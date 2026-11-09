@@ -15,6 +15,7 @@ import { pinoSink, setLogSink } from './lib/log.js';
 import { attachRouteRegistry } from './lib/routeRegistry.js';
 import { websocketServerOptions } from './lib/websocketOptions.js';
 import authPlugin from './plugins/auth.js';
+import panelAccessPlugin from './plugins/panelAccess.js';
 import backupSchedulerPlugin from './plugins/backupScheduler.js';
 import pitrSchedulerPlugin from './plugins/pitrScheduler.js';
 import autoUpdateSchedulerPlugin from './plugins/autoUpdateScheduler.js';
@@ -121,6 +122,9 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(rateLimitPlugin);
   await app.register(rawBodyPlugin);
   await app.register(dbPlugin);
+  // O4: the panel IP allow-list. It needs only the db; registered before the
+  // kernel and every route so its hook covers all of them.
+  await app.register(panelAccessPlugin);
   await app.register(kernelPlugin);
   // Commit statuses / PR comments for opted-in GitHub links (0.13); listens on
   // the kernel bus, so it comes after the kernel.

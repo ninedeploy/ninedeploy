@@ -68,6 +68,9 @@ services:
       NINEDEPLOY_ACME_EMAIL: ${NINEDEPLOY_ACME_EMAIL:-}
       NINEDEPLOY_DNS_PROVIDER: ${NINEDEPLOY_DNS_PROVIDER:-}
       NINEDEPLOY_DNS_TOKEN: ${NINEDEPLOY_DNS_TOKEN:-}
+      # "off" ignores the panel IP allow-list (Settings → Security), for when
+      # you have locked yourself out. Remove it again once the list is fixed.
+      NINEDEPLOY_PANEL_ACCESS: ${NINEDEPLOY_PANEL_ACCESS:-on}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       # SQLite db, git checkouts, encrypted backups and master.key live here.

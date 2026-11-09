@@ -169,6 +169,7 @@ export const MARKETPLACE_CATALOG: Omit<MarketplacePluginItem, 'isInstalled'>[] =
   {
     id: 'postgres-wal-g',
     implemented: false,
+    builtIn: { label: 'Databases → a PostgreSQL database → Point-in-time recovery (built in since 0.18.21)', path: '/databases' },
     name: 'PostgreSQL WAL-G Continuous Archiving',
     version: '1.0.0',
     description: 'Continuous WAL streaming and Point-in-Time-Recovery (PITR) for mission-critical PostgreSQL databases',
@@ -287,6 +288,7 @@ export const MARKETPLACE_CATALOG: Omit<MarketplacePluginItem, 'isInstalled'>[] =
   {
     id: 'sentry-tracking',
     implemented: false,
+    builtIn: { label: 'Services → a service → Errors (Sentry-compatible ingest)', path: '/services' },
     name: 'Sentry Error & Performance Tracking',
     version: '1.0.0',
     description: 'Real-time error capturing, stack trace analysis, and deployment performance release tracking via Sentry',
@@ -318,6 +320,7 @@ export const MARKETPLACE_CATALOG: Omit<MarketplacePluginItem, 'isInstalled'>[] =
   {
     id: 'tailscale-vpn',
     implemented: false,
+    builtIn: { label: 'Servers → Add server (joins a Tailscale or Headscale tailnet)', path: '/servers' },
     name: 'Tailscale Mesh VPN Integration',
     version: '1.0.0',
     description: 'Connect your NineDeploy instance and private deployment nodes to your Tailscale mesh network for secure, overlay networking',

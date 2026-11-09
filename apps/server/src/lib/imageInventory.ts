@@ -272,8 +272,10 @@ export async function pruneImages(opts: PruneOptions = {}, releaseImages: Readon
     try {
       await commands.capture('docker', ['image', 'inspect', id, '--format', '{{.Id}}']);
       return true;
-    } catch {
-      return false;
+    } catch (err) {
+      // An unavailable inspect cannot confirm that a failed rm removed this image.
+      const message = err instanceof Error ? err.message : String(err);
+      return !/no such (image|object)/i.test(message);
     }
   };
   for (let i = 0; i < candidates.length; i += CHUNK) {

@@ -240,6 +240,10 @@ export function createFakeApiModule() {
       setPanelDomain: vi.fn(),
       setTemplatesSource: vi.fn(),
       setDns: vi.fn(),
+      panelAccess: {
+        get: vi.fn().mockResolvedValue({ enabled: false, cidrs: [], includeTokens: false, yourIp: '203.0.113.9', overridden: false }),
+        set: vi.fn(),
+      },
       dnsRecords: { get: vi.fn(), set: vi.fn(), test: vi.fn() },
       namecheap: { get: vi.fn(), set: vi.fn() },
       dnsProvider: {

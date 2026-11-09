@@ -129,7 +129,7 @@ export function isReplayedDelivery(
 ): boolean {
   const keys: string[] = [];
   const id = deliveryId(headers, provider);
-  if (id) keys.push(id);
+  if (id) keys.push(`id:${JSON.stringify([provider, body?.scope ?? null, id])}`);
   if (body?.rawBody) {
     keys.push(`body:${provider}:${body.scope}:${createHash('sha256').update(body.rawBody).digest('hex')}`);
   }

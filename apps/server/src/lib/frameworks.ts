@@ -607,6 +607,10 @@ function enumerateWorkspacePackages(
       return;
     }
     for (const entry of entries) {
+      // The bound is checked here too, not only at frame entry: one huge
+      // directory would otherwise analyze and push far past it (and keep
+      // lstat-ing every later entry) on the synchronous request path.
+      if (results.length >= MAX_WORKSPACE_PACKAGES) return;
       if (!entry.isDirectory() || entry.name.startsWith('.') || SKIP_DIRS.has(entry.name)) continue;
       const relDir = rel === '' ? entry.name : `${rel}/${entry.name}`;
       // r620: resolveInRepo throws on a symlinked component — skip that one

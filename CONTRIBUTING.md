@@ -21,6 +21,8 @@ pnpm dev:web        # the web panel, in a second terminal
 
 The panel drives the Docker daemon it can reach. On a machine that runs other projects' containers, use a separate daemon (for example Docker-in-Docker) for anything that deploys.
 
+For a native Mac setup, the separate desktop lockfile and Keychain/DMG acceptance, follow [Developing on macOS](docs/MACOS_DEVELOPMENT.md).
+
 ## Checks
 
 ```bash

@@ -271,6 +271,24 @@ A docker service that builds from source can use a Dockerfile pasted in the pane
 - At most 64 KiB, and the text must start with `FROM` (or `ARG` before `FROM`).
 - No migration is needed: the text is a settings row, `inline_dockerfile:<id>`. A clone of the service copies it.
 
+### What a clone and a service bundle carry (S3)
+
+Several service settings live in the settings table rather than on the service row. A **clone** (`POST /v1/services/:id/clone`) copies them. So does a **service bundle**: `GET /v1/services/:id/export`, then `POST /v1/services/import` on the same or another panel.
+
+**What travels:**
+- the inline Dockerfile;
+- the restart-loop limit;
+- custom error pages;
+- the CI pipeline;
+- commit statuses;
+- sticky sessions;
+- maintenance mode, in a bundle only. A clone starts outside maintenance mode.
+- for each domain in a bundle, forward auth and its compose route.
+
+**How values are checked:** every value is validated by the same schema as its own route. A value the new service cannot use is skipped, and the response lists it under `settings.skipped` with the reason. Examples are a panel-host feature on a node service, and an invalid value in an edited bundle. The rest of the import goes ahead. Bundles from older panels have no `settings` and import as before.
+
+**What never travels:** secrets. These are the registry push-webhook token and the error-ingest key. The bundle's `notCarried` list names them so you can create new ones. Neither do staged pending changes, image-scan results, move progress, or a tripped restart limit.
+
 ### Restart-loop limit (G1.3)
 
 A docker service on the panel host, or a PM2 service (bare-metal mode), can be stopped when its containers or processes keep crashing. Turn it on under **Settings → Restart-loop limit**, or with `PUT /v1/services/:id/restart-limit` and `{ "limit": { "maxRestarts": 5, "windowMinutes": 10 } }`. `{ "limit": null }` turns it off. Turning it on is refused for a node service or a Swarm service (`restart_limit_unsupported`), whose containers the panel does not sample, and a service with the limit on cannot move to a node (`move_panel_host_only`).

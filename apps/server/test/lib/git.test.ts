@@ -592,6 +592,47 @@ describe('checkoutCommit — edge cases', () => {
   });
 });
 
+describe('checkoutCommit — abort signal reaches the submodule git processes', () => {
+  it('passes limits.signal to the SimpleGit instances initSubmodules constructs', async () => {
+    // A real clone materializes the repo's .gitmodules — write the fixture in
+    // the clone stub, because checkoutCommit rm -rf's the target before cloning.
+    gitState.simpleGit.mockImplementation(() => {
+      const g = makeGit();
+      g.clone = vi.fn(async (_url: string, target: string) => {
+        mkdirSync(path.join(String(target), 'sub'), { recursive: true });
+        writeFileSync(
+          path.join(String(target), '.gitmodules'),
+          '[submodule "lib"]\n\tpath = sub\n\turl = https://sub.example.com/lib.git\n',
+        );
+        writeFileSync(
+          path.join(String(target), 'sub', '.gitmodules'),
+          '[submodule "nested"]\n\tpath = nested\n\turl = https://sub.example.com/nested.git\n',
+        );
+      });
+      return g;
+    });
+
+    const dir = gitDir('submodule-abort');
+    // The shared makeGit.raw reads .gitmodules from lastDir (the `-z` fixture path).
+    gitState.lastDir = dir;
+    const controller = new AbortController();
+    await checkoutCommit('https://github.com/ada/repo.git', 'main', undefined, dir, vi.fn(), undefined, {
+      signal: controller.signal,
+    });
+
+    const constructions = gitState.simpleGit.mock.calls.map((call) => ({
+      target: call.length === 2 ? String(call[0]) : '<bare>',
+      abort: ((call[call.length - 1] ?? {}) as { abort?: AbortSignal }).abort,
+    }));
+    // The clone materialized a .gitmodules with an absolute https URL, so the
+    // gate vetted a second pin and initSubmodules constructed its own
+    // SimpleGit for the submodule updater and for the recursive level — every
+    // git process of this checkout must be abortable.
+    expect(constructions.length).toBeGreaterThanOrEqual(4);
+    expect(constructions.filter((c) => c.abort !== controller.signal)).toEqual([]);
+  });
+});
+
 describe('checkoutCommit — r355 DNS-rebinding pin', () => {
   it('pins git to the address the gate vetted, even when the name re-resolves to a private one', async () => {
     // Rebinding DNS: the gate's lookup sees public addresses; any later

@@ -1988,11 +1988,12 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     // G1.1: the pasted Dockerfile is part of the build definition (a settings
     // row, not a column): without it the copy built the repository's own
     // Dockerfile, or nothing at all for a "Dockerfile only" service.
-    {
-      const { getInlineDockerfile, setInlineDockerfile } = await import('../lib/inlineDockerfile.js');
-      const dockerfile = await getInlineDockerfile(app.db, svc.id);
-      if (dockerfile) await setInlineDockerfile(app.db, created.id, dockerfile);
-    }
+    // S3: so is the rest of the settings-row configuration (restart limit,
+    // error pages, CI pipeline, commit statuses, sticky sessions). A copy
+    // starts outside maintenance mode; secrets (registry hook, ingest key)
+    // are never copied.
+    const { applyPortableServiceSettings, readPortableServiceSettings } = await import('../lib/portableSettings.js');
+    const carried = await applyPortableServiceSettings(app.db, created, await readPortableServiceSettings(app.db, svc.id), { kind: 'clone' });
 
     // Clone env vars
     const envs = await app.db.query.envVars.findMany({ where: eq(envVars.serviceId, svc.id) });
@@ -2007,7 +2008,7 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
       });
     }
 
-    void audit(app.db, req.user!.id, 'service.clone', `${svc.name} -> ${created!.name}`);
+    void audit(app.db, req.user!.id, 'service.clone', `${svc.name} -> ${created!.name}`, { settings: carried.applied, skipped: carried.skipped });
     // The clone belongs wherever the original did.
     const sourceTags = await tagIdsOf(app.db, svc.id);
     await replaceServiceTags(

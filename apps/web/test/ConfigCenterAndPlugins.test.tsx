@@ -722,7 +722,7 @@ describe('Config Center & Plugins Frontend Components', () => {
       expect(api.plugins.install).not.toHaveBeenCalled();
     });
 
-    it('labels an unimplemented entry with no shipped equivalent as planned', async () => {
+    it('labels an unimplemented entry with no shipped equivalent as not available, never as planned', async () => {
       const user = userEvent.setup();
       mockOf(api.plugins.marketplace).mockResolvedValue({
         catalog: [{ ...sampleCatalog[0]!, implemented: false }],
@@ -731,7 +731,8 @@ describe('Config Center & Plugins Frontend Components', () => {
       await waitFor(() => expect(screen.getByText('Install Plugin')).toBeInTheDocument());
       await user.click(screen.getByText('Install Plugin'));
 
-      await waitFor(() => expect(screen.getByText('Planned — not available yet')).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByText('Not available')).toBeInTheDocument());
+      expect(screen.queryByText(/Planned/)).not.toBeInTheDocument();
       expect(screen.queryByRole('button', { name: /^Install$/ })).not.toBeInTheDocument();
     });
 

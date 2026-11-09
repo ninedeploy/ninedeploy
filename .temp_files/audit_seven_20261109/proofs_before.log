@@ -1,0 +1,102 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_seven_20261109/prove_F1035_runtime_unknown_inspect.test.ts > does not turn an unreadable Docker response into a service outage
+CONTROL EXPECTED: updates=[] alerts=0 | ACTUAL: {"updates":[],"alerts":0}
+
+stdout | .temp_files/audit_seven_20261109/prove_F1035_runtime_unknown_inspect.test.ts > does not turn an unreadable Docker response into a service outage
+EXPECTED: updates=[] alerts=0 | ACTUAL: {"updates":[{"status":"error"}],"alerts":1}
+PROBLEM CONFIRMED
+
+stdout | .temp_files/audit_seven_20261109/prove_F1035_runtime_unknown_inspect.test.ts > does not mark a fan-out target gone for an unknown inspect failure
+EXPECTED: fan-out updates=[] | ACTUAL: [{"status":"error"}]
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_seven_20261109/prove_F1035_runtime_unknown_inspect.test.ts > does not turn an unreadable Docker response into a service outage 81ms
+   → expected { …(2) } to deeply equal { updates: [], alerts: +0 }
+ × .temp_files/audit_seven_20261109/prove_F1035_runtime_unknown_inspect.test.ts > does not mark a fan-out target gone for an unknown inspect failure 2ms
+   → expected [ { status: 'error' } ] to deeply equal []
+stdout | .temp_files/audit_seven_20261109/prove_F1034_webhook_replay_scope.test.ts > allows the same provider delivery to reach two service-scoped receivers
+CONTROL EXPECTED: first=false duplicate=true | ACTUAL: false true
+EXPECTED: sibling replay=false | ACTUAL: true
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_seven_20261109/prove_F1034_webhook_replay_scope.test.ts > allows the same provider delivery to reach two service-scoped receivers 8ms
+   → expected true to be false // Object.is equality
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_seven_20261109/prove_F1034_webhook_replay_scope.test.ts > allows the same provider delivery to reach two service-scoped receivers
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ .temp_files/audit_seven_20261109/prove_F1034_webhook_replay_scope.test.ts:14:19
+     12|   console.log('EXPECTED: sibling replay=false | ACTUAL:', sibling);
+     13|   console.log(sibling ? 'PROBLEM CONFIRMED' : 'PROBLEM NOT REPRODUCED'…
+     14|   expect(sibling).toBe(false);
+       |                   ^
+     15| });
+     16|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  .temp_files/audit_seven_20261109/prove_F1035_runtime_unknown_inspect.test.ts > does not turn an unreadable Docker response into a service outage
+AssertionError: expected { …(2) } to deeply equal { updates: [], alerts: +0 }
+
+- Expected
++ Received
+
+  {
+-   "alerts": 0,
+-   "updates": [],
++   "alerts": 1,
++   "updates": [
++     {
++       "status": "error",
++     },
++   ],
+  }
+
+ ❯ .temp_files/audit_seven_20261109/prove_F1035_runtime_unknown_inspect.test.ts:27:18
+     25|   console.log('EXPECTED: updates=[] alerts=0 | ACTUAL:', JSON.stringif…
+     26|   console.log(actual.updates.length || actual.alerts ? 'PROBLEM CONFIR…
+     27|   expect(actual).toEqual({ updates: [], alerts: 0 });
+       |                  ^
+     28| });
+     29| it('does not mark a fan-out target gone for an unknown inspect failure…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  .temp_files/audit_seven_20261109/prove_F1035_runtime_unknown_inspect.test.ts > does not mark a fan-out target gone for an unknown inspect failure
+AssertionError: expected [ { status: 'error' } ] to deeply equal []
+
+- Expected
++ Received
+
+- []
++ [
++   {
++     "status": "error",
++   },
++ ]
+
+ ❯ .temp_files/audit_seven_20261109/prove_F1035_runtime_unknown_inspect.test.ts:41:21
+     39|     console.log('EXPECTED: fan-out updates=[] | ACTUAL:', JSON.stringi…
+     40|     console.log(updates.length ? 'PROBLEM CONFIRMED' : 'PROBLEM NOT RE…
+     41|     expect(updates).toEqual([]);
+       |                     ^
+     42|   } finally { await patrol.close(); await app.close(); }
+     43| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+
+ Test Files  2 failed (2)
+      Tests  3 failed (3)
+   Start at  16:44:13
+   Duration  1.56s (import 69%, transform 22%, tests 8%, worker 1%)

@@ -273,6 +273,39 @@ describe('workspaces routes', () => {
       expect(auditMocks.audit).toHaveBeenCalledWith(expect.anything(), 2, 'workspace.update', 'Renamed Workspace');
     });
 
+    it('reports the workspace\'s real member and project counts (not hardcoded 1/0)', async () => {
+      const members = [
+        memberRow({ id: 1, userId: 2, role: 'owner' }),
+        memberRow({ id: 2, userId: 3, role: 'member' }),
+      ];
+      const app = await buildTestApp({
+        db: createFakeDb({
+          findFirst: {
+            workspaces: workspaceRow({ id: 1 }),
+            workspace_members: members[0],
+          },
+          select: {
+            workspace_members: members.map((m) => ({ member: m, user: { email: 'x@example.com', name: null } })),
+            projects: [{ id: 7, workspaceId: 1 }],
+          },
+          update: {
+            workspaces: [workspaceRow({ id: 1, name: 'Renamed Workspace' })],
+          },
+        }),
+      });
+      await app.register(workspaceRoutes, { prefix: '/workspaces' });
+
+      const res = await app.inject({
+        method: 'PATCH',
+        url: '/workspaces/1',
+        headers: { ...asUser({ id: 2 }), 'content-type': 'application/json' },
+        payload: { name: 'Renamed Workspace' },
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.json().memberCount).toBe(2);
+      expect(res.json().projectCount).toBe(1);
+    });
+
     it('updates workspace info with description and allows admin without membership', async () => {
       const app = await buildTestApp({
         db: createFakeDb({

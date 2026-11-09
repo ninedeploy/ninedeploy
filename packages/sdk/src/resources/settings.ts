@@ -17,6 +17,8 @@ import type {
   ExecProviderPut,
   McpHttpPolicyPatch,
   McpHttpPolicyView,
+  PanelAccessUpdate,
+  PanelAccessView,
 } from '@ninedeploy/schemas';
 import type { VaultAllowlistView, VaultSettings, EmailTemplateName, EmailTemplateEntry, EmailTemplateRender } from '../types.js';
 import type { Transport } from '../transport.js';
@@ -84,6 +86,14 @@ export interface SettingsApi {
     setAllowRegistration: (enabled: boolean) => Promise<{ ok: boolean; allowRegistration: boolean }>;
     setAcmeEmail: (email: string) => Promise<{ ok: boolean; acmeEmail: string | null; applied: string }>;
     setTemplatesSource: (source: string) => Promise<{ ok: boolean; templatesSource: string | null }>;
+    /**
+     * O4: the panel IP allow-list (operator, interactive session). `set`
+     * is refused when the list would exclude the caller's own address.
+     */
+    panelAccess: {
+      get: () => Promise<PanelAccessView>;
+      set: (input: PanelAccessUpdate) => Promise<PanelAccessView>;
+    };
     /** Configure the ACME DNS-01 challenge (wildcard certificates). */
     setDns: (input: { provider: string; token?: string; wildcardApex: string }) => Promise<{ ok: boolean; dnsProvider: string | null; wildcardApex: string | null; applied: string }>;
     /**
@@ -266,6 +276,10 @@ export function settingsApi(t: Transport): SettingsApi {
         send<{ ok: boolean; acmeEmail: string | null; applied: string }>('PUT', '/v1/settings/acme-email', { email }),
       setTemplatesSource: (source) =>
         send<{ ok: boolean; templatesSource: string | null }>('PUT', '/v1/settings/templates-source', { source }),
+      panelAccess: {
+        get: () => get<PanelAccessView>('/v1/settings/panel-access'),
+        set: (input) => send<PanelAccessView>('PUT', '/v1/settings/panel-access', input),
+      },
       setDns: (input) =>
         send<{ ok: boolean; dnsProvider: string | null; wildcardApex: string | null; applied: string }>('PUT', '/v1/settings/dns', input),
       autoUrl: {

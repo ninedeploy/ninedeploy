@@ -156,6 +156,7 @@ async function initSubmodules(
   sink: (line: string) => void,
   config: string[],
   depth = 0,
+  signal?: AbortSignal,
 ): Promise<void> {
   if (depth >= MAX_SUBMODULE_DEPTH || !existsSync(path.join(repoDir, '.gitmodules'))) return;
   let raw = '';
@@ -191,7 +192,10 @@ async function initSubmodules(
   if (depth === 0) sink('Initialising git submodules …');
   // `-c` settings reach the child clones `submodule update` spawns (git keeps
   // GIT_CONFIG_PARAMETERS for submodule processes), so the pins apply there.
-  const updater = levelConfig.length === config.length ? git : simpleGit(repoDir, { config: levelConfig, unsafe: HOOKS_OPT_IN });
+  // The checkout's abort signal comes too: a submodule sync/update/fetch is
+  // one of "every git process of this checkout" (CheckoutLimits.signal).
+  const submoduleOpts = { config: levelConfig, unsafe: HOOKS_OPT_IN, ...(signal ? { abort: signal } : {}) };
+  const updater = levelConfig.length === config.length ? git : simpleGit(repoDir, submoduleOpts);
   // F576: the stored submodule URLs are scrubbed after every checkout; re-derive
   // them from the (vetted) `.gitmodules` and this run's origin before fetching.
   await updater.raw(['submodule', 'sync', '--quiet']);
@@ -200,7 +204,7 @@ async function initSubmodules(
     const subDir = path.resolve(repoDir, rel);
     if (!subDir.startsWith(path.resolve(repoDir) + path.sep)) continue;
     if (!existsSync(path.join(subDir, '.gitmodules'))) continue;
-    await initSubmodules(simpleGit(subDir, { config: levelConfig, unsafe: HOOKS_OPT_IN }), subDir, sink, levelConfig, depth + 1);
+    await initSubmodules(simpleGit(subDir, submoduleOpts), subDir, sink, levelConfig, depth + 1, signal);
   }
 }
 
@@ -366,7 +370,7 @@ export async function checkoutCommit(
     // Submodules: if the repo ships a `.gitmodules`, init + fetch them so
     // builds that reference submodule paths don't fail on empty directories.
     // r657: an inspection never recurses into submodules (each is another clone).
-    if (!limits?.shallow) await initSubmodules(git, dir, sink, gitConfig);
+    if (!limits?.shallow) await initSubmodules(git, dir, sink, gitConfig, 0, limits?.signal);
 
     const resolved = (await git.raw(['log', '-1', '--format=%H'])).trim() || sha || '';
     sink(`Checked out ${resolved.slice(0, 7)} on ${branch}`);

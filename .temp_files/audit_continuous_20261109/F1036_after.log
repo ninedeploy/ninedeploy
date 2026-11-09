@@ -1,0 +1,22 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stderr | .temp_files/audit_continuous_20261109/prove_F1036_unconfirmed_image_removal.test.ts > never credits deletion based on a failed follow-up inspection
+[images] prune chunk failed: Docker image removal did not complete
+stdout | .temp_files/audit_continuous_20261109/prove_F1036_unconfirmed_image_removal.test.ts > never credits deletion based on a failed follow-up inspection
+CONTROL EXPECTED: successful removal / explicit absence credited | ACTUAL: both credited
+
+
+stderr | .temp_files/audit_continuous_20261109/prove_F1036_unconfirmed_image_removal.test.ts > never credits deletion based on a failed follow-up inspection
+[images] prune chunk failed: Docker image removal did not complete
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1036_unconfirmed_image_removal.test.ts > never credits deletion based on a failed follow-up inspection
+EXPECTED: removed=[] freedBytes=0 | ACTUAL: {"removed":[],"freedBytes":0}
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1036_unconfirmed_image_removal.test.ts > never credits deletion based on a failed follow-up inspection 4ms
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  17:13:42
+   Duration  530ms (transform 56%, import 29%, tests 8%, worker 7%)

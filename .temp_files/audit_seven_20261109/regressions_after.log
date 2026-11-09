@@ -1,0 +1,110 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/runtimeState.test.ts > runtime state reconciliation > leaves a running container alone 67ms
+ ✓ test/runtimeState.test.ts > runtime state reconciliation > does not judge a local container when inspect is unreadable: permission denied while trying to connect to the Docker daemon socket 2ms
+ ✓ test/runtimeState.test.ts > runtime state reconciliation > does not judge a local container when inspect is unreadable: Docker API returned 500: internal server error 1ms
+ ✓ test/runtimeState.test.ts > runtime state reconciliation > does not judge a local container when inspect is unreadable: Docker inspect timed out 1ms
+ ✓ test/runtimeState.test.ts > runtime state reconciliation > does not mark a fan-out target missing when its inspect fails: permission denied 2ms
+ ✓ test/runtimeState.test.ts > runtime state reconciliation > does not mark a fan-out target missing when its inspect fails: Cannot connect to the Docker daemon 1ms
+ ✓ test/runtimeState.test.ts > runtime state reconciliation > revives a stopped container and keeps the service running 1ms
+ ✓ test/runtimeState.test.ts > runtime state reconciliation > revives a stopped replica while the primary stays healthy 1ms
+ ✓ test/runtimeState.test.ts > runtime state reconciliation > 0.16.10: an autoscaled service revives only the containers that serve, never its stopped spares 1ms
+ ✓ test/runtimeState.test.ts > runtime state reconciliation > 0.16.11: leaves a sleeping service alone — its containers are stopped on purpose 1ms
+ ✓ test/runtimeState.test.ts > runtime state reconciliation > leaves single-replica services without replica inspections 1ms
+ ✓ test/runtimeState.test.ts > runtime state reconciliation > alerts when the revived container was OOM-killed 1ms
+ ✓ test/runtimeState.test.ts > runtime state reconciliation > alerts on exit 137 even when the OOMKilled flag is false 2ms
+ ✓ test/runtimeState.test.ts > runtime state reconciliation > patrols fan-out targets: revives a stopped clone on its node 1ms
+ ✓ test/runtimeState.test.ts > runtime state reconciliation > skips a downed agent without judging the service 1ms
+ ✓ test/runtimeState.test.ts > runtime state reconciliation > r471: marks a GONE fan-out target errored instead of showing a stale running row 1ms
+ ✓ test/runtimeState.test.ts > runtime state reconciliation > throttles repeated OOM alerts for the same service 1ms
+ ✓ test/runtimeState.test.ts > runtime state reconciliation > starts compose project siblings alongside the main container 1ms
+ ✓ test/runtimeState.test.ts > runtime state reconciliation > marks the service errored when revival fails 1ms
+ ✓ test/runtimeState.test.ts > runtime state reconciliation > marks the service errored without a start attempt when the container is gone 1ms
+ ✓ test/runtimeState.test.ts > runtime state reconciliation > r242: records the outage in the audit trail, which fans out to notifications and the kernel 1ms
+ ✓ test/runtimeState.test.ts > runtime state reconciliation > skips the round without judging when the docker daemon is unreachable 1ms
+ ✓ test/runtimeState.test.ts > runtime state reconciliation > resurrects the PM2 dump once when a process is gone, then revives it 1ms
+ ✓ test/runtimeState.test.ts > runtime state reconciliation > revives a stopped PM2 process via restart 1ms
+ ✓ test/runtimeState.test.ts > runtime state reconciliation > marks a PM2 service errored when it stays gone after resurrect 1ms
+ ✓ test/runtimeState.test.ts > r525: node-pinned docker services are patrolled through their agent > leaves a running node container alone 1ms
+ ✓ test/runtimeState.test.ts > r525: node-pinned docker services are patrolled through their agent > marks a container the node says is GONE errored and fires alert.service_down 1ms
+ ✓ test/runtimeState.test.ts > r525: node-pinned docker services are patrolled through their agent > does not send a legacy Start when fresh node ownership cannot be confirmed 1ms
+ ✓ test/runtimeState.test.ts > r525: node-pinned docker services are patrolled through their agent > never judges a service on an unreachable node — records the node instead, once per outage 1ms
+ ✓ test/runtimeState.test.ts > r525: node-pinned docker services are patrolled through their agent > skips (does not judge) an inspect failure that is not the node saying the container is gone 1ms
+ ✓ test/runtimeState.test.ts > r591: node-pinned compose services are patrolled through their agent > inspects the stack's main container on its node and leaves a running one alone 1ms
+ ✓ test/runtimeState.test.ts > r591: node-pinned compose services are patrolled through their agent > marks a stack whose main container is GONE errored and fires alert.service_down 1ms
+ ✓ test/runtimeState.test.ts > r591: node-pinned compose services are patrolled through their agent > revives a stopped main container on its node 1ms
+ ✓ test/runtimeState.test.ts > r591: node-pinned compose services are patrolled through their agent > never judges a stack on an unreachable node 1ms
+ ✓ test/runtimeState.test.ts > r591: node-pinned compose services are patrolled through their agent > skips a service when the agent is too old for the op — neither the service nor the node is judged 1ms
+ ✓ test/runtimeState.test.ts > F164: an outage is reported only for a row this pass actually moved off running > control: a running row whose container is gone is errored and alerted once 236ms
+ ✓ test/runtimeState.test.ts > F164: an outage is reported only for a row this pass actually moved off running > never alerts for a service deleted while its container was being inspected 207ms
+ ✓ test/runtimeState.test.ts > F164: an outage is reported only for a row this pass actually moved off running > never overwrites a compose in-place redeploy (same runtimeId) with error 205ms
+ ✓ test/runtimeState.test.ts > F889/F940: a revive re-checks the row it is about to start (real SQLite, gated) > control: a running service whose container crashed is still revived 219ms
+ ✓ test/runtimeState.test.ts > F889/F940: a revive re-checks the row it is about to start (real SQLite, gated) > F889: never starts a container its user stopped after the pass listed it 219ms
+ ✓ test/runtimeState.test.ts > F889/F940: a revive re-checks the row it is about to start (real SQLite, gated) > F889: never starts the old container after a deploy swapped the runtime mid-pass 201ms
+ ✓ test/runtimeState.test.ts > F889/F940: a revive re-checks the row it is about to start (real SQLite, gated) > F940: never starts a replica of a service stopped while the primary looked healthy 213ms
+ ✓ test/runtimeState.test.ts > F889/F940: a revive re-checks the row it is about to start (real SQLite, gated) > F940: never restarts a PM2 process its user stopped after the pass listed it 212ms
+ ✓ test/runtimeState.test.ts > F889/F940: a revive re-checks the row it is about to start (real SQLite, gated) > F940: never starts a node container its user stopped after the patrol listed it 204ms
+ ✓ test/lib/webhooks.test.ts > delivery replay isolation > accepts one repository delivery per service and still rejects that service’s duplicates 2ms
+ ✓ test/lib/webhooks.test.ts > delivery replay isolation > isolates provider delivery identifiers even when a caller supplies no body 0ms
+ ✓ test/lib/webhooks.test.ts > verifyWebhook > accepts a valid GitHub signature 0ms
+ ✓ test/lib/webhooks.test.ts > verifyWebhook > rejects a GitHub request with a wrong signature 0ms
+ ✓ test/lib/webhooks.test.ts > verifyWebhook > rejects a GitHub request without a signature header 0ms
+ ✓ test/lib/webhooks.test.ts > verifyWebhook > rejects a GitHub signature that is not sha256-prefixed 0ms
+ ✓ test/lib/webhooks.test.ts > verifyWebhook > accepts a valid Gitea signature 0ms
+ ✓ test/lib/webhooks.test.ts > verifyWebhook > rejects a Gitea request without a signature 0ms
+ ✓ test/lib/webhooks.test.ts > verifyWebhook > rejects a Gitea request with a wrong signature 0ms
+ ✓ test/lib/webhooks.test.ts > verifyWebhook > accepts a valid GitLab token 0ms
+ ✓ test/lib/webhooks.test.ts > verifyWebhook > rejects a GitLab request without a token 0ms
+ ✓ test/lib/webhooks.test.ts > verifyWebhook > rejects a GitLab request with a wrong token 0ms
+ ✓ test/lib/webhooks.test.ts > verifyWebhook > returns null when no provider header is present 0ms
+ ✓ test/lib/webhooks.test.ts > verifyWebhook > handles array-valued headers by ignoring them 0ms
+ ✓ test/lib/webhooks.test.ts > isPing > detects GitHub and Gitea pings 0ms
+ ✓ test/lib/webhooks.test.ts > isPing > detects GitLab ping hooks 0ms
+ ✓ test/lib/webhooks.test.ts > parsePush > parses a GitHub push payload 1ms
+ ✓ test/lib/webhooks.test.ts > parsePush > reports the listed commit count so watch-path gating can detect truncation 0ms
+ ✓ test/lib/webhooks.test.ts > parsePush > parses a GitHub payload with a bare ref (not refs/heads/) 0ms
+ ✓ test/lib/webhooks.test.ts > parsePush > handles a GitHub payload without head_commit 0ms
+ ✓ test/lib/webhooks.test.ts > parsePush > returns null for an empty ref 0ms
+ ✓ test/lib/webhooks.test.ts > parsePush > returns null for a null or undefined body (r010) 0ms
+ ✓ test/lib/webhooks.test.ts > parsePush > returns null for a GitHub branch-deletion push (r009) 0ms
+ ✓ test/lib/webhooks.test.ts > parsePush > returns null for a Gitea branch-deletion push (r009) 0ms
+ ✓ test/lib/webhooks.test.ts > parsePush > returns null when `after` is all zeros even without a deleted flag (r009) 0ms
+ ✓ test/lib/webhooks.test.ts > parsePush > still parses a normal push that carries an `after` sha (r009 guard does not overfire) 0ms
+ ✓ test/lib/webhooks.test.ts > parsePush > parses a GitLab push payload 0ms
+ ✓ test/lib/webhooks.test.ts > parsePush > returns null for a GitLab payload with no commits 0ms
+ ✓ test/lib/webhooks.test.ts > parsePush > returns null for a GitLab payload without a commits key 0ms
+ ✓ test/lib/webhooks.test.ts > parsePush > parses a GitLab commit with no id or message 0ms
+ ✓ test/lib/webhooks.test.ts > parsePush > parses a GitLab payload with missing author name and repo url 0ms
+ ✓ test/lib/webhooks.test.ts > parsePush > collects added/modified/removed files from a GitHub payload 0ms
+ ✓ test/lib/webhooks.test.ts > parsePush > collects changed files from a GitLab payload 0ms
+ ✓ test/lib/webhooks.test.ts > parsePush > falls back to the head commit alone when the commits array is absent 0ms
+ ✓ test/lib/webhooks.test.ts > parsePush > returns an empty changed-files list when nothing reports paths 0ms
+ ✓ test/lib/webhooks.test.ts > parsePush > skips non-array and non-string entries in file lists 0ms
+ ✓ test/lib/webhooks.test.ts > isPullRequest and parsePullRequest > detects PR events on GitHub, Gitea, and GitLab 0ms
+ ✓ test/lib/webhooks.test.ts > isPullRequest and parsePullRequest > parses GitHub pull request events (open, sync, reopen, close) 0ms
+ ✓ test/lib/webhooks.test.ts > isPullRequest and parsePullRequest > parses GitLab merge request events (open, update, reopen, close, merge) 0ms
+ ✓ test/lib/webhooks.test.ts > isReplayedDelivery > flags a repeated GitHub delivery id but not first sightings 0ms
+ ✓ test/lib/webhooks.test.ts > isReplayedDelivery > tracks GitLab UUID and Gitea delivery headers 0ms
+ ✓ test/lib/webhooks.test.ts > isReplayedDelivery > fails open when the provider sent no delivery id 0ms
+ ✓ test/lib/webhooks.test.ts > isReplayedDelivery > flags a replayed signed body even when the delivery id is fresh (r313) 0ms
+ ✓ test/lib/webhooks.test.ts > isReplayedDelivery > scopes body dedupe per service and still dedupes on the id (r313) 0ms
+ ✓ test/lib/webhooks.test.ts > Bitbucket > accepts a valid Bitbucket signature 0ms
+ ✓ test/lib/webhooks.test.ts > Bitbucket > rejects a Bitbucket request with a wrong signature 0ms
+ ✓ test/lib/webhooks.test.ts > Bitbucket > rejects a Bitbucket signature that is not sha256-prefixed 0ms
+ ✓ test/lib/webhooks.test.ts > Bitbucket > rejects a Bitbucket request without a signature 0ms
+ ✓ test/lib/webhooks.test.ts > Bitbucket > treats diagnostics:ping as a ping 0ms
+ ✓ test/lib/webhooks.test.ts > Bitbucket > deduplicates Bitbucket deliveries by X-Request-UUID 0ms
+ ✓ test/lib/webhooks.test.ts > Bitbucket > parses a repo:push payload into a deploy event 0ms
+ ✓ test/lib/webhooks.test.ts > Bitbucket > returns null for a push with no branch creation change 0ms
+ ✓ test/lib/webhooks.test.ts > Bitbucket > recognizes pullrequest event keys 0ms
+ ✓ test/lib/webhooks.test.ts > Bitbucket > parses a created pull request 0ms
+ ✓ test/lib/webhooks.test.ts > Bitbucket > maps fulfilled to closed with merged=true 0ms
+ ✓ test/lib/webhooks.test.ts > Bitbucket > maps rejected to closed without merged and updated to synchronize 0ms
+ ✓ test/lib/webhooks.test.ts > Bitbucket > r187: reads the event key from the X-Event-Key header, as Bitbucket really sends it 0ms
+ ✓ test/lib/webhooks.test.ts > Bitbucket > returns null for a pull request payload without a source branch 0ms
+
+ Test Files  2 passed (2)
+      Tests  102 passed (102)
+   Start at  16:46:31
+   Duration  3.30s (tests 70%, import 22%, transform 8%)

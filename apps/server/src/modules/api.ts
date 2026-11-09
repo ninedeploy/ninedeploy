@@ -45,6 +45,7 @@ import { serverRoutes } from './servers.js';
 import { nodeOsUpdateRoutes, osUpdateRoutes } from './osUpdates.js';
 import { cloudRoutes } from './cloud.js';
 import { deployFreezeRoutes } from './deployFreezes.js';
+import { panelAccessRoutes } from './panelAccess.js';
 import { usageRoutes } from './usage.js';
 import { imageScanPolicyRoutes, serviceImageScanRoutes } from './imageScans.js';
 import { databaseTunnelRoutes } from './databaseTunnel.js';
@@ -242,6 +243,8 @@ export const apiRoutes: FastifyPluginAsync = async (app) => {
   await app.register(settingsRoutes, { prefix: '/settings' });
   // Vault / OpenBao and AWS Secrets Manager (0.14, DESIGN §4.2), operator-only.
   await app.register(secretProviderRoutes, { prefix: '/settings/secret-providers' });
+  // O4: the panel IP allow-list (enforced by plugins/panelAccess.ts).
+  await app.register(panelAccessRoutes, { prefix: '/settings/panel-access' });
   await app.register(firewallRoutes, { prefix: '/firewall' });
   await app.register(configCenterRoutes, { prefix: '/config' });
   await app.register(buildCacheRoutes, { prefix: '/build-cache' });

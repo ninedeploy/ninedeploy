@@ -9,8 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- A native macOS development bootstrap (`node scripts/dev-macos.mjs --install`) and cross-machine handoff guide in `docs/MACOS_DEVELOPMENT.md`, including the separate desktop lockfile and the remaining DMG/Keychain acceptance checks.
+- **An IP allow-list for the panel itself.** Turn it on under **Settings → Security → Panel access**, or with `PUT /v1/settings/panel-access` (SDK `settings.panelAccess`). It is off by default and operator only. When on, only the listed IPv4 or IPv6 addresses and CIDR ranges can sign in or use the panel with a session, over HTTP and WebSocket.
+  - Integrations keep working from anywhere: git, registry and deploy webhooks, badges, status pages, CI runners, SCIM, error ingest, and the app traffic the panel serves for wake, forward auth and maintenance pages.
+  - API and remote-MCP tokens are only restricted if you also turn on **Also restrict API and MCP tokens**.
+  - A list that would exclude your own address is refused, and the card offers **Add my address**.
+  - If you lock yourself out, set `NINEDEPLOY_PANEL_ACCESS=off` and restart the panel. Docker installs need the line `NINEDEPLOY_PANEL_ACCESS: ${NINEDEPLOY_PANEL_ACCESS:-on}` in their compose file. The installer writes it from this release; an older compose file does not pass the variable through. See [docs/TROUBLESHOOTING.md §14](docs/TROUBLESHOOTING.md#-14-locked-out-by-the-panel-ip-allow-list).
+
+### Changed
+
+- The Plugins catalog now points its PostgreSQL PITR, Sentry and Tailscale entries at the built-in features. Entries with no shipped equivalent say "Not available" instead of "Planned".
+
 ### Fixed
 
+- Image cleanup no longer reports images removed or space reclaimed when both deletion and the follow-up inspection are unconfirmed; a daemon, permission or timeout error is kept separate from a missing image.
+- Webhook replay detection keeps delivery IDs separate per provider and service, so one repository event can reach each configured service. Docker runtime patrols skip unreadable inspections instead of reporting a missing container and a false outage.
+- **Cloning, exporting and importing a service no longer drops settings kept outside the service record.** These settings were silently lost: restart limit, custom error pages, CI pipeline, commit statuses, sticky sessions, maintenance mode, and per-domain forward auth and compose routes. Before, only the inline Dockerfile survived a clone, and an exported inline-Dockerfile service lost its Dockerfile.
+  - Each value is checked with its own route's validation. Anything the new service cannot use is skipped and listed in the import response.
+  - A clone starts outside maintenance mode.
+  - Secrets (the registry push-webhook token and the error-ingest key) never travel; the import names them so you can create new ones.
+  - Older bundles import as before. See [docs/DEPLOYMENTS.md](docs/DEPLOYMENTS.md#what-a-clone-and-a-service-bundle-carry-s3).
 - **Deleting a service, database, domain, GitHub App or SSO provider now also deletes its stored settings.** Several features keep per-item state in the panel's settings table rather than in their own tables: restart limits, maintenance pages, forward auth, compose routes, registry-hook tokens, error-ingest keys, backup replica logs, runner configurations and SAML identity links. Until now this state was left behind after its owner was deleted. That included the hashed registry-hook token and the error-ingest key.
   - Leftover rows from earlier deletes, and rows of deleted workspaces, are removed by the hourly housekeeping run.
   - Cloud-VM links are kept, so a VM created through the panel can still be deleted from it.

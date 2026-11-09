@@ -1,0 +1,527 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/lib/nodeSleepCoordinator.test.ts > starts a sleep only with genuine scheduler-issued authority and does not repeat completed Stop 14599ms
+ ✓ test/lib/nodeSleepCoordinator.test.ts > does not substitute elapsed time or an arbitrary object for an opaque idle proof 211ms
+ ✓ test/lib/nodeSleepCoordinator.test.ts > does not consume idle authority for an ineligible placement: {"serverId":null} 261ms
+ ✓ test/lib/nodeSleepCoordinator.test.ts > does not consume idle authority for an ineligible placement: {"type":"compose"} 225ms
+ ✓ test/lib/nodeSleepCoordinator.test.ts > does not consume idle authority for an ineligible placement: {"status":"stopped"} 228ms
+ ✓ test/lib/nodeSleepCoordinator.test.ts > does not consume idle authority for an ineligible placement: {"asleepAt":"2026-11-09T14:47:06.435Z"} 239ms
+ ✓ test/lib/nodeSleepCoordinator.test.ts > does not consume idle authority for an ineligible placement: {"sleepAfterMinutes":null} 238ms
+ ✓ test/lib/nodeSleepCoordinator.test.ts > does not consume idle authority for an ineligible placement: {"orchestrator":"swarm"} 216ms
+ ✓ test/lib/nodeSleepCoordinator.test.ts > does not consume idle authority for an ineligible placement: {"runtimeId":null} 230ms
+ ✓ test/lib/nodeSleepCoordinator.test.ts > does not consume idle authority for an ineligible placement: {"port":null} 233ms
+ ✓ test/lib/nodeSleepCoordinator.test.ts > recovers a lost Stop acknowledgement with the same durable command without new idle evidence 18664ms
+ ✓ test/lib/nodeSleepCoordinator.test.ts > does not take over another worker lease and expires unpublished idle rather than stopping later 306ms
+ ✓ test/lib/nodeSleepCoordinator.test.ts > explicit Stop supersedes an in-flight coordinator before it can stop the old captured runtime 421ms
+ ✓ test/lib/nodeSleepCoordinator.test.ts > closes an in-flight pre-routing step without issuing Stop or retaining fallback authority 388ms
+ ✓ test/lib/nodeSleepCoordinator.test.ts > never dispatches wake journals through the sleep controller 270ms
+ ✓ test/lib/nodeSleepCoordinator.test.ts > a new coordinator restores a shutdown during fallback routing without resuming the old idle Stop 12709ms
+ ✓ test/lib/nodeSleepController.test.ts > confirms a reachable catcher, fallback routing and drain before stopping captured immutable IDs 551ms
+ ✓ test/lib/nodeSleepController.test.ts > does not publish or stop if the catcher cannot accept connections 447ms
+ ✓ test/lib/nodeSleepController.test.ts > restores ready app routing after an uncertain catcher route without issuing Stop 519ms
+ ✓ test/lib/nodeSleepController.test.ts > recovers failed restoration by restoring the app, never resuming the obsolete idle decision 641ms
+ ✓ test/lib/nodeSleepController.test.ts > refuses to stop after the idle decision expires during drain and restores app routing 477ms
+ ✓ test/lib/nodeSleepController.test.ts > restores app routing if sleep is disabled during catcher publication 493ms
+ ✓ test/lib/nodeSleepController.test.ts > reconfirms fallback routing and repeats the identical Stop after a lost receipt 594ms
+ ✓ test/lib/nodeSleepController.test.ts > a newer deploy supersedes sleep during route 443ms
+ ✓ test/lib/nodeSleepController.test.ts > a newer deploy supersedes sleep during drain 462ms
+ ✓ test/lib/nodeSleepController.test.ts > a newer deploy supersedes sleep during docker.stopSet 519ms
+ ✓ test/lib/nodeSleepController.test.ts > cancels an unpublished stale sleep without touching the node 306ms
+ ✓ test/lib/nodeSleepController.test.ts > uses the production adapter to confirm ordered catcher routing before the immutable Stop 14563ms
+ ✓ test/lib/nodeSleepController.test.ts > settles a restored app before queued writers can restore an aborted sleep fallback 12737ms
+ ✓ test/lib/nodeSleepController.test.ts > holds restoration when another writer reserves before settlement (bound=false) 699ms
+ ✓ test/lib/nodeSleepController.test.ts > holds restoration when another writer reserves before settlement (bound=true) 711ms
+ ✓ test/swarmRecovery.test.ts > durable Swarm service transitions > rechecks backoff when it changes after the scheduled scan 271ms
+ ✓ test/swarmRecovery.test.ts > durable Swarm service transitions > Docker → Swarm migration > journals immutable Docker identities before native submission and refuses early retirement 305ms
+ ✓ test/swarmRecovery.test.ts > durable Swarm service transitions > Docker → Swarm migration > recovers an interrupted native cutover and retires Docker only after readiness and routing 2394ms
+ ✓ test/swarmRecovery.test.ts > durable Swarm service transitions > Docker → Swarm migration > restores the healthy previous Docker generation when cancelled before submission 277ms
+ ✓ test/swarmRecovery.test.ts > durable Swarm service transitions > Docker → Swarm migration > preserves explicit Stop and retires the known old Docker generation without starting Swarm 2301ms
+ ✓ test/swarmRecovery.test.ts > durable Swarm service transitions > Docker → Swarm migration > accepts the service/deployment labels from 0.17 without requiring the new managed label 307ms
+ ✓ test/swarmRecovery.test.ts > durable Swarm service transitions > Docker → Swarm migration > refuses a conflicting previous Docker serviceId before native submission 292ms
+ ✓ test/swarmRecovery.test.ts > durable Swarm service transitions > Docker → Swarm migration > refuses a conflicting previous Docker deploymentId before native submission 310ms
+ ✓ test/swarmRecovery.test.ts > durable Swarm service transitions > Docker → Swarm migration > refuses a conflicting previous Docker managed before native submission 267ms
+ ✓ test/swarmRecovery.test.ts > durable Swarm service transitions > Docker → Swarm migration > retires stopped spare containers with the same owned generation 2385ms
+ ✓ test/swarmRecovery.test.ts > durable Swarm service transitions > Docker → Swarm migration > rolls back a paused native candidate to Docker without stopping its previous generation 326ms
+ ✓ test/swarmRecovery.test.ts > durable Swarm service transitions > Docker → Swarm migration > retains Docker across unconfirmed routing, then resumes the same native deployment safely 2316ms
+ ✓ test/swarmRecovery.test.ts > durable Swarm service transitions > Docker → Swarm migration > retains a renamed previous container rather than guessing ownership from its old name 2242ms
+ ✓ test/swarmRecovery.test.ts > durable Swarm service transitions > encrypts both runtime specs before submission and exposes only operator-safe recovery fields 272ms
+ ✓ test/swarmRecovery.test.ts > durable Swarm service transitions > submits using the exact observed service revision and prepared image 282ms
+ ✓ test/swarmRecovery.test.ts > durable Swarm service transitions > does not steal a live lease even for an operator retry 223ms
+ ✓ test/swarmRecovery.test.ts > durable Swarm service transitions > recovers the original deployment without replaying a build: before apply 268ms
+ ✓ test/swarmRecovery.test.ts > durable Swarm service transitions > recovers the original deployment without replaying a build: after apply 365ms
+ ✓ test/swarmRecovery.test.ts > durable Swarm service transitions > keeps the resolved deployment snapshot when routing intent has no replacement snapshot 335ms
+ ✓ test/swarmRecovery.test.ts > durable Swarm service transitions > keeps old controller mutations fenced after a new owner recovers 284ms
+ ✓ test/swarmRecovery.test.ts > durable Swarm service transitions > restores the encrypted previous spec after an owned candidate pauses 298ms
+ ✓ test/swarmRecovery.test.ts > durable Swarm service transitions > cancels before apply without ever starting the candidate 238ms
+ ✓ test/swarmRecovery.test.ts > durable Swarm service transitions > preserves explicit Stop and never restores a positive replica count 227ms
+ ✓ test/swarmRecovery.test.ts > durable Swarm service transitions > settles Stop before candidate submission when Docker has already scaled the previous spec to zero 228ms
+ ✓ test/swarmRecovery.test.ts > durable Swarm service transitions > retains an unknown native spec without writing it 236ms
+ ✓ test/swarmRecovery.test.ts > durable Swarm service transitions > retains an unknown native identity without writing it 234ms
+ ✓ test/swarmRecovery.test.ts > durable Swarm service transitions > retains an unknown native manager without writing it 233ms
+ ✓ test/swarmRecovery.test.ts > durable Swarm service transitions > never retries a rejected native revision with the new operator version 228ms
+ ✓ test/swarmRecovery.test.ts > durable Swarm service transitions > keeps a routing failure pending and safely retries the same deployment 290ms
+ ✓ test/swarmRecovery.test.ts > durable Swarm service transitions > releases an unreadable journal lease and holds its reason without native writes 245ms
+ ✓ test/swarmRecovery.test.ts > durable Swarm service transitions > refuses a routed port change before applying a native update 314ms
+ ✓ test/lib/nodeSleepAuthority.test.ts > persists an exact sleep admission without stopping or marking the service asleep 1095ms
+ ✓ test/lib/nodeSleepAuthority.test.ts > refuses manufactured, reused, revoked and insufficient idle evidence 296ms
+ ✓ test/lib/nodeSleepAuthority.test.ts > cannot reserve sleep after queued changes 256ms
+ ✓ test/lib/nodeSleepAuthority.test.ts > cannot reserve sleep after owner changes 253ms
+ ✓ test/lib/nodeSleepAuthority.test.ts > cannot reserve sleep after route changes 252ms
+ ✓ test/lib/nodeSleepAuthority.test.ts > cannot reserve sleep after configuration changes 243ms
+ ✓ test/lib/nodeSleepAuthority.test.ts > requires catcher binding and every route phase before confirming a Stop 274ms
+ ✓ test/lib/nodeSleepAuthority.test.ts > marks asleep only after an exact complete Stop receipt and retains running service status 289ms
+ ✓ test/lib/nodeSleepAuthority.test.ts > explicit stop supersedes sleep and rejects its delayed continuation 239ms
+ ✓ test/lib/nodeSleepAuthority.test.ts > explicit restart supersedes sleep and rejects its delayed continuation 292ms
+ ✓ test/lib/nodeSleepAuthority.test.ts > explicit deploy supersedes sleep and rejects its delayed continuation 247ms
+ ✓ test/lib/nodeSleepAuthority.test.ts > explicit limits supersedes sleep and rejects its delayed continuation 237ms
+ ✓ test/lib/nodeSleepAuthority.test.ts > automatic scaling and automatic Start cannot take a pending sleep owner 242ms
+ ✓ test/lib/nodeSleepAuthority.test.ts > the actual explicit Stop admission supersedes an asleep row and makes its old wake demand unusable 254ms
+ ✓ test/lib/nodeSleepAuthority.test.ts > recovers one expired worker lease with the same command identity and fences the old worker 278ms
+ ✓ test/lib/nodeSleepAuthority.test.ts > abandons stale unpublished sleep on recovery instead of applying an old idle decision 223ms
+ ✓ test/lib/nodeSleepAuthority.test.ts > refuses retargeted or corrupted immutable journal fields 227ms
+ ✓ test/lib/nodeSleepAuthority.test.ts > admits one fresh pinned-catcher demand and completes wake only after ordered phases plus exact Start receipt 324ms
+ ✓ test/lib/nodeSleepAuthority.test.ts > refuses token wake demand without changing ownership 314ms
+ ✓ test/lib/nodeSleepAuthority.test.ts > refuses node wake demand without changing ownership 254ms
+ ✓ test/lib/nodeSleepAuthority.test.ts > refuses catcher wake demand without changing ownership 250ms
+ ✓ test/lib/nodeSleepAuthority.test.ts > refuses old wake demand without changing ownership 265ms
+ ✓ test/lib/nodeSleepAuthority.test.ts > refuses future wake demand without changing ownership 269ms
+ ✓ test/lib/nodeSleepAuthority.test.ts > a new conflicting placement cannot wake a sleeping generation 289ms
+ ✓ test/lib/nodeSleepAuthority.test.ts > renews a recreated catcher under the same sleeping owner and refuses stale renewal after Stop 272ms
+ ✓ test/lib/nodeSleepAuthority.test.ts > retains fallback routing intent when an explicit deploy supersedes a sleep already publishing routes 278ms
+ ✓ test/lib/nodeSleepAuthority.test.ts > holds automation while a superseded same-generation fallback remains, without blocking a new selected generation 293ms
+ ✓ test/lib/nodeSleepAuthority.test.ts > does not strand an asleep generation when cosmetic or next-deploy preferences change 286ms
+ ✓ test/lib/nodeSleepAuthority.test.ts > does not continue an unpublished sleep after its idle policy is disabled or increased beyond the proof 262ms
+ ✓ test/lib/nodeSleepAuthority.test.ts > rolls back both runtime ownership and journal creation if a canary starts before admission commits 259ms
+ ✓ test/lib/nodeSleepAuthority.test.ts > an edit to a response header on a sleeping service still lets a fresh demand wake it 269ms
+ ✓ test/lib/nodeSleepAuthority.test.ts > an edit to the SSL toggle on a sleeping service still lets a fresh demand wake it 271ms
+ ✓ test/lib/nodeSleepAuthority.test.ts > an edit to only updatedAt on a sleeping service still lets a fresh demand wake it 299ms
+ ✓ test/lib/nodeSleepAuthority.test.ts > a health-setting edit on a sleeping service still lets a fresh demand wake it (readiness reads them live) 286ms
+ ✓ test/lib/nodeSleepAuthority.test.ts > a journal written by 0.18.17 (whole domain rows in the configuration) still wakes after the upgrade 276ms
+ ✓ test/lib/nodeSleepAuthority.test.ts > a serving-generation change on a sleeping service still refuses its wake 288ms
+ ✓ test/lib/nodeSleepAuthority.test.ts > a limits edit on a sleeping service is saved for the next deploy: no live owner, and a demand still wakes it 290ms
+ ✓ test/lib/nodeSleepAuthority.test.ts > limits do not take the owner from an in-flight sleep either 252ms
+ ✓ test/ownedSettings.test.ts > key shapes > reads the owner id only from a key with the declared shape 2ms
+ ✓ test/ownedSettings.test.ts > key shapes > bounds a prefix range just past every key with that prefix 0ms
+ ✓ test/ownedSettings.test.ts > key shapes > declares no prefix twice and none that is also exempt 1ms
+ ✓ test/ownedSettings.test.ts > against a migrated database > the prefix range lists exactly that prefix, with `_` taken literally 242ms
+ ✓ test/ownedSettings.test.ts > against a migrated database > deleting a service through its route removes its rows and its domains’ rows, not a sibling’s 2758ms
+ ✓ test/ownedSettings.test.ts > against a migrated database > a refused delete keeps the rows 249ms
+ ✓ test/ownedSettings.test.ts > against a migrated database > the sweep removes rows of deleted entities, keeps live ones, unparseable and exempt keys 231ms
+ ✓ test/ownedSettings.test.ts > against a migrated database > the sweep never removes the row of an entity created while it runs 284ms
+ ✓ test/ownedSettings.test.ts > against a migrated database > deleteOwnedSettings removes compound keys of one owner only 257ms
+ ✓ test/ownedSettings.test.ts > source scan > every per-entity settings key prefix in src is declared or exempted 68ms
+ ✓ test/modules/githubAppHooks.test.ts > POST /v1/hooks/github-app/:hookKey — verification > 404s an unknown hook key, and the bare prefix falls to the per-service receiver (404 too) 356ms
+ ✓ test/modules/githubAppHooks.test.ts > POST /v1/hooks/github-app/:hookKey — verification > refuses a bad signature, another App’s secret and a non-GitHub signature scheme 295ms
+ ✓ test/modules/githubAppHooks.test.ts > POST /v1/hooks/github-app/:hookKey — verification > answers a ping, and the per-service receiver keeps its own route 286ms
+ ✓ test/modules/githubAppHooks.test.ts > POST /v1/hooks/github-app/:hookKey — verification > ignores a replayed delivery (same signed body) 292ms
+ ✓ test/modules/githubAppHooks.test.ts > POST /v1/hooks/github-app/:hookKey — verification > ignores an installation that is not this App’s 321ms
+ ✓ test/modules/githubAppHooks.test.ts > installation events > created → suspend → unsuspend → new permissions → deleted, each audited with a null actor 378ms
+ ✓ test/modules/githubAppHooks.test.ts > installation events > a removed or suspended installation stops routing pushes; an unknown one is only accepted as created 273ms
+ ✓ test/modules/githubAppHooks.test.ts > installation events > installation_repositories: audits github.repos_changed naming the linked services that lost access 257ms
+ ✓ test/modules/githubAppHooks.test.ts > workflow_job (G4.5) > reaches the runner handler, which takes nothing while runners are off 288ms
+ ✓ test/modules/githubAppHooks.test.ts > workflow_job (G4.5) > is ignored for an inactive installation 305ms
+ ✓ test/modules/githubAppHooks.test.ts > push routing by repository id > deploys the linked service only — not an unlinked service with the same URL, not another repo id 345ms
+ ✓ test/modules/githubAppHooks.test.ts > push routing by repository id > applies the per-service gates: branch, skip marker, SHA dedup 333ms
+ ✓ test/modules/githubAppHooks.test.ts > push routing by repository id > honours the link’s watch paths 299ms
+ ✓ test/modules/githubAppHooks.test.ts > push routing by repository id > a renamed repository (same id, new clone URL) updates repoUrl and the link, audited 343ms
+ ✓ test/modules/githubAppHooks.test.ts > push routing by repository id > never moves a service to another host, and a .git-only difference is no rename 292ms
+ ✓ test/modules/githubAppHooks.test.ts > pull requests > refuses a fork by repository id, before anything is created 293ms
+ ✓ test/modules/githubAppHooks.test.ts > pull requests > 0.16.14: builds a fork with previewForks on — known by id, cloned without a credential, waiting for approval 367ms
+ ✓ test/modules/githubAppHooks.test.ts > pull requests > a same-repository PR creates the preview through the shared handler, and close tears it down 319ms
+ ✓ test/modules/githubAppHooks.test.ts > pull requests > teardown edits an opted-in PR comment to "destroyed" 335ms
+ ✓ test/modules/githubAppHooks.test.ts > coexistence with the per-service webhook > skips a per-service delivery for an App-driven service 271ms
+ ✓ test/modules/githubAppHooks.test.ts > coexistence with the per-service webhook > takes over again when the installation is suspended or removed, or the link disabled 338ms
+ ✓ test/modules/githubAppHooks.test.ts > coexistence with the per-service webhook > an unlinked service is unchanged 251ms
+ ✓ test/modules/githubAppHooks.test.ts > coexistence with the per-service webhook > no double deploy when both deliveries of one push arrive together 262ms
+ ✓ test/modules/githubAppHooks.test.ts > coexistence with the per-service webhook > two App deliveries of one SHA racing each other leave one deployment (race guard) 286ms
+ ✓ test/lib/nodeSleepRecovery.test.ts > recovers the same durable sleep command across process restarts without adopting the old worker or sleeping the service 2578ms
+ ✓ test/runtimeStateSwarm.test.ts > the runtime patrol checks a running Swarm service against the manager (R2) > every desired task running, or some (Swarm converging): nothing to do 323ms
+ ✓ test/runtimeStateSwarm.test.ts > the runtime patrol checks a running Swarm service against the manager (R2) > never a container command against the Swarm service name 215ms
+ ✓ test/runtimeStateSwarm.test.ts > the runtime patrol checks a running Swarm service against the manager (R2) > no task for SWARM_DOWN_PASSES passes: recorded as down once, with the service-down alert 262ms
+ ✓ test/runtimeStateSwarm.test.ts > the runtime patrol checks a running Swarm service against the manager (R2) > a task that comes back resets the count 231ms
+ ✓ test/runtimeStateSwarm.test.ts > the runtime patrol checks a running Swarm service against the manager (R2) > the Swarm service no longer exists: recorded as down at once 244ms
+ ✓ test/runtimeStateSwarm.test.ts > the runtime patrol checks a running Swarm service against the manager (R2) > scaled to 0 outside the panel: scaled back to the service replicas, still running 232ms
+ ✓ test/runtimeStateSwarm.test.ts > the runtime patrol checks a running Swarm service against the manager (R2) > F889: a Stop recorded after the pass listed the row is never undone 279ms
+ ✓ test/runtimeStateSwarm.test.ts > the runtime patrol checks a running Swarm service against the manager (R2) > a scale the manager refuses costs the other services nothing: the pass goes on 208ms
+ ✓ test/runtimeStateSwarm.test.ts > the runtime patrol checks a running Swarm service against the manager (R2) > a manager that cannot answer (daemon down, panel left the swarm) is never a judgement 207ms
+ ✓ test/runtimeStateSwarm.test.ts > the runtime patrol checks a running Swarm service against the manager (R2) > a stopped row is not visited; a compose row named like a stack is not Swarm 464ms
+ ✓ test/runtimeState.test.ts > runtime state reconciliation > leaves a running container alone 61ms
+ ✓ test/runtimeState.test.ts > runtime state reconciliation > does not judge a local container when inspect is unreadable: permission denied while trying to connect to the Docker daemon socket 1ms
+ ✓ test/runtimeState.test.ts > runtime state reconciliation > does not judge a local container when inspect is unreadable: Docker API returned 500: internal server error 1ms
+ ✓ test/runtimeState.test.ts > runtime state reconciliation > does not judge a local container when inspect is unreadable: Docker inspect timed out 1ms
+ ✓ test/runtimeState.test.ts > runtime state reconciliation > does not mark a fan-out target missing when its inspect fails: permission denied 2ms
+ ✓ test/runtimeState.test.ts > runtime state reconciliation > does not mark a fan-out target missing when its inspect fails: Cannot connect to the Docker daemon 1ms
+ ✓ test/runtimeState.test.ts > runtime state reconciliation > revives a stopped container and keeps the service running 2ms
+ ✓ test/runtimeState.test.ts > runtime state reconciliation > revives a stopped replica while the primary stays healthy 2ms
+ ✓ test/runtimeState.test.ts > runtime state reconciliation > 0.16.10: an autoscaled service revives only the containers that serve, never its stopped spares 1ms
+ ✓ test/runtimeState.test.ts > runtime state reconciliation > 0.16.11: leaves a sleeping service alone — its containers are stopped on purpose 1ms
+ ✓ test/runtimeState.test.ts > runtime state reconciliation > leaves single-replica services without replica inspections 1ms
+ ✓ test/runtimeState.test.ts > runtime state reconciliation > alerts when the revived container was OOM-killed 1ms
+ ✓ test/runtimeState.test.ts > runtime state reconciliation > alerts on exit 137 even when the OOMKilled flag is false 1ms
+ ✓ test/runtimeState.test.ts > runtime state reconciliation > patrols fan-out targets: revives a stopped clone on its node 1ms
+ ✓ test/runtimeState.test.ts > runtime state reconciliation > skips a downed agent without judging the service 1ms
+ ✓ test/runtimeState.test.ts > runtime state reconciliation > r471: marks a GONE fan-out target errored instead of showing a stale running row 1ms
+ ✓ test/runtimeState.test.ts > runtime state reconciliation > throttles repeated OOM alerts for the same service 2ms
+ ✓ test/runtimeState.test.ts > runtime state reconciliation > starts compose project siblings alongside the main container 1ms
+ ✓ test/runtimeState.test.ts > runtime state reconciliation > marks the service errored when revival fails 1ms
+ ✓ test/runtimeState.test.ts > runtime state reconciliation > marks the service errored without a start attempt when the container is gone 1ms
+ ✓ test/runtimeState.test.ts > runtime state reconciliation > r242: records the outage in the audit trail, which fans out to notifications and the kernel 4ms
+ ✓ test/runtimeState.test.ts > runtime state reconciliation > skips the round without judging when the docker daemon is unreachable 1ms
+ ✓ test/runtimeState.test.ts > runtime state reconciliation > resurrects the PM2 dump once when a process is gone, then revives it 1ms
+ ✓ test/runtimeState.test.ts > runtime state reconciliation > revives a stopped PM2 process via restart 1ms
+ ✓ test/runtimeState.test.ts > runtime state reconciliation > marks a PM2 service errored when it stays gone after resurrect 1ms
+ ✓ test/runtimeState.test.ts > r525: node-pinned docker services are patrolled through their agent > leaves a running node container alone 2ms
+ ✓ test/runtimeState.test.ts > r525: node-pinned docker services are patrolled through their agent > marks a container the node says is GONE errored and fires alert.service_down 1ms
+ ✓ test/runtimeState.test.ts > r525: node-pinned docker services are patrolled through their agent > does not send a legacy Start when fresh node ownership cannot be confirmed 1ms
+ ✓ test/runtimeState.test.ts > r525: node-pinned docker services are patrolled through their agent > never judges a service on an unreachable node — records the node instead, once per outage 1ms
+ ✓ test/runtimeState.test.ts > r525: node-pinned docker services are patrolled through their agent > skips (does not judge) an inspect failure that is not the node saying the container is gone 1ms
+ ✓ test/runtimeState.test.ts > r591: node-pinned compose services are patrolled through their agent > inspects the stack's main container on its node and leaves a running one alone 1ms
+ ✓ test/runtimeState.test.ts > r591: node-pinned compose services are patrolled through their agent > marks a stack whose main container is GONE errored and fires alert.service_down 1ms
+ ✓ test/runtimeState.test.ts > r591: node-pinned compose services are patrolled through their agent > revives a stopped main container on its node 1ms
+ ✓ test/runtimeState.test.ts > r591: node-pinned compose services are patrolled through their agent > never judges a stack on an unreachable node 1ms
+ ✓ test/runtimeState.test.ts > r591: node-pinned compose services are patrolled through their agent > skips a service when the agent is too old for the op — neither the service nor the node is judged 1ms
+ ✓ test/runtimeState.test.ts > F164: an outage is reported only for a row this pass actually moved off running > control: a running row whose container is gone is errored and alerted once 240ms
+ ✓ test/runtimeState.test.ts > F164: an outage is reported only for a row this pass actually moved off running > never alerts for a service deleted while its container was being inspected 210ms
+ ✓ test/runtimeState.test.ts > F164: an outage is reported only for a row this pass actually moved off running > never overwrites a compose in-place redeploy (same runtimeId) with error 193ms
+ ✓ test/runtimeState.test.ts > F889/F940: a revive re-checks the row it is about to start (real SQLite, gated) > control: a running service whose container crashed is still revived 205ms
+ ✓ test/runtimeState.test.ts > F889/F940: a revive re-checks the row it is about to start (real SQLite, gated) > F889: never starts a container its user stopped after the pass listed it 204ms
+ ✓ test/runtimeState.test.ts > F889/F940: a revive re-checks the row it is about to start (real SQLite, gated) > F889: never starts the old container after a deploy swapped the runtime mid-pass 190ms
+ ✓ test/runtimeState.test.ts > F889/F940: a revive re-checks the row it is about to start (real SQLite, gated) > F940: never starts a replica of a service stopped while the primary looked healthy 207ms
+ ✓ test/runtimeState.test.ts > F889/F940: a revive re-checks the row it is about to start (real SQLite, gated) > F940: never restarts a PM2 process its user stopped after the pass listed it 195ms
+ ✓ test/runtimeState.test.ts > F889/F940: a revive re-checks the row it is about to start (real SQLite, gated) > F940: never starts a node container its user stopped after the patrol listed it 213ms
+ ✓ test/lib/nodeSleepCoordinatorConcurrency.test.ts > reserves four file-backed sleep slots without consuming the other idle proofs or contending with managed transactions 1793ms
+ ✓ test/plugins/runtimePatrolShutdown.test.ts > closes a real node patrol without false outages while the handshake boundary is active 380ms
+ ✓ test/plugins/runtimePatrolShutdown.test.ts > closes a real node patrol without false outages while the inspect boundary is active 221ms
+ ✓ test/plugins/runtimePatrolShutdown.test.ts > closes a real node patrol without false outages while the capabilities boundary is active 238ms
+ ✓ test/plugins/runtimePatrolShutdown.test.ts > closes a real node patrol without false outages while the healthy boundary is active 232ms
+ ✓ test/hooks.test.ts > webhook receiver > returns 404 for an unknown webhook 90ms
+ ✓ test/hooks.test.ts > webhook receiver > r477: an EMPTY body declared as application/json parses to {} instead of 500 3ms
+ ✓ test/hooks.test.ts > webhook receiver > returns 404 for an inactive webhook 6ms
+ ✓ test/hooks.test.ts > webhook receiver > handles a missing raw body 2ms
+ ✓ test/hooks.test.ts > webhook receiver > rejects a bad signature with 401 2ms
+ ✓ test/hooks.test.ts > webhook receiver > answers pings with pong 3ms
+ ✓ test/hooks.test.ts > webhook receiver > queues a deployment for a matching github push 4ms
+ ✓ test/hooks.test.ts > webhook receiver > ignores a captured push replayed with a fresh delivery id (r313) 3ms
+ ✓ test/hooks.test.ts > webhook receiver > push webhook syncs service.branch (but NOT commitSha) after insert (r070) 3ms
+ ✓ test/hooks.test.ts > webhook receiver > skips a replayed push whose commit is already deployed (dedup) 2ms
+ ✓ test/hooks.test.ts > webhook receiver > drops its own insert when a concurrent duplicate won the race (post-hoc dedup) 2ms
+ ✓ test/hooks.test.ts > webhook receiver > queues a push with missing commit metadata 2ms
+ ✓ test/hooks.test.ts > webhook receiver > skips pushes for a different branch 2ms
+ ✓ test/hooks.test.ts > webhook receiver > skips pushes that do not touch any watch path 3ms
+ ✓ test/hooks.test.ts > webhook receiver > fails OPEN when the commits list is at the GitHub cap (possible truncation) 2ms
+ ✓ test/hooks.test.ts > webhook receiver > skips deploys for [skip ci] / [skip cd] commit markers 2ms
+ ✓ test/hooks.test.ts > webhook receiver > deploys when a changed file matches a watch path 1ms
+ ✓ test/hooks.test.ts > webhook receiver > deploys watch-path webhooks when the payload reports no files 1ms
+ ✓ test/hooks.test.ts > webhook receiver > ignores non-push events 1ms
+ ✓ test/hooks.test.ts > webhook receiver > accepts gitlab pushes via header token 2ms
+ ✓ test/hooks.test.ts > webhook receiver > refuses a webhook push whose service owner is a non-operator and runs on the host (pm2) 2ms
+ ✓ test/hooks.test.ts > webhook receiver > queues a webhook push when the owner is an operator even for host-executing types (pm2) 1ms
+ ✓ test/hooks.test.ts > webhook receiver > skips routing when a preview pattern renders outside the instance wildcard zone 3ms
+ ✓ test/hooks.test.ts > webhook receiver > handles pull request opened and synchronize events by spawning ephemeral preview 4ms
+ ✓ test/hooks.test.ts > webhook receiver > handles duplicate preview domain insert gracefully (r065) 2ms
+ ✓ test/hooks.test.ts > webhook receiver > cleans up the evicted preview when the preview cap is exceeded (r036) 3ms
+ ✓ test/hooks.test.ts > webhook receiver > rejects fork preview builds before parent secrets are copied 2ms
+ ✓ test/hooks.test.ts > webhook receiver > handles pull request closed events by auto-destroying ephemeral preview container and records 2ms
+ ✓ test/hooks.test.ts > webhook receiver > still reports the preview destroyed when the teardown extras fail 2ms
+ ✓ test/hooks.test.ts > webhook receiver > handles gitlab merge request events and skips when previews are disabled or invalid 1ms
+ ✓ test/hooks.test.ts > webhook receiver > ignores invalid PR action payloads 1ms
+ ✓ test/hooks.test.ts > webhook receiver > returns 404 when parent service is not found 1ms
+ ✓ test/hooks.test.ts > webhook receiver > skips PR close when autoDestroy is disabled or preview does not exist 5ms
+ ✓ test/hooks.test.ts > webhook receiver > handles PR closed destroying pm2 and compose runtimes or null runtimeId 6ms
+ ✓ test/hooks.test.ts > webhook receiver > handles PR synchronize updating existing preview 1ms
+ ✓ test/hooks.test.ts > webhook receiver > prunes oldest preview when max active cap is reached and handles creation failure 8ms
+ ✓ test/hooks.test.ts > webhook management routes > lists webhooks for a service 3ms
+ ✓ test/hooks.test.ts > webhook management routes > creates a webhook with the service branch by default 3ms
+ ✓ test/hooks.test.ts > webhook management routes > creates a webhook with the service branch when no body is sent 1ms
+ ✓ test/hooks.test.ts > webhook management routes > creates a webhook with an explicit branch 1ms
+ ✓ test/hooks.test.ts > webhook management routes > returns 404 when the service is missing 2ms
+ ✓ test/hooks.test.ts > webhook management routes > deletes a webhook 1ms
+ ✓ test/webhookPanelUrl.test.ts > auto-deploy webhook URL origin > falls back to NINEDEPLOY_PUBLIC_URL when no panel domain is set 87ms
+ ✓ test/webhookPanelUrl.test.ts > auto-deploy webhook URL origin > uses https://<panel domain> when the domain and ACME email are configured 3ms
+ ✓ test/webhookPanelUrl.test.ts > auto-deploy webhook URL origin > stays on http when no ACME email is configured yet 3ms
+ ✓ test/webhookPanelUrl.test.ts > auto-deploy webhook URL origin > honours NINEDEPLOY_DOMAIN without a stored panel domain 2ms
+ ✓ test/webhookPanelUrl.test.ts > auto-deploy webhook URL origin > rejects garbage values that sanitize to nothing 3ms
+ ✓ test/lib/backupRestoreVerification.test.ts > isolated real PostgreSQL restore verifier orchestration > restores plain SQL, queries known data, confirms removal and never changes the source 17ms
+ ✓ test/lib/backupRestoreVerification.test.ts > isolated real PostgreSQL restore verifier orchestration > uses the archive restore tool for custom dumps with strict error handling 6ms
+ ✓ test/lib/backupRestoreVerification.test.ts > isolated real PostgreSQL restore verifier orchestration > refuses to certify unavailable or incomplete image execution 3ms
+ ✓ test/lib/backupRestoreVerification.test.ts > isolated real PostgreSQL restore verifier orchestration > refuses to certify unavailable or incomplete create execution 4ms
+ ✓ test/lib/backupRestoreVerification.test.ts > isolated real PostgreSQL restore verifier orchestration > refuses to certify unavailable or incomplete copy execution 5ms
+ ✓ test/lib/backupRestoreVerification.test.ts > isolated real PostgreSQL restore verifier orchestration > refuses to certify unavailable or incomplete ready execution 5ms
+ ✓ test/lib/backupRestoreVerification.test.ts > isolated real PostgreSQL restore verifier orchestration > refuses to certify unavailable or incomplete timeout execution 6ms
+ ✓ test/lib/backupRestoreVerification.test.ts > isolated real PostgreSQL restore verifier orchestration > refuses to certify unavailable or incomplete output execution 6ms
+ ✓ test/lib/backupRestoreVerification.test.ts > isolated real PostgreSQL restore verifier orchestration > refuses to certify unavailable or incomplete cleanup execution 6ms
+ ✓ test/lib/backupRestoreVerification.test.ts > isolated real PostgreSQL restore verifier orchestration > refuses to certify unavailable or incomplete retained execution 7ms
+ ✓ test/lib/backupRestoreVerification.test.ts > isolated real PostgreSQL restore verifier orchestration > fails restore without exposing restored content 5ms
+ ✓ test/lib/backupRestoreVerification.test.ts > isolated real PostgreSQL restore verifier orchestration > fails query without exposing restored content 6ms
+ ✓ test/lib/backupRestoreVerification.test.ts > isolated real PostgreSQL restore verifier orchestration > fails mismatch without exposing restored content 5ms
+ ✓ test/lib/backupRestoreVerification.test.ts > isolated real PostgreSQL restore verifier orchestration > attempts owned cleanup even after a lost create response 5ms
+ ✓ test/lib/backupRestoreVerification.test.ts > isolated real PostgreSQL restore verifier orchestration > rejects invalid probes before any Docker work 5ms
+ ✓ test/lib/backupRestoreVerification.test.ts > isolated real PostgreSQL restore verifier orchestration > refuses malformed image identity before creating a helper 3ms
+ ✓ test/lib/backupRestoreVerification.test.ts > bounded helper capacity is never reported as a broken backup > refuses a dump too large for the scratch before any helper or copy exists 5ms
+ ✓ test/lib/backupRestoreVerification.test.ts > bounded helper capacity is never reported as a broken backup > reports an out-of-space restore as unverifiable, without keeping the engine message 5ms
+ ✓ test/lib/backupRestoreVerification.test.ts > bounded helper capacity is never reported as a broken backup > reports a cgroup OOM kill during restore as unverifiable 6ms
+ ✓ test/lib/backupRestoreVerification.test.ts > bounded helper capacity is never reported as a broken backup > does not blame the backup when the helper state cannot be read 5ms
+ ✓ test/lib/backupRestoreVerification.test.ts > bounded helper capacity is never reported as a broken backup > still fails a genuine restore error on a healthy helper 5ms
+ ✓ test/lib/backupRestoreVerification.test.ts > bounded helper capacity is never reported as a broken backup > does not blame the backup when the helper stopped during the restore 7ms
+ ✓ test/lib/backupRestoreVerification.test.ts > bounded helper capacity is never reported as a broken backup > does not blame the backup when the client lost its server, even before Docker reports the helper stopped 4ms
+ ✓ test/lib/backupRestoreVerification.test.ts > MySQL and MariaDB restore helpers > restores a mysqldump into a hardened, networkless MySQL helper and probes the managed database 5ms
+ ✓ test/lib/backupRestoreVerification.test.ts > MySQL and MariaDB restore helpers > uses the MariaDB client, admin tool, socket directory and empty-root variable 5ms
+ ✓ test/lib/backupRestoreVerification.test.ts > MySQL and MariaDB restore helpers > never reads a MySQL dump as a PostgreSQL custom archive 5ms
+ ✓ test/lib/backupRestoreVerification.test.ts > MySQL and MariaDB restore helpers > fails a genuine restore error or a probe mismatch on a healthy helper without exposing either 7ms
+ ✓ test/lib/backupRestoreVerification.test.ts > MySQL and MariaDB restore helpers > reports a full scratch ("The table … is full") as capacity, without the table name 5ms
+ ✓ test/lib/backupRestoreVerification.test.ts > MySQL and MariaDB restore helpers > treats a MariaDB server that aborted mid-restore (lost connection) as unverifiable 5ms
+ ✓ test/lib/backupRestoreVerification.test.ts > MySQL and MariaDB restore helpers > names capacity when the aborted MariaDB helper logged a full tmpfs, keeping no log text 6ms
+ ✓ test/lib/backupRestoreVerification.test.ts > MySQL and MariaDB restore helpers > stays unverifiable without a capacity claim when the stopped helper log cannot be read 6ms
+ ✓ test/lib/backupRestoreVerification.test.ts > MySQL and MariaDB restore helpers > does not read logs when a healthy helper reports a genuine restore error 6ms
+ ✓ test/lib/backupRestoreVerification.test.ts > MySQL and MariaDB restore helpers > is unverifiable when the MySQL helper never accepts TCP connections 7ms
+ ✓ test/lib/backupRestoreVerification.test.ts > MySQL and MariaDB restore helpers > refuses an engine without an adapter before any Docker work 3ms
+ ✓ test/lib/backupRestoreVerification.test.ts > MongoDB restore helper > streams the archive straight into mongorestore in a hardened helper, with the whole scratch for data 6ms
+ ✓ test/lib/backupRestoreVerification.test.ts > MongoDB restore helper > fails a corrupt archive on a healthy helper, and a probe mismatch, without exposing either 9ms
+ ✓ test/lib/backupRestoreVerification.test.ts > MongoDB restore helper > is unverifiable when the streamed restore ends with a stopped helper 6ms
+ ✓ test/lib/backupRestoreVerification.test.ts > MongoDB restore helper > is unverifiable when mongod never answers the readiness ping 5ms
+ ✓ test/lib/backupRestoreVerification.test.ts > crashed restore helpers are swept > removes only labelled helpers with the generated name that outlived the age floor 3ms
+ ✓ test/lib/backupRestoreVerification.test.ts > crashed restore helpers are swept > keeps sweeping after one container vanishes mid-scan, and ignores non-id lines 3ms
+ ✓ test/lib/backupRestoreVerification.test.ts > RabbitMQ restore helper (a definitions export, applied asynchronously) > imports the definitions, waits until every named object exists, then runs the list probe 8ms
+ ✓ test/lib/backupRestoreVerification.test.ts > RabbitMQ restore helper (a definitions export, applied asynchronously) > compares listed rows as a set: rabbitmqctl lists them in no fixed order 15ms
+ ✓ test/lib/backupRestoreVerification.test.ts > RabbitMQ restore helper (a definitions export, applied asynchronously) > fails a definitions file RabbitMQ cannot import, without the engine message 5ms
+ ✓ test/lib/backupRestoreVerification.test.ts > RabbitMQ restore helper (a definitions export, applied asynchronously) > is unverifiable when the imported definitions never all appear 7ms
+ ✓ test/lib/backupRestoreVerification.test.ts > RabbitMQ restore helper (a definitions export, applied asynchronously) > bounds the whole settle wait by its deadline, however many vhosts the file names 15ms
+ ✓ test/lib/backupRestoreVerification.test.ts > RabbitMQ restore helper (a definitions export, applied asynchronously) > refuses "eval rabbit:stop()" before any Docker work: it is not one list command 6ms
+ ✓ test/lib/backupRestoreVerification.test.ts > RabbitMQ restore helper (a definitions export, applied asynchronously) > refuses "list_queues; reboot" before any Docker work: it is not one list command 4ms
+ ✓ test/lib/backupRestoreVerification.test.ts > RabbitMQ restore helper (a definitions export, applied asynchronously) > refuses "LIST_QUEUES name" before any Docker work: it is not one list command 3ms
+ ✓ test/lib/backupRestoreVerification.test.ts > RabbitMQ restore helper (a definitions export, applied asynchronously) > refuses "status" before any Docker work: it is not one list command 3ms
+ ✓ test/lib/backupRestoreVerification.test.ts > RabbitMQ restore helper (a definitions export, applied asynchronously) > refuses "list_queues  name" before any Docker work: it is not one list command 3ms
+ ✓ test/lib/backupRestoreVerification.test.ts > Meilisearch restore helper (the dump is imported at startup) > copies the dump into a gated helper, releases the import, waits for health and GETs the probe path 5ms
+ ✓ test/lib/backupRestoreVerification.test.ts > Meilisearch restore helper (the dump is imported at startup) > fails a dump Meilisearch refused to import, keeping no log text 5ms
+ ✓ test/lib/backupRestoreVerification.test.ts > Meilisearch restore helper (the dump is imported at startup) > is unverifiable when Meilisearch exits during the import without naming the dump 6ms
+ ✓ test/lib/backupRestoreVerification.test.ts > Meilisearch restore helper (the dump is imported at startup) > refuses "GET /indexes" as a probe before any Docker work: it is not an API path 3ms
+ ✓ test/lib/backupRestoreVerification.test.ts > Meilisearch restore helper (the dump is imported at startup) > refuses "indexes/movies" as a probe before any Docker work: it is not an API path 3ms
+ ✓ test/lib/backupRestoreVerification.test.ts > Meilisearch restore helper (the dump is imported at startup) > refuses "/indexes/movies documents" as a probe before any Docker work: it is not an API path 2ms
+ ✓ test/lib/backupRestoreVerification.test.ts > Meilisearch restore helper (the dump is imported at startup) > refuses "" as a probe before any Docker work: it is not an API path 3ms
+ ✓ test/lib/backupRestoreVerification.test.ts > Meilisearch restore helper (the dump is imported at startup) > fails a probe mismatch without exposing the response 5ms
+ ✓ test/lib/backupRestoreVerification.test.ts > ClickHouse restore helper > copies the BACKUP archive under the allowed backups path, restores ALL and probes the managed database 5ms
+ ✓ test/lib/backupRestoreVerification.test.ts > ClickHouse restore helper > fails an archive ClickHouse cannot open on a healthy helper, without the engine message 5ms
+ ✓ test/lib/backupRestoreVerification.test.ts > ClickHouse restore helper > reports NOT_ENOUGH_SPACE during RESTORE as capacity 6ms
+ ✓ test/lib/backupRestoreVerification.test.ts > ClickHouse restore helper > is unverifiable when the server never answers 6ms
+ ✓ test/lib/backupRestoreVerification.test.ts > Redis-family restore helpers (the server loads its RDB at startup) > copies the RDB into a gated, hardened helper, releases the server, waits for the load and probes on stdin 8ms
+ ✓ test/lib/backupRestoreVerification.test.ts > Redis-family restore helpers (the server loads its RDB at startup) > runs valkey with its own user, server and client 6ms
+ ✓ test/lib/backupRestoreVerification.test.ts > Redis-family restore helpers (the server loads its RDB at startup) > runs keydb with its own user, server and client 5ms
+ ✓ test/lib/backupRestoreVerification.test.ts > Redis-family restore helpers (the server loads its RDB at startup) > fails a backup whose RDB the engine refused while loading, keeping no log text 6ms
+ ✓ test/lib/backupRestoreVerification.test.ts > Redis-family restore helpers (the server loads its RDB at startup) > names capacity when the engine ran out of memory loading the RDB, even beside a short-read line 6ms
+ ✓ test/lib/backupRestoreVerification.test.ts > Redis-family restore helpers (the server loads its RDB at startup) > is unverifiable when the server exits while loading without saying the file was bad 16ms
+ ✓ test/lib/backupRestoreVerification.test.ts > Redis-family restore helpers (the server loads its RDB at startup) > runs Dragonfly as dfly with the managed snapshot flags and probes it with redis-cli 7ms
+ ✓ test/lib/backupRestoreVerification.test.ts > Redis-family restore helpers (the server loads its RDB at startup) > fails a Dragonfly backup whose RDB it refused ("Rdb load failed") 5ms
+ ✓ test/lib/backupRestoreVerification.test.ts > Redis-family restore helpers (the server loads its RDB at startup) > fails a probe mismatch on a loaded dataset without exposing it 5ms
+ ✓ test/lib/backupDrill.test.ts > real restore drill staging and history > records restore timings and exact probe verdict without persisting probe SQL or data 10ms
+ ✓ test/lib/backupDrill.test.ts > real restore drill staging and history > decrypts an encrypted backup before restore and removes only its private staging file 5ms
+ ✓ test/lib/backupDrill.test.ts > real restore drill staging and history > fetches a remote-only backup, verifies its staged copy and removes the fetched file 5ms
+ ✓ test/lib/backupDrill.test.ts > real restore drill staging and history > persists a failed verifier result without reporting structural success 5ms
+ ✓ test/lib/backupDrill.test.ts > real restore drill staging and history > persists a unverifiable verifier result without reporting structural success 4ms
+ ✓ test/lib/backupDrill.test.ts > real restore drill staging and history > sanitizes unexpected restore errors and still drops encrypted staging 5ms
+ ✓ test/lib/backupDrill.test.ts > real restore drill staging and history > makes the engine image present on the panel host before verifying (a node database may lack it) 4ms
+ ✓ test/lib/backupDrill.test.ts > real restore drill staging and history > is unverifiable, before decrypting anything, when the engine image cannot be pulled 3ms
+ ✓ test/lib/backupDrill.test.ts > real restore drill staging and history > does not pull images for the structural drill 6ms
+ ✓ test/lib/backupDrill.test.ts > real restore drill staging and history > admits once the running row exists, before any staging or verification 4ms
+ ✓ test/lib/backupDrill.test.ts > real restore drill staging and history > verifies a mysql backup (version null) in its own engine image mysql:9.7 4ms
+ ✓ test/lib/backupDrill.test.ts > real restore drill staging and history > verifies a mariadb backup (version null) in its own engine image mariadb:12.3 4ms
+ ✓ test/lib/backupDrill.test.ts > real restore drill staging and history > verifies a mysql backup (version 8.4) in its own engine image mysql:8.4 4ms
+ ✓ test/lib/backupDrill.test.ts > real restore drill staging and history > verifies a mongo backup (version null) in its own engine image mongo:8.0 3ms
+ ✓ test/lib/backupDrill.test.ts > real restore drill staging and history > verifies a redis backup (version null) in its own engine image redis:8.8 4ms
+ ✓ test/lib/backupDrill.test.ts > real restore drill staging and history > verifies a valkey backup (version null) in its own engine image valkey/valkey:9.1 4ms
+ ✓ test/lib/backupDrill.test.ts > real restore drill staging and history > verifies a dragonfly backup (version null) in its own engine image ghcr.io/dragonflydb/dragonfly:v1.34.2 4ms
+ ✓ test/lib/backupDrill.test.ts > real restore drill staging and history > verifies a clickhouse backup (version null) in its own engine image clickhouse/clickhouse-server:25.8 4ms
+ ✓ test/lib/backupDrill.test.ts > real restore drill staging and history > refuses an unsupported engine before inserting history or invoking an engine 2ms
+ ✓ test/lib/backupDrill.test.ts > real restore drill staging and history > verifies a Meilisearch dump with an API-path probe in its own engine image 4ms
+ ✓ test/lib/backupDrill.test.ts > real restore drill staging and history > verifies RabbitMQ definitions with a rabbitmqctl list probe in its own engine image 5ms
+ ✓ test/lib/backupDrill.test.ts > real restore drill staging and history > refuses a probe the engine cannot take before admitting it (no row, no verifier) 2ms
+ ✓ test/lib/backupDrill.test.ts > real restore drill staging and history > refuses incomplete backups before invoking the verifier 2ms
+ ✓ test/lib/backupDrill.test.ts > real restore drill staging and history > removes a partially fetched remote backup before recording an unavailable result 4ms
+ ✓ test/lib/backupDrill.test.ts > real restore drill staging and history > does not pass when decrypted staging cleanup cannot be confirmed 11ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > runBackupDrill > rejects when the database does not exist 7ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > runBackupDrill > rejects when the backup does not exist 11ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > runBackupDrill > rejects when the backup belongs to a different database 2ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > runBackupDrill > fails for an unsupported engine without a validator 4ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > r356: postgres > passes a complete plain-SQL pg_dump structurally, with no tool and no docker 6ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > r356: postgres > fails a truncated plain-SQL dump (no "dump complete" trailer) 5ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > r356: postgres > fails a dump whose \restrict key has no matching \unrestrict 6ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > r356: postgres > fails SQL that is not a pg_dump at all 5ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > r356: postgres > lists a custom-format archive with pg_restore INSIDE the database image (argv, no network) 6ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > r356: postgres > uses the pgvector image for a pgvector database 6ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > r356: postgres > fails when pg_restore rejects the custom archive 10ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > r356: postgres > is unverifiable — not failed — when docker is unreachable 18ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > r356: mysql / mariadb > passes a dump with the banner and the "Dump completed" trailer 9ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > r356: mysql / mariadb > fails a truncated dump that lost its "Dump completed" trailer 73ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > r356: mysql / mariadb > F132: passes a mariadb-dump whose first line is the sandbox-mode marker 24ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > r356: mysql / mariadb > fails a dump when the banner is missing 9ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > r356: redis / valkey > runs redis-check-rdb inside the redis image, never on the host 26ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > r356: redis / valkey > uses the database's pinned version for the image 6ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > r356: redis / valkey > runs valkey-check-rdb inside the valkey image 6ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > r356: redis / valkey > runs keydb-check-rdb inside the KeyDB image 10ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > r356: redis / valkey > is unverifiable when the KeyDB image does not carry keydb-check-rdb 9ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > r356: redis / valkey > fails when the checker rejects the file, and still removes the container 5ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > r356: redis / valkey > is unverifiable when docker is not installed (spawn ENOENT) 4ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > r356: redis / valkey > is unverifiable when the image does not carry the checker 5ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > r356: redis / valkey > dragonfly: runs redis-check-rdb inside the Dragonfly image, and a zero-padded dump is not reported as truncated 4ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > r356: redis / valkey > dragonfly: a dump the image's checker rejects (exit 1, truncated) fails, and the container is removed 4ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > r356: redis / valkey > is unverifiable when the check times out 4ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > r356: mongo > passes a complete gzipped mongodump archive with no tool and no docker 9ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > r356: mongo > fails a truncated gzip stream 8ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > r356: mongo > fails an archive that does not end with the terminator 7ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > r356: mongo > fails a gzip stream that is not a mongodump archive 6ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > r356: mongo > fails a file that is not gzip at all 6ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > G1.8: clickhouse / meilisearch / rabbitmq > lists a ClickHouse archive with unzip inside the ClickHouse image 6ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > G1.8: clickhouse / meilisearch / rabbitmq > fails a ClickHouse backup that is not a zip, or that unzip rejects 8ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > G1.8: clickhouse / meilisearch / rabbitmq > reads metadata.json from a Meilisearch dump inside the Meilisearch image 6ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > G1.8: clickhouse / meilisearch / rabbitmq > fails a Meilisearch dump that is not gzip, that tar rejects, or whose metadata names no version 10ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > G1.8: clickhouse / meilisearch / rabbitmq > is unverifiable when the engine image is not on the host 8ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > G1.8: clickhouse / meilisearch / rabbitmq > parses a RabbitMQ definitions export and reports what it holds 9ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > G1.8: clickhouse / meilisearch / rabbitmq > fails a RabbitMQ backup that is cut off, not an object, or names no version 10ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > staging and cleanup > fetches a missing remote-only backup and cleans up the temp file 5ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > staging and cleanup > r189: decrypts a fetched remote copy that is an encrypted envelope 6ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > staging and cleanup > fails cleanly when the file is missing and no remote key is recorded 2ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > staging and cleanup > decrypts an encrypted envelope to a temp file and cleans up 6ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > staging and cleanup > r356: the decrypted dump is what enters the drill container, and it is removed afterwards 5ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > staging and cleanup > r356: the decrypted dump is removed on the unverifiable and failed paths too 7ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > staging and cleanup > F133: concurrent drills of one encrypted backup never share or unlink each other's plaintext 9ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > listBackupDrills + findDrillById > returns the most-recent N rows in descending order with parsed details 3ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > listBackupDrills + findDrillById > honours the limit argument 1ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > listBackupDrills + findDrillById > findDrillById returns null for an unknown id 1ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > listBackupDrills + findDrillById > findDrillById parses detailsJson back to an object 1ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > listBackupDrills + findDrillById > never whole-file-reads a dump — header sniffing stays bounded (r034 regression) 1ms
+ ✓ test/lib/backupDrill.coverage.test.ts > staging: legacy envelopes and failures after a fetch > decrypts a legacy single-line v<n>: envelope to a sibling temp file and removes it 20ms
+ ✓ test/lib/backupDrill.coverage.test.ts > staging: legacy envelopes and failures after a fetch > a fetched legacy envelope that cannot be decrypted fails setup and drops the fetched copy (F134) 6ms
+ ✓ test/lib/backupDrill.coverage.test.ts > staging: legacy envelopes and failures after a fetch > an encrypted backup whose decryption throws fails setup with the message 3ms
+ ✓ test/lib/backupDrill.coverage.test.ts > staging: legacy envelopes and failures after a fetch > a non-Error thrown during setup is stringified 2ms
+ ✓ test/lib/backupDrill.coverage.test.ts > staging: legacy envelopes and failures after a fetch > cleanup tolerates scratch files that never appeared (best-effort unlink) 5ms
+ ✓ test/lib/backupDrill.coverage.test.ts > staging: legacy envelopes and failures after a fetch > throws when the running row cannot be inserted 4ms
+ ✓ test/lib/backupDrill.coverage.test.ts > drill container bookkeeping > is unverifiable when the drill container cannot be created 3ms
+ ✓ test/lib/backupDrill.coverage.test.ts > drill container bookkeeping > is unverifiable when the dump cannot be copied in, and still removes the container 3ms
+ ✓ test/lib/backupDrill.coverage.test.ts > drill container bookkeeping > a rejection with no tool output names only the error; the rm failure is ignored 3ms
+ ✓ test/lib/backupDrill.coverage.test.ts > drill container bookkeeping > keeps only the last 40 lines of tool output 4ms
+ ✓ test/lib/backupDrill.coverage.test.ts > drill container bookkeeping > ClickHouse output without a file-count summary reports files: null 4ms
+ ✓ test/lib/backupDrill.coverage.test.ts > validateDumpFile without a known image > redis is unverifiable and runs no docker 3ms
+ ✓ test/lib/backupDrill.coverage.test.ts > validateDumpFile without a known image > keydb is unverifiable and runs no docker 2ms
+ ✓ test/lib/backupDrill.coverage.test.ts > validateDumpFile without a known image > postgres is unverifiable and runs no docker 3ms
+ ✓ test/lib/backupDrill.coverage.test.ts > validateDumpFile without a known image > clickhouse is unverifiable and runs no docker 2ms
+ ✓ test/lib/backupDrill.coverage.test.ts > validateDumpFile without a known image > meilisearch is unverifiable and runs no docker 9ms
+ ✓ test/lib/backupDrill.coverage.test.ts > validateDumpFile without a known image > an unknown engine is not supported 2ms
+ ✓ test/lib/backupDrill.coverage.test.ts > validateDumpFile without a known image > a RabbitMQ definitions file above 64 MiB is not parsed 5ms
+ ✓ test/lib/backupDrill.coverage.test.ts > validateDumpFile without a known image > a JSON null RabbitMQ file is not an object 3ms
+ ✓ test/lib/backupDrill.coverage.test.ts > list / find with numeric timestamps > passes numeric startedAt through and keeps a null completedAt 2ms
+ ✓ test/lib/backupDrill.coverage.test.ts > pruneDrillLeftovers (r302) > removes only old drill scratch files, skipping directories, fresh files and missing dirs 10ms
+ ✓ test/plugins/backupSchedulerPolicy.test.ts > backup scheduler — per-database policy > runs a policy database on its own cron and leaves it out of the built-in daily run 169ms
+ ✓ test/plugins/backupSchedulerPolicy.test.ts > backup scheduler — per-database policy > applies the policy retention count instead of the built-in 7 12ms
+ ✓ test/plugins/backupSchedulerPolicy.test.ts > backup scheduler — per-database policy > uploads to the destination the policy names, and not at all when local-only 22ms
+ ✓ test/plugins/backupSchedulerPolicy.test.ts > backup scheduler — per-database policy > a disabled policy takes no scheduled backups and is exempt from the missed-backup watchdog 3ms
+ ✓ test/plugins/backupSchedulerPolicy.test.ts > backup scheduler — per-database policy > judges a weekly policy against its own cadence in the missed-backup watchdog 3ms
+ ✓ test/plugins/backupSchedulerPolicy.test.ts > backup scheduler — per-database policy > re-arms when a policy is saved, and disarms when it is disabled 3ms
+ ✓ test/plugins/backupSchedulerPolicy.test.ts > backup scheduler — per-database policy > trims remote copies past retainRemoteCount without dropping the local dumps 9ms
+ ✓ test/plugins/backupSchedulerPolicy.test.ts > backup scheduler — per-database policy > a policy read error skips the built-in run instead of pruning a policy database to 7 4ms
+ ✓ test/plugins/backupScheduler.test.ts > r170: firstTickDelay > runs a day after the newest scheduled backup, not a day after boot 2ms
+ ✓ test/plugins/backupScheduler.test.ts > r170: firstTickDelay > catches up (after a short grace) when a backup is overdue 0ms
+ ✓ test/plugins/backupScheduler.test.ts > r170: firstTickDelay > anchors on the oldest running database when nothing was ever backed up 0ms
+ ✓ test/plugins/backupScheduler.test.ts > keeps metadata for remote recovery points after local retention 68ms
+ ✓ test/plugins/backupScheduler.test.ts > backup scheduler plugin > gives overlapping scheduler runs different paths in the same millisecond 6ms
+ ✓ test/plugins/backupScheduler.test.ts > backup scheduler plugin > preserves successful recovery points when newer scheduled attempts failed 3ms
+ ✓ test/plugins/backupScheduler.test.ts > backup scheduler plugin > backs up running databases, records size, and prunes stale backups 8ms
+ ✓ test/plugins/backupScheduler.test.ts > backup scheduler plugin > logs per-database failures but keeps going 2ms
+ ✓ test/plugins/backupScheduler.test.ts > backup scheduler plugin > F96: a retention error for one database does not skip the backups of the next 3ms
+ ✓ test/plugins/backupScheduler.test.ts > backup scheduler plugin > F97: an upload failure after a committed dump is not recorded as a failed backup 4ms
+ ✓ test/plugins/backupScheduler.test.ts > backup scheduler plugin > r528: audits each successful scheduled backup like the manual route does 2ms
+ ✓ test/plugins/backupScheduler.test.ts > backup scheduler plugin > logs when the whole tick fails 1ms
+ ✓ test/plugins/backupScheduler.test.ts > backup scheduler plugin > does nothing when no database is running 1ms
+ ✓ test/plugins/backupScheduler.test.ts > backup scheduler plugin > reschedules the daily tick while running 2ms
+ ✓ test/plugins/backupScheduler.test.ts > backup scheduler plugin > stops rescheduling after close 2ms
+ ✓ test/plugins/backupScheduler.test.ts > backup scheduler plugin > skips the remote upload when the insert returns no row 2ms
+ ✓ test/plugins/backupScheduler.test.ts > T6: scheduled backups of a node database > dump on the node (not the panel engine), rows record the node; an unreachable node is a failed row, no fallback 3ms
+ ✓ test/plugins/backupSchedulerRemotePrune.test.ts > r542: scheduled backup retention covers remote-backed rows > deletes the remote object, then the row, for every remote row past KEEP_PER_DB 106ms
+ ✓ test/plugins/backupSchedulerRemotePrune.test.ts > r542: scheduled backup retention covers remote-backed rows > keeps the row when the remote delete fails, and when the destination is unknown 3ms
+ ✓ test/plugins/backupSchedulerRemotePrune.test.ts > r542: scheduled backup retention covers remote-backed rows > caps the remote deletes per tick so an upgrade backlog is worked down over several ticks 14ms
+ ✓ test/plugins/swarmRecovery.test.ts > runs after boot, serializes cycles and aborts the active recovery before closing 75ms
+ ✓ test/plugins/swarmRecovery.test.ts > continues the scheduled loop after a transient recovery error 2ms
+ ✓ test/lib/backupPolicy.test.ts > assertBackupCron (same rule as scheduled jobs) > accepts 5-field expressions 2ms
+ ✓ test/lib/backupPolicy.test.ts > assertBackupCron (same rule as scheduled jobs) > refuses 6-field (seconds) patterns and garbage with a 400 1ms
+ ✓ test/lib/backupPolicy.test.ts > nextCronRun / cronPeriodMs > computes the next run and the cadence 1ms
+ ✓ test/lib/backupPolicy.test.ts > nextCronRun / cronPeriodMs > is null for an invalid expression 0ms
+ ✓ test/lib/backupPolicy.test.ts > planRetention > built-in rule: completed rows past N are dropped with their remote copy (pre-0.12 behaviour) 0ms
+ ✓ test/lib/backupPolicy.test.ts > planRetention > F97/F288: failed attempts never evict a completed dump, and have their own bound 0ms
+ ✓ test/lib/backupPolicy.test.ts > planRetention > never touches the newest completed dump, even with a nonsensical count 0ms
+ ✓ test/lib/backupPolicy.test.ts > planRetention > ignores manual and running rows 0ms
+ ✓ test/lib/backupPolicy.test.ts > planRetention > separate remote count: more remote copies than local dumps 0ms
+ ✓ test/lib/backupPolicy.test.ts > planRetention > separate remote count: fewer remote copies than local dumps 0ms
+ ✓ test/lib/backupPolicy.test.ts > planRetention > remote copies are counted over rows that have one — an upload outage does not cost the last remote copy 0ms
+ ✓ test/lib/backupPolicy.test.ts > loadBackupPolicies > is empty when the table is not there (mocked DB, pre-0067 schema) 0ms
+ ✓ test/lib/backupPolicy.test.ts > loadBackupPolicies > rethrows any other read error — a policy database must never fall back to the built-in 7 1ms
+ ✓ test/lib/backupPolicy.test.ts > loadBackupPolicies > keys rows by database id 0ms
+ ✓ test/lib/backupPolicy.test.ts > serializeBackupPolicy > reports the built-in default for a database without a row 0ms
+ ✓ test/lib/backupPolicy.test.ts > serializeBackupPolicy > includes the next run only for an enabled policy 1ms
+ ✓ test/lib/webhooks.test.ts > delivery replay isolation > accepts one repository delivery per service and still rejects that service’s duplicates 2ms
+ ✓ test/lib/webhooks.test.ts > delivery replay isolation > isolates provider delivery identifiers even when a caller supplies no body 0ms
+ ✓ test/lib/webhooks.test.ts > verifyWebhook > accepts a valid GitHub signature 1ms
+ ✓ test/lib/webhooks.test.ts > verifyWebhook > rejects a GitHub request with a wrong signature 0ms
+ ✓ test/lib/webhooks.test.ts > verifyWebhook > rejects a GitHub request without a signature header 0ms
+ ✓ test/lib/webhooks.test.ts > verifyWebhook > rejects a GitHub signature that is not sha256-prefixed 0ms
+ ✓ test/lib/webhooks.test.ts > verifyWebhook > accepts a valid Gitea signature 0ms
+ ✓ test/lib/webhooks.test.ts > verifyWebhook > rejects a Gitea request without a signature 0ms
+ ✓ test/lib/webhooks.test.ts > verifyWebhook > rejects a Gitea request with a wrong signature 0ms
+ ✓ test/lib/webhooks.test.ts > verifyWebhook > accepts a valid GitLab token 0ms
+ ✓ test/lib/webhooks.test.ts > verifyWebhook > rejects a GitLab request without a token 0ms
+ ✓ test/lib/webhooks.test.ts > verifyWebhook > rejects a GitLab request with a wrong token 0ms
+ ✓ test/lib/webhooks.test.ts > verifyWebhook > returns null when no provider header is present 0ms
+ ✓ test/lib/webhooks.test.ts > verifyWebhook > handles array-valued headers by ignoring them 0ms
+ ✓ test/lib/webhooks.test.ts > isPing > detects GitHub and Gitea pings 0ms
+ ✓ test/lib/webhooks.test.ts > isPing > detects GitLab ping hooks 0ms
+ ✓ test/lib/webhooks.test.ts > parsePush > parses a GitHub push payload 1ms
+ ✓ test/lib/webhooks.test.ts > parsePush > reports the listed commit count so watch-path gating can detect truncation 0ms
+ ✓ test/lib/webhooks.test.ts > parsePush > parses a GitHub payload with a bare ref (not refs/heads/) 0ms
+ ✓ test/lib/webhooks.test.ts > parsePush > handles a GitHub payload without head_commit 0ms
+ ✓ test/lib/webhooks.test.ts > parsePush > returns null for an empty ref 0ms
+ ✓ test/lib/webhooks.test.ts > parsePush > returns null for a null or undefined body (r010) 0ms
+ ✓ test/lib/webhooks.test.ts > parsePush > returns null for a GitHub branch-deletion push (r009) 0ms
+ ✓ test/lib/webhooks.test.ts > parsePush > returns null for a Gitea branch-deletion push (r009) 0ms
+ ✓ test/lib/webhooks.test.ts > parsePush > returns null when `after` is all zeros even without a deleted flag (r009) 0ms
+ ✓ test/lib/webhooks.test.ts > parsePush > still parses a normal push that carries an `after` sha (r009 guard does not overfire) 0ms
+ ✓ test/lib/webhooks.test.ts > parsePush > parses a GitLab push payload 0ms
+ ✓ test/lib/webhooks.test.ts > parsePush > returns null for a GitLab payload with no commits 0ms
+ ✓ test/lib/webhooks.test.ts > parsePush > returns null for a GitLab payload without a commits key 0ms
+ ✓ test/lib/webhooks.test.ts > parsePush > parses a GitLab commit with no id or message 0ms
+ ✓ test/lib/webhooks.test.ts > parsePush > parses a GitLab payload with missing author name and repo url 0ms
+ ✓ test/lib/webhooks.test.ts > parsePush > collects added/modified/removed files from a GitHub payload 0ms
+ ✓ test/lib/webhooks.test.ts > parsePush > collects changed files from a GitLab payload 0ms
+ ✓ test/lib/webhooks.test.ts > parsePush > falls back to the head commit alone when the commits array is absent 0ms
+ ✓ test/lib/webhooks.test.ts > parsePush > returns an empty changed-files list when nothing reports paths 0ms
+ ✓ test/lib/webhooks.test.ts > parsePush > skips non-array and non-string entries in file lists 0ms
+ ✓ test/lib/webhooks.test.ts > isPullRequest and parsePullRequest > detects PR events on GitHub, Gitea, and GitLab 0ms
+ ✓ test/lib/webhooks.test.ts > isPullRequest and parsePullRequest > parses GitHub pull request events (open, sync, reopen, close) 0ms
+ ✓ test/lib/webhooks.test.ts > isPullRequest and parsePullRequest > parses GitLab merge request events (open, update, reopen, close, merge) 0ms
+ ✓ test/lib/webhooks.test.ts > isReplayedDelivery > flags a repeated GitHub delivery id but not first sightings 0ms
+ ✓ test/lib/webhooks.test.ts > isReplayedDelivery > tracks GitLab UUID and Gitea delivery headers 0ms
+ ✓ test/lib/webhooks.test.ts > isReplayedDelivery > fails open when the provider sent no delivery id 0ms
+ ✓ test/lib/webhooks.test.ts > isReplayedDelivery > flags a replayed signed body even when the delivery id is fresh (r313) 0ms
+ ✓ test/lib/webhooks.test.ts > isReplayedDelivery > scopes body dedupe per service and still dedupes on the id (r313) 0ms
+ ✓ test/lib/webhooks.test.ts > Bitbucket > accepts a valid Bitbucket signature 0ms
+ ✓ test/lib/webhooks.test.ts > Bitbucket > rejects a Bitbucket request with a wrong signature 0ms
+ ✓ test/lib/webhooks.test.ts > Bitbucket > rejects a Bitbucket signature that is not sha256-prefixed 0ms
+ ✓ test/lib/webhooks.test.ts > Bitbucket > rejects a Bitbucket request without a signature 0ms
+ ✓ test/lib/webhooks.test.ts > Bitbucket > treats diagnostics:ping as a ping 0ms
+ ✓ test/lib/webhooks.test.ts > Bitbucket > deduplicates Bitbucket deliveries by X-Request-UUID 0ms
+ ✓ test/lib/webhooks.test.ts > Bitbucket > parses a repo:push payload into a deploy event 0ms
+ ✓ test/lib/webhooks.test.ts > Bitbucket > returns null for a push with no branch creation change 0ms
+ ✓ test/lib/webhooks.test.ts > Bitbucket > recognizes pullrequest event keys 0ms
+ ✓ test/lib/webhooks.test.ts > Bitbucket > parses a created pull request 1ms
+ ✓ test/lib/webhooks.test.ts > Bitbucket > maps fulfilled to closed with merged=true 0ms
+ ✓ test/lib/webhooks.test.ts > Bitbucket > maps rejected to closed without merged and updated to synchronize 0ms
+ ✓ test/lib/webhooks.test.ts > Bitbucket > r187: reads the event key from the X-Event-Key header, as Bitbucket really sends it 0ms
+ ✓ test/lib/webhooks.test.ts > Bitbucket > returns null for a pull request payload without a source branch 0ms
+ ✓ test/edgeCasesWebhooksAndAlerting.test.ts > Edge Cases — Webhook Signatures & Multiprovider Parsing > verifies GitHub HMAC-SHA256 signature and rejects forged signatures 2ms
+ ✓ test/edgeCasesWebhooksAndAlerting.test.ts > Edge Cases — Webhook Signatures & Multiprovider Parsing > verifies Gitea signature and GitLab raw token header 0ms
+ ✓ test/edgeCasesWebhooksAndAlerting.test.ts > Edge Cases — Webhook Signatures & Multiprovider Parsing > detects ping events across providers without triggering deploys 0ms
+ ✓ test/edgeCasesWebhooksAndAlerting.test.ts > Edge Cases — Webhook Signatures & Multiprovider Parsing > parses push events and extracts changed files safely 1ms
+ ✓ test/edgeCasesWebhooksAndAlerting.test.ts > Edge Cases — Alerting Engine State Transitions > transitions state from ok -> breaching -> firing -> ok with recovery audit 1ms
+ ✓ test/edgeCasesWebhooksAndAlerting.test.ts > Edge Cases — Master Key Rotation Registry > re-encrypts across all registered tables safely 1ms
+
+ Test Files  23 passed (23)
+      Tests  519 passed (519)
+   Start at  16:47:05
+   Duration  158.72s (tests 90%, import 9%, transform 1%)

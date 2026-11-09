@@ -1,8 +1,27 @@
 ﻿import { createHmac } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { isPing, isPullRequest, isReplayedDelivery, parsePullRequest, parsePush, verifyWebhook } from '../../src/lib/webhooks.js';
+import { isPing, isPullRequest, isReplayedDelivery, parsePullRequest, parsePush, resetReplayWindowForTests, verifyWebhook } from '../../src/lib/webhooks.js';
 
 const SECRET = 'whsec_test';
+
+describe('delivery replay isolation', () => {
+  it('accepts one repository delivery per service and still rejects that service’s duplicates', () => {
+    resetReplayWindowForTests();
+    const headers = { 'x-github-delivery': 'shared-push' };
+    const body = '{"ref":"refs/heads/main"}';
+    expect(isReplayedDelivery(headers, 'github', { rawBody: body, scope: 1 })).toBe(false);
+    expect(isReplayedDelivery(headers, 'github', { rawBody: body, scope: 2 })).toBe(false);
+    expect(isReplayedDelivery(headers, 'github', { rawBody: body, scope: 1 })).toBe(true);
+    resetReplayWindowForTests();
+  });
+  it('isolates provider delivery identifiers even when a caller supplies no body', () => {
+    resetReplayWindowForTests();
+    expect(isReplayedDelivery({ 'x-github-delivery': 'same-id' }, 'github')).toBe(false);
+    expect(isReplayedDelivery({ 'x-gitea-delivery': 'same-id' }, 'gitea')).toBe(false);
+    expect(isReplayedDelivery({ 'x-github-delivery': 'same-id' }, 'github')).toBe(true);
+    resetReplayWindowForTests();
+  });
+});
 
 const sig = (body: string) => `sha256=${createHmac('sha256', SECRET).update(body).digest('hex')}`;
 const giteaSig = (body: string) => createHmac('sha256', SECRET).update(body).digest('hex');

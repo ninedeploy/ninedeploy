@@ -59,11 +59,31 @@ import {
   parseHumanBytes,
   parseReclaimedBytes,
   pruneImages,
+  type ImageCommands,
 } from '../../src/lib/imageInventory.js';
 
 beforeEach(() => {
   execState.byArgs.clear();
   execState.rmCalls.length = 0;
+});
+
+describe('failed-removal confirmation', () => {
+  it.each(['Cannot connect to the Docker daemon', 'permission denied', 'image inspect timed out', 'Docker API returned 500'])('does not credit an image whose removal and inspection failed: %s', async message => {
+    const id = `sha256:${'a'.repeat(64)}`;
+    const execution: ImageCommands = {
+      capture: async (_cmd, args = []) => {
+        if (args[0] === 'image' && args[1] === 'ls') return JSON.stringify({ ID: id, Repository: 'fixture', Tag: 'old', Size: '1MB', CreatedAt: '2020-01-01T00:00:00Z' });
+        if (args[0] === 'ps') return '';
+        if (args[0] === 'image' && args[1] === 'inspect') throw new Error(message);
+        throw new Error('Unexpected command');
+      },
+      run: async () => { throw new Error('Image removal did not complete'); },
+    };
+    const result = await pruneImages({}, new Set(), execution);
+    expect(result.removed).toEqual([]);
+    expect(result.removedLabels).toEqual([]);
+    expect(result.freedBytes).toBe(0);
+  });
 });
 
 const IMG_LS_JSON = [

@@ -14,6 +14,24 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
+describe('analyzeRepo — workspace enumeration honors MAX_WORKSPACE_PACKAGES', () => {
+  it('returns at most 100 workspace packages for a monorepo with 150 members', () => {
+    // The cap used to be checked only when a walk frame entered, never inside
+    // a directory's entry loop — one huge directory analyzed and returned
+    // every member, doing unbounded synchronous lstat/readJson work on the
+    // inspection request path.
+    writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: 'monorepo', workspaces: ['apps/*'] }));
+    for (let i = 0; i < 150; i++) {
+      const name = `app-${String(i).padStart(4, '0')}`;
+      mkdirSync(path.join(dir, 'apps', name), { recursive: true });
+      writeFileSync(path.join(dir, 'apps', name, 'package.json'), JSON.stringify({ name, dependencies: { express: '^4' } }));
+    }
+    const insights = analyzeRepo(dir);
+    expect(insights.monorepo).toBe(true);
+    expect(insights.workspacePackages.length).toBeLessThanOrEqual(100);
+  });
+});
+
 /** Write a fixture file. `rel` is test-controlled and containment-checked so
  * the helper itself enforces the temp-dir boundary. */
 const write = (rel: string, content: string) => {

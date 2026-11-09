@@ -125,6 +125,57 @@ describe('notifyEvent', () => {
     );
   });
 
+  it('a delivered event whose sent-row write fails gets no failed row (log writes are best-effort)', async () => {
+    fetchMock.mockResolvedValue(okResponse());
+    const channels = [
+      { id: 3, type: 'webhook', targetEncrypted: encrypt('https://hooks.example.com/hook'), eventFilter: 'deploy', active: true },
+    ];
+    const { db, insert } = makeDb(channels);
+    const values = insert.mock.results.at(-1)?.value as { values: ReturnType<typeof vi.fn> };
+    void values;
+    // Fail only the FIRST values() call — the `sent` row after a successful
+    // delivery. The delivery happened, so no `failed` row may be written for
+    // the channel (the old code relabelled the outcome via the catch).
+    let calls = 0;
+    insert.mockImplementation(() => ({
+      values: vi.fn(async (v: Record<string, unknown>) => {
+        calls += 1;
+        if (calls === 1) throw new Error('database is locked');
+        return v;
+      }),
+    }));
+    await expect(notifyEvent(db, event)).resolves.toBeUndefined();
+    const rows = insert.mock.results
+      .map((r) => (r.value as { values: ReturnType<typeof vi.fn> }).values.mock.calls[0]?.[0])
+      .filter((v): v is Record<string, unknown> => v !== undefined);
+    expect(rows.some((r) => r['status'] === 'failed')).toBe(false);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('sendSystemEmail: a mail that was sent still returns true when its sent-row write fails', async () => {
+    fetchMock.mockResolvedValue(okResponse());
+    const channels = [
+      {
+        id: 9,
+        type: 'resend',
+        targetEncrypted: encrypt(JSON.stringify({ apiKey: 'k', from: 'panel@x.test', to: 'ops@x.test' })),
+        eventFilter: '',
+        active: true,
+      },
+    ];
+    const { db, insert } = makeDb(channels);
+    let calls = 0;
+    insert.mockImplementation(() => ({
+      values: vi.fn(async (v: Record<string, unknown>) => {
+        calls += 1;
+        if (calls === 1) throw new Error('database is locked');
+        return v;
+      }),
+    }));
+    await expect(sendSystemEmail(db, 'user@y.test', 'Subject', 'Body')).resolves.toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it('skips inactive channels and filter mismatches', async () => {
     const channels = [
       { id: 1, type: 'webhook', targetEncrypted: encrypt('https://hooks.example.com'), eventFilter: 'service', active: false },

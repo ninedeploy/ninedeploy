@@ -1,0 +1,21 @@
+import { afterEach, expect, it, vi } from 'vitest';
+import { isReplayedDelivery as replay, resetReplayWindowForTests } from '../../apps/server/src/lib/webhooks.js';
+afterEach(() => { resetReplayWindowForTests(); vi.useRealTimers(); });
+it('isolates service/provider IDs while preserving body dedup, empty-body IDs and expiry', () => {
+  resetReplayWindowForTests(); vi.useFakeTimers(); vi.setSystemTime(0);
+  const h = { 'x-github-delivery': 'one' }, body = '{"push":true}';
+  expect(replay(h, 'github', { rawBody: body, scope: 1 })).toBe(false);
+  expect(replay(h, 'github', { rawBody: body, scope: 2 })).toBe(false);
+  expect(replay(h, 'github', { rawBody: body, scope: 1 })).toBe(true);
+  expect(replay({ 'x-github-delivery': 'forged' }, 'github', { rawBody: body, scope: 1 })).toBe(true);
+  expect(replay({ 'x-gitea-delivery': 'one' }, 'gitea', { rawBody: body, scope: 1 })).toBe(false);
+  expect(replay(h, 'github', { rawBody: '', scope: 'empty' })).toBe(false);
+  expect(replay(h, 'github', { rawBody: '', scope: 'empty' })).toBe(true);
+  expect(replay({}, 'github')).toBe(false);
+  expect(replay(h, 'github')).toBe(false);
+  expect(replay(h, 'github')).toBe(true);
+  vi.setSystemTime(24 * 60 * 60 * 1000 + 1);
+  expect(replay(h, 'github', { rawBody: body, scope: 1 })).toBe(false);
+  expect(replay(h, 'github', { rawBody: body, scope: 1 })).toBe(true);
+  console.log('FIX VERIFIED');
+});

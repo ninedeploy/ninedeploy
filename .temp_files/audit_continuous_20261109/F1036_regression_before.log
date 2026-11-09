@@ -1,0 +1,107 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+stderr | test/lib/imageInventory.test.ts > failed-removal confirmation > does not credit an image whose removal and inspection failed: Cannot connect to the Docker daemon
+[images] prune chunk failed: Image removal did not complete
+
+stderr | test/lib/imageInventory.test.ts > failed-removal confirmation > does not credit an image whose removal and inspection failed: permission denied
+[images] prune chunk failed: Image removal did not complete
+
+stderr | test/lib/imageInventory.test.ts > failed-removal confirmation > does not credit an image whose removal and inspection failed: image inspect timed out
+[images] prune chunk failed: Image removal did not complete
+
+stderr | test/lib/imageInventory.test.ts > failed-removal confirmation > does not credit an image whose removal and inspection failed: Docker API returned 500
+[images] prune chunk failed: Image removal did not complete
+
+ × test/lib/imageInventory.test.ts > failed-removal confirmation > does not credit an image whose removal and inspection failed: Cannot connect to the Docker daemon 7ms
+   → expected [ Array(1) ] to deeply equal []
+ × test/lib/imageInventory.test.ts > failed-removal confirmation > does not credit an image whose removal and inspection failed: permission denied 1ms
+   → expected [ Array(1) ] to deeply equal []
+ × test/lib/imageInventory.test.ts > failed-removal confirmation > does not credit an image whose removal and inspection failed: image inspect timed out 1ms
+   → expected [ Array(1) ] to deeply equal []
+ × test/lib/imageInventory.test.ts > failed-removal confirmation > does not credit an image whose removal and inspection failed: Docker API returned 500 1ms
+   → expected [ Array(1) ] to deeply equal []
+ ↓ test/lib/imageInventory.test.ts > listImages > parses docker image ls JSON output, marks in-use from the containers
+ ↓ test/lib/imageInventory.test.ts > listImages > tolerates bad lines in the docker ls output (skips them)
+ ↓ test/lib/imageInventory.test.ts > listImages > throws a friendly error when docker image ls fails
+ ↓ test/lib/imageInventory.test.ts > listImages > returns an empty list when there are no images
+ ↓ test/lib/imageInventory.test.ts > pruneImages > retains recorded release images in a dry-run (dangling=false)
+ ↓ test/lib/imageInventory.test.ts > pruneImages > retains recorded release images in a dry-run (dangling=true)
+ ↓ test/lib/imageInventory.test.ts > pruneImages > runs `docker image prune -f` for danglingOnly and parses the freed bytes
+ ↓ test/lib/imageInventory.test.ts > pruneImages > passes olderThanHours as a `until=` filter on the dangling prune
+ ↓ test/lib/imageInventory.test.ts > pruneImages > keeps the newest N images per repository and prunes the rest on dryRun
+ ↓ test/lib/imageInventory.test.ts > pruneImages > keeps the N newest versions of a repo and retires only older ones (r017)
+ ↓ test/lib/imageInventory.test.ts > pruneImages > skips in-use images even when they would otherwise be candidates
+ ↓ test/lib/imageInventory.test.ts > pruneImages > never offers an image a container runs from, even with keepLast=0 (r311)
+ ↓ test/lib/imageInventory.test.ts > pruneImages > a container that vanishes between ps and inspect does not blind the rest (r311)
+ ↓ test/lib/imageInventory.test.ts > pruneImages > no containers at all: no docker inspect is issued (r311)
+ ↓ test/lib/imageInventory.test.ts > pruneImages > filters by olderThanHours on the candidate set
+ ↓ test/lib/imageInventory.test.ts > pruneImages > performs the real delete via `docker image rm` in 50-id chunks
+ ↓ test/lib/imageInventory.test.ts > pruneImages > treats keepLast=0 as "keep nothing" — every non-dangling image is a candidate
+ ↓ test/lib/imageInventory.test.ts > pruneImages > clamps keepLast to the per-group size — never deletes the only image of a tag
+ ↓ test/lib/imageInventory.test.ts > parseHumanBytes / parseReclaimedBytes > parses human-readable sizes through listImages
+ ↓ test/lib/imageInventory.test.ts > parseHumanBytes / parseReclaimedBytes > returns ageHours=0 when the createdAt date is unparseable
+ ↓ test/lib/imageInventory.test.ts > parseHumanBytes / parseReclaimedBytes > falls back to the empty in-use set when docker ps throws
+ ↓ test/lib/imageInventory.test.ts > pruneImages error + edge branches > throws a friendly error when docker image prune fails (danglingOnly)
+ ↓ test/lib/imageInventory.test.ts > pruneImages error + edge branches > continues with the remaining chunks when one docker image rm fails
+ ↓ test/lib/imageInventory.test.ts > pruneImages error + edge branches > r406: credits the images a FAILED chunk actually removed (docker rm is partial)
+ ↓ test/lib/imageInventory.test.ts > formatBytes via listImages / pruneImages output > formats the freed-bytes summary in MB when candidates are small
+ ↓ test/lib/imageInventory.test.ts > parseHumanBytes > parses 0B
+ ↓ test/lib/imageInventory.test.ts > parseHumanBytes > parses 100B
+ ↓ test/lib/imageInventory.test.ts > parseHumanBytes > parses 1KB
+ ↓ test/lib/imageInventory.test.ts > parseHumanBytes > parses 1.5KB
+ ↓ test/lib/imageInventory.test.ts > parseHumanBytes > parses 1MB
+ ↓ test/lib/imageInventory.test.ts > parseHumanBytes > parses 1.5MB
+ ↓ test/lib/imageInventory.test.ts > parseHumanBytes > parses 1GB
+ ↓ test/lib/imageInventory.test.ts > parseHumanBytes > parses 1.5GB
+ ↓ test/lib/imageInventory.test.ts > parseHumanBytes > parses 1TB
+ ↓ test/lib/imageInventory.test.ts > parseHumanBytes > parses 1.5TB
+ ↓ test/lib/imageInventory.test.ts > parseHumanBytes > parses 1PB
+ ↓ test/lib/imageInventory.test.ts > parseHumanBytes > parses 1.5PB
+ ↓ test/lib/imageInventory.test.ts > parseHumanBytes > parses   1KB
+ ↓ test/lib/imageInventory.test.ts > parseHumanBytes > returns 0 for empty / unparseable input
+ ↓ test/lib/imageInventory.test.ts > parseReclaimedBytes > parses Total reclaimed space: 12.0MB
+ ↓ test/lib/imageInventory.test.ts > parseReclaimedBytes > parses Total reclaimed space: 1.5GB (something)
+ ↓ test/lib/imageInventory.test.ts > parseReclaimedBytes > parses Total reclaimed space: 1TB
+ ↓ test/lib/imageInventory.test.ts > parseReclaimedBytes > parses Total reclaimed space: 0B
+ ↓ test/lib/imageInventory.test.ts > parseReclaimedBytes > returns 0 when the summary line is missing
+ ↓ test/lib/imageInventory.test.ts > formatBytes > formats 0 as 0B
+ ↓ test/lib/imageInventory.test.ts > formatBytes > formats 100 as 100B
+ ↓ test/lib/imageInventory.test.ts > formatBytes > formats 1024 as 1.0KB
+ ↓ test/lib/imageInventory.test.ts > formatBytes > formats 1048576 as 1.0MB
+ ↓ test/lib/imageInventory.test.ts > formatBytes > formats 1073741824 as 1.0GB
+ ↓ test/lib/imageInventory.test.ts > formatBytes > formats 1099511627776 as 1.0TB
+ ↓ test/lib/imageInventory.test.ts > formatBytes > formats 107374182400 as 100GB
+ ↓ test/lib/imageInventory.test.ts > formatBytes > formats 1500 as 1.5KB
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/lib/imageInventory.test.ts > failed-removal confirmation > does not credit an image whose removal and inspection failed: Cannot connect to the Docker daemon
+ FAIL  test/lib/imageInventory.test.ts > failed-removal confirmation > does not credit an image whose removal and inspection failed: permission denied
+ FAIL  test/lib/imageInventory.test.ts > failed-removal confirmation > does not credit an image whose removal and inspection failed: image inspect timed out
+ FAIL  test/lib/imageInventory.test.ts > failed-removal confirmation > does not credit an image whose removal and inspection failed: Docker API returned 500
+AssertionError: expected [ Array(1) ] to deeply equal []
+
+- Expected
++ Received
+
+- []
++ [
++   "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
++ ]
+
+ ❯ test/lib/imageInventory.test.ts:83:28
+     81|     };
+     82|     const result = await pruneImages({}, new Set(), execution);
+     83|     expect(result.removed).toEqual([]);
+       |                            ^
+     84|     expect(result.removedLabels).toEqual([]);
+     85|     expect(result.freedBytes).toBe(0);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  4 failed | 52 skipped (56)
+   Start at  17:12:51
+   Duration  249ms (transform 61%, import 23%, tests 12%, worker 4%)

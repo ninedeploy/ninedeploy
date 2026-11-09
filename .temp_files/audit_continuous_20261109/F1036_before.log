@@ -1,0 +1,47 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stderr | .temp_files/audit_continuous_20261109/prove_F1036_unconfirmed_image_removal.test.ts > never credits deletion based on a failed follow-up inspection
+[images] prune chunk failed: Docker image removal did not complete
+stdout | .temp_files/audit_continuous_20261109/prove_F1036_unconfirmed_image_removal.test.ts > never credits deletion based on a failed follow-up inspection
+CONTROL EXPECTED: successful removal / explicit absence credited | ACTUAL: both credited
+
+
+stderr | .temp_files/audit_continuous_20261109/prove_F1036_unconfirmed_image_removal.test.ts > never credits deletion based on a failed follow-up inspection
+[images] prune chunk failed: Docker image removal did not complete
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1036_unconfirmed_image_removal.test.ts > never credits deletion based on a failed follow-up inspection
+EXPECTED: removed=[] freedBytes=0 | ACTUAL: {"removed":["sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],"freedBytes":1048576}
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/prove_F1036_unconfirmed_image_removal.test.ts > never credits deletion based on a failed follow-up inspection 9ms
+   → expected [ Array(1) ] to deeply equal []
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1036_unconfirmed_image_removal.test.ts > never credits deletion based on a failed follow-up inspection
+AssertionError: expected [ Array(1) ] to deeply equal []
+
+- Expected
++ Received
+
+- []
++ [
++   "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
++ ]
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1036_unconfirmed_image_removal.test.ts:27:28
+     25|     console.log('EXPECTED: removed=[] freedBytes=0 | ACTUAL:', JSON.st…
+     26|     console.log(actual.removed.length ? 'PROBLEM CONFIRMED' : 'PROBLEM…
+     27|     expect(actual.removed).toEqual([]); expect(actual.freedBytes).toBe…
+       |                            ^
+     28|   } finally { vi.useRealTimers(); }
+     29| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed (1)
+   Start at  17:10:59
+   Duration  182ms (transform 63%, import 20%, tests 13%, worker 5%)

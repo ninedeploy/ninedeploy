@@ -303,7 +303,12 @@ export const workspaceRoutes: FastifyPluginAsync = async (app) => {
     void audit(app.db, req.user!.id, 'workspace.update', updated.name);
 
     const myRole = (membership?.role as WorkspaceRole) ?? 'admin';
-    return serializeWorkspace(updated, myRole, { members: 1, projects: 0 });
+    // The answer carries the same WorkspaceEntry shape as GET /:id, so the
+    // counts must be the real ones — hardcoded 1/0 made a rename report a
+    // 1-member, 0-project workspace until the next full read.
+    const members = await app.db.select({ id: workspaceMembers.id }).from(workspaceMembers).where(eq(workspaceMembers.workspaceId, id));
+    const wsProjects = await app.db.select({ id: projects.id }).from(projects).where(eq(projects.workspaceId, id));
+    return serializeWorkspace(updated, myRole, { members: members.length, projects: wsProjects.length });
   });
 
   // Delete workspace

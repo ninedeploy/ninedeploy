@@ -92,8 +92,10 @@ async function containerState(runtimeId: string): Promise<'running' | 'stopped' 
     state = (await execDocker(['inspect', '--format', '{{.State.Status}}', runtimeId])).trim();
   } catch (err) {
     if (err instanceof DaemonUnavailableError) throw err;
-    // "No such container/object" — the runtime was destroyed.
-    return 'gone';
+    // An unreadable daemon is not evidence that this runtime was destroyed.
+    const message = err instanceof Error ? err.message : String(err);
+    if (/no such (container|object)/i.test(message)) return 'gone';
+    throw err;
   }
   // 'restarting' is on its way back up — treat as running, not as drift.
   if (state === 'running' || state === 'restarting') return 'running';
@@ -277,6 +279,7 @@ export function createRuntimeStateReconciler(fastify: FastifyInstance) {
         try {
           const res = await agent('docker.inspect', { name: target.runtimeId, format: 'state' }, { tolerateExit: true });
           if (res.exitCode !== 0) {
+            if (!res.lines.some(line => /no such (object|container)/i.test(line))) continue;
             // Container GONE on the node — mark the row so the panel says so
             // instead of showing a stale running status. Never judged if the
             // state cannot be asked for below; a missing container is certain.

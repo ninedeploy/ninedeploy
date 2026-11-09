@@ -1,0 +1,52 @@
+ M .env.example
+ M CHANGELOG.md
+ M apps/server/src/app.ts
+ M apps/server/src/config.ts
+ M apps/server/src/env.ts
+ M apps/server/src/kernel/pluginLoader.ts
+ M apps/server/src/lib/emailTemplates.ts
+ M apps/server/src/lib/frameworks.ts
+ M apps/server/src/lib/git.ts
+ M apps/server/src/lib/notifier.ts
+ M apps/server/src/lib/saml.ts
+ M apps/server/src/lib/settings.ts
+ M apps/server/src/lib/webhooks.ts
+ M apps/server/src/modules/api.ts
+ M apps/server/src/modules/serviceMigration.ts
+ M apps/server/src/modules/services.ts
+ M apps/server/src/modules/workspaces.ts
+ M apps/server/src/openapi/specs/settings.ts
+ M apps/server/src/plugins/runtimeState.ts
+ M apps/server/test/authzMatrix.test.ts
+ M apps/server/test/lib/emailTemplates.test.ts
+ M apps/server/test/lib/frameworks.test.ts
+ M apps/server/test/lib/git.test.ts
+ M apps/server/test/lib/notifier.test.ts
+ M apps/server/test/lib/saml.test.ts
+ M apps/server/test/lib/webhooks.test.ts
+ M apps/server/test/openapi/apiSurface.snap
+ M apps/server/test/runtimeState.test.ts
+ M apps/server/test/workspaces.test.ts
+ M apps/web/src/locales/tr.ts
+ M apps/web/src/routes/settings/PluginsSection.tsx
+ M apps/web/src/routes/settings/SecuritySection.tsx
+ M apps/web/test/ConfigCenterAndPlugins.test.tsx
+ M apps/web/test/apiMock.tsx
+ M docker-compose.prod.yml
+ M docs/DEPLOYMENTS.md
+ M docs/SECURITY_SSO.md
+ M docs/TROUBLESHOOTING.md
+ M docs/plans/COMPETITIVE_ROADMAP_2026-11.md
+ M packages/schemas/src/index.ts
+ M packages/sdk/src/resources/settings.ts
+?? apps/server/src/lib/panelAccess.ts
+?? apps/server/src/lib/portableSettings.ts
+?? apps/server/src/modules/panelAccess.ts
+?? apps/server/src/plugins/panelAccess.ts
+?? apps/server/test/lib/panelAccess.test.ts
+?? apps/server/test/panelAccessRoutes.test.ts
+?? apps/server/test/panelAccessWiring.test.ts
+?? apps/server/test/portableSettings.test.ts
+?? apps/web/src/routes/settings/PanelAccessCard.tsx
+?? apps/web/test/PanelAccessCard.test.tsx
+?? packages/schemas/src/panelAccess.ts

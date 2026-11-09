@@ -739,7 +739,10 @@ export async function notifyEvent(db: DB, event: AppEvent): Promise<void> {
       // channel was dead.
       const target = decrypt(ch.targetEncrypted);
       const attempts = await withRetry(() => dispatchChannel(ch.type, target, event, message, { configJson: channelConfigOf(ch) }));
-      await db.insert(notificationLog).values({ channelId: ch.id, event: event.action, entity: event.entity, status: 'sent', attempts });
+      // Best-effort like the failed row below: the delivery SUCCEEDED, so a
+      // log-write failure must not throw into the catch and relabel the
+      // outcome as `failed` (or mislabel the error with the insert's message).
+      await db.insert(notificationLog).values({ channelId: ch.id, event: event.action, entity: event.entity, status: 'sent', attempts }).catch(() => undefined);
     } catch (err) {
       // F924: an fcm channel's target IS the device token. Once FCM declares it
       // dead, deactivate the channel — otherwise every later event re-sends
@@ -819,7 +822,13 @@ export async function sendSystemEmail(db: DB, recipient: string, subject: string
     const attempts = await withRetry(() =>
       channel.type === 'resend' ? sendResend(target, subject, text, recipient) : sendEmail(target, subject, text, recipient),
     );
-    await db.insert(notificationLog).values({ channelId: channel.id, event: 'email.system', entity: subject, status: 'sent', attempts });
+    // F115: log the real attempt count, not a hard-coded 1. Best-effort like
+    // deliver()'s sent row: the mail WENT OUT, so a log-write failure must not
+    // flip the answer to false.
+    await db
+      .insert(notificationLog)
+      .values({ channelId: channel.id, event: 'email.system', entity: subject, status: 'sent', attempts })
+      .catch(() => undefined);
     return true;
   } catch (err) {
     await db.insert(notificationLog).values({

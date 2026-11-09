@@ -35,6 +35,9 @@ const schema = z.object({
     .string()
     .regex(/^(true|false|\d+)$/, 'must be "true", "false" or a hop count')
     .default('1'),
+  // O4: "off" ignores the panel IP allow-list (Settings → Security), for an
+  // operator who locked themselves out. Restart the panel after changing it.
+  NINEDEPLOY_PANEL_ACCESS: z.enum(['on', 'off']).default('on'),
   NINEDEPLOY_JWT_SECRET: z.string().min(16).default(INSECURE_JWT_SECRET),
   NINEDEPLOY_JWT_ACCESS_TTL: z.string().default('15m'),
   NINEDEPLOY_JWT_REFRESH_TTL: z.string().default('7d'),

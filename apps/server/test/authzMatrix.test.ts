@@ -1146,6 +1146,8 @@ export const MATRIX: Record<string, Rule> = {
   'POST /v1/servers/ssh-test': OP,
   'GET /v1/settings': OP,
   'PUT /v1/settings/acme-email': OP,
+  'GET /v1/settings/panel-access': OP,
+  'PUT /v1/settings/panel-access': OP,
   'PUT /v1/settings/allow-registration': OP,
   'PUT /v1/settings/dns': OP,
   'GET /v1/settings/auto-url': OP,

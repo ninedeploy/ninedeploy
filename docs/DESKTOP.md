@@ -4,6 +4,8 @@ The NineDeploy desktop app opens the panel of an instance you choose in its own 
 
 The code is in [`desktop/`](../desktop). It has its own lockfile and is not part of the panel's pnpm workspace, so Electron and its packaging tools never enter the dependency tree of the panel image or of the npm packages.
 
+For local Mac prerequisites, setup commands and the physical-Mac Keychain/installed-DMG acceptance checklist, see [Developing on macOS](MACOS_DEVELOPMENT.md).
+
 ## Installing
 
 Download the installer for your platform from the assets of a [GitHub Release](https://github.com/ninedeploy/ninedeploy/releases) (0.18.25 and later). `SHA256SUMS` in the same release covers every installer, and `SHA256SUMS.sigstore.json` is its signature. Check the file before you run it, as [Verifying a release](../README.md#verifying-a-release) describes:

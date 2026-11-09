@@ -15,6 +15,7 @@ import {
   azureProviderPut,
   onePasswordProviderPut,
   execProviderPut,
+  panelAccessUpdate,
 } from '@ninedeploy/schemas';
 import type { RouteSpec, RouteSpecMap } from '../types.js';
 
@@ -43,6 +44,20 @@ export const settingsSpecs: RouteSpecMap = {
     summary: 'Instance settings',
     tag: 'settings',
     floor: 'operator',
+  },
+  'GET /v1/settings/panel-access': {
+    summary: 'The panel IP allow-list and the address the panel sees for you',
+    tag: 'settings',
+    floor: 'operator',
+    responseType: 'PanelAccessView',
+  },
+  'PUT /v1/settings/panel-access': {
+    summary: 'Set the panel IP allow-list (refused when it would exclude your own address)',
+    tag: 'settings',
+    floor: 'operator',
+    body: panelAccessUpdate,
+    validation: 'zod',
+    responseType: 'PanelAccessView',
   },
   'PUT /v1/settings/acme-email': {
     summary: 'Set the ACME email (turns on TLS)',

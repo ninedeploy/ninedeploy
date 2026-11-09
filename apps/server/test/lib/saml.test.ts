@@ -382,6 +382,13 @@ describe('lib/saml', () => {
         .toThrow(/no ID attribute/);
     });
 
+    it('accepts a single-quoted ID like the rest of the module reads attributes, then refuses its replay', () => {
+      const xml = `<saml:Assertion ID='_sq'><saml:NameID>a@b.c</saml:NameID></saml:Assertion>`;
+      const t0 = 1_000_000;
+      expect(() => checkAssertionNotReplayed(xml, t0)).not.toThrow();
+      expect(() => checkAssertionNotReplayed(xml, t0 + 1)).toThrow(/replay/);
+    });
+
     it('prunes aged entries so the cache stays bounded and old IDs free up', () => {
       const hour = 60 * 60 * 1000;
       // Fill past the age window with distinct IDs at t=0, then re-use the

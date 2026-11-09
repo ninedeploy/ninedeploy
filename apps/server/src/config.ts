@@ -74,6 +74,8 @@ export const config = {
           const n = Number(env.NINEDEPLOY_TRUST_PROXY);
           return !Number.isNaN(n) && hop < n && isPrivateAddress(addr);
         },
+  // O4: NINEDEPLOY_PANEL_ACCESS=off overrides the panel IP allow-list.
+  panelAccessOverride: env.NINEDEPLOY_PANEL_ACCESS === 'off',
   paths: {
     dataDir,
     dbFile,

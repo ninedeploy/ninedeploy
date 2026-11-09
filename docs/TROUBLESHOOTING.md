@@ -308,3 +308,17 @@ The deploy log prints the path it picked: `📁 Auto-detected Dockerfile at apps
   ```
 
 
+---
+
+## 🚪 14. Locked Out by the Panel IP Allow-List
+
+**Symptoms**:
+- Signing in, or any page after it, answers `403 panel_access_denied`: "This panel only accepts sign-ins from its listed addresses".
+
+**Cause**:
+- **Settings → Security → Panel access** is on and your current address is not in the list. This happens, for example, after your ISP changed your IP, or when you connect through a VPN.
+
+**Resolution**:
+- **Bare metal:** loopback is always allowed, so you can open an SSH tunnel and sign in through it: `ssh -L 3000:127.0.0.1:3000 you@panel-host`, then go to `http://localhost:3000`. Alternatively, add `NINEDEPLOY_PANEL_ACCESS=off` to the panel's `.env` and run `sudo systemctl restart ninedeploy`.
+- **Docker:** add `NINEDEPLOY_PANEL_ACCESS=off` to `/opt/ninedeploy-docker/.env`, then run `docker compose up -d` there. Check that `docker-compose.yml` passes the variable: it should list `NINEDEPLOY_PANEL_ACCESS: ${NINEDEPLOY_PANEL_ACCESS:-on}` under `environment`. A compose file from a release older than this feature does not; add that line, or re-run the installer, which writes the current file. In Docker mode, a browser on the host reaches the panel through the Docker bridge, not loopback.
+- Sign in, fix the list, then remove the variable and restart once more so the list applies again.

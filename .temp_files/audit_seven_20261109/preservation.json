@@ -1,0 +1,11 @@
+{
+  "baselineFiles": 44,
+  "identicalFiles": 41,
+  "externallyChangedBaselinePaths": [
+    "apps/server/src/lib/portableSettings.ts",
+    "CHANGELOG.md",
+    "docs/plans/COMPETITIVE_ROADMAP_2026-11.md"
+  ],
+  "ownFilesWereCleanAtBaseline": true,
+  "overlap": []
+}

@@ -1,0 +1,27 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_seven_20261109/prove_F1035_runtime_unknown_inspect.test.ts > does not turn an unreadable Docker response into a service outage
+CONTROL EXPECTED: updates=[] alerts=0 | ACTUAL: {"updates":[],"alerts":0}
+
+stdout | .temp_files/audit_seven_20261109/prove_F1035_runtime_unknown_inspect.test.ts > does not turn an unreadable Docker response into a service outage
+EXPECTED: updates=[] alerts=0 | ACTUAL: {"updates":[],"alerts":0}
+PROBLEM NOT REPRODUCED
+
+stdout | .temp_files/audit_seven_20261109/prove_F1035_runtime_unknown_inspect.test.ts > does not mark a fan-out target gone for an unknown inspect failure
+EXPECTED: fan-out updates=[] | ACTUAL: []
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_seven_20261109/prove_F1035_runtime_unknown_inspect.test.ts > does not turn an unreadable Docker response into a service outage 74ms
+ ✓ .temp_files/audit_seven_20261109/prove_F1035_runtime_unknown_inspect.test.ts > does not mark a fan-out target gone for an unknown inspect failure 2ms
+stdout | .temp_files/audit_seven_20261109/prove_F1034_webhook_replay_scope.test.ts > allows the same provider delivery to reach two service-scoped receivers
+CONTROL EXPECTED: first=false duplicate=true | ACTUAL: false true
+EXPECTED: sibling replay=false | ACTUAL: false
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_seven_20261109/prove_F1034_webhook_replay_scope.test.ts > allows the same provider delivery to reach two service-scoped receivers 3ms
+
+ Test Files  2 passed (2)
+      Tests  3 passed (3)
+   Start at  16:45:50
+   Duration  1.48s (import 68%, transform 23%, tests 8%, worker 1%)

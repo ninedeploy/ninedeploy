@@ -108,6 +108,24 @@ describe('runtime state reconciliation', () => {
     expect(updates).toEqual([]);
   });
 
+  it.each(['permission denied while trying to connect to the Docker daemon socket', 'Docker API returned 500: internal server error', 'Docker inspect timed out'])('does not judge a local container when inspect is unreadable: %s', async message => {
+    mockDocker({ state: [new Error(message)] });
+    const { updates } = await reconcileOnce(svcRow({ id: 1, status: 'running', runtimeId: 'c1' }));
+    expect(updates).toEqual([]);
+    expect(auditMocks.audit).not.toHaveBeenCalled();
+    expect(execMocks.capture).not.toHaveBeenCalledWith('docker', expect.arrayContaining(['start']));
+  });
+
+  it.each(['permission denied', 'Cannot connect to the Docker daemon'])('does not mark a fan-out target missing when its inspect fails: %s', async message => {
+    mockDocker({ state: ['running'] });
+    agentMocks.agentOp.mockResolvedValue({ exitCode: 1, lines: [message] });
+    const { updates } = await reconcileOnce(svcRow({ id: 43, status: 'running', runtimeId: 'web-7', replicas: 1 }), {
+      select: { serviceTargets: [{ id: 5, serviceId: 43, serverId: 8, runtimeId: 'web-t8-9', status: 'running' }] },
+    });
+    expect(updates).toEqual([]);
+    expect(agentMocks.agentOp.mock.calls.some(c => c[2] === 'docker.start')).toBe(false);
+  });
+
   it('revives a stopped container and keeps the service running', async () => {
     mockDocker({ state: ['exited', 'running'] });
     const { updates } = await reconcileOnce(svcRow({ id: 1, status: 'running', runtimeId: 'c1' }));

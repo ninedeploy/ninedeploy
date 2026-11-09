@@ -1,0 +1,45 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stderr | .temp_files/audit_continuous_20261109/verify_F1036_unconfirmed_image_removal.test.ts > credits only proven removal across unknown, absent, present, partial, empty and protected cases
+[images] prune chunk failed: Removal unconfirmed
+
+stderr | .temp_files/audit_continuous_20261109/verify_F1036_unconfirmed_image_removal.test.ts > credits only proven removal across unknown, absent, present, partial, empty and protected cases
+[images] prune chunk failed: Removal unconfirmed
+
+stderr | .temp_files/audit_continuous_20261109/verify_F1036_unconfirmed_image_removal.test.ts > credits only proven removal across unknown, absent, present, partial, empty and protected cases
+[images] prune chunk failed: Removal unconfirmed
+
+stderr | .temp_files/audit_continuous_20261109/verify_F1036_unconfirmed_image_removal.test.ts > credits only proven removal across unknown, absent, present, partial, empty and protected cases
+[images] prune chunk failed: Removal unconfirmed
+
+stderr | .temp_files/audit_continuous_20261109/verify_F1036_unconfirmed_image_removal.test.ts > credits only proven removal across unknown, absent, present, partial, empty and protected cases
+[images] prune chunk failed: Removal unconfirmed
+
+stderr | .temp_files/audit_continuous_20261109/verify_F1036_unconfirmed_image_removal.test.ts > credits only proven removal across unknown, absent, present, partial, empty and protected cases
+[images] prune chunk failed: Removal unconfirmed
+
+stderr | .temp_files/audit_continuous_20261109/verify_F1036_unconfirmed_image_removal.test.ts > credits only proven removal across unknown, absent, present, partial, empty and protected cases
+[images] prune chunk failed: Removal unconfirmed
+
+stderr | .temp_files/audit_continuous_20261109/verify_F1036_unconfirmed_image_removal.test.ts > credits only proven removal across unknown, absent, present, partial, empty and protected cases
+[images] prune chunk failed: Removal unconfirmed
+
+stderr | .temp_files/audit_continuous_20261109/verify_F1036_unconfirmed_image_removal.test.ts > credits only proven removal across unknown, absent, present, partial, empty and protected cases
+[images] prune chunk failed: Removal unconfirmed
+
+stderr | .temp_files/audit_continuous_20261109/verify_F1036_unconfirmed_image_removal.test.ts > credits only proven removal across unknown, absent, present, partial, empty and protected cases
+[images] prune chunk failed: Removal unconfirmed
+
+stderr | .temp_files/audit_continuous_20261109/verify_F1036_unconfirmed_image_removal.test.ts > credits only proven removal across unknown, absent, present, partial, empty and protected cases
+[images] prune chunk failed: Removal unconfirmed
+
+stdout | .temp_files/audit_continuous_20261109/verify_F1036_unconfirmed_image_removal.test.ts > credits only proven removal across unknown, absent, present, partial, empty and protected cases
+FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1036_unconfirmed_image_removal.test.ts > credits only proven removal across unknown, absent, present, partial, empty and protected cases 11ms
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  17:13:47
+   Duration  271ms (transform 48%, import 24%, tests 21%, worker 7%)

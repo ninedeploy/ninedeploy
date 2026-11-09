@@ -1,0 +1,105 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+stderr | test/lib/imageInventory.test.ts > failed-removal confirmation > does not credit an image whose removal and inspection failed: Cannot connect to the Docker daemon
+[images] prune chunk failed: Image removal did not complete
+
+stderr | test/lib/imageInventory.test.ts > failed-removal confirmation > does not credit an image whose removal and inspection failed: permission denied
+[images] prune chunk failed: Image removal did not complete
+
+stderr | test/lib/imageInventory.test.ts > failed-removal confirmation > does not credit an image whose removal and inspection failed: image inspect timed out
+[images] prune chunk failed: Image removal did not complete
+
+stderr | test/lib/imageInventory.test.ts > failed-removal confirmation > does not credit an image whose removal and inspection failed: Docker API returned 500
+[images] prune chunk failed: Image removal did not complete
+
+stderr | test/lib/imageInventory.test.ts > pruneImages error + edge branches > continues with the remaining chunks when one docker image rm fails
+[images] prune chunk failed: first chunk failed
+
+stderr | test/lib/imageInventory.test.ts > pruneImages error + edge branches > r406: credits the images a FAILED chunk actually removed (docker rm is partial)
+[images] prune chunk failed: chunk failed partway
+
+ ✓ test/lib/imageInventory.test.ts > failed-removal confirmation > does not credit an image whose removal and inspection failed: Cannot connect to the Docker daemon 2ms
+ ✓ test/lib/imageInventory.test.ts > failed-removal confirmation > does not credit an image whose removal and inspection failed: permission denied 0ms
+ ✓ test/lib/imageInventory.test.ts > failed-removal confirmation > does not credit an image whose removal and inspection failed: image inspect timed out 0ms
+ ✓ test/lib/imageInventory.test.ts > failed-removal confirmation > does not credit an image whose removal and inspection failed: Docker API returned 500 0ms
+ ✓ test/lib/imageInventory.test.ts > listImages > parses docker image ls JSON output, marks in-use from the containers 1ms
+ ✓ test/lib/imageInventory.test.ts > listImages > tolerates bad lines in the docker ls output (skips them) 0ms
+ ✓ test/lib/imageInventory.test.ts > listImages > throws a friendly error when docker image ls fails 1ms
+ ✓ test/lib/imageInventory.test.ts > listImages > returns an empty list when there are no images 0ms
+ ✓ test/lib/imageInventory.test.ts > pruneImages > retains recorded release images in a dry-run (dangling=false) 0ms
+ ✓ test/lib/imageInventory.test.ts > pruneImages > retains recorded release images in a dry-run (dangling=true) 5ms
+ ✓ test/lib/imageInventory.test.ts > pruneImages > runs `docker image prune -f` for danglingOnly and parses the freed bytes 0ms
+ ✓ test/lib/imageInventory.test.ts > pruneImages > passes olderThanHours as a `until=` filter on the dangling prune 0ms
+ ✓ test/lib/imageInventory.test.ts > pruneImages > keeps the newest N images per repository and prunes the rest on dryRun 0ms
+ ✓ test/lib/imageInventory.test.ts > pruneImages > keeps the N newest versions of a repo and retires only older ones (r017) 0ms
+ ✓ test/lib/imageInventory.test.ts > pruneImages > skips in-use images even when they would otherwise be candidates 0ms
+ ✓ test/lib/imageInventory.test.ts > pruneImages > never offers an image a container runs from, even with keepLast=0 (r311) 0ms
+ ✓ test/lib/imageInventory.test.ts > pruneImages > a container that vanishes between ps and inspect does not blind the rest (r311) 0ms
+ ✓ test/lib/imageInventory.test.ts > pruneImages > no containers at all: no docker inspect is issued (r311) 0ms
+ ✓ test/lib/imageInventory.test.ts > pruneImages > filters by olderThanHours on the candidate set 0ms
+ ✓ test/lib/imageInventory.test.ts > pruneImages > performs the real delete via `docker image rm` in 50-id chunks 1ms
+ ✓ test/lib/imageInventory.test.ts > pruneImages > treats keepLast=0 as "keep nothing" — every non-dangling image is a candidate 0ms
+ ✓ test/lib/imageInventory.test.ts > pruneImages > clamps keepLast to the per-group size — never deletes the only image of a tag 0ms
+ ✓ test/lib/imageInventory.test.ts > parseHumanBytes / parseReclaimedBytes > parses human-readable sizes through listImages 0ms
+ ✓ test/lib/imageInventory.test.ts > parseHumanBytes / parseReclaimedBytes > returns ageHours=0 when the createdAt date is unparseable 0ms
+ ✓ test/lib/imageInventory.test.ts > parseHumanBytes / parseReclaimedBytes > falls back to the empty in-use set when docker ps throws 0ms
+ ✓ test/lib/imageInventory.test.ts > pruneImages error + edge branches > throws a friendly error when docker image prune fails (danglingOnly) 0ms
+ ✓ test/lib/imageInventory.test.ts > pruneImages error + edge branches > continues with the remaining chunks when one docker image rm fails 1ms
+ ✓ test/lib/imageInventory.test.ts > pruneImages error + edge branches > r406: credits the images a FAILED chunk actually removed (docker rm is partial) 1ms
+ ✓ test/lib/imageInventory.test.ts > formatBytes via listImages / pruneImages output > formats the freed-bytes summary in MB when candidates are small 0ms
+ ✓ test/lib/imageInventory.test.ts > parseHumanBytes > parses 0B 0ms
+ ✓ test/lib/imageInventory.test.ts > parseHumanBytes > parses 100B 0ms
+ ✓ test/lib/imageInventory.test.ts > parseHumanBytes > parses 1KB 0ms
+ ✓ test/lib/imageInventory.test.ts > parseHumanBytes > parses 1.5KB 0ms
+ ✓ test/lib/imageInventory.test.ts > parseHumanBytes > parses 1MB 0ms
+ ✓ test/lib/imageInventory.test.ts > parseHumanBytes > parses 1.5MB 0ms
+ ✓ test/lib/imageInventory.test.ts > parseHumanBytes > parses 1GB 0ms
+ ✓ test/lib/imageInventory.test.ts > parseHumanBytes > parses 1.5GB 0ms
+ ✓ test/lib/imageInventory.test.ts > parseHumanBytes > parses 1TB 0ms
+ ✓ test/lib/imageInventory.test.ts > parseHumanBytes > parses 1.5TB 0ms
+ ✓ test/lib/imageInventory.test.ts > parseHumanBytes > parses 1PB 0ms
+ ✓ test/lib/imageInventory.test.ts > parseHumanBytes > parses 1.5PB 0ms
+ ✓ test/lib/imageInventory.test.ts > parseHumanBytes > parses   1KB   0ms
+ ✓ test/lib/imageInventory.test.ts > parseHumanBytes > returns 0 for empty / unparseable input 0ms
+ ✓ test/lib/imageInventory.test.ts > parseReclaimedBytes > parses Total reclaimed space: 12.0MB 0ms
+ ✓ test/lib/imageInventory.test.ts > parseReclaimedBytes > parses Total reclaimed space: 1.5GB (something) 0ms
+ ✓ test/lib/imageInventory.test.ts > parseReclaimedBytes > parses Total reclaimed space: 1TB 0ms
+ ✓ test/lib/imageInventory.test.ts > parseReclaimedBytes > parses Total reclaimed space: 0B 0ms
+ ✓ test/lib/imageInventory.test.ts > parseReclaimedBytes > returns 0 when the summary line is missing 0ms
+ ✓ test/lib/imageInventory.test.ts > formatBytes > formats 0 as 0B 0ms
+ ✓ test/lib/imageInventory.test.ts > formatBytes > formats 100 as 100B 0ms
+ ✓ test/lib/imageInventory.test.ts > formatBytes > formats 1024 as 1.0KB 0ms
+ ✓ test/lib/imageInventory.test.ts > formatBytes > formats 1048576 as 1.0MB 0ms
+ ✓ test/lib/imageInventory.test.ts > formatBytes > formats 1073741824 as 1.0GB 0ms
+ ✓ test/lib/imageInventory.test.ts > formatBytes > formats 1099511627776 as 1.0TB 0ms
+ ✓ test/lib/imageInventory.test.ts > formatBytes > formats 107374182400 as 100GB 0ms
+ ✓ test/lib/imageInventory.test.ts > formatBytes > formats 1500 as 1.5KB 0ms
+ ✓ test/releaseRecords.test.ts > encrypted release persistence and restore API > distinguishes Docker failure from missing images and hides host details 275ms
+ ✓ test/releaseRecords.test.ts > encrypted release persistence and restore API > rechecks images on submission after an eligible preview 212ms
+ ✓ test/releaseRecords.test.ts > encrypted release persistence and restore API > counts unique missing IDs across services and accepts untagged image IDs 190ms
+ ✓ test/releaseRecords.test.ts > encrypted release persistence and restore API > refuses missing recorded images before queueing and reports their absence without secrets 179ms
+ ✓ test/releaseRecords.test.ts > encrypted release persistence and restore API > stores encrypted values separately, refuses overwrite, and removes records with their deployment 154ms
+ ✓ test/releaseRecords.test.ts > encrypted release persistence and restore API > returns only metadata and copies immutable restore input before the original is pruned 180ms
+ ✓ test/releaseRecords.test.ts > encrypted release persistence and restore API > refuses old inline history, unserved records and changed hosts without enqueuing 183ms
+ ✓ test/releaseRecords.test.ts > encrypted release persistence and restore API > does not expose or enqueue corrupt ciphertext or another service record 213ms
+ ✓ test/releaseRecords.test.ts > encrypted release persistence and restore API > keeps service and host privilege checks in front of a restore 181ms
+ ✓ test/releaseRecords.test.ts > encrypted release persistence and restore API > rolls back the enqueue when the copied record cannot be stored 172ms
+ ✓ test/releaseRecords.test.ts > encrypted release persistence and restore API > refuses a changed primary container identity before enqueuing 229ms
+ ✓ test/releaseImageRetention.test.ts > recorded release image retention > shows protection separately from container use without exposing release secrets 184ms
+ ✓ test/releaseImageRetention.test.ts > recorded release image retention > protects tagged and untagged images in dry-run and deletion (dangling=false) 201ms
+ ✓ test/releaseImageRetention.test.ts > recorded release image retention > protects tagged and untagged images in dry-run and deletion (dangling=true) 217ms
+ ✓ test/releaseImageRetention.test.ts > recorded release image retention > applies the same protection to age-filtered automatic cleanup 268ms
+ ✓ test/releaseImageRetention.test.ts > recorded release image retention > keeps a copied queued restore protected after source deletion, then releases it with its final record 182ms
+ ✓ test/releaseImageRetention.test.ts > recorded release image retention > refuses cleanup before Docker is called when any encrypted record is unreadable 179ms
+ ✓ test/releaseImageRetention.test.ts > recorded release image retention > paginates retained records instead of silently ignoring later history 214ms
+ ✓ test/releaseImageRetention.test.ts > recorded release image retention > serializes record publication with an in-flight cleanup and releases the lock after failure 251ms
+ ✓ test/lib/r057-imageInventory-keepLast.test.ts > r057 — pruneImages ignores keepLast when danglingOnly=true > keepLast is honoured in the danglingOnly branch (regression r057) 2ms
+
+ Test Files  4 passed (4)
+      Tests  76 passed (76)
+   Start at  17:14:22
+   Duration  6.52s (tests 73%, import 21%, transform 6%)
+
+    Isolate  4 workers spawned · ~269ms startup each (spawn + environment, per file)
+             at least ~807ms faster with isolate: false — reuses workers across files instead of one per file

@@ -302,7 +302,11 @@ function pruneReplayCache(now: number): void {
  * everything reaching it is authentically signed.
  */
 export function checkAssertionNotReplayed(assertionXml: string, now: number = Date.now()): void {
-  const id = assertionXml.match(/<(?:[A-Za-z0-9]+:)?Assertion\b[^>]*\bID="([^"]+)"/)?.[1];
+  // The ID is read with `parseAttrs` (not a quote-specific regex) so a
+  // spec-legal single-quoted ID='…' is cached exactly like a double-quoted
+  // one — the same opening tag `locateSignedAssertion` already accepts.
+  const openTag = assertionXml.match(/<(?:[A-Za-z0-9]+:)?Assertion\b[^>]*>/)?.[0];
+  const id = openTag ? parseAttrs(openTag).ID : undefined;
   if (!id) throw new Error('SAML response: assertion carries no ID attribute');
   pruneReplayCache(now);
   if (SEEN_ASSERTION_IDS.has(id)) {

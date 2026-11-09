@@ -173,8 +173,11 @@ export async function workspaceOverridesAllowed(db: DB, workspaceId: number): Pr
  * link — drop those before the check (also guards rows stored before F620).
  */
 export function overrideMissingRequiredLink(name: EmailTemplateName, text: string): boolean {
-  const live = text.replace(/\\\{\{acceptUrl\}\}/g, ' ');
-  return TEMPLATE_DELIVERY[name].sent && DEFAULTS[name].text.includes('{{acceptUrl}}') && !live.includes('{{acceptUrl}}');
+  // `expand` interpolates `{{ acceptUrl }}` with interior whitespace too, so
+  // the check must read the link the same way: an override using the spaced
+  // spelling DOES render the link and must not be judged link-less.
+  const live = text.replace(/\\\{\{\s*acceptUrl\s*\}\}/g, ' ');
+  return TEMPLATE_DELIVERY[name].sent && DEFAULTS[name].text.includes('{{acceptUrl}}') && !/\{\{\s*acceptUrl\s*\}\}/.test(live);
 }
 
 /**

@@ -13,6 +13,16 @@ import { materialiseComposeFile } from '../lib/composeWorkspace.js';
 import { assertMayUseHostPrivilege } from '../lib/hostPrivilege.js';
 import { assertMayWriteVaultRefs } from '../lib/vault.js';
 import { getSettingString } from '../lib/settings.js';
+import {
+  applyPortableDomainSettings,
+  applyPortableServiceSettings,
+  notCarriedSecrets,
+  readPortableDomainSettings,
+  readPortableServiceSettings,
+  type PortableDomainSettings,
+  type PortableReport,
+  type PortableServiceSettings,
+} from '../lib/portableSettings.js';
 import { hostsCollide, normalizeHost, ownZoneClaimRefusal } from '../lib/domainVerification.js';
 
 interface ServiceBundle {
@@ -44,7 +54,11 @@ interface ServiceBundle {
     dockerfilePath: string | null;
   } | null;
   envVars: Array<{ key: string; value: string; isSecret: boolean }>;
-  domains: Array<{ hostname: string; path: string; ssl: boolean }>;
+  domains: Array<{ hostname: string; path: string; ssl: boolean; settings?: PortableDomainSettings }>;
+  /** S3: configuration kept in settings rows (restart limit, error pages, CI pipeline, …). Absent in older bundles. */
+  settings?: PortableServiceSettings;
+  /** S3: secrets the source had that are not in the bundle; the import repeats them so the operator creates new ones. */
+  notCarried?: string[];
   webhooks: Array<{ branch: string; events: string[]; secret: string; watchPaths?: string | null }>;
   attachments: Array<{ envAlias: string; databaseName: string; databaseEngine: string }>;
 }
@@ -105,7 +119,14 @@ export const serviceMigrationRoutes: FastifyPluginAsync = async (app) => {
         dockerfilePath: bc.dockerfilePath,
       } : null,
       envVars: envs.map((e) => ({ key: e.key, value: decrypt(e.valueEncrypted), isSecret: e.isSecret })),
-      domains: doms.map((d) => ({ hostname: d.hostname, path: d.path, ssl: d.ssl })),
+      domains: await Promise.all(
+        doms.map(async (d) => {
+          const settings = await readPortableDomainSettings(app.db, d.id);
+          return { hostname: d.hostname, path: d.path, ssl: d.ssl, ...(Object.keys(settings).length > 0 && { settings }) };
+        }),
+      ),
+      settings: await readPortableServiceSettings(app.db, id),
+      notCarried: await notCarriedSecrets(app.db, id),
       // F193: the path filter decides which pushes deploy — dropping it made
       // every push redeploy the service after the move.
       webhooks: hooks.map((w) => ({ branch: w.branch, events: w.events, secret: decrypt(w.secretEncrypted), watchPaths: w.watchPaths ?? null })),
@@ -319,13 +340,33 @@ export const serviceMigrationRoutes: FastifyPluginAsync = async (app) => {
       return created;
     });
 
-    void audit(app.db, req.user!.id, 'service.import', svc.name, { serviceId: svc.id });
+    // S3: settings-row configuration, after the commit and through each
+    // feature's own validation. A refused value is reported, never fatal.
+    const settingsReport: PortableReport = await applyPortableServiceSettings(app.db, svc, bundle.settings, { kind: 'import' });
+    const importedDomains = await app.db.query.domains.findMany({ where: eq(domains.serviceId, svc.id) });
+    for (const d of bundle.domains) {
+      if (!d?.settings) continue;
+      const parsed = bundleDomain.safeParse(d);
+      if (!parsed.success) continue;
+      const host = normalizeHost(parsed.data.hostname);
+      const row = importedDomains.find((r) => r.hostname === host && r.path === parsed.data.path);
+      if (row) await applyPortableDomainSettings(app.db, row.id, row.hostname, svc, d.settings, settingsReport);
+    }
+    const notCarried = Array.isArray(bundle.notCarried) ? bundle.notCarried.filter((n): n is string => typeof n === 'string').slice(0, 10) : [];
+    void audit(app.db, req.user!.id, 'service.import', svc.name, { serviceId: svc.id, settings: settingsReport.applied, skipped: settingsReport.skipped.length });
     // An inline stack has no repository to clone, so its workspace has to be
     // rebuilt from the bundle before the first deploy on this host — after
     // the commit, so a rolled-back import leaves no workspace behind.
     if (svc.composeContent) materialiseComposeFile(svc.id, svc.composeContent);
 
-    return { ok: true, serviceId: svc.id, slug, message: `Service "${bundle.service.name}" imported. Deploy to activate.` };
+    return {
+      ok: true,
+      serviceId: svc.id,
+      slug,
+      message: `Service "${bundle.service.name}" imported. Deploy to activate.`,
+      settings: settingsReport,
+      notCarried,
+    };
   });
 };
 

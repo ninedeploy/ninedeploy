@@ -563,4 +563,14 @@ describe('r621: workspace overrides cannot turn the instance into a mail relay',
     expect(r.overridden).toBe(true);
     expect(r.text).toBe('Accept: https://x/y');
   });
+
+  it('still sends an operator-owned override that keeps the link via the spaced spelling {{ acceptUrl }}', async () => {
+    // `expand` interpolates interior whitespace, so the required-link check
+    // must read the placeholder the same way — the spaced override DOES
+    // render the link and must not be discarded as link-less.
+    seedOverride(1, 'workspace-invitation', 'Join {{workspaceName}}', 'Accept: {{ acceptUrl }}');
+    const r = await renderTemplate(makeDb(), 'workspace-invitation', INVITE_VARS, { workspaceId: 1 });
+    expect(r.overridden).toBe(true);
+    expect(r.text).toBe('Accept: https://x/y');
+  });
 });

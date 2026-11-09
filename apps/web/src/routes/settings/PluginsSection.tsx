@@ -451,7 +451,7 @@ export function PluginsSection() {
                                 </Link>
                               </>
                             ) : (
-                              <span className="text-xs text-slate-500">{t('Planned — not available yet')}</span>
+                              <span className="text-xs text-slate-500">{t('Not available')}</span>
                             )
                           ) : item.isInstalled ? (
                             <span className="ml-auto inline-flex items-center gap-1 text-xs text-emerald-400 font-medium">

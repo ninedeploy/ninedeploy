@@ -45,6 +45,7 @@ export * from './osUpdates.js';
 export * from './cloud.js';
 export * from './usage.js';
 export * from './deployFreeze.js';
+export * from './panelAccess.js';
 export * from './imageScan.js';
 export * from './mcpHttp.js';
 export * from './sizing.js';

@@ -12,6 +12,7 @@ import { HostIpsCard } from './HostIpsCard.js';
 import { EgressIpCard } from './EgressIpCard.js';
 import { ApiTokensCard } from './ApiTokensCard.js';
 import { McpRemoteCard } from './McpRemoteCard.js';
+import { PanelAccessCard } from './PanelAccessCard.js';
 
 /** Security: open registration, ACME, template source, DNS-01 and wildcard domain. */
 export function SecuritySection() {
@@ -94,6 +95,8 @@ export function SecuritySection() {
       <ApiTokensCard />
       {/* R4: remote MCP over HTTP, with the tokens above. */}
       {isOperator && <McpRemoteCard />}
+      {/* O4: who may sign in to the panel at all. */}
+      {isOperator && <PanelAccessCard />}
       {instanceSettings.isError && !loaded && (
         <div className="mb-5">
           <ErrorCard title={t('Could not load the security settings')} error={instanceSettings.error} onRetry={() => void instanceSettings.refetch()} />
