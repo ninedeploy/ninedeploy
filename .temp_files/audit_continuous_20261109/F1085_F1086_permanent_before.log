@@ -1,0 +1,104 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ × test/lib/passwordResetIssuanceRace.test.ts > six overlapping requests leave only the last issued hash 160ms
+   → expected [ { id: 1, userId: 1, …(5) }, …(5) ] to have a length of 1 but got 6
+ ✓ test/lib/passwordResetIssuanceRace.test.ts > different users retain separate active tokens across the shared connection queue 149ms
+ ✓ test/lib/passwordResetIssuanceRace.test.ts > an independent database remains usable while this issuance waits 307ms
+ ✓ test/lib/passwordResetIssuanceRace.test.ts > only the surviving link can change the password, and consumption stays single-use 168ms
+ ✓ test/lib/passwordResetIssuanceRace.test.ts > delete failure rolls back previous token rows, then clean retry succeeds 142ms
+ × test/lib/passwordResetIssuanceRace.test.ts > insert failure rolls back previous token rows, then clean retry succeeds 150ms
+   → expected [] to deeply equal [ { id: 1, userId: 1, …(5) }, …(1) ]
+ × test/lib/passwordResetIssuanceRace.test.ts > precommit rejection rolls back replacement and releases managed transaction order 142ms
+   → promise resolved "{ …(2) }" instead of rejecting
+ ✓ test/lib/passwordResetIssuanceRace.test.ts > hash-only storage, source normalization and thirty-minute returned expiry stay intact 142ms
+ × test/lib/passwordResetIssuanceRace.test.ts > a held successful replacement is superseded by the next queued request 139ms
+   → expected [ { id: 2, userId: 1, …(5) }, …(1) ] to have a length of 1 but got 2
+ ✓ test/lib/passwordResetIssuanceRace.test.ts > a gated failed replacement rolls back before the next queued request succeeds 146ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/lib/passwordResetIssuanceRace.test.ts > six overlapping requests leave only the last issued hash
+AssertionError: expected [ { id: 1, userId: 1, …(5) }, …(5) ] to have a length of 1 but got 6
+
+- Expected
++ Received
+
+- 1
++ 6
+
+ ❯ test/lib/passwordResetIssuanceRace.test.ts:36:271
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  test/lib/passwordResetIssuanceRace.test.ts > insert failure rolls back previous token rows, then clean retry succeeds
+AssertionError: expected [] to deeply equal [ { id: 1, userId: 1, …(5) }, …(1) ]
+
+- Expected
++ Received
+
+- [
+-   {
+-     "createdAt": 2026-11-09T23:33:55.000Z,
+-     "expiresAt": 2026-11-10T00:03:55.000Z,
+-     "id": 1,
+-     "requestedFrom": "delivered",
+-     "tokenHash": "b4c378de39997a6ac3a5ba7dda81a1cf37e160cd186871a6ad2de157c9dce246",
+-     "usedAt": null,
+-     "userId": 1,
+-   },
+-   {
+-     "createdAt": 2026-11-09T23:33:55.000Z,
+-     "expiresAt": 2026-11-09T23:34:55.000Z,
+-     "id": 2,
+-     "requestedFrom": "old",
+-     "tokenHash": "a15dc08bf880bf1478af7c6524a8fd8dc05f4f2d09b4cb12e2f4f7801c5b57e4",
+-     "usedAt": 2026-11-09T23:33:55.000Z,
+-     "userId": 1,
+-   },
+- ]
++ []
+
+ ❯ test/lib/passwordResetIssuanceRace.test.ts:54:136
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+ FAIL  test/lib/passwordResetIssuanceRace.test.ts > precommit rejection rolls back replacement and releases managed transaction order
+AssertionError: promise resolved "{ …(2) }" instead of rejecting
+
+- Expected
++ Received
+
+- Error {
+-   "message": "rejected promise",
++ {
++   "expiresAt": 2026-11-10T00:03:55.313Z,
++   "token": "iRUbS4YN5SZ84ALDxU5UPPDZsv961bQLM9_ZlXdFpRg",
+  }
+
+ ❯ test/lib/passwordResetIssuanceRace.test.ts:60:62
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+
+ FAIL  test/lib/passwordResetIssuanceRace.test.ts > a held successful replacement is superseded by the next queued request
+AssertionError: expected [ { id: 2, userId: 1, …(5) }, …(1) ] to have a length of 1 but got 2
+
+- Expected
++ Received
+
+- 1
++ 2
+
+ ❯ test/lib/passwordResetIssuanceRace.test.ts:68:229
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/4]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  4 failed | 6 passed (10)
+   Start at  01:33:53
+   Duration  2.16s (tests 80%, import 16%, transform 4%)

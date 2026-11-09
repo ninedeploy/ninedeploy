@@ -57,7 +57,7 @@ export function createDb(opts: CreateDbOptions): CreateDbResult {
   // same connection, whose initial foreign_keys pragma is already set.
   // Asking the parent client for a replacement while it is borrowed throws
   // TRANSACTION_ACTIVE and strands the transaction before Drizzle sees it.
-  if (typeof client.transaction === 'function' && opts.url !== 'file::memory:') {
+  if (typeof client.transaction === 'function' && opts.url !== 'file::memory:' && opts.url !== ':memory:') {
     const beginTransaction = client.transaction.bind(client);
     client.transaction = async (...args: Parameters<typeof client.transaction>) => {
       const tx = await beginTransaction(...args);

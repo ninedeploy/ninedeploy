@@ -23,16 +23,18 @@ export async function issueResetToken(
   user: User,
   requestedFrom: string | null | undefined,
 ): Promise<IssuedResetToken> {
-  const token = randomToken(32);
-  const expiresAt = new Date(Date.now() + RESET_TTL_MS);
-  await db.delete(passwordResetTokens).where(eq(passwordResetTokens.userId, user.id));
-  await db.insert(passwordResetTokens).values({
-    userId: user.id,
-    tokenHash: sha256(token),
-    expiresAt,
-    requestedFrom: requestedFrom ?? null,
+  return db.transaction(async (tx) => {
+    const token = randomToken(32);
+    const expiresAt = new Date(Date.now() + RESET_TTL_MS);
+    await tx.delete(passwordResetTokens).where(eq(passwordResetTokens.userId, user.id));
+    await tx.insert(passwordResetTokens).values({
+      userId: user.id,
+      tokenHash: sha256(token),
+      expiresAt,
+      requestedFrom: requestedFrom ?? null,
+    });
+    return { token, expiresAt };
   });
-  return { token, expiresAt };
 }
 
 /**

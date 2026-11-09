@@ -3,8 +3,8 @@ import { sql } from 'drizzle-orm';
 import { createDb } from '../src/client.js';
 
 describe('in-memory database transactions', () => {
-  it('can commit and roll back without borrowing a second connection, while foreign keys remain enabled', async () => {
-    const { db, client, ready } = createDb({ url: 'file::memory:' });
+  it.each(['file::memory:', ':memory:'])('can commit and roll back with %s without borrowing a second connection, while foreign keys remain enabled', async (url) => {
+    const { db, client, ready } = createDb({ url });
     try {
       await ready;
       await db.run(sql`create table tx_proof (id integer primary key)`);

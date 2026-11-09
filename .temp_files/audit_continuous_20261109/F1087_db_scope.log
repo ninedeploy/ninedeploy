@@ -1,0 +1,363 @@
+$ vitest run --coverage
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/packages/db
+      Coverage enabled with v8
+
+ ❯ test/node-wake-collection.test.ts (1 test | 1 failed) 20756ms
+   × reopens standalone catcher retirement targets without invented service authority or a schema migration 20754ms
+ ❯ test/migration-0120-node-sleep.test.ts (1 test | 1 failed) 8928ms
+   × upgrades an existing runtime owner, retains sleep journals across deployment pruning and enforces unique request/token identity 8927ms
+ ❯ test/migration-0123-postgres-pitr.test.ts (1 test | 1 failed) 9502ms
+   × upgrades existing databases from 122 with point-in-time recovery off, and records recoveries that outlive both databases 9500ms
+ ❯ test/migration-0121-wake-maintenance.test.ts (1 test | 1 failed) 9511ms
+   × upgrades from 120 and retains a unique maintenance intent and precise lease after node deletion 9509ms
+ ❯ test/migration-0105-error-ingest.test.ts (1 test | 1 failed) 9522ms
+   × adds empty error issue and event tables that cascade with their service and leave deployments alone 9521ms
+ ❯ test/migration-0100-node-studio.test.ts (1 test | 1 failed) 10095ms
+   × adds nullable node Studio identity without changing local ports, node placement or stored credentials 10093ms
+ ❯ test/migration-0099-swarm-recovery.test.ts (1 test | 1 failed) 10073ms
+   × creates an encrypted Swarm transition journal without replacing existing service state 10071ms
+ ❯ test/migration-0098-primary-recovery.test.ts (1 test | 1 failed) 10716ms
+   × creates a bounded primary transition journal without replacing existing service state 10715ms
+ ❯ test/migration-0119-serving-receipts.test.ts (1 test | 1 failed) 9577ms
+   × upgrades an existing deployment with replay-safe receipt constraints and cascading retirement 9576ms
+ ❯ test/migration-0116-node-networks.test.ts (1 test | 1 failed) 10150ms
+   × upgrades existing node preparation and capacity receipts without losing their identities 10149ms
+ ❯ test/migration-0102-runtime-owners.test.ts (1 test | 1 failed) 10747ms
+   × preserves pending wire identity and seeds private ownership above deleted command history when upgrading 0101 10746ms
+ ❯ test/migration-0122-catcher-names.test.ts (1 test | 1 failed) 10761ms
+   × upgrades existing sleep and maintenance bindings from 121 without losing legacy routing identity 10760ms
+ ❯ test/migration-0097-fanout-recovery.test.ts (1 test | 1 failed) 10743ms
+   × adds a unique recovery journal without losing existing target data on repeated migrations 10742ms
+ ❯ test/migration-0104-deployment-owner.test.ts (1 test | 1 failed) 10147ms
+   × adds a private empty owner journal without guessing ownership for existing work or changing deployment payloads 10145ms
+ ❯ test/migration-0096-observability.test.ts (1 test | 1 failed) 9597ms
+   ❯ observability upgrade from migration 0095 (1)
+     × preserves existing data and supports queue/history writes with foreign-key cleanup 9595ms
+ ❯ test/migration-0064-fk-rebuild.test.ts (2 tests | 1 failed) 12046ms
+   ❯ migration 0064 — FK SET NULL rebuild (r300) (2)
+     × upgrades a populated 0063 database through the drizzle migrator without losing rows 7787ms
+ ❯ test/migration-0115-node-capacity.test.ts (1 test | 1 failed) 10285ms
+   × adds durable capacity evidence without changing existing deployments 10284ms
+ ❯ test/migration-0114-node-recovery.test.ts (1 test | 1 failed) 11584ms
+   × preserves existing preparation records when adding the recovery watermark 11583ms
+ ❯ test/migration-0113-node-preparation.test.ts (1 test | 1 failed) 11005ms
+   × upgrades existing work and persists node preparation receipts across reopen 11004ms
+ ❯ test/migration-0103-unselected-stop.test.ts (2 tests | 1 failed) 11913ms
+   × preserves old commands and pruned sequence through nullable Stop upgrade; retained=true 10128ms
+ ❯ test/migration-0101-node-lifecycle.test.ts (3 tests | 1 failed) 11292ms
+   × upgrades 0100 without changing deployed services and preserves ordered intents across migration reruns 10147ms
+ ❯ test/migration-0066-retention.test.ts (3 tests | 1 failed) 11158ms
+   ❯ migration 0066 (3)
+     × r541: deletes project-scoped env vars whose project is gone, and nothing else 8347ms
+ ❯ test/migration-0106-node-autoscale.test.ts (2 tests | 1 failed) 12050ms
+   × upgrades without changing existing work and retains the unique scale decision across database reopen 10803ms
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 23 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/migration-0064-fk-rebuild.test.ts > migration 0064 — FK SET NULL rebuild (r300) > upgrades a populated 0063 database through the drizzle migrator without losing rows
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ test/migration-0064-fk-rebuild.test.ts:112:3
+    110|
+    111| describe('migration 0064 — FK SET NULL rebuild (r300)', () => {
+    112|   it('upgrades a populated 0063 database through the drizzle migrator …
+       |   ^
+    113|     const { db, client } = createDb({ url: ':memory:' });
+    114|     await migrate(db, { migrationsFolder: folderBefore0064() });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/23]⎯
+
+ FAIL  test/migration-0066-retention.test.ts > migration 0066 > r541: deletes project-scoped env vars whose project is gone, and nothing else
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ test/migration-0066-retention.test.ts:46:3
+     44|
+     45| describe('migration 0066', () => {
+     46|   it('r541: deletes project-scoped env vars whose project is gone, and…
+       |   ^
+     47|     const { db, client } = await at0065();
+     48|     await client.execute(`INSERT INTO projects (id, name, slug) VALUES…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/23]⎯
+
+ FAIL  test/migration-0096-observability.test.ts > observability upgrade from migration 0095 > preserves existing data and supports queue/history writes with foreign-key cleanup
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ test/migration-0096-observability.test.ts:9:3
+      7|
+      8| describe('observability upgrade from migration 0095', () => {
+      9|   it('preserves existing data and supports queue/history writes with f…
+       |   ^
+     10|     const source = fileURLToPath(new URL('../src/migrations', import.m…
+     11|     const scratch = mkdtempSync(join(tmpdir(), 'nd-observability-migra…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/23]⎯
+
+ FAIL  test/migration-0097-fanout-recovery.test.ts > adds a unique recovery journal without losing existing target data on repeated migrations
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ test/migration-0097-fanout-recovery.test.ts:8:1
+      6| import { createDb, runMigrations } from '../src/index.js';
+      7|
+      8| it('adds a unique recovery journal without losing existing target data…
+       | ^
+      9|   const source = fileURLToPath(new URL('../src/migrations', import.met…
+     10|   const scratch = resolve(mkdtempSync(join(tmpdir(), 'nd-fanout-migrat…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/23]⎯
+
+ FAIL  test/migration-0098-primary-recovery.test.ts > creates a bounded primary transition journal without replacing existing service state
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ test/migration-0098-primary-recovery.test.ts:8:1
+      6| import { createDb, runMigrations } from '../src/index.js';
+      7|
+      8| it('creates a bounded primary transition journal without replacing exi…
+       | ^
+      9|   const source = fileURLToPath(new URL('../src/migrations', import.met…
+     10|   const scratch = resolve(mkdtempSync(join(tmpdir(), 'nd-primary-migra…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/23]⎯
+
+ FAIL  test/migration-0099-swarm-recovery.test.ts > creates an encrypted Swarm transition journal without replacing existing service state
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ test/migration-0099-swarm-recovery.test.ts:8:1
+      6| import { createDb, runMigrations } from '../src/index.js';
+      7|
+      8| it('creates an encrypted Swarm transition journal without replacing ex…
+       | ^
+      9|   const source = fileURLToPath(new URL('../src/migrations', import.met…
+     10|   const scratch = resolve(mkdtempSync(join(tmpdir(), 'nd-swarm-migrati…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/23]⎯
+
+ FAIL  test/migration-0100-node-studio.test.ts > adds nullable node Studio identity without changing local ports, node placement or stored credentials
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ test/migration-0100-node-studio.test.ts:8:1
+      6| import { createDb, runMigrations } from '../src/index.js';
+      7|
+      8| it('adds nullable node Studio identity without changing local ports, n…
+       | ^
+      9|   const source = fileURLToPath(new URL('../src/migrations', import.met…
+     10|   const scratch = resolve(mkdtempSync(join(tmpdir(), 'nd-node-studio-m…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/23]⎯
+
+ FAIL  test/migration-0101-node-lifecycle.test.ts > upgrades 0100 without changing deployed services and preserves ordered intents across migration reruns
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ test/migration-0101-node-lifecycle.test.ts:8:1
+      6| import { createDb, runMigrations } from '../src/index.js';
+      7|
+      8| it('upgrades 0100 without changing deployed services and preserves ord…
+       | ^
+      9|   const scratch = resolve(mkdtempSync(join(tmpdir(), 'nd-lifecycle-mig…
+     10|   if (!scratch.startsWith(resolve(tmpdir()) + sep) || !scratch.include…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/23]⎯
+
+ FAIL  test/migration-0102-runtime-owners.test.ts > preserves pending wire identity and seeds private ownership above deleted command history when upgrading 0101
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ test/migration-0102-runtime-owners.test.ts:8:1
+      6| import { createDb, runMigrations } from '../src/index.js';
+      7|
+      8| it('preserves pending wire identity and seeds private ownership above …
+       | ^
+      9|   const scratch = resolve(mkdtempSync(join(tmpdir(), 'nd-runtime-owner…
+     10|   if (!scratch.startsWith(resolve(tmpdir()) + sep) || !scratch.include…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/23]⎯
+
+ FAIL  test/migration-0103-unselected-stop.test.ts > preserves old commands and pruned sequence through nullable Stop upgrade; retained=true
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ test/migration-0103-unselected-stop.test.ts:8:23
+      6| import { createDb, runMigrations } from '../src/index.js';
+      7|
+      8| it.each([true, false])('preserves old commands and pruned sequence thr…
+       |                       ^
+      9|   const scratch = resolve(mkdtempSync(join(tmpdir(), 'nd-unselected-st…
+     10|   if (!scratch.startsWith(resolve(tmpdir()) + sep) || !scratch.include…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/23]⎯
+
+ FAIL  test/migration-0104-deployment-owner.test.ts > adds a private empty owner journal without guessing ownership for existing work or changing deployment payloads
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ test/migration-0104-deployment-owner.test.ts:8:1
+      6| import { createDb, runMigrations } from '../src/index.js';
+      7|
+      8| it('adds a private empty owner journal without guessing ownership for …
+       | ^
+      9|   const scratch = resolve(mkdtempSync(join(tmpdir(), 'nd-deployment-ow…
+     10|   if (!scratch.startsWith(resolve(tmpdir()) + sep) || !scratch.include…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[11/23]⎯
+
+ FAIL  test/migration-0105-error-ingest.test.ts > adds empty error issue and event tables that cascade with their service and leave deployments alone
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ test/migration-0105-error-ingest.test.ts:8:1
+      6| import { createDb, runMigrations } from '../src/index.js';
+      7|
+      8| it('adds empty error issue and event tables that cascade with their se…
+       | ^
+      9|   const scratch = resolve(mkdtempSync(join(tmpdir(), 'nd-error-ingest-…
+     10|   if (!scratch.startsWith(resolve(tmpdir()) + sep) || !scratch.include…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[12/23]⎯
+
+ FAIL  test/migration-0106-node-autoscale.test.ts > upgrades without changing existing work and retains the unique scale decision across database reopen
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ test/migration-0106-node-autoscale.test.ts:16:1
+     14| }
+     15|
+     16| it('upgrades without changing existing work and retains the unique sca…
+       | ^
+     17|   const scratch = resolve(mkdtempSync(join(tmpdir(), 'nd-node-autoscal…
+     18|   if (!scratch.startsWith(resolve(tmpdir()) + sep) || !scratch.include…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[13/23]⎯
+
+ FAIL  test/migration-0113-node-preparation.test.ts > upgrades existing work and persists node preparation receipts across reopen
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ test/migration-0113-node-preparation.test.ts:13:1
+     11| }
+     12|
+     13| it('upgrades existing work and persists node preparation receipts acro…
+       | ^
+     14|   const scratch = resolve(mkdtempSync(join(tmpdir(), 'nd-node-preparat…
+     15|   if (!scratch.startsWith(resolve(tmpdir()) + sep) || !scratch.include…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[14/23]⎯
+
+ FAIL  test/migration-0114-node-recovery.test.ts > preserves existing preparation records when adding the recovery watermark
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ test/migration-0114-node-recovery.test.ts:14:1
+     12| });
+     13|
+     14| it('preserves existing preparation records when adding the recovery wa…
+       | ^
+     15|   scratch = resolve(mkdtempSync(join(tmpdir(), 'nd-node-recovery-migra…
+     16|   if (!scratch.startsWith(resolve(tmpdir()) + sep) || !scratch.include…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[15/23]⎯
+
+ FAIL  test/migration-0115-node-capacity.test.ts > adds durable capacity evidence without changing existing deployments
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ test/migration-0115-node-capacity.test.ts:14:1
+     12| });
+     13|
+     14| it('adds durable capacity evidence without changing existing deploymen…
+       | ^
+     15|   scratch = resolve(mkdtempSync(join(tmpdir(), 'nd-node-capacity-migra…
+     16|   if (!scratch.startsWith(resolve(tmpdir()) + sep) || !scratch.include…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[16/23]⎯
+
+ FAIL  test/migration-0116-node-networks.test.ts > upgrades existing node preparation and capacity receipts without losing their identities
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ test/migration-0116-node-networks.test.ts:9:1
+      7| import { createDb } from '../src/index.js';
+      8|
+      9| it('upgrades existing node preparation and capacity receipts without l…
+       | ^
+     10|   const migrations = fileURLToPath(new URL('../src/migrations', import…
+     11|   const scratch = mkdtempSync(join(tmpdir(), 'nd-0116-'));
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[17/23]⎯
+
+ FAIL  test/migration-0119-serving-receipts.test.ts > upgrades an existing deployment with replay-safe receipt constraints and cascading retirement
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ test/migration-0119-serving-receipts.test.ts:9:1
+      7| import { createDb } from '../src/index.js';
+      8|
+      9| it('upgrades an existing deployment with replay-safe receipt constrain…
+       | ^
+     10|   const migrations = fileURLToPath(new URL('../src/migrations', import…
+     11|   const scratch = mkdtempSync(join(tmpdir(), 'nd-0119-'));
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[18/23]⎯
+
+ FAIL  test/migration-0120-node-sleep.test.ts > upgrades an existing runtime owner, retains sleep journals across deployment pruning and enforces unique request/token identity
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ test/migration-0120-node-sleep.test.ts:9:1
+      7| import { createDb } from '../src/index.js';
+      8|
+      9| it('upgrades an existing runtime owner, retains sleep journals across …
+       | ^
+     10|   const folder = fileURLToPath(new URL('../src/migrations', import.met…
+     11|   const c = createDb({ url: 'file::memory:' }); await c.ready;
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[19/23]⎯
+
+ FAIL  test/migration-0121-wake-maintenance.test.ts > upgrades from 120 and retains a unique maintenance intent and precise lease after node deletion
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ test/migration-0121-wake-maintenance.test.ts:9:1
+      7| import { createDb } from '../src/index.js';
+      8|
+      9| it('upgrades from 120 and retains a unique maintenance intent and prec…
+       | ^
+     10|   const folder = fileURLToPath(new URL('../src/migrations', import.met…
+     11|   const c = createDb({ url: 'file::memory:' }); await c.ready;
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[20/23]⎯
+
+ FAIL  test/migration-0122-catcher-names.test.ts > upgrades existing sleep and maintenance bindings from 121 without losing legacy routing identity
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ test/migration-0122-catcher-names.test.ts:9:1
+      7| import { createDb } from '../src/index.js';
+      8|
+      9| it('upgrades existing sleep and maintenance bindings from 121 without …
+       | ^
+     10|   const folder = fileURLToPath(new URL('../src/migrations', import.met…
+     11|   const c = createDb({ url: 'file::memory:' }); await c.ready;
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[21/23]⎯
+
+ FAIL  test/migration-0123-postgres-pitr.test.ts > upgrades existing databases from 122 with point-in-time recovery off, and records recoveries that outlive both databases
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ test/migration-0123-postgres-pitr.test.ts:9:1
+      7| import { createDb } from '../src/index.js';
+      8|
+      9| it('upgrades existing databases from 122 with point-in-time recovery o…
+       | ^
+     10|   const folder = fileURLToPath(new URL('../src/migrations', import.met…
+     11|   const c = createDb({ url: 'file::memory:' }); await c.ready;
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[22/23]⎯
+
+ FAIL  test/node-wake-collection.test.ts > reopens standalone catcher retirement targets without invented service authority or a schema migration
+Error: spawnSync C:\Program Files\nodejs\node.exe ETIMEDOUT
+ ❯ run test/node-wake-collection.test.ts:12:46
+     10|   if (dirname(resolve(folder)) !== resolve(tmpdir())) throw new Error(…
+     11|   const snapshot = [{ catcherId: 'a'.repeat(64), catcherName: `ninedep…
+     12|   const run = (write: boolean) => JSON.parse(execFileSync(process.exec…
+       |                                              ^
+     13|     import { createClient } from '@libsql/client';
+     14|     import { drizzle } from 'drizzle-orm/libsql';
+ ❯ test/node-wake-collection.test.ts:27:20
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[23/23]⎯
+
+
+ Test Files  23 failed | 13 passed (36)
+      Tests  23 failed | 62 passed (85)
+   Start at  01:34:55
+   Duration  33.98s (import 58%, tests 32%, transform 8%, worker 1%)
+
+[ELIFECYCLE] Test failed. See above for more details.

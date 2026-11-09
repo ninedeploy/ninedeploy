@@ -1,0 +1,41 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1087_memoryUri.test.ts > managed transaction works for supported memory URI file::memory:
+EXPECTED: successful memory transaction /error null; ACTUAL: file::memory: null
+PROBLEM NOT REPRODUCED
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1087_memoryUri.test.ts > managed transaction works for supported memory URI :memory:
+EXPECTED: successful memory transaction /error null; ACTUAL: :memory: LibsqlError: TRANSACTION_ACTIVE: This client has a single connection, which an open transaction is holding. In-memory databases and embedded replicas cannot have more than one. Commit or roll back the transaction before using the client again.
+PROBLEM CONFIRMED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1087_memoryUri.test.ts > managed transaction works for supported memory URI file::memory: 8ms
+ × .temp_files/audit_continuous_20261109/prove_F1087_memoryUri.test.ts > managed transaction works for supported memory URI :memory: 4ms
+   → expected 'LibsqlError: TRANSACTION_ACTIVE: This…' to be null
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1087_memoryUri.test.ts > managed transaction works for supported memory URI :memory:
+AssertionError: expected 'LibsqlError: TRANSACTION_ACTIVE: This…' to be null
+
+- Expected:
+null
+
++ Received:
+"LibsqlError: TRANSACTION_ACTIVE: This client has a single connection, which an open transaction is holding. In-memory databases and embedded replicas cannot have more than one. Commit or roll back the transaction before using the client again."
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1087_memoryUri.test.ts:10:86
+      8|   try { await c.db.transaction(async tx => { await tx.run(sql`insert i…
+      9|   console.log('EXPECTED: successful memory transaction /error null; AC…
+     10|   console.log(error ? 'PROBLEM CONFIRMED' : 'PROBLEM NOT REPRODUCED');…
+       |                                                                                      ^
+     11|  } finally { c.client?.close(); }
+     12| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 1 passed (2)
+   Start at  01:27:57
+   Duration  446ms (import 68%, transform 28%, tests 4%, worker 1%)

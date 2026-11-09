@@ -1,0 +1,32 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1085_F1086_resetIssuance.test.ts > six overlapping requests leave only the last issued hash 157ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1085_F1086_resetIssuance.test.ts > different users retain separate active tokens across the shared connection queue 150ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1085_F1086_resetIssuance.test.ts > an independent database remains usable while this issuance waits 288ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1085_F1086_resetIssuance.test.ts > only the surviving link can change the password, and consumption stays single-use 164ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1085_F1086_resetIssuance.test.ts > delete failure rolls back previous token rows, then clean retry succeeds 144ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1085_F1086_resetIssuance.test.ts > insert failure rolls back previous token rows, then clean retry succeeds 143ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1085_F1086_resetIssuance.test.ts > precommit rejection rolls back replacement and releases managed transaction order 150ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1085_F1086_resetIssuance.test.ts > hash-only storage, source normalization and thirty-minute returned expiry stay intact 145ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1085_F1086_resetIssuance.test.ts > a held successful replacement is superseded by the next queued request 151ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1085_F1086_resetIssuance.test.ts
+FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1085_F1086_resetIssuance.test.ts > a gated failed replacement rolls back before the next queued request succeeds 154ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1087_memoryUri.test.ts
+FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1087_memoryUri.test.ts > file::memory: commit, rollback and foreign-key enforcement retain the connection 8ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1087_memoryUri.test.ts > file::memory: gated managed order releases after rollback=false 2ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1087_memoryUri.test.ts > file::memory: gated managed order releases after rollback=true 2ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1087_memoryUri.test.ts > file::memory: nested savepoint rollback preserves outer transaction 2ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1087_memoryUri.test.ts > :memory: commit, rollback and foreign-key enforcement retain the connection 1ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1087_memoryUri.test.ts > :memory: gated managed order releases after rollback=false 1ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1087_memoryUri.test.ts > :memory: gated managed order releases after rollback=true 1ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1087_memoryUri.test.ts > :memory: nested savepoint rollback preserves outer transaction 1ms
+
+ Test Files  2 passed (2)
+      Tests  18 passed (18)
+   Start at  01:34:00
+   Duration  2.68s (tests 73%, import 24%, transform 2%)

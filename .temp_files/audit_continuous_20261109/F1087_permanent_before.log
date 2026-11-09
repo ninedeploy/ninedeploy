@@ -1,0 +1,31 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/packages/db
+
+ ✓ test/clientMemory.test.ts > in-memory database transactions > can commit and roll back with file::memory: without borrowing a second connection, while foreign keys remain enabled 9ms
+ × test/clientMemory.test.ts > in-memory database transactions > can commit and roll back with :memory: without borrowing a second connection, while foreign keys remain enabled 2ms
+   → TRANSACTION_ACTIVE: This client has a single connection, which an open transaction is holding. In-memory databases and embedded replicas cannot have more than one. Commit or roll back the transaction before using the client again.
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/clientMemory.test.ts > in-memory database transactions > can commit and roll back with :memory: without borrowing a second connection, while foreign keys remain enabled
+LibsqlError: TRANSACTION_ACTIVE: This client has a single connection, which an open transaction is holding. In-memory databases and embedded replicas cannot have more than one. Commit or roll back the transaction before using the client again.
+ ❯ ConnectionPool.acquire ../../node_modules/.pnpm/@libsql+client@0.18.0/node_modules/@libsql/client/lib-esm/sqlite3.js:109:39
+ ❯ Sqlite3Client.execute ../../node_modules/.pnpm/@libsql+client@0.18.0/node_modules/@libsql/client/lib-esm/sqlite3.js:242:37
+ ❯ Sqlite3Client.client.transaction src/client.ts:66:20
+     64|       // Re-assert on the connection that replaces the one the transac…
+     65|       // took (foreign_keys is not a client option).
+     66|       await client.execute('PRAGMA foreign_keys = ON;');
+       |                    ^
+     67|       return tx;
+     68|     };
+ ❯ LibSQLSession.transaction ../../node_modules/.pnpm/drizzle-orm@0.45.3_@libsql+client@0.18.0_pg@8.23.1/node_modules/src/libsql/session.ts:112:20
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+Serialized Error: { code: 'TRANSACTION_ACTIVE', extendedCode: undefined, rawCode: undefined }
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 1 passed (2)
+   Start at  01:29:03
+   Duration  694ms (import 83%, transform 13%, tests 4%, worker 1%)

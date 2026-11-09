@@ -1,0 +1,24 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/packages/db
+      Coverage enabled with v8
+
+
+ Test Files  36 passed (36)
+      Tests  85 passed (85)
+   Start at  01:36:29
+   Duration  30.24s (tests 64%, import 34%, worker 2%)
+
+    Isolate  36 workers spawned · ~136ms startup each (spawn + environment, per file)
+             at least ~4.75s faster with isolate: false — reuses workers across files instead of one per file
+
+ % Coverage report from v8
+No files with missing coverage.
+3 files fully covered.
+1 empty file skipped.
+
+=============================== Coverage summary ===============================
+Statements   : 100% ( 494/494 )
+Branches     : 100% ( 37/37 )
+Functions    : 100% ( 271/271 )
+Lines        : 100% ( 460/460 )
+================================================================================

@@ -1,0 +1,120 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/lib/passwordResetIssuanceRace.test.ts > six overlapping requests leave only the last issued hash 163ms
+ ✓ test/lib/passwordResetIssuanceRace.test.ts > different users retain separate active tokens across the shared connection queue 162ms
+ ✓ test/lib/passwordResetIssuanceRace.test.ts > an independent database remains usable while this issuance waits 297ms
+ ✓ test/lib/passwordResetIssuanceRace.test.ts > only the surviving link can change the password, and consumption stays single-use 166ms
+ ✓ test/lib/passwordResetIssuanceRace.test.ts > delete failure rolls back previous token rows, then clean retry succeeds 174ms
+ ✓ test/lib/passwordResetIssuanceRace.test.ts > insert failure rolls back previous token rows, then clean retry succeeds 147ms
+ ✓ test/lib/passwordResetIssuanceRace.test.ts > precommit rejection rolls back replacement and releases managed transaction order 145ms
+ ✓ test/lib/passwordResetIssuanceRace.test.ts > hash-only storage, source normalization and thirty-minute returned expiry stay intact 145ms
+ ✓ test/lib/passwordResetIssuanceRace.test.ts > a held successful replacement is superseded by the next queued request 162ms
+stdout | test/lib/passwordResetIssuanceRace.test.ts
+FIX VERIFIED
+
+ ✓ test/lib/passwordResetIssuanceRace.test.ts > a gated failed replacement rolls back before the next queued request succeeds 139ms
+ ✓ test/auth.test.ts > auth module helpers > createFirstAdmin succeeds when no users exist 5ms
+ ✓ test/auth.test.ts > auth module helpers > 0.16 setup token > createFirstAdmin refuses the bootstrap without the token 1ms
+ ✓ test/auth.test.ts > auth module helpers > 0.16 setup token > createFirstAdmin refuses a wrong token 0ms
+ ✓ test/auth.test.ts > auth module helpers > 0.16 setup token > createFirstAdmin accepts the token 1ms
+ ✓ test/auth.test.ts > auth module helpers > 0.16 setup token > the first /register is gated too, later ones are not 1ms
+ ✓ test/auth.test.ts > auth module helpers > 0.16 setup token > status asks for the token only while uninitialized 106ms
+ ✓ test/auth.test.ts > auth module helpers > createFirstAdmin conflicts when users already exist 0ms
+ ✓ test/auth.test.ts > auth module helpers > createFirstAdmin fails when the insert returns no row 0ms
+ ✓ test/auth.test.ts > auth module helpers > registerAccount makes the first user an operator 0ms
+ ✓ test/auth.test.ts > auth module helpers > registerAccount makes subsequent users non-operators 0ms
+ ✓ test/auth.test.ts > auth module helpers > registration cannot redeem a pending invitation by claiming its email 0ms
+ ✓ test/auth.test.ts > auth module helpers > registerAccount reports duplicate emails 0ms
+ ✓ test/auth.test.ts > auth module helpers > registerAccount fails when the insert returns no row 0ms
+ ✓ test/auth.test.ts > auth routes > reports the initialization status 2ms
+ ✓ test/auth.test.ts > auth routes > reports initialized when users exist 2ms
+ ✓ test/auth.test.ts > auth routes > treats a missing count row as zero users 3ms
+ ✓ test/auth.test.ts > auth routes > registers a user 5ms
+ ✓ test/auth.test.ts > auth routes > blocks registration when open registration is disabled and users exist 3ms
+ ✓ test/auth.test.ts > auth routes > still allows bootstrap registration when disabled but no user exists 5ms
+ ✓ test/auth.test.ts > auth routes > exposes allowRegistration on the public status endpoint 3ms
+ ✓ test/auth.test.ts > auth routes > rejects an invalid register payload 3ms
+ ✓ test/auth.test.ts > auth routes > logs in with valid credentials 3ms
+ ✓ test/auth.test.ts > auth routes > rejects a wrong password 3ms
+ ✓ test/auth.test.ts > auth routes > rejects login for an unknown user 2ms
+ ✓ test/auth.test.ts > auth routes > runs the password verify even when the email has no account 2ms
+ ✓ test/auth.test.ts > auth routes > refreshes tokens with a valid refresh token 2ms
+ ✓ test/auth.test.ts > auth routes > rejects a refresh token whose ver no longer matches the user tokenVersion (revoked session) 2ms
+ ✓ test/auth.test.ts > auth routes > rejects an invalid refresh token 2ms
+ ✓ test/auth.test.ts > auth routes > rejects a refresh token without a ver claim (revocation bypass guard) 1ms
+ ✓ test/auth.test.ts > auth routes > rejects a refresh whose user vanished but session lives on 1ms
+ ✓ test/auth.test.ts > auth routes > rejects a refresh token from a session of another user 1ms
+ ✓ test/auth.test.ts > auth routes > rejects a legacy token without a jti claim (pre-sessions era) 4ms
+ ✓ test/auth.test.ts > auth routes > rejects a token whose session row was revoked 2ms
+ ✓ test/auth.test.ts > auth routes > rejects a non-refresh token type 2ms
+ ✓ test/auth.test.ts > auth routes > rejects refresh for a missing user 2ms
+ ✓ test/auth.test.ts > auth routes > returns the current user from /me 2ms
+ ✓ test/auth.test.ts > auth routes > returns 401 from /me when the user is gone 2ms
+ ✓ test/auth.test.ts > auth routes > logs out by bumping the user tokenVersion 2ms
+ ✓ test/auth.test.ts > auth routes > requires auth for /logout 1ms
+ ✓ test/auth.test.ts > auth routes > changes the password, bumps tokenVersion and issues fresh tokens 2ms
+ ✓ test/auth.test.ts > auth routes > r603: a password change keeps passkeys and reports how many remain 2ms
+ ✓ test/auth.test.ts > auth routes > deletes the user API tokens on a password change and on a token reset (r094) 3ms
+ ✓ test/auth.test.ts > auth routes > rejects a password change with a wrong current password 1ms
+ ✓ test/auth.test.ts > auth routes > returns 401 when the password update returns no row (user vanished) 1ms
+ ✓ test/auth.test.ts > auth routes > rejects a too-short new password (validation) 1ms
+ ✓ test/auth.test.ts > auth routes > creates an API token with a custom name 5ms
+ ✓ test/auth.test.ts > auth routes > refuses to mint an operator-scoped token for a non-operator 2ms
+ ✓ test/auth.test.ts > auth routes > mints a scoped, expiring token for an operator 2ms
+ ✓ test/auth.test.ts > auth routes > creates an API token with the default name when none is given 2ms
+ ✓ test/auth.test.ts > auth routes > falls back to the default name for an empty name 2ms
+ ✓ test/auth.test.ts > auth routes > truncates very long token names 1ms
+ ✓ test/auth.test.ts > auth routes > returns 400 when the token insert fails 1ms
+ ✓ test/auth.test.ts > auth routes > lists API tokens with optional lastUsedAt 1ms
+ ✓ test/auth.test.ts > auth routes > rejects invalid ids for user-owned auth resources 2ms
+ ✓ test/auth.test.ts > auth routes > deletes an API token 1ms
+ ✓ test/auth.test.ts > auth routes > requires auth for /me and token routes 1ms
+ ✓ test/auth.test.ts > auth routes > accepts a forgot-password request for an existing user 2ms
+ ✓ test/auth.test.ts > auth routes > answers forgot-password identically for an unknown user (no enumeration) 1ms
+ ✓ test/auth.test.ts > auth routes > emails the reset link when an email channel exists; a failure still answers ok 2ms
+ ✓ test/auth.test.ts > auth routes > rejects an invalid forgot-password payload 2ms
+ ✓ test/auth.test.ts > auth routes > resets a password with a valid token 5ms
+ ✓ test/auth.test.ts > auth routes > r441: a password reset bumps the studio-cookie epoch (studio sessions die with the sessions) 2ms
+ ✓ test/auth.test.ts > auth routes > rejects a reset with an unknown token 2ms
+ ✓ test/auth.test.ts > auth routes > locks an account after 5 failed logins (same message as a wrong password) 3ms
+ ✓ test/auth.test.ts > auth routes > locks the whole account against a distributed 5-per-IP guess run 5ms
+ ✓ test/users.test.ts > users routes > requires authentication 52ms
+ ✓ test/users.test.ts > users routes > forbids non-operator users 2ms
+ ✓ test/users.test.ts > users routes > lists users with operator and workspaceCount fields 2ms
+ ✓ test/users.test.ts > users routes > counts each user’s workspace seats alongside the operator flag 2ms
+ ✓ test/users.test.ts > users routes > creates a user directly (operator path, e.g. closed registration) 4ms
+ ✓ test/users.test.ts > users routes > creates a user without a name (optional field) 5ms
+ ✓ test/users.test.ts > users routes > reports not-found when the insert returns nothing 2ms
+ ✓ test/users.test.ts > users routes > rejects creating a user with a duplicate email 2ms
+ ✓ test/users.test.ts > users routes > does not delete yourself 2ms
+ ✓ test/users.test.ts > users routes > deletes a user via the operator path 2ms
+ ✓ test/users.test.ts > users routes > refuses to delete the last instance operator 2ms
+ ✓ test/users.test.ts > users routes > grants and revokes the instance-operator flag 6ms
+ ✓ test/users.test.ts > users routes > 404s an operator grant for a user that does not exist 1ms
+ ✓ test/users.test.ts > users routes > refuses to revoke the flag from the last instance operator 1ms
+ ✓ test/users.test.ts > users routes > returns 404 when deleting a user that vanished mid-check 1ms
+ ✓ test/users.test.ts > users routes > resets a user password as operator (hash + tokenVersion bump) 2ms
+ ✓ test/users.test.ts > users routes > revokes the target user sessions and API tokens on an operator reset (r094) 1ms
+ ✓ test/users.test.ts > users routes > r444: an operator reset also bumps the studio-cookie epoch (studio sessions die too) 2ms
+ ✓ test/users.test.ts > users routes > 404s when resetting the password of a missing user 1ms
+ ✓ test/users.test.ts > users routes > rejects a password reset shorter than 8 chars 1ms
+ ✓ test/users.test.ts > users routes > mints a one-time reset link for an existing user 2ms
+ ✓ test/users.test.ts > users routes > 404s when minting a reset link for a missing user 1ms
+ ✓ test/lib/passwordReset.test.ts > passwordReset tokens > issues a hashed token with a 30-minute expiry 3ms
+ ✓ test/lib/passwordReset.test.ts > passwordReset tokens > consumes a valid token: sets the password and bumps tokenVersion 27ms
+ ✓ test/lib/passwordReset.test.ts > passwordReset tokens > rejects an unknown token with a generic message 1ms
+ ✓ test/lib/passwordReset.test.ts > passwordReset tokens > rejects and deletes an expired token 0ms
+ ✓ test/lib/passwordReset.test.ts > passwordReset tokens > throws unauthorized when the owning user vanished 0ms
+ ✓ test/lib/passwordReset.test.ts > passwordReset tokens > throws unauthorized when the update returns no row 7ms
+ ✓ test/lib/passwordReset.test.ts > passwordReset tokens > rejects when the token was already claimed by a concurrent request 0ms
+ ✓ test/lib/passwordReset.test.ts > passwordReset tokens > prunes expired tokens 0ms
+
+ Test Files  4 passed (4)
+      Tests  105 passed (105)
+   Start at  01:34:07
+   Duration  5.04s (import 48%, tests 46%, transform 6%)
+
+     Import  152 modules were evaluated 257 times · 2.18s total, 48% of tracked time
+             ~892ms faster with isolate: false — shared modules are evaluated once per worker instead of once per file
+             learn more: https://vitest.dev/guide/improving-performance#test-isolation

@@ -615,3 +615,22 @@ a production race. Registry deletion/pending transitions, refresh and age bounda
 failed/malformed remote samples and initial unknown registry behavior passed.
 No source patch was made; a cached-metric fallback observation remains unproven.
 No live node/native Mac/full release acceptance was claimed.
+
+Round 68 fixes reset replacement atomicity (F1085/F1086) and a supported memory
+URI transaction adapter case (F1087). Overlapping issuances now share the existing
+managed transaction order; delete/insert rollback preserves a delivered token on
+precommit failure. Both `:memory:` and `file::memory:` keep their single connection
+without an invalid replacement borrow. Original proofs passed after repair; ten
+server regression cases were seen red (four failing cases, six controls), and
+the extended DB URI regression was seen red (one failure, one control). Eighteen
+independent reset/rollback/memory/savepoint cases passed three times, and 105
+server auth/user/reset tests passed.
+
+The default parallel DB coverage run hit22 existing five-second migration test
+timeouts and one child-process timeout. The serial retry kept the same thresholds
+and test timeouts: **85 tests in36 files passed, with100% statements, branches,
+functions and lines**. This resource-bounded result is distinct from the failed
+default parallel run and from a complete release gate. The initial reset after-run
+that exposed the adapter defect is retained as a failure, not passing evidence.
+No live reset email/account, postcommit lost-response recovery, multi-process
+ordering, native Mac acceptance or full root certification was claimed.

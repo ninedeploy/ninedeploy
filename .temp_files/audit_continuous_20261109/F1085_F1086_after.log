@@ -1,0 +1,84 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+ × .temp_files/audit_continuous_20261109/prove_F1085_resetIssuance.test.ts > control: sequential issuance keeps one hash and invalidates the previous token 152ms
+   → TRANSACTION_ACTIVE: This client has a single connection, which an open transaction is holding. In-memory databases and embedded replicas cannot have more than one. Commit or roll back the transaction before using the client again.
+ × .temp_files/audit_continuous_20261109/prove_F1085_resetIssuance.test.ts > overlapping same-user issuance leaves exactly one pending token after both complete 30156ms
+   → Test timed out in 30000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ × .temp_files/audit_continuous_20261109/prove_F1085_resetIssuance.test.ts > failed replacement preserves the previously issued token 198ms
+   → TRANSACTION_ACTIVE: This client has a single connection, which an open transaction is holding. In-memory databases and embedded replicas cannot have more than one. Commit or roll back the transaction before using the client again.
+ × .temp_files/audit_continuous_20261109/prove_F1086_resetReplacement.test.ts > control: sequential issuance keeps one hash and invalidates the previous token 156ms
+   → TRANSACTION_ACTIVE: This client has a single connection, which an open transaction is holding. In-memory databases and embedded replicas cannot have more than one. Commit or roll back the transaction before using the client again.
+ × .temp_files/audit_continuous_20261109/prove_F1086_resetReplacement.test.ts > failed replacement preserves the previously issued token 142ms
+   → TRANSACTION_ACTIVE: This client has a single connection, which an open transaction is holding. In-memory databases and embedded replicas cannot have more than one. Commit or roll back the transaction before using the client again.
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 5 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1085_resetIssuance.test.ts > control: sequential issuance keeps one hash and invalidates the previous token
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1086_resetReplacement.test.ts > control: sequential issuance keeps one hash and invalidates the previous token
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1086_resetReplacement.test.ts > failed replacement preserves the previously issued token
+LibsqlError: TRANSACTION_ACTIVE: This client has a single connection, which an open transaction is holding. In-memory databases and embedded replicas cannot have more than one. Commit or roll back the transaction before using the client again.
+ ❯ ConnectionPool.acquire node_modules/.pnpm/@libsql+client@0.18.0/node_modules/@libsql/client/lib-esm/sqlite3.js:109:39
+ ❯ Sqlite3Client.execute node_modules/.pnpm/@libsql+client@0.18.0/node_modules/@libsql/client/lib-esm/sqlite3.js:242:37
+ ❯ Sqlite3Client.client.transaction packages/db/src/client.ts:66:20
+ ❯ LibSQLSession.transaction node_modules/.pnpm/drizzle-orm@0.45.3_@libsql+client@0.18.0_pg@8.23.1/node_modules/src/libsql/session.ts:112:20
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+Serialized Error: { code: 'TRANSACTION_ACTIVE', extendedCode: undefined, rawCode: undefined }
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/5]⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1085_resetIssuance.test.ts > overlapping same-user issuance leaves exactly one pending token after both complete
+Error: Test timed out in 30000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ .temp_files/audit_continuous_20261109/prove_F1085_resetIssuance.test.ts:29:1
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/5]⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1085_resetIssuance.test.ts > failed replacement preserves the previously issued token
+LibsqlError: TRANSACTION_ACTIVE: This client has a single connection, which an open transaction is holding. In-memory databases and embedded replicas cannot have more than one. Commit or roll back the transaction before using the client again.
+ ❯ ConnectionPool.acquire node_modules/.pnpm/@libsql+client@0.18.0/node_modules/@libsql/client/lib-esm/sqlite3.js:109:39
+ ❯ Sqlite3Client.execute node_modules/.pnpm/@libsql+client@0.18.0/node_modules/@libsql/client/lib-esm/sqlite3.js:242:37
+ ❯ Sqlite3Client.client.transaction packages/db/src/client.ts:66:20
+ ❯ LibSQLSession.transaction node_modules/.pnpm/drizzle-orm@0.45.3_@libsql+client@0.18.0_pg@8.23.1/node_modules/src/libsql/session.ts:112:20
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+Serialized Error: { code: 'TRANSACTION_ACTIVE', extendedCode: undefined, rawCode: undefined }
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/5]⎯
+
+⎯⎯⎯⎯⎯⎯ Unhandled Errors ⎯⎯⎯⎯⎯⎯
+
+Vitest caught 1 unhandled error during the test run.
+This might cause false positive tests. Resolve unhandled errors to make sure your tests are not affected.
+
+⎯⎯⎯⎯ Unhandled Rejection ⎯⎯⎯⎯⎯
+LibsqlError: TRANSACTION_ACTIVE: This client has a single connection, which an open transaction is holding. In-memory databases and embedded replicas cannot have more than one. Commit or roll back the transaction before using the client again.
+ ❯ ConnectionPool.acquire node_modules/.pnpm/@libsql+client@0.18.0/node_modules/@libsql/client/lib-esm/sqlite3.js:109:39
+ ❯ Sqlite3Client.execute node_modules/.pnpm/@libsql+client@0.18.0/node_modules/@libsql/client/lib-esm/sqlite3.js:242:37
+ ❯ Sqlite3Client.<anonymous> .temp_files/audit_continuous_20261109/prove_F1085_resetIssuance.test.ts:19:11
+     17|    const s = args[0]; const sql = typeof s === 'string' ? s : s.sql;
+     18|    if (!held && /insert into "password_reset_tokens"/i.test(sql)) { he…
+     19|    return original(...args);
+       |           ^
+     20|   }) as typeof original); restores.push(() => spy.mockRestore());
+     21|  }
+ ❯ Sqlite3Client.execute node_modules/.pnpm/vitest@5.0.5_@types+node@26_52342ce20624a14f589ad0628f982827/node_modules/vitest/dist/chunks/spy.DDMXghXv.js:353:40
+ ❯ Sqlite3Client.client.transaction packages/db/src/client.ts:66:20
+ ❯ process.processTicksAndRejections node:internal/process/task_queues:104:5
+ ❯ Sqlite3Client.<anonymous> .temp_files/audit_continuous_20261109/prove_F1085_resetIssuance.test.ts:23:153
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+Serialized Error: { code: 'TRANSACTION_ACTIVE', extendedCode: undefined, rawCode: undefined }
+This error originated in ".temp_files/audit_continuous_20261109/prove_F1085_resetIssuance.test.ts" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.
+The last test to run before this error was "overlapping same-user issuance leaves exactly one pending token after both complete". This means either:
+- the error was thrown while Vitest was running this test, or
+- the error was thrown after the test completed, and this was the most recent test at that point.
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+
+
+ Test Files  2 failed (2)
+      Tests  5 failed (5)
+     Errors  1 error
+   Start at  01:25:43
+   Duration  31.93s (tests 98%, import 2%)

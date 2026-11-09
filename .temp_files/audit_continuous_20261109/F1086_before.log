@@ -1,0 +1,32 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1086_resetReplacement.test.ts > control: sequential issuance keeps one hash and invalidates the previous token 172ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1086_resetReplacement.test.ts > failed replacement preserves the previously issued token
+EXPECTED: previous active hash retained; ACTUAL token rows: 0
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/prove_F1086_resetReplacement.test.ts > failed replacement preserves the previously issued token 167ms
+   → expected [] to have a length of 1 but got +0
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1086_resetReplacement.test.ts > failed replacement preserves the previously issued token
+AssertionError: expected [] to have a length of 1 but got +0
+
+- Expected
++ Received
+
+- 1
++ 0
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1086_resetReplacement.test.ts:32:364
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 1 passed (2)
+   Start at  01:25:40
+   Duration  891ms (import 47%, tests 44%, transform 8%)

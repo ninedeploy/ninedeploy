@@ -36,6 +36,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Bare :memory: SQLite transactions no longer borrow a nonexistent replacement connection; commit, rollback and foreign-key enforcement match file::memory: (F1087).
+- Failed reset-link replacement rolls back deletion and preserves the previously delivered token on precommit failure (F1086).
+- Reset-link issuance replaces pending tokens atomically through the managed transaction queue, so overlapping completed requests leave one pending token (F1085).
 - Restricted-port sidecar inspection now treats only exact target-specific missing-container diagnostics as absence, preserving config and avoiding replacement on unknown Docker errors (F1084).
 - Failed restricted-port sidecar removal now preserves its live config, propagates the original Docker error and avoids a false successful-removal log (F1083).
 - Restricted-port sidecar sync and removal now run in order per service slug, so an older prepared sync cannot recreate the sidecar after a later removal or overwrite newer routes (F1082).

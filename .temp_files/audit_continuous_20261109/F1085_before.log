@@ -1,0 +1,52 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1085_resetIssuance.test.ts > control: sequential issuance keeps one hash and invalidates the previous token 161ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1085_resetIssuance.test.ts > overlapping same-user issuance leaves exactly one pending token after both complete
+EXPECTED: 2 completed issuances /1 active token; ACTUAL: 2 2
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/prove_F1085_resetIssuance.test.ts > overlapping same-user issuance leaves exactly one pending token after both complete 156ms
+   → expected [ { id: 1, userId: 1, …(5) }, …(1) ] to have a length of 1 but got 2
+stdout | .temp_files/audit_continuous_20261109/prove_F1085_resetIssuance.test.ts > failed replacement preserves the previously issued token
+EXPECTED: previous active hash retained; ACTUAL token rows: 0
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/prove_F1085_resetIssuance.test.ts > failed replacement preserves the previously issued token 157ms
+   → expected [] to have a length of 1 but got +0
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1085_resetIssuance.test.ts > overlapping same-user issuance leaves exactly one pending token after both complete
+AssertionError: expected [ { id: 1, userId: 1, …(5) }, …(1) ] to have a length of 1 but got 2
+
+- Expected
++ Received
+
+- 1
++ 2
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1085_resetIssuance.test.ts:35:350
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1085_resetIssuance.test.ts > failed replacement preserves the previously issued token
+AssertionError: expected [] to have a length of 1 but got +0
+
+- Expected
++ Received
+
+- 1
++ 0
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1085_resetIssuance.test.ts:41:364
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 1 passed (3)
+   Start at  01:24:45
+   Duration  1.48s (tests 51%, import 40%, transform 9%)
