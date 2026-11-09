@@ -46,6 +46,7 @@ import { removeNodeWorkspace } from '../lib/agentCapabilities.js';
 import { autoUrlPreview } from '../lib/autoUrl.js';
 import { getStickyEnabledForService } from '../engine/proxy.js';
 import { setSettingString } from '../lib/settings.js';
+import { deleteOwnedSettings } from '../lib/ownedSettings.js';
 import { badRequest, conflict, forbidden, HttpError, isUniqueViolation, notFound, parseId as num } from '../lib/errors.js';
 import { assertMayLeaveLane, assertMaySeeLaneSecrets } from '../lib/protectedLanes.js';
 import { readRuntimeLogs } from '../lib/runtimeLogs.js';
@@ -1198,8 +1199,19 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     // Row first (a single DELETE is atomic; FK cascade removes the build
     // config, env vars, domains and deployments) — a failed delete must never
     // leave a live row whose runtime has already been destroyed.
+    // S2: the cascade takes the domain rows, so note their ids for their settings rows.
+    const domainIds = (await app.db.select({ id: domains.id }).from(domains).where(eq(domains.serviceId, id))).map((d) => d.id);
     const removed = await app.db.delete(services).where(and(eq(services.id, id), sql`NOT (${nodePreparationForServiceExists()})`)).returning({ id: services.id });
     if (!removed.length) throw conflict('Service has pending node preparation recovery or changed state — resolve it before deleting');
+    // S2: settings rows keyed by this service or its domains (restart limit,
+    // registry hook token, forward auth, …). Best effort: housekeeping's
+    // owned-settings sweep removes whatever this misses.
+    try {
+      await deleteOwnedSettings(app.db, 'service', id);
+      for (const domainId of domainIds) await deleteOwnedSettings(app.db, 'domain', domainId);
+    } catch (err) {
+      req.log.warn({ err, serviceId: id }, 'could not remove the service settings rows');
+    }
     for (const row of orphanLogs) deleteLog(row.id);
     // 0.16.1: the allow-list port proxy goes with it (nothing when it never had one).
     if (existsSync(portProxyDir(svc.slug))) {

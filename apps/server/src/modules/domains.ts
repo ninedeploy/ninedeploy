@@ -10,6 +10,7 @@ import { loadServiceForUser } from '../lib/serviceAccess.js';
 import { assertServiceRole, roleAtLeast, serviceRole } from '../lib/resourceAccess.js';
 import { badRequest, conflict, HttpError, isUniqueViolation, notFound, parseId as num } from '../lib/errors.js';
 import { getSettingString } from '../lib/settings.js';
+import { deleteOwnedSettings } from '../lib/ownedSettings.js';
 import { classifyResolution, resolveHostAddresses } from '../lib/dnsStatus.js';
 import {
   challengeRecordName,
@@ -306,6 +307,7 @@ export const domainsRoutes: FastifyPluginAsync = async (app) => {
       }
       for (const row of unverified) {
         await app.db.delete(domains).where(eq(domains.id, row.id));
+        await deleteOwnedSettings(app.db, 'domain', row.id).catch(() => undefined);
         void audit(app.db, user.id, 'domain.pending_evicted', row.hostname, {
           domainId: row.id,
           serviceId: row.serviceId,
@@ -559,6 +561,8 @@ export const domainsRoutes: FastifyPluginAsync = async (app) => {
     // never touched. A miss is a 404 now, before any side effect.
     if (!existing) throw notFound('Domain not found');
     await app.db.delete(domains).where(and(eq(domains.id, domainId), eq(domains.serviceId, id)));
+    // S2: forward auth and compose route rows of this domain. The sweep catches a miss.
+    await deleteOwnedSettings(app.db, 'domain', domainId).catch((err: unknown) => req.log.warn({ err, domainId }, 'could not remove the domain settings rows'));
     // Remove the provider DNS record (best-effort — a stale record only points
     // at the server, it no longer routes anywhere once Traefik rewrites).
     // F157: the record serves the HOSTNAME, not this row. Another active row

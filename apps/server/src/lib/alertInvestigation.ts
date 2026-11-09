@@ -1,4 +1,4 @@
-import { eq, like } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { alertRules, services, settings, type DB } from '@ninedeploy/db';
 import type { AlertInvestigation } from '@ninedeploy/schemas';
 import { aiComplete, loadAiConfig, loadStoredAiConfig } from './aiProvider.js';
@@ -7,6 +7,7 @@ import { audit } from './audit.js';
 import { laneRules } from './protectedLanes.js';
 import { readRuntimeLogs } from './runtimeLogs.js';
 import { setSettingJson } from './settings.js';
+import { settingRowsWithPrefix } from './settingRows.js';
 
 /**
  * ROADMAP 0.16.8 item 6: when a service's alert rule fires, ask the
@@ -70,7 +71,7 @@ export async function investigateFiredAlert(
 
 /** The stored investigation per rule id. */
 export async function loadAlertInvestigations(db: DB): Promise<Map<number, AlertInvestigation>> {
-  const rows = await db.select().from(settings).where(like(settings.key, `${ALERT_INVESTIGATION_PREFIX}%`));
+  const rows = await settingRowsWithPrefix(db, ALERT_INVESTIGATION_PREFIX);
   const out = new Map<number, AlertInvestigation>();
   for (const row of rows) {
     const id = Number(row.key.slice(ALERT_INVESTIGATION_PREFIX.length));

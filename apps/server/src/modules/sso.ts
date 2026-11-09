@@ -2,6 +2,7 @@ import type { FastifyPluginAsync } from 'fastify';
 import { randomBytes } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { ssoProviders, type DB } from '@ninedeploy/db';
+import { deleteOwnedSettings } from '../lib/ownedSettings.js';
 import {
   discover as oidcDiscover,
   exchangeCode as oidcExchangeCode,
@@ -196,6 +197,8 @@ export const ssoRoutes: FastifyPluginAsync = async (app) => {
     if (!Number.isFinite(id)) return { ok: false, error: '`id` must be a number' };
     const [gone] = await db.delete(ssoProviders).where(eq(ssoProviders.id, id)).returning();
     if (gone) void audit(db, req.user?.id ?? null, 'sso.provider_delete', `${gone.type}:${gone.name}`);
+    // S2: the SAML identity links of this provider. The sweep catches a miss.
+    if (gone) await deleteOwnedSettings(db, 'ssoProvider', gone.id).catch((err: unknown) => req.log.warn({ err, providerId: gone.id }, 'could not remove the SSO provider settings rows'));
     return { ok: true };
   });
 

@@ -1,7 +1,8 @@
-import { and, eq, inArray, like } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { settings, users, webauthnCredentials, workspaceMembers, workspaces, type DB } from '@ninedeploy/db';
 import type { SessionAuthMethod } from './sessionMethod.js';
 import { getSettingJson, setSettingJson } from './settings.js';
+import { settingRowsWithPrefix } from './settingRows.js';
 
 /**
  * G1.4 workspace-enforced 2FA. A workspace admin can require two-factor
@@ -56,7 +57,7 @@ export function resetTwoFactorPolicyCache(): void {
 
 async function policies(db: DB): Promise<Map<number, WorkspaceTwoFactorPolicy>> {
   if (cache && Date.now() - cache.at < CACHE_MS) return cache.policies;
-  const rows = await db.select({ key: settings.key, value: settings.value }).from(settings).where(like(settings.key, `${PREFIX}%`));
+  const rows = await settingRowsWithPrefix(db, PREFIX);
   const map = new Map<number, WorkspaceTwoFactorPolicy>();
   for (const row of rows) {
     const id = Number(row.key.slice(PREFIX.length));

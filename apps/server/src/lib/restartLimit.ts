@@ -1,4 +1,4 @@
-import { and, eq, inArray, like } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { deployments, services, settings, type DB, type Service } from '@ninedeploy/db';
 import { restartLimitConfig, type RestartLimitConfig, type RestartLimitView } from '@ninedeploy/schemas';
 import { pm2RestartCounts, pm2Stop } from '../engine/builders/pm2.js';
@@ -6,6 +6,7 @@ import { replicaNames } from '../engine/dockerNames.js';
 import { capture } from './exec.js';
 import { runtimeReplicaCounts } from './runtimeReplicaCounts.js';
 import { getSettingJson, setSettingJson } from './settings.js';
+import { settingRowsWithPrefix } from './settingRows.js';
 
 /**
  * G1.3 restart-loop limit. Opt-in per service (`restart_limit:<id>`): a
@@ -112,7 +113,7 @@ async function inspectRestarts(names: string[]): Promise<Map<string, number>> {
 
 /** One pass over every service with a limit. Returns the ids it stopped. */
 export async function enforceRestartLimits(db: DB, deps: RestartLimitDeps = {}, now = Date.now()): Promise<number[]> {
-  const rows = await db.select({ key: settings.key }).from(settings).where(like(settings.key, `${PREFIX}%`));
+  const rows = await settingRowsWithPrefix(db, PREFIX);
   const ids = rows.map((r) => Number(r.key.slice(PREFIX.length))).filter((n) => Number.isInteger(n) && n > 0);
   if (ids.length === 0) return [];
   const busy = new Set(

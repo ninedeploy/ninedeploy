@@ -2,6 +2,7 @@ import { existsSync, unlinkSync } from 'node:fs';
 import { and, eq } from 'drizzle-orm';
 import { audit } from '../lib/audit.js';
 import { backups, databaseAttachments, databases, type DB, projects, servers, serviceTargets, users, type Database } from '@ninedeploy/db';
+import { deleteOwnedSettings } from '../lib/ownedSettings.js';
 import type { FastifyPluginAsync } from 'fastify';
 import { createAttachment, createDatabase, setLimits, DATABASE_STUDIO_ENGINES } from '@ninedeploy/schemas';
 import {
@@ -646,6 +647,8 @@ export const databasesRoutes: FastifyPluginAsync = async (app) => {
         await tx.delete(backups).where(eq(backups.databaseId, d.id));
         await tx.delete(databases).where(eq(databases.id, d.id));
       });
+      // S2: its settings rows (backup replica copy log). The sweep catches a miss.
+      await deleteOwnedSettings(app.db, 'database', d.id).catch((err: unknown) => req.log.warn({ err, databaseId: d.id }, 'could not remove the database settings rows'));
       // Post-commit best-effort cleanup: unlink the dump files (dumps contain DB
       // credentials, plaintext once decrypted). Files are not transactional — a
       // failure here leaves an orphaned dump, which is logged, not silent.

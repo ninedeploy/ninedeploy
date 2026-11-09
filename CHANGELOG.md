@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Deleting a service, database, domain, GitHub App or SSO provider now also deletes its stored settings.** Several features keep per-item state in the panel's settings table rather than in their own tables: restart limits, maintenance pages, forward auth, compose routes, registry-hook tokens, error-ingest keys, backup replica logs, runner configurations and SAML identity links. Until now this state was left behind after its owner was deleted. That included the hashed registry-hook token and the error-ingest key.
+  - Leftover rows from earlier deletes, and rows of deleted workspaces, are removed by the hourly housekeeping run.
+  - Cloud-VM links are kept, so a VM created through the panel can still be deleted from it.
+  - IDs are never reused, so no new item ever picked up an old row. The restart-limit check stops walking deleted services every pass.
+
+### Changed
+
+- **Settings lookups by key prefix use the table's index.** These lookups run on every Traefik config render: maintenance pages, error pages, compose routes and forward auth. They now read a key range instead of `LIKE 'prefix%'`. `LIKE` could not use the index, and it treated the `_` in a prefix such as `restart_limit:` as a wildcard.
+
 ## [0.18.25] - 2026-11-08
 
 ### Added

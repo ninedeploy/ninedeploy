@@ -1,9 +1,10 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
-import { eq, like } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { settings, type DB } from '@ninedeploy/db';
 import { forwardAuthConfig, type ForwardAuthConfig } from '@ninedeploy/schemas';
 import { config } from '../config.js';
 import { setSettingJson } from './settings.js';
+import { settingRowsWithPrefix } from './settingRows.js';
 
 /**
  * G2.3 forward auth: put any app behind panel sign-in, per domain. No
@@ -63,7 +64,7 @@ export async function setForwardAuth(db: DB, domainId: number, value: ForwardAut
 
 /** For the proxy render: the protected domain ids. A read error propagates: the render must not drop the protection. */
 export async function forwardAuthDomains(db: DB): Promise<Set<number>> {
-  const rows = await db.select({ key: settings.key }).from(settings).where(like(settings.key, `${PREFIX}%`));
+  const rows = await settingRowsWithPrefix(db, PREFIX);
   return new Set(rows.filter((r) => r.key.startsWith(PREFIX)).map((r) => Number(r.key.slice(PREFIX.length))).filter((n) => Number.isInteger(n) && n > 0));
 }
 

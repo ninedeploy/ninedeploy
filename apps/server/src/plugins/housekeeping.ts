@@ -39,6 +39,7 @@ import { pruneServiceMetrics } from '../lib/serviceMetricHistory.js';
 import { pruneLogDrainCursors } from '../engine/logShipper.js';
 import { pruneNodeLifecycleHistory } from '../lib/nodeLifecycleIntent.js';
 import { pruneNodeServingTrafficReceipts } from '../lib/nodeServingTrafficReceipt.js';
+import { sweepOrphanedSettings } from '../lib/ownedSettings.js';
 
 const INTERVAL_MS = 60 * 60 * 1000; // hourly
 /** Export artifacts (secret-bearing archives + scratch files) older than this
@@ -556,6 +557,12 @@ export default fp(
         // 0.16.12 database copies whose preview was removed without its teardown.
         await step('preview-databases', () => sweepOrphanPreviewCopies(fastify.db, (line) => fastify.log.info({ component: 'housekeeping' }, line)));
         await step('dangling-images', () => pruneDanglingImages(fastify.db));
+        // S2 (COMPETITIVE_ROADMAP_2026-11): settings rows whose entity is gone,
+        // e.g. a workspace delete or an FK cascade that no route cleans up after.
+        await step('owned-settings', async () => {
+          const removed = await sweepOrphanedSettings(fastify.db);
+          if (Object.keys(removed).length) fastify.log.info({ component: 'housekeeping', removed }, 'removed settings rows of deleted entities');
+        });
 
         await step('disk-auto-prune', async () => {
           const pruneStatus = await getAutoPruneStatus(fastify.db);

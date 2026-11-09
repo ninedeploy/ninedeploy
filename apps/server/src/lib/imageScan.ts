@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { eq, like } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { services, settings, type DB } from '@ninedeploy/db';
 import {
   DEFAULT_IMAGE_SCAN_POLICY,
@@ -17,6 +17,7 @@ import {
 } from '@ninedeploy/schemas';
 import { buildEnv, capture, killTree } from './exec.js';
 import { getSettingJson, setSettingJson } from './settings.js';
+import { settingRowsWithPrefix } from './settingRows.js';
 
 /**
  * G5.1 image vulnerability scanning with Trivy, panel host only.
@@ -69,7 +70,7 @@ export async function getImageScanResult(db: DB, serviceId: number): Promise<Ima
 
 /** Drop the results of services that no longer exist. Returns how many went. */
 export async function pruneImageScanResults(db: DB): Promise<number> {
-  const rows = await db.select({ key: settings.key }).from(settings).where(like(settings.key, `${RESULT_PREFIX}%`));
+  const rows = await settingRowsWithPrefix(db, RESULT_PREFIX);
   let pruned = 0;
   for (const { key } of rows) {
     const id = Number(key.slice(RESULT_PREFIX.length));

@@ -2,6 +2,7 @@ import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { and, eq, isNull } from 'drizzle-orm';
 import type { FastifyPluginAsync } from 'fastify';
 import { githubAppInstallations, githubApps, servers, sources, type DB, type GithubApp, type GithubAppInstallation } from '@ninedeploy/db';
+import { deleteOwnedSettings } from '../lib/ownedSettings.js';
 import {
   GITHUB_API_BASE_URL,
   githubAppCreate,
@@ -735,6 +736,8 @@ export const githubAppsRoutes: FastifyPluginAsync = async (app) => {
   app.delete('/:id', async (req) => {
     const row = await loadApp(app.db, parseId((req.params as { id: string }).id));
     await app.db.delete(githubApps).where(eq(githubApps.id, row.id));
+    // S2: its runner configuration row. The sweep catches a miss.
+    await deleteOwnedSettings(app.db, 'githubApp', row.id).catch((err: unknown) => req.log.warn({ err, githubAppId: row.id }, 'could not remove the GitHub App settings rows'));
     clearGithubAppCaches();
     forgetPending(row.id);
     void audit(app.db, req.user!.id, 'github_app.delete', row.name, { githubAppId: row.id, appId: row.appId });

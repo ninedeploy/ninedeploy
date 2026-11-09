@@ -1,4 +1,4 @@
-import { eq, like, or } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { domains, settings, type DB } from '@ninedeploy/db';
 import {
   ERROR_PAGE_STATUSES,
@@ -13,6 +13,7 @@ import {
 import { COMPOSE_ROUTE_PREFIX, parseComposeRoute } from './composeRoutes.js';
 import { forwardAuthDomains } from './forwardAuth.js';
 import { getSettingJson, setSettingJson } from './settings.js';
+import { settingRowsWithPrefixes } from './settingRows.js';
 
 /**
  * G2.2 maintenance mode and custom error pages, per service. No migration:
@@ -101,10 +102,7 @@ export async function routingOverrides(db: DB): Promise<{
   const composeRoutes = new Map<number, ComposeRoute>();
   let rows: Array<{ key: string; value: unknown }> = [];
   try {
-    rows = await db
-      .select({ key: settings.key, value: settings.value })
-      .from(settings)
-      .where(or(like(settings.key, `${MAINT}%`), like(settings.key, `${PAGES}%`), like(settings.key, `${COMPOSE_ROUTE_PREFIX}%`)));
+    rows = await settingRowsWithPrefixes(db, [MAINT, PAGES, COMPOSE_ROUTE_PREFIX]);
   } catch {
     // A fake or partial db in a test: no overrides, the render is unchanged.
     return { maintenance, errorPages, composeRoutes };

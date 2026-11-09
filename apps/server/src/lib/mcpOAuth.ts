@@ -1,10 +1,11 @@
 import { createHash } from 'node:crypto';
-import { and, eq, like, lt, sql } from 'drizzle-orm';
+import { and, eq, lt, sql } from 'drizzle-orm';
 import { apiTokens, settings, type DB } from '@ninedeploy/db';
 import { randomToken, secretEquals, sha256 } from './crypto.js';
 import { HttpError } from './errors.js';
 import { MCP_TOKEN_PREFIX } from './mcpAudience.js';
 import { getSettingJson, setSettingJson } from './settings.js';
+import { settingRowsWithPrefix } from './settingRows.js';
 
 /**
  * R4 remote MCP: the OAuth 2.1 authorization server the MCP authorization
@@ -54,7 +55,7 @@ interface RefreshRow {
 /** Clients that hold a refresh token still usable: removing one of those would end a live grant. */
 async function clientsInUse(db: DB, now: number): Promise<Set<string>> {
   const live = new Set<string>();
-  for (const r of await db.select().from(settings).where(like(settings.key, `${REFRESH_KEY}%`))) {
+  for (const r of await settingRowsWithPrefix(db, REFRESH_KEY)) {
     const row = storedValue<RefreshRow>(r.value);
     if (row && row.spentAt == null && row.expiresAt >= now) live.add(row.clientId);
   }
@@ -75,7 +76,7 @@ export function redirectUriAllowed(uri: string): boolean {
 }
 
 export async function registerClient(db: DB, name: string, redirectUris: string[], now = Date.now()): Promise<{ clientId: string; client: OAuthClient }> {
-  const rows = await db.select().from(settings).where(like(settings.key, `${CLIENT_KEY}%`));
+  const rows = await settingRowsWithPrefix(db, CLIENT_KEY);
   if (rows.length >= MAX_CLIENTS) {
     // Full: make room by dropping the oldest client that never completed a sign-in, so anonymous
     // registrations cannot lock real clients out; then the one unused longest among those whose
@@ -262,7 +263,7 @@ function storedValue<T>(v: unknown): T | null {
  */
 export async function sweepMcpOAuth(db: DB, now = Date.now()): Promise<number> {
   let removed = 0;
-  for (const r of await db.select().from(settings).where(like(settings.key, `${REFRESH_KEY}%`))) {
+  for (const r of await settingRowsWithPrefix(db, REFRESH_KEY)) {
     const row = storedValue<RefreshRow>(r.value);
     if (row && row.expiresAt >= now) continue;
     await db.delete(settings).where(eq(settings.key, r.key));
@@ -274,7 +275,7 @@ export async function sweepMcpOAuth(db: DB, now = Date.now()): Promise<number> {
     }
   }
   const live = await clientsInUse(db, now);
-  for (const r of await db.select().from(settings).where(like(settings.key, `${CLIENT_KEY}%`))) {
+  for (const r of await settingRowsWithPrefix(db, CLIENT_KEY)) {
     const c = storedValue<OAuthClient>(r.value);
     // Kept: a client in its first day, or one with a grant alive or used within a refresh token's lifetime.
     if (c && c.lastUsedAt === null && now - c.createdAt < UNUSED_CLIENT_MS) continue;
