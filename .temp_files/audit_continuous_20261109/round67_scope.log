@@ -1,0 +1,38 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/plugins/collector.test.ts > collector plugin > samples a node hosting only a running database and records its collection timestamp 54ms
+ ✓ test/plugins/collector.test.ts > collector plugin > persists node metrics from that node, never from an identically named local container 4ms
+ ✓ test/plugins/collector.test.ts > collector plugin > collects stats on the interval, persists metrics, and updates the cache 2ms
+ ✓ test/plugins/collector.test.ts > collector plugin > skips the insert when no services match any container 2ms
+ ✓ test/plugins/collector.test.ts > collector plugin > logs and continues when collection fails 6ms
+ ✓ test/plugins/collector.test.ts > collector plugin > reschedules the tick while running 4ms
+ ✓ test/plugins/collector.test.ts > collector plugin > stops rescheduling after close 2ms
+ ✓ test/plugins/collector.test.ts > collector plugin > skips host alert snapshots when host stats are unavailable 1ms
+ ✓ test/plugins/collector.test.ts > collector plugin > feeds cert-expiry snapshots from the issued certificates 2ms
+ ✓ test/plugins/collector.test.ts > collector plugin > skips cert snapshots when no certificate has an expiry 2ms
+ ✓ test/plugins/collector.test.ts > collector plugin > 0.12: feeds the disk and server_offline snapshots to the alert evaluator 2ms
+ ✓ test/plugins/collector.test.ts > collector plugin > 0.12: a node-health failure is logged and the local samples are still evaluated 2ms
+ ✓ test/plugins/collector.test.ts > collector plugin > falls back to load-derived host cpu when memTotal is zero 1ms
+ ✓ test/plugins/collector.test.ts > cpuDeltaPct > returns null without a previous sample or with mismatched cores 0ms
+ ✓ test/lib/nodeHealth.test.ts > disk percent parsing > uses df Use% semantics (reserved blocks excluded, rounded up) 1ms
+ ✓ test/lib/nodeHealth.test.ts > disk percent parsing > reads an agent ND-DF (df -kP) row 0ms
+ ✓ test/lib/nodeHealth.test.ts > dockerDataRoot > asks docker once with a bounded timeout and caches the answer 1ms
+ ✓ test/lib/nodeHealth.test.ts > dockerDataRoot > returns null when docker is unavailable 0ms
+ ✓ test/lib/nodeHealth.test.ts > panelDiskReadings > measures the data dir, plus a distinct, locally visible docker data root 2ms
+ ✓ test/lib/nodeHealth.test.ts > panelDiskReadings > skips a docker data root this process cannot see (the container install) 1ms
+ ✓ test/lib/nodeHealth.test.ts > snapshots > disk: worst reading wins and every host is named 0ms
+ ✓ test/lib/nodeHealth.test.ts > snapshots > server_offline: minutes rounded up, counted from watchSince at the earliest 0ms
+ ✓ test/lib/nodeHealth.test.ts > createNodeHealthWatch > pings non-pending nodes, stamps last_seen_at on success, and starts the clock at the first cycle 2ms
+ ✓ test/lib/nodeHealth.test.ts > createNodeHealthWatch > emits no server_offline sample when the node list cannot be read 0ms
+ ✓ test/lib/nodeHealth.test.ts > createNodeHealthWatch > a deleted node stops counting, so a firing offline rule can recover 0ms
+ ✓ test/lib/nodeHealth.test.ts > createNodeHealthWatch > samples remote disk every 5 minutes from agent.stats and forgets deleted or silent nodes 0ms
+ ✓ test/lib/nodeHealth.test.ts > createNodeHealthWatch > a failing stats probe does not break the cycle 0ms
+
+ Test Files  2 passed (2)
+      Tests  27 passed (27)
+   Start at  01:19:43
+   Duration  1.99s (import 66%, transform 25%, tests 8%)
+
+    Isolate  2 workers spawned · ~407ms startup each (spawn + environment, per file)
+             at least ~407ms faster with isolate: false — reuses workers across files instead of one per file

@@ -1,0 +1,14 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+ ✓ .temp_files/audit_continuous_20261109/inspect_round67_nodeHealth.test.ts > serial poll cadence keeps last reading until the exact refresh boundary 181ms
+ ✓ .temp_files/audit_continuous_20261109/inspect_round67_nodeHealth.test.ts > failed stats preserves prior reading through inclusive age, then expires it 156ms
+ ✓ .temp_files/audit_continuous_20261109/inspect_round67_nodeHealth.test.ts > deleted node disappears on next serial registry snapshot 158ms
+ ✓ .temp_files/audit_continuous_20261109/inspect_round67_nodeHealth.test.ts > pending node evicts prior cache and reapproval polls immediately 148ms
+ ✓ .temp_files/audit_continuous_20261109/inspect_round67_nodeHealth.test.ts > initial unknown registry emits local disk but no false fleet offline sample 152ms
+ ✓ .temp_files/audit_continuous_20261109/inspect_round67_nodeHealth.test.ts > malformed remote sample cannot replace a prior valid reading 149ms
+
+ Test Files  1 passed (1)
+      Tests  6 passed (6)
+   Start at  01:19:40
+   Duration  1.48s (tests 69%, import 26%, transform 5%)

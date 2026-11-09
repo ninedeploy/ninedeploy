@@ -607,3 +607,11 @@ real native Node subprocess validating the capture error envelope. Existing
 missing-container fixtures now reproduce that actual envelope. Sync's earlier
 desired-config writes, live Docker/network enforcement and native Mac acceptance
 remain outside this correction; the full pipeline pass remains round64 evidence.
+
+Round 67 found no new node-health defect in six additional migrated-database
+serial controls and 27 existing health/collector tests. The actual collector
+awaits each cycle, so artificial overlapping factory calls were not counted as
+a production race. Registry deletion/pending transitions, refresh and age boundaries,
+failed/malformed remote samples and initial unknown registry behavior passed.
+No source patch was made; a cached-metric fallback observation remains unproven.
+No live node/native Mac/full release acceptance was claimed.
