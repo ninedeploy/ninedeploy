@@ -67,7 +67,8 @@ export function Databases() {
       qc.invalidateQueries({ queryKey: ['backups'] });
       toast(t('Backup started'), 'success');
     },
-    onError: () => toast(t('Backup failed'), 'error'),
+    // S7: the server says why (for example pg_dump's exit); show it.
+    onError: (err: unknown) => toast(err instanceof Error && err.message ? err.message : t('Backup failed'), 'error'),
   });
 
   return (

@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A PostgreSQL backup taken just after the database started no longer fails.** The official image initializes with a temporary server and then restarts, while the container already shows as running. A **Backup now** click, or a scheduled backup, in those first seconds failed with `pg_dump` exit 1. A failed dump now waits up to 20 seconds for the server to accept connections over TCP, and retries once. A backup that succeeds the first time sends the same commands as before. The panel's backup toast now shows the reason the server gave, not just "Backup failed".
 - Runner job rechecks keep failed or unrecognized GitHub status reads pending without taking a slot; only confirmed queued jobs start and confirmed non-queued work is dropped (F1072).
 - Self-hosted GitHub runner upkeep no longer applies a GitHub-hosted six-hour age cutoff to busy or unverifiable runners; confirmed-idle/exited cleanup and explicit operator stop remain available (F1071).
 - Runner sweeps retain missing, malformed or unrecognized node/container states instead of treating them as confirmed non-running runners and automatically stopping them (F1070).

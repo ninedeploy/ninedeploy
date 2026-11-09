@@ -705,6 +705,44 @@ describe('backupDatabase', () => {
     expect(readFileSync(file).subarray(0, 6).toString()).toBe('NDBK1:');
   });
 
+  it('S7: retries the postgres dump once when it failed while the server was still starting', async () => {
+    const file = path.join(tmp, 'pg-starting.sql');
+    writeFileSync(file, '');
+    const log = vi.fn();
+    let dumps = 0;
+    h.run.mockImplementation(async (_cmd: string, args: unknown[]) => {
+      if ((args as string[]).includes('pg_dump') && ++dumps === 1) throw new Error('exited with code 1');
+    });
+    // pg_isready over TCP: refused twice, then up.
+    h.capture.mockRejectedValueOnce(new Error('no response')).mockRejectedValueOnce(new Error('no response')).mockResolvedValue('');
+    await backupDatabase(dbRow({ engine: 'postgres' }), file, log);
+    expect(dumps).toBe(2);
+    expect(h.capture).toHaveBeenCalledWith('docker', ['exec', 'c', 'pg_isready', '-q', '-h', '127.0.0.1', '-U', 'nine', '-d', 'app']);
+    expect(log).toHaveBeenCalledWith('postgres is accepting connections; retrying the dump once');
+    expect(readFileSync(file).subarray(0, 6).toString()).toBe('NDBK1:');
+  });
+
+  it('S7: fails without a retry when postgres never accepts connections, and fails if the retry fails too', async () => {
+    const log = vi.fn();
+    let dumps = 0;
+    h.run.mockImplementation(async (_cmd: string, args: unknown[]) => {
+      if ((args as string[]).includes('pg_dump')) { dumps++; throw new Error(`pg_dump failed #${dumps}`); }
+    });
+    h.capture.mockRejectedValue(new Error('no response'));
+    const never = path.join(tmp, 'pg-never.sql');
+    writeFileSync(never, '');
+    await expect(backupDatabase(dbRow({ engine: 'postgres' }), never, log)).rejects.toThrow('pg_dump failed #1');
+    expect(dumps).toBe(1);
+    expect(log).toHaveBeenCalledWith('postgres still not accepting connections after 20s');
+
+    dumps = 0;
+    h.capture.mockReset().mockResolvedValue('');
+    const again = path.join(tmp, 'pg-again.sql');
+    writeFileSync(again, '');
+    await expect(backupDatabase(dbRow({ engine: 'postgres' }), again, log)).rejects.toThrow('pg_dump failed #2');
+    expect(dumps).toBe(2);
+  });
+
   it('backs up mysql with the decrypted password via result-file + docker cp', async () => {
     const file = path.join(tmp, 'mysql.sql');
     writeFileSync(file, '');

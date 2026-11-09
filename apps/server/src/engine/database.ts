@@ -1038,6 +1038,32 @@ export function backupDatabase(d: Database, file: string, log: (line: string) =>
     withExclusiveOperation(`database-${d.containerName ?? d.id}`, log, () => backupDatabaseUnlocked(d, file, log)));
 }
 
+/**
+ * S7: a backup taken in the first seconds of a new (or restarted) postgres
+ * container failed with pg_dump exit 1. The image initializes with a
+ * temporary server that listens on the Unix socket only, then restarts; the
+ * container is "running" throughout. TCP answers only once the real server is
+ * up. Called after a failed dump only, so a successful backup sends exactly the
+ * commands it always did (test/databaseArgv015 pins them):
+ *  - 'ready': TCP answered at once (the dump may have hit the restart gap);
+ *  - 'became-ready': the server was still starting and is up now;
+ *  - 'not-ready': it never answered within the wait.
+ */
+export async function waitForPostgresTcp(cn: string, user: string, db: string, log: (line: string) => void, attempts = 20, delayMs = 1_000): Promise<'ready' | 'became-ready' | 'not-ready'> {
+  for (let i = 0; i < attempts; i++) {
+    try {
+      await capture('docker', ['exec', cn, 'pg_isready', '-q', '-h', '127.0.0.1', '-U', user, '-d', db]);
+      return i === 0 ? 'ready' : 'became-ready';
+    } catch {
+      /* starting up */
+    }
+    if (i === 0) log('postgres is not accepting connections yet; waiting…');
+    if (i < attempts - 1) await sleep(delayMs);
+  }
+  log(`postgres still not accepting connections after ${Math.round((attempts * delayMs) / 1000)}s`);
+  return 'not-ready';
+}
+
 async function backupDatabaseUnlocked(d: Database, file: string, log: (line: string) => void): Promise<void> {
   const DUMP_TMP = `/tmp/ninedeploy-dump-${randomUUID()}`;
   const cfg = ENGINES[d.engine];
@@ -1059,7 +1085,18 @@ async function backupDatabaseUnlocked(d: Database, file: string, log: (line: str
       // it the restore's first CREATE hit "already exists" under ON_ERROR_STOP,
       // so a backup could only ever be restored into an EMPTY database.
       usesDumpTmp = true;
-      await run('docker', ['exec', cn, 'pg_dump', '-U', cfg.username()!, '-d', cfg.dbName()!, '--clean', '--if-exists', `--file=${DUMP_TMP}`], {}, log);
+      const dump = () => run('docker', ['exec', cn, 'pg_dump', '-U', cfg.username()!, '-d', cfg.dbName()!, '--clean', '--if-exists', `--file=${DUMP_TMP}`], {}, log);
+      try {
+        await dump();
+      } catch (err) {
+        // The server may have been starting or restarting (see
+        // waitForPostgresTcp). Once it answers over TCP, retry once; a dump
+        // that fails again fails with that error.
+        const ready = await waitForPostgresTcp(cn, cfg.username()!, cfg.dbName()!, log);
+        if (ready === 'not-ready') throw err;
+        log('postgres is accepting connections; retrying the dump once');
+        await dump();
+      }
       await run('docker', ['cp', `${cn}:${DUMP_TMP}`, file], {}, log);
     } else if (d.engine === 'mysql' || d.engine === 'mariadb') {
       const pass = decrypt(d.passwordEncrypted);
