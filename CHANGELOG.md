@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Runner job rechecks keep failed or unrecognized GitHub status reads pending without taking a slot; only confirmed queued jobs start and confirmed non-queued work is dropped (F1072).
 - Self-hosted GitHub runner upkeep no longer applies a GitHub-hosted six-hour age cutoff to busy or unverifiable runners; confirmed-idle/exited cleanup and explicit operator stop remain available (F1071).
 - Runner sweeps retain missing, malformed or unrecognized node/container states instead of treating them as confirmed non-running runners and automatically stopping them (F1070).
 - Queued GitHub runner jobs revalidate current repository, public-repository and label policy before taking a slot, so previously accepted work cannot bypass later runner restrictions (F1069).

@@ -1,0 +1,67 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1072_ghaRecheck.test.ts > online job state queued preserves correct pending admission
+EXPECTED starts/pending: [ 80, 81 ] [] ACTUAL: [ 80, 81 ] []
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1072_ghaRecheck.test.ts > online job state queued preserves correct pending admission 237ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1072_ghaRecheck.test.ts > online job state completed preserves correct pending admission
+EXPECTED starts/pending: [] [] ACTUAL: [] []
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1072_ghaRecheck.test.ts > online job state completed preserves correct pending admission 198ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1072_ghaRecheck.test.ts > online job state error preserves correct pending admission
+EXPECTED starts/pending: [] [ 80, 81 ] ACTUAL: [ 80, 81 ] []
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/prove_F1072_ghaRecheck.test.ts > online job state error preserves correct pending admission 217ms
+   → expected [ 80, 81 ] to deeply equal []
+stdout | .temp_files/audit_continuous_20261109/prove_F1072_ghaRecheck.test.ts > online job state missing preserves correct pending admission
+EXPECTED starts/pending: [] [ 80, 81 ] ACTUAL: [] []
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/prove_F1072_ghaRecheck.test.ts > online job state missing preserves correct pending admission 214ms
+   → expected [] to deeply equal [ 80, 81 ]
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1072_ghaRecheck.test.ts > online job state error preserves correct pending admission
+AssertionError: expected [ 80, 81 ] to deeply equal []
+
+- Expected
++ Received
+
+- []
++ [
++   80,
++   81,
++ ]
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1072_ghaRecheck.test.ts:50:18
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1072_ghaRecheck.test.ts > online job state missing preserves correct pending admission
+AssertionError: expected [] to deeply equal [ 80, 81 ]
+
+- Expected
++ Received
+
+- [
+-   80,
+-   81,
+- ]
++ []
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1072_ghaRecheck.test.ts:50:52
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 2 passed (4)
+   Start at  23:41:51
+   Duration  1.62s (tests 59%, import 31%, transform 10%)

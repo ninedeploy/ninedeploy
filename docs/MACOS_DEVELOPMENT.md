@@ -278,7 +278,7 @@ image intentionally before running on a fresh Mac. The independent native
 verifier exercised seven final-status/error cases three times; 26 neighboring
 unit tests passed. This does not exercise Electron or macOS Keychain.
 
-### Further audit checkpoints through round 52
+### Further audit checkpoints through round 53
 
 Additional committed evidence is under `.temp_files/audit_continuous_20261109/`:
 
@@ -311,6 +311,7 @@ Additional committed evidence is under `.temp_files/audit_continuous_20261109/`:
 | F1069 | Pending GitHub jobs revalidate current repository/public/label policy before consuming runner slots | 122 |
 | F1070 | Automated runner sweeps retain unreadable/unrecognized container states and keep explicit stop available | 127 |
 | F1071 | Active self-hosted runners use confirmed GitHub busy/idle state instead of a hosted-runner container-age cutoff | 132 |
+| F1072 | Unknown queued-job lookups retain work without a slot and force verification across later drain entry points | 138 |
 
 Counts belong to each round's recorded source snapshot and are not aggregate
 or full-suite coverage. Each fix has a before-proof, an independent verifier
@@ -406,6 +407,13 @@ then passed 24 independent local/node lifetime-state cases three times. The
 132-test scope and resource-bound server static checks passed. Elapsed time
 and provider replies were controlled fixtures; no multi-day live workflow ran.
 Confirmed idle/exited cleanup and explicit operator stop remain available.
+
+Round 53 passed 13 independent status/retry/owner cases three times and
+138 neighboring tests. Uncertainty survives a later webhook or a config-drift
+break; eligible later work still proceeds. The strongest two persistence cases
+were promoted and seen red before the final marker patch. Initial incomplete
+verification is retained in the ledger. Resource-bound server static checks
+passed; no live GitHub workflow or native Mac bootstrap was exercised.
 
 Rounds 28–29 found no new defect: PITR scheduler close/overlap gates passed five
 additional cases plus its two existing tests; recovery-helper housekeeping passed

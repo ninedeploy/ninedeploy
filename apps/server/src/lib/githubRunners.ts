@@ -135,6 +135,7 @@ interface PendingJob {
   repoId: number;
   labels: string[];
   isPrivate: boolean;
+  recheckRequired?: boolean;
   jobName: string | null;
   queuedAt: number;
 }
@@ -628,15 +629,18 @@ async function drainOnce(db: DB, log: FastifyBaseLogger, opts: { recheck?: boole
     for (const job of jobs) {
       if (running >= config.maxConcurrent) break;
       const key = pendingKey(githubAppId, job.jobId);
-      const waiting = !opts.recheck || await stillQueued(db, ghApp, job);
+      const waiting = (!opts.recheck && !job.recheckRequired) || await stillQueued(db, ghApp, job);
+      if (waiting === null && pending.get(key) === job) job.recheckRequired = true;
       // A changed policy needs a fresh host/slot count before another start.
       const generation = runnerConfigGeneration(db, githubAppId);
       const currentConfig = await getRunnerConfig(db, githubAppId);
       if (generation !== runnerConfigGeneration(db, githubAppId) || JSON.stringify(currentConfig) !== configSnapshot) break;
       // Another job's startup or this recheck may outlive a later delivery.
       if (pending.get(key) !== job) continue;
+      const refusal = jobRefusal(currentConfig, job);
+      if (waiting === null && !refusal) continue;
       pending.delete(key);
-      if (!waiting || jobRefusal(currentConfig, job)) continue;
+      if (!waiting || refusal) continue;
       running += 1;
       try {
         await startRunner(db, log, ghApp, job, config);
@@ -655,16 +659,19 @@ async function drainOnce(db: DB, log: FastifyBaseLogger, opts: { recheck?: boole
 }
 
 /** Whether GitHub still has the job waiting (a job that waited is often taken by another runner or cancelled). */
-async function stillQueued(db: DB, ghApp: GithubApp, job: PendingJob): Promise<boolean> {
+async function stillQueued(db: DB, ghApp: GithubApp, job: PendingJob): Promise<boolean | null> {
   const inst = await loadInstallation(db, job.installationRowId);
   if (!inst) return false;
   try {
     const token = await installationToken(db, ghApp, inst, { permissions: { actions: 'read' }, repositoryIds: [job.repoId] });
     const res = await githubApi<{ status?: string }>(ghApp, token, 'GET', `/repos/${job.repo}/actions/jobs/${job.jobId}`);
-    return res.data?.status === 'queued';
+    const status = res.data?.status;
+    if (status === 'queued') return true;
+    if (status === 'in_progress' || status === 'completed') return false;
+    return null;
   } catch {
     // Unknown: keep waiting rather than drop a job.
-    return true;
+    return null;
   }
 }
 

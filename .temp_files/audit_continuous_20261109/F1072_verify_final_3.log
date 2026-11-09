@@ -1,0 +1,75 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/verify_F1072_ghaRecheck.test.ts > confirmed state queued
+EXPECTED: [ 80, 81 ] [] ACTUAL: [ 80, 81 ] [] FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1072_ghaRecheck.test.ts > confirmed state queued 241ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1072_ghaRecheck.test.ts > confirmed state in_progress
+EXPECTED: [] [] ACTUAL: [] [] FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1072_ghaRecheck.test.ts > confirmed state in_progress 207ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1072_ghaRecheck.test.ts > confirmed state completed
+EXPECTED: [] [] ACTUAL: [] [] FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1072_ghaRecheck.test.ts > confirmed state completed 178ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1072_ghaRecheck.test.ts > unknown response absent remains pending
+EXPECTED: [] [ 80, 81 ] ACTUAL: [] [ 80, 81 ] FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1072_ghaRecheck.test.ts > unknown response absent remains pending 200ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1072_ghaRecheck.test.ts > unknown response null remains pending
+EXPECTED: [] [ 80, 81 ] ACTUAL: [] [ 80, 81 ] FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1072_ghaRecheck.test.ts > unknown response null remains pending 190ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1072_ghaRecheck.test.ts > unknown response invalid-type remains pending
+EXPECTED: [] [ 80, 81 ] ACTUAL: [] [ 80, 81 ] FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1072_ghaRecheck.test.ts > unknown response invalid-type remains pending 185ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1072_ghaRecheck.test.ts > unknown response unrecognized remains pending
+EXPECTED: [] [ 80, 81 ] ACTUAL: [] [ 80, 81 ] FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1072_ghaRecheck.test.ts > unknown response unrecognized remains pending 199ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1072_ghaRecheck.test.ts > failed lookup retries without losing or prematurely starting work
+EXPECTED: [] [ 80, 81 ] ACTUAL: [] [ 80, 81 ] FIX VERIFIED
+
+stdout | .temp_files/audit_continuous_20261109/verify_F1072_ghaRecheck.test.ts > failed lookup retries without losing or prematurely starting work
+EXPECTED: [ 80, 81 ] [] ACTUAL: [ 80, 81 ] [] FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1072_ghaRecheck.test.ts > failed lookup retries without losing or prematurely starting work 204ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1072_ghaRecheck.test.ts > unknown first job consumes no slot ahead of a verified second job
+EXPECTED: [ 81 ] [ 80 ] ACTUAL: [ 81 ] [ 80 ] FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1072_ghaRecheck.test.ts > unknown first job consumes no slot ahead of a verified second job 170ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1072_ghaRecheck.test.ts > a late unknown response cannot resurrect a completed pending owner
+EXPECTED: [ 81 ] [] ACTUAL: [ 81 ] [] FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1072_ghaRecheck.test.ts > a late unknown response cannot resurrect a completed pending owner 224ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1072_ghaRecheck.test.ts > another queued webhook cannot bypass uncertainty from the prior sweep
+EXPECTED: [] [ 80, 81 ] ACTUAL: [] [ 80, 81 ] FIX VERIFIED
+
+stdout | .temp_files/audit_continuous_20261109/verify_F1072_ghaRecheck.test.ts > another queued webhook cannot bypass uncertainty from the prior sweep
+EXPECTED new webhook starts [82]; ACTUAL: [ 82 ]
+
+stdout | .temp_files/audit_continuous_20261109/verify_F1072_ghaRecheck.test.ts > another queued webhook cannot bypass uncertainty from the prior sweep
+EXPECTED: [ 82 ] [ 80, 81 ] ACTUAL: [ 82 ] [ 80, 81 ] FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1072_ghaRecheck.test.ts > another queued webhook cannot bypass uncertainty from the prior sweep 235ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1072_ghaRecheck.test.ts > uncertainty survives a configuration drift break before the next drain
+EXPECTED: [] [ 80, 81 ] ACTUAL: [] [ 80, 81 ] FIX VERIFIED
+
+stdout | .temp_files/audit_continuous_20261109/verify_F1072_ghaRecheck.test.ts > uncertainty survives a configuration drift break before the next drain
+EXPECTED only previously unqueried job81; ACTUAL: [ 81 ]
+
+stdout | .temp_files/audit_continuous_20261109/verify_F1072_ghaRecheck.test.ts > uncertainty survives a configuration drift break before the next drain
+EXPECTED: [ 81 ] [ 80 ] ACTUAL: [ 81 ] [ 80 ] FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1072_ghaRecheck.test.ts > uncertainty survives a configuration drift break before the next drain 259ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1072_ghaRecheck.test.ts > a locally suspended installation drops waiting jobs without remote queries
+EXPECTED: [] [] ACTUAL: [] [] FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1072_ghaRecheck.test.ts > a locally suspended installation drops waiting jobs without remote queries 202ms
+
+ Test Files  1 passed (1)
+      Tests  13 passed (13)
+   Start at  23:48:10
+   Duration  3.39s (tests 83%, import 13%, transform 3%)

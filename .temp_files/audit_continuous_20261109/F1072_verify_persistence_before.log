@@ -1,0 +1,111 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/verify_F1072_ghaRecheck.test.ts > confirmed state queued
+EXPECTED: [ 80, 81 ] [] ACTUAL: [ 80, 81 ] [] FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1072_ghaRecheck.test.ts > confirmed state queued 206ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1072_ghaRecheck.test.ts > confirmed state in_progress
+EXPECTED: [] [] ACTUAL: [] [] FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1072_ghaRecheck.test.ts > confirmed state in_progress 160ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1072_ghaRecheck.test.ts > confirmed state completed
+EXPECTED: [] [] ACTUAL: [] [] FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1072_ghaRecheck.test.ts > confirmed state completed 175ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1072_ghaRecheck.test.ts > unknown response absent remains pending
+EXPECTED: [] [ 80, 81 ] ACTUAL: [] [ 80, 81 ] FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1072_ghaRecheck.test.ts > unknown response absent remains pending 183ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1072_ghaRecheck.test.ts > unknown response null remains pending
+EXPECTED: [] [ 80, 81 ] ACTUAL: [] [ 80, 81 ] FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1072_ghaRecheck.test.ts > unknown response null remains pending 171ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1072_ghaRecheck.test.ts > unknown response invalid-type remains pending
+EXPECTED: [] [ 80, 81 ] ACTUAL: [] [ 80, 81 ] FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1072_ghaRecheck.test.ts > unknown response invalid-type remains pending 220ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1072_ghaRecheck.test.ts > unknown response unrecognized remains pending
+EXPECTED: [] [ 80, 81 ] ACTUAL: [] [ 80, 81 ] FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1072_ghaRecheck.test.ts > unknown response unrecognized remains pending 155ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1072_ghaRecheck.test.ts > failed lookup retries without losing or prematurely starting work
+EXPECTED: [] [ 80, 81 ] ACTUAL: [] [ 80, 81 ] FIX VERIFIED
+
+stdout | .temp_files/audit_continuous_20261109/verify_F1072_ghaRecheck.test.ts > failed lookup retries without losing or prematurely starting work
+EXPECTED: [ 80, 81 ] [] ACTUAL: [ 80, 81 ] [] FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1072_ghaRecheck.test.ts > failed lookup retries without losing or prematurely starting work 172ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1072_ghaRecheck.test.ts > unknown first job consumes no slot ahead of a verified second job
+EXPECTED: [ 81 ] [ 80 ] ACTUAL: [ 81 ] [ 80 ] FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1072_ghaRecheck.test.ts > unknown first job consumes no slot ahead of a verified second job 164ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1072_ghaRecheck.test.ts > a late unknown response cannot resurrect a completed pending owner
+EXPECTED: [ 81 ] [] ACTUAL: [ 81 ] [] FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1072_ghaRecheck.test.ts > a late unknown response cannot resurrect a completed pending owner 184ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1072_ghaRecheck.test.ts > another queued webhook cannot bypass uncertainty from the prior sweep
+EXPECTED: [] [ 80, 81 ] ACTUAL: [] [ 80, 81 ] FIX VERIFIED
+
+stdout | .temp_files/audit_continuous_20261109/verify_F1072_ghaRecheck.test.ts > another queued webhook cannot bypass uncertainty from the prior sweep
+EXPECTED new webhook starts [82]; ACTUAL: [ 80, 81 ]
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/verify_F1072_ghaRecheck.test.ts > another queued webhook cannot bypass uncertainty from the prior sweep 196ms
+   → expected [ 80, 81 ] to deeply equal [ 82 ]
+stdout | .temp_files/audit_continuous_20261109/verify_F1072_ghaRecheck.test.ts > uncertainty survives a configuration drift break before the next drain
+EXPECTED: [] [ 80, 81 ] ACTUAL: [] [ 80, 81 ] FIX VERIFIED
+
+stdout | .temp_files/audit_continuous_20261109/verify_F1072_ghaRecheck.test.ts > uncertainty survives a configuration drift break before the next drain
+EXPECTED only previously unqueried job81; ACTUAL: [ 80, 81 ]
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/verify_F1072_ghaRecheck.test.ts > uncertainty survives a configuration drift break before the next drain 226ms
+   → expected [ 80, 81 ] to deeply equal [ 81 ]
+stdout | .temp_files/audit_continuous_20261109/verify_F1072_ghaRecheck.test.ts > a locally suspended installation drops waiting jobs without remote queries
+EXPECTED: [] [] ACTUAL: [] [] FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1072_ghaRecheck.test.ts > a locally suspended installation drops waiting jobs without remote queries 233ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/verify_F1072_ghaRecheck.test.ts > another queued webhook cannot bypass uncertainty from the prior sweep
+AssertionError: expected [ 80, 81 ] to deeply equal [ 82 ]
+
+- Expected
++ Received
+
+  [
+-   82,
++   80,
++   81,
+  ]
+
+ ❯ checked .temp_files/audit_continuous_20261109/verify_F1072_ghaRecheck.test.ts:45:161
+
+ ❯ .temp_files/audit_continuous_20261109/verify_F1072_ghaRecheck.test.ts:52:442
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/verify_F1072_ghaRecheck.test.ts > uncertainty survives a configuration drift break before the next drain
+AssertionError: expected [ 80, 81 ] to deeply equal [ 81 ]
+
+- Expected
++ Received
+
+  [
++   80,
+    81,
+  ]
+
+ ❯ checked .temp_files/audit_continuous_20261109/verify_F1072_ghaRecheck.test.ts:45:161
+
+ ❯ .temp_files/audit_continuous_20261109/verify_F1072_ghaRecheck.test.ts:53:635
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 11 passed (13)
+   Start at  23:46:55
+   Duration  3.55s (tests 83%, import 13%, transform 4%)

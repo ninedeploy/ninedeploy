@@ -1,0 +1,84 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+stdout | test/lib/githubRunnerRecheck.test.ts > online job state queued preserves correct pending admission
+EXPECTED starts/pending: [ 80, 81 ] [] ACTUAL: [ 80, 81 ] []
+PROBLEM NOT REPRODUCED
+
+ ✓ test/lib/githubRunnerRecheck.test.ts > online job state queued preserves correct pending admission 268ms
+stdout | test/lib/githubRunnerRecheck.test.ts > online job state completed preserves correct pending admission
+EXPECTED starts/pending: [] [] ACTUAL: [] []
+PROBLEM NOT REPRODUCED
+
+ ✓ test/lib/githubRunnerRecheck.test.ts > online job state completed preserves correct pending admission 205ms
+stdout | test/lib/githubRunnerRecheck.test.ts > online job state error preserves correct pending admission
+EXPECTED starts/pending: [] [ 80, 81 ] ACTUAL: [] [ 80, 81 ]
+PROBLEM NOT REPRODUCED
+
+ ✓ test/lib/githubRunnerRecheck.test.ts > online job state error preserves correct pending admission 219ms
+stdout | test/lib/githubRunnerRecheck.test.ts > online job state missing preserves correct pending admission
+EXPECTED starts/pending: [] [ 80, 81 ] ACTUAL: [] [ 80, 81 ]
+PROBLEM NOT REPRODUCED
+
+ ✓ test/lib/githubRunnerRecheck.test.ts > online job state missing preserves correct pending admission 204ms
+stdout | test/lib/githubRunnerRecheck.test.ts > another queued webhook cannot bypass uncertainty from the prior sweep
+EXPECTED: [] [ 80, 81 ] ACTUAL: [] [ 80, 81 ] FIX VERIFIED
+
+stdout | test/lib/githubRunnerRecheck.test.ts > another queued webhook cannot bypass uncertainty from the prior sweep
+EXPECTED new webhook starts [82]; ACTUAL: [ 80, 81 ]
+PROBLEM CONFIRMED
+
+ × test/lib/githubRunnerRecheck.test.ts > another queued webhook cannot bypass uncertainty from the prior sweep 213ms
+   → expected [ 80, 81 ] to deeply equal [ 82 ]
+stdout | test/lib/githubRunnerRecheck.test.ts > uncertainty survives a configuration drift break before the next drain
+EXPECTED: [] [ 80, 81 ] ACTUAL: [] [ 80, 81 ] FIX VERIFIED
+
+stdout | test/lib/githubRunnerRecheck.test.ts > uncertainty survives a configuration drift break before the next drain
+EXPECTED only previously unqueried job81; ACTUAL: [ 80, 81 ]
+PROBLEM CONFIRMED
+
+ × test/lib/githubRunnerRecheck.test.ts > uncertainty survives a configuration drift break before the next drain 261ms
+   → expected [ 80, 81 ] to deeply equal [ 81 ]
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/lib/githubRunnerRecheck.test.ts > another queued webhook cannot bypass uncertainty from the prior sweep
+AssertionError: expected [ 80, 81 ] to deeply equal [ 82 ]
+
+- Expected
++ Received
+
+  [
+-   82,
++   80,
++   81,
+  ]
+
+ ❯ checked test/lib/githubRunnerRecheck.test.ts:58:161
+
+ ❯ test/lib/githubRunnerRecheck.test.ts:61:442
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  test/lib/githubRunnerRecheck.test.ts > uncertainty survives a configuration drift break before the next drain
+AssertionError: expected [ 80, 81 ] to deeply equal [ 81 ]
+
+- Expected
++ Received
+
+  [
++   80,
+    81,
+  ]
+
+ ❯ checked test/lib/githubRunnerRecheck.test.ts:58:161
+
+ ❯ test/lib/githubRunnerRecheck.test.ts:63:635
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 4 passed (6)
+   Start at  23:47:52
+   Duration  2.37s (tests 70%, import 23%, transform 8%)

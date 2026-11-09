@@ -1,0 +1,28 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1072_ghaRecheck.test.ts > online job state queued preserves correct pending admission
+EXPECTED starts/pending: [ 80, 81 ] [] ACTUAL: [ 80, 81 ] []
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1072_ghaRecheck.test.ts > online job state queued preserves correct pending admission 301ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1072_ghaRecheck.test.ts > online job state completed preserves correct pending admission
+EXPECTED starts/pending: [] [] ACTUAL: [] []
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1072_ghaRecheck.test.ts > online job state completed preserves correct pending admission 238ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1072_ghaRecheck.test.ts > online job state error preserves correct pending admission
+EXPECTED starts/pending: [] [ 80, 81 ] ACTUAL: [] [ 80, 81 ]
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1072_ghaRecheck.test.ts > online job state error preserves correct pending admission 220ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1072_ghaRecheck.test.ts > online job state missing preserves correct pending admission
+EXPECTED starts/pending: [] [ 80, 81 ] ACTUAL: [] [ 80, 81 ]
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1072_ghaRecheck.test.ts > online job state missing preserves correct pending admission 245ms
+
+ Test Files  1 passed (1)
+      Tests  4 passed (4)
+   Start at  23:51:00
+   Duration  1.93s (tests 57%, import 34%, transform 10%)

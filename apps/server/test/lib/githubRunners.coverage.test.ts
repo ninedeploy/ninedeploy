@@ -497,7 +497,7 @@ describe('sweepGithubRunners: re-checking waiting jobs', () => {
     expect((await lib.runnerStatus(db, ghApp)).pending).toEqual([]);
   });
 
-  it('starts a job GitHub still has queued, and one it cannot check', async () => {
+  it('starts a confirmed queued job and retains an unverified job for a later retry', async () => {
     await lib.setRunnerConfig(db, ghApp.id, enabled());
     await holdJob(77);
     await lib.sweepGithubRunners(db, log);
@@ -509,6 +509,10 @@ describe('sweepGithubRunners: re-checking waiting jobs', () => {
       if (path.includes('/actions/jobs/')) throw new Error('502');
       return base(a, t, method, path);
     });
+    await lib.sweepGithubRunners(db, log);
+    expect(runCalls()).toHaveLength(1);
+    expect((await lib.runnerStatus(db, ghApp)).pending.map((p) => p.jobId)).toEqual([78]);
+    h.githubApi.mockImplementation(base);
     await lib.sweepGithubRunners(db, log);
     expect(runCalls()).toHaveLength(2);
   });

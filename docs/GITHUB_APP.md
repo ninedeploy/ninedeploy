@@ -275,7 +275,7 @@ GitHub, not only the panel, enforces the repository rules:
 
 **Queue and upkeep**
 
-- **Runners at once** limits how many runner containers an App has. Further jobs wait in memory; every minute the panel starts those that are still queued on GitHub.
+- **Runners at once** limits how many runner containers an App has. Further jobs wait in memory; every minute the panel starts those that are still queued on GitHub. An unverifiable job status stays pending for a later sweep.
 - The waiting list does not survive a panel restart. GitHub keeps such a job queued until some runner takes it, or for 24 hours.
 - After 10 minutes, a running runner is removed only when GitHub confirms it is idle or its registration is gone. Busy or unverifiable runners are retained; an operator can still stop one explicitly. Job duration follows the workflow's [`timeout-minutes`](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#jobsjob_idtimeout-minutes) and GitHub's [self-hosted execution limits](https://docs.github.com/en/actions/reference/limits), rather than container creation age.
 
