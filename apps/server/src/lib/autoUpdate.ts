@@ -1,4 +1,4 @@
-import { and, desc, DrizzleQueryError, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, DrizzleQueryError, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { deployments, services, type DB } from '@ninedeploy/db';
 import { audit } from './audit.js';
 import { assertMayDeployStoredService } from './hostPrivilege.js';
@@ -133,9 +133,14 @@ export async function sweepAutoUpdates(
       continue;
     }
 
+    const ownsObservation = and(
+      eq(services.id, svc.id), eq(services.autoUpdate, true), eq(services.status, 'running'),
+      eq(services.type, 'docker'), eq(services.image, svc.image!),
+      svc.autoUpdateDigest === null ? isNull(services.autoUpdateDigest) : eq(services.autoUpdateDigest, svc.autoUpdateDigest),
+    );
     if (!svc.autoUpdateDigest) {
       // First observation after enabling — record the baseline, act never.
-      await db.update(services).set({ autoUpdateDigest: digest }).where(eq(services.id, svc.id));
+      await db.update(services).set({ autoUpdateDigest: digest }).where(ownsObservation);
       continue;
     }
     if (svc.autoUpdateDigest === digest) continue;
@@ -155,7 +160,7 @@ export async function sweepAutoUpdates(
     if (refusal) {
       // Record the digest so the same move is refused (and audited) once,
       // not on every 30-minute sweep; the next image change is re-checked.
-      await db.update(services).set({ autoUpdateDigest: digest }).where(eq(services.id, svc.id));
+      await db.update(services).set({ autoUpdateDigest: digest }).where(ownsObservation);
       log(`auto-update: ${svc.name} skipped — ${refusal}`);
       void audit(db, null, 'autoupdate.refused', `${svc.name}: ${refusal}`, { serviceId: svc.id });
       result.skipped++;
@@ -184,7 +189,7 @@ export async function sweepAutoUpdates(
       }
       throw err;
     }
-    await db.update(services).set({ autoUpdateDigest: digest }).where(eq(services.id, svc.id));
+    await db.update(services).set({ autoUpdateDigest: digest }).where(ownsObservation);
     void audit(db, null, 'autoupdate.enqueued', `${svc.name}: ${svc.image} moved to ${digest.slice(0, 19)}`, {
       serviceId: svc.id,
     });

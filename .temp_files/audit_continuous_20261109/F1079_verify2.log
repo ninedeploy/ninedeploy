@@ -1,0 +1,34 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1079_autoUpdateDigest.test.ts > baseline publication respects image at native write boundary 194ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1079_autoUpdateDigest.test.ts > baseline publication respects digest at native write boundary 172ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1079_autoUpdateDigest.test.ts > baseline publication respects disable at native write boundary 171ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1079_autoUpdateDigest.test.ts > baseline publication respects stop at native write boundary 172ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1079_autoUpdateDigest.test.ts > baseline publication respects type at native write boundary 160ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1079_autoUpdateDigest.test.ts > baseline publication respects delete at native write boundary 173ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1079_autoUpdateDigest.test.ts > refused publication respects image at native write boundary 196ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1079_autoUpdateDigest.test.ts > refused publication respects digest at native write boundary 194ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1079_autoUpdateDigest.test.ts > refused publication respects disable at native write boundary 161ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1079_autoUpdateDigest.test.ts > refused publication respects stop at native write boundary 156ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1079_autoUpdateDigest.test.ts > refused publication respects type at native write boundary 172ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1079_autoUpdateDigest.test.ts > refused publication respects delete at native write boundary 167ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1079_autoUpdateDigest.test.ts > enqueued publication respects image at native write boundary 167ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1079_autoUpdateDigest.test.ts > enqueued publication respects digest at native write boundary 186ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1079_autoUpdateDigest.test.ts > enqueued publication respects disable at native write boundary 229ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1079_autoUpdateDigest.test.ts > enqueued publication respects stop at native write boundary 256ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1079_autoUpdateDigest.test.ts > enqueued publication respects type at native write boundary 240ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1079_autoUpdateDigest.test.ts > enqueued publication respects delete at native write boundary 242ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1079_autoUpdateDigest.test.ts > baseline unchanged owner still records digest 235ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1079_autoUpdateDigest.test.ts > refused unchanged owner still records digest 227ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1079_autoUpdateDigest.test.ts > enqueued unchanged owner still records digest 222ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1079_autoUpdateDigest.test.ts > a stale first-observation writer preserves a newer independent baseline 223ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1079_autoUpdateDigest.test.ts
+FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1079_autoUpdateDigest.test.ts > legacy empty-string baseline can still be replaced by its first observation 226ms
+
+ Test Files  1 passed (1)
+      Tests  23 passed (23)
+   Start at  00:46:41
+   Duration  5.10s (tests 92%, import 7%, transform 1%)

@@ -1,0 +1,95 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/lib/autoUpdateDigestRace.test.ts > control: unchanged baseline and accepted update publish their digest 165ms
+stdout | test/lib/autoUpdateDigestRace.test.ts > baseline: opt-out committed before digest write remains cleared
+EXPECTED: opt-out digest null; ACTUAL: false sha256:new
+PROBLEM CONFIRMED
+
+ × test/lib/autoUpdateDigestRace.test.ts > baseline: opt-out committed before digest write remains cleared 164ms
+   → expected { id: 5, ownerUserId: null, …(61) } to deeply equal { id: 5, ownerUserId: null, …(61) }
+stdout | test/lib/autoUpdateDigestRace.test.ts > refused: opt-out committed before digest write remains cleared
+EXPECTED: opt-out digest null; ACTUAL: false sha256:new
+PROBLEM CONFIRMED
+
+ × test/lib/autoUpdateDigestRace.test.ts > refused: opt-out committed before digest write remains cleared 163ms
+   → expected { id: 5, ownerUserId: 1, …(61) } to deeply equal { id: 5, ownerUserId: 1, …(61) }
+stdout | test/lib/autoUpdateDigestRace.test.ts > enqueued: opt-out committed before digest write remains cleared
+EXPECTED: opt-out digest null; ACTUAL: false sha256:new
+PROBLEM CONFIRMED
+
+ × test/lib/autoUpdateDigestRace.test.ts > enqueued: opt-out committed before digest write remains cleared 153ms
+   → expected { id: 5, ownerUserId: null, …(61) } to deeply equal { id: 5, ownerUserId: null, …(61) }
+ × test/lib/autoUpdateDigestRace.test.ts > a stale first-observation writer preserves a newer independent baseline 160ms
+   → expected 'sha256:old-probe' to be 'sha256:fresh' // Object.is equality
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/lib/autoUpdateDigestRace.test.ts > baseline: opt-out committed before digest write remains cleared
+ FAIL  test/lib/autoUpdateDigestRace.test.ts > enqueued: opt-out committed before digest write remains cleared
+AssertionError: expected { id: 5, ownerUserId: null, …(61) } to deeply equal { id: 5, ownerUserId: null, …(61) }
+
+- Expected
++ Received
+
+@@ -1,9 +1,9 @@
+  {
+    "asleepAt": null,
+    "autoUpdate": false,
+-   "autoUpdateDigest": null,
++   "autoUpdateDigest": "sha256:new",
+    "autoscale": null,
+    "badgeToken": null,
+    "branch": "main",
+    "buildOn": null,
+    "buildServerId": null,
+
+ ❯ test/lib/autoUpdateDigestRace.test.ts:32:268
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  test/lib/autoUpdateDigestRace.test.ts > refused: opt-out committed before digest write remains cleared
+AssertionError: expected { id: 5, ownerUserId: 1, …(61) } to deeply equal { id: 5, ownerUserId: 1, …(61) }
+
+- Expected
++ Received
+
+@@ -1,9 +1,9 @@
+  {
+    "asleepAt": null,
+    "autoUpdate": false,
+-   "autoUpdateDigest": null,
++   "autoUpdateDigest": "sha256:new",
+    "autoscale": null,
+    "badgeToken": null,
+    "branch": "main",
+    "buildOn": null,
+    "buildServerId": null,
+
+ ❯ test/lib/autoUpdateDigestRace.test.ts:32:268
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+ FAIL  test/lib/autoUpdateDigestRace.test.ts > a stale first-observation writer preserves a newer independent baseline
+AssertionError: expected 'sha256:old-probe' to be 'sha256:fresh' // Object.is equality
+
+Expected: "sha256:fresh"
+Received: "sha256:old-probe"
+
+ ❯ test/lib/autoUpdateDigestRace.test.ts:50:67
+     48|  try {
+     49|   await held.entered; expect((await sweepAutoUpdates(db, async () => '…
+     50|   expect((await db.query.services.findFirst())?.autoUpdateDigest).toBe…
+       |                                                                   ^
+     51|  } finally { held.release(); await stale; held.close(); }
+     52| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  4 failed | 1 passed (5)
+   Start at  00:46:32
+   Duration  1.31s (tests 66%, import 28%, transform 6%)

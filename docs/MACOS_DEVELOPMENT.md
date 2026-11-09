@@ -547,3 +547,13 @@ neighboring tests passed after repair. Sixteen independent native-SQL barrier,
 competing-sweep and failure/retry cases passed three times. Accepted queue rows
 retain the schedule trigger. This does not certify post-insert digest publication,
 multiple processes, live registry/deployment or native Mac acceptance.
+
+Round 61 (F1079) fences automatic-update digest publication against the original
+opt-in/running image and previous digest. Old baseline, refused-update and
+post-enqueue writes cannot restore an operator-cleared or replacement baseline.
+Five permanent tests were seen red (four failing cases and one control); 34
+neighboring tests passed after repair. Twenty-three independent native-write
+barrier cases passed three times, including competing baseline observations and
+a legacy empty-string baseline. Accepted deployment rows are retained; refusal
+authorization, multi-process ABA ordering, live provider and native Mac acceptance
+remain outside this bounded validation.

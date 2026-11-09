@@ -1,0 +1,24 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1079_autoUpdateDigest.test.ts > control: unchanged baseline and accepted update publish their digest 179ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1079_autoUpdateDigest.test.ts > baseline: opt-out committed before digest write remains cleared
+EXPECTED: opt-out digest null; ACTUAL: false null
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1079_autoUpdateDigest.test.ts > baseline: opt-out committed before digest write remains cleared 214ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1079_autoUpdateDigest.test.ts > refused: opt-out committed before digest write remains cleared
+EXPECTED: opt-out digest null; ACTUAL: false null
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1079_autoUpdateDigest.test.ts > refused: opt-out committed before digest write remains cleared 192ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1079_autoUpdateDigest.test.ts > enqueued: opt-out committed before digest write remains cleared
+EXPECTED: opt-out digest null; ACTUAL: false null
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1079_autoUpdateDigest.test.ts > enqueued: opt-out committed before digest write remains cleared 174ms
+
+ Test Files  1 passed (1)
+      Tests  4 passed (4)
+   Start at  00:45:26
+   Duration  1.35s (tests 62%, import 31%, transform 7%)

@@ -1,0 +1,77 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1079_autoUpdateDigest.test.ts > control: unchanged baseline and accepted update publish their digest 195ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1079_autoUpdateDigest.test.ts > baseline: opt-out committed before digest write remains cleared
+EXPECTED: opt-out digest null; ACTUAL: false sha256:new
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/prove_F1079_autoUpdateDigest.test.ts > baseline: opt-out committed before digest write remains cleared 201ms
+   → expected { id: 5, ownerUserId: null, …(61) } to deeply equal { id: 5, ownerUserId: null, …(61) }
+stdout | .temp_files/audit_continuous_20261109/prove_F1079_autoUpdateDigest.test.ts > refused: opt-out committed before digest write remains cleared
+EXPECTED: opt-out digest null; ACTUAL: false sha256:new
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/prove_F1079_autoUpdateDigest.test.ts > refused: opt-out committed before digest write remains cleared 167ms
+   → expected { id: 5, ownerUserId: 1, …(61) } to deeply equal { id: 5, ownerUserId: 1, …(61) }
+stdout | .temp_files/audit_continuous_20261109/prove_F1079_autoUpdateDigest.test.ts > enqueued: opt-out committed before digest write remains cleared
+EXPECTED: opt-out digest null; ACTUAL: false sha256:new
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/prove_F1079_autoUpdateDigest.test.ts > enqueued: opt-out committed before digest write remains cleared 195ms
+   → expected { id: 5, ownerUserId: null, …(61) } to deeply equal { id: 5, ownerUserId: null, …(61) }
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1079_autoUpdateDigest.test.ts > baseline: opt-out committed before digest write remains cleared
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1079_autoUpdateDigest.test.ts > enqueued: opt-out committed before digest write remains cleared
+AssertionError: expected { id: 5, ownerUserId: null, …(61) } to deeply equal { id: 5, ownerUserId: null, …(61) }
+
+- Expected
++ Received
+
+@@ -1,9 +1,9 @@
+  {
+    "asleepAt": null,
+    "autoUpdate": false,
+-   "autoUpdateDigest": null,
++   "autoUpdateDigest": "sha256:new",
+    "autoscale": null,
+    "badgeToken": null,
+    "branch": "main",
+    "buildOn": null,
+    "buildServerId": null,
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1079_autoUpdateDigest.test.ts:32:268
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1079_autoUpdateDigest.test.ts > refused: opt-out committed before digest write remains cleared
+AssertionError: expected { id: 5, ownerUserId: 1, …(61) } to deeply equal { id: 5, ownerUserId: 1, …(61) }
+
+- Expected
++ Received
+
+@@ -1,9 +1,9 @@
+  {
+    "asleepAt": null,
+    "autoUpdate": false,
+-   "autoUpdateDigest": null,
++   "autoUpdateDigest": "sha256:new",
+    "autoscale": null,
+    "badgeToken": null,
+    "branch": "main",
+    "buildOn": null,
+    "buildServerId": null,
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1079_autoUpdateDigest.test.ts:32:268
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  3 failed | 1 passed (4)
+   Start at  00:45:03
+   Duration  1.38s (tests 62%, import 31%, transform 6%)
