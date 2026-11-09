@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Restart-loop samples cannot stop replacement runtimes or interrupt deployments admitted while sampling; rejected stale trips no longer contaminate later runtime baselines (F1076).
 - Restart-loop enforcement preserves newer operator policy changes during runtime sampling and does not recreate disabled limits or clear replacement history after an admitted stop (F1075).
 - Shared-certificate renewal checks no longer overlap while reading settings, and pending checks cannot start a proxy render after server close (F1074).
 - Pending runner jobs recheck queue expiry after asynchronous preparation and status/config reads, so an expired snapshot entry cannot consume a runner slot ahead of fresh work (F1073).

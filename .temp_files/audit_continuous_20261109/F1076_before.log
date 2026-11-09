@@ -1,0 +1,52 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1076_restartRuntime.test.ts > control: unchanged runtime without deployment is stopped 204ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1076_restartRuntime.test.ts > runtime during sampling prevents stale stop admission
+EXPECTED: no stop, running current service; ACTUAL: { stopped: [ 5 ], status: 'stopped', calls: 1 }
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/prove_F1076_restartRuntime.test.ts > runtime during sampling prevents stale stop admission 163ms
+   → expected { stopped: [ 5 ], …(2) } to deeply equal { Object (stopped, status, ...) }
+stdout | .temp_files/audit_continuous_20261109/prove_F1076_restartRuntime.test.ts > deploy during sampling prevents stale stop admission
+EXPECTED: no stop, running current service; ACTUAL: { stopped: [ 5 ], status: 'stopped', calls: 1 }
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/prove_F1076_restartRuntime.test.ts > deploy during sampling prevents stale stop admission 147ms
+   → expected { stopped: [ 5 ], …(2) } to deeply equal { Object (stopped, status, ...) }
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1076_restartRuntime.test.ts > runtime during sampling prevents stale stop admission
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1076_restartRuntime.test.ts > deploy during sampling prevents stale stop admission
+AssertionError: expected { stopped: [ 5 ], …(2) } to deeply equal { Object (stopped, status, ...) }
+
+- Expected
++ Received
+
+  {
+-   "calls": 0,
+-   "status": "running",
+-   "stopped": [],
++   "calls": 1,
++   "status": "stopped",
++   "stopped": [
++     5,
++   ],
+  }
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1076_restartRuntime.test.ts:30:18
+     28|   const actual = { stopped, status: svc?.status, calls: stop.mock.call…
+     29|   console.log('EXPECTED: no stop, running current service; ACTUAL:', a…
+     30|   expect(actual).toEqual({ stopped: [], status: 'running', calls: 0 })…
+       |                  ^
+     31|  } finally { blocked.release(); await run; }
+     32| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 1 passed (3)
+   Start at  00:32:01
+   Duration  1.46s (tests 47%, import 41%, transform 12%)

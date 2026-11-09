@@ -1,0 +1,104 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/lib/restartLimitRuntimeRace.test.ts > control: unchanged runtime without deployment is stopped 207ms
+stdout | test/lib/restartLimitRuntimeRace.test.ts > runtime during sampling prevents stale stop admission
+EXPECTED: no stop, running current service; ACTUAL: { stopped: [ 5 ], status: 'stopped', calls: 1 }
+PROBLEM CONFIRMED
+
+ × test/lib/restartLimitRuntimeRace.test.ts > runtime during sampling prevents stale stop admission 175ms
+   → expected { stopped: [ 5 ], …(2) } to deeply equal { Object (stopped, status, ...) }
+stdout | test/lib/restartLimitRuntimeRace.test.ts > deploy during sampling prevents stale stop admission
+EXPECTED: no stop, running current service; ACTUAL: { stopped: [ 5 ], status: 'stopped', calls: 1 }
+PROBLEM CONFIRMED
+
+ × test/lib/restartLimitRuntimeRace.test.ts > deploy during sampling prevents stale stop admission 204ms
+   → expected { stopped: [ 5 ], …(2) } to deeply equal { Object (stopped, status, ...) }
+ × test/lib/restartLimitRuntimeRace.test.ts > SQL admission catches runtime committed after earlier reads 213ms
+   → expected [ 5 ] to deeply equal []
+ × test/lib/restartLimitRuntimeRace.test.ts > SQL admission catches deploy committed after earlier reads 189ms
+   → expected [ 5 ] to deeply equal []
+ × test/lib/restartLimitRuntimeRace.test.ts > rejected runtime sample does not trip a later clean runtime baseline 182ms
+   → expected [ 5 ] to deeply equal []
+ × test/lib/restartLimitRuntimeRace.test.ts > rejected deploy sample does not trip a later clean runtime baseline 151ms
+   → expected [ 5 ] to deeply equal []
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 6 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/lib/restartLimitRuntimeRace.test.ts > runtime during sampling prevents stale stop admission
+ FAIL  test/lib/restartLimitRuntimeRace.test.ts > deploy during sampling prevents stale stop admission
+AssertionError: expected { stopped: [ 5 ], …(2) } to deeply equal { Object (stopped, status, ...) }
+
+- Expected
++ Received
+
+  {
+-   "calls": 0,
+-   "status": "running",
+-   "stopped": [],
++   "calls": 1,
++   "status": "stopped",
++   "stopped": [
++     5,
++   ],
+  }
+
+ ❯ test/lib/restartLimitRuntimeRace.test.ts:30:18
+     28|   const actual = { stopped, status: svc?.status, calls: stop.mock.call…
+     29|   console.log('EXPECTED: no stop, running current service; ACTUAL:', a…
+     30|   expect(actual).toEqual({ stopped: [], status: 'running', calls: 0 })…
+       |                  ^
+     31|  } finally { blocked.release(); await run; }
+     32| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/6]⎯
+
+ FAIL  test/lib/restartLimitRuntimeRace.test.ts > SQL admission catches runtime committed after earlier reads
+ FAIL  test/lib/restartLimitRuntimeRace.test.ts > SQL admission catches deploy committed after earlier reads
+AssertionError: expected [ 5 ] to deeply equal []
+
+- Expected
++ Received
+
+- []
++ [
++   5,
++ ]
+
+ ❯ test/lib/restartLimitRuntimeRace.test.ts:47:40
+     45|   await entered.promise;
+     46|   if (change === 'runtime') await db.update(services).set({ runtimeId:…
+     47|   blocked.release(); expect(await run).toEqual([]); expect(stop).not.t…
+       |                                        ^
+     48|  } finally { blocked.release(); await run; }
+     49| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/6]⎯
+
+ FAIL  test/lib/restartLimitRuntimeRace.test.ts > rejected runtime sample does not trip a later clean runtime baseline
+ FAIL  test/lib/restartLimitRuntimeRace.test.ts > rejected deploy sample does not trip a later clean runtime baseline
+AssertionError: expected [ 5 ] to deeply equal []
+
+- Expected
++ Received
+
+- []
++ [
++   5,
++ ]
+
+ ❯ test/lib/restartLimitRuntimeRace.test.ts:56:40
+     54|   await entered.promise;
+     55|   if (change === 'runtime') await db.update(services).set({ runtimeId:…
+     56|   blocked.release(); expect(await run).toEqual([]); await db.delete(de…
+       |                                        ^
+     57|   expect(await lib.enforceRestartLimits(db, { sample: async () => new …
+     58|   expect(await lib.enforceRestartLimits(db, { sample: async () => new …
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/6]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  6 failed | 1 passed (7)
+   Start at  00:33:52
+   Duration  2.33s (tests 66%, import 27%, transform 7%)

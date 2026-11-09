@@ -1,0 +1,39 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1076_restartRuntime.test.ts > docker: runtime while sampling cannot be clobbered 183ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1076_restartRuntime.test.ts > docker: deploying-status while sampling cannot be clobbered 188ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1076_restartRuntime.test.ts > docker: error while sampling cannot be clobbered 163ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1076_restartRuntime.test.ts > docker: stopped while sampling cannot be clobbered 171ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1076_restartRuntime.test.ts > docker: type while sampling cannot be clobbered 150ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1076_restartRuntime.test.ts > docker: swarm while sampling cannot be clobbered 170ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1076_restartRuntime.test.ts > docker: delete while sampling cannot be clobbered 175ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1076_restartRuntime.test.ts > pm2: runtime while sampling cannot be clobbered 176ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1076_restartRuntime.test.ts > pm2: deploying-status while sampling cannot be clobbered 156ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1076_restartRuntime.test.ts > pm2: error while sampling cannot be clobbered 165ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1076_restartRuntime.test.ts > pm2: stopped while sampling cannot be clobbered 176ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1076_restartRuntime.test.ts > pm2: type while sampling cannot be clobbered 157ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1076_restartRuntime.test.ts > pm2: swarm while sampling cannot be clobbered 179ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1076_restartRuntime.test.ts > pm2: delete while sampling cannot be clobbered 211ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1076_restartRuntime.test.ts > docker: new queued deployment holds admission 205ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1076_restartRuntime.test.ts > docker: new building deployment holds admission 207ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1076_restartRuntime.test.ts > docker: new deploying deployment holds admission 241ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1076_restartRuntime.test.ts > pm2: new queued deployment holds admission 211ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1076_restartRuntime.test.ts > pm2: new building deployment holds admission 210ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1076_restartRuntime.test.ts > pm2: new deploying deployment holds admission 218ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1076_restartRuntime.test.ts > SQL admission catches runtime committed after earlier reads 216ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1076_restartRuntime.test.ts > SQL admission catches deploy committed after earlier reads 213ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1076_restartRuntime.test.ts > rejected runtime sample does not trip a later clean runtime baseline 216ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1076_restartRuntime.test.ts > rejected deploy sample does not trip a later clean runtime baseline 197ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1076_restartRuntime.test.ts > terminal succeeded deployments do not block a valid trip 221ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1076_restartRuntime.test.ts > terminal failed deployments do not block a valid trip 246ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1076_restartRuntime.test.ts > terminal cancelled deployments do not block a valid trip 231ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1076_restartRuntime.test.ts
+FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1076_restartRuntime.test.ts > an active deployment for another service does not hold this service 209ms
+
+ Test Files  1 passed (1)
+      Tests  28 passed (28)
+   Start at  00:34:04
+   Duration  6.37s (tests 90%, import 8%, transform 2%)

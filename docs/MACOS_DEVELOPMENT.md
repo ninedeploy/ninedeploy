@@ -521,3 +521,12 @@ cases passed three times. Fixture promotion and initial incomplete-fix failures
 are retained in the ledger and excluded from passing results. No live container
 stop or distributed policy lock was certified; use the physical-Mac acceptance
 steps above for native behavior.
+
+Round 58 (F1076) prevents restart-loop samples from stopping a replacement
+runtime or a service whose deployment became active during sampling. The final
+database admission checks current runtime/status and active deployments; rejected
+trip history cannot stop a later clean runtime baseline. Seven permanent tests
+were seen red on the preceding policy fix, then 19 neighboring tests passed.
+Twenty-eight independent Docker/PM2, native-SQL barrier and follow-up baseline
+cases passed three times. This does not cancel an external stop already admitted
+before a later deployment; live runtime and native Mac acceptance remain separate.

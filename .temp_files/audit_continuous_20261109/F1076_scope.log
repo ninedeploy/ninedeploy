@@ -1,0 +1,46 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/lib/restartLimitRuntimeRace.test.ts > control: unchanged runtime without deployment is stopped 170ms
+stdout | test/lib/restartLimitRuntimeRace.test.ts > runtime during sampling prevents stale stop admission
+EXPECTED: no stop, running current service; ACTUAL: { stopped: [], status: 'running', calls: 0 }
+PROBLEM NOT REPRODUCED
+
+ ✓ test/lib/restartLimitRuntimeRace.test.ts > runtime during sampling prevents stale stop admission 168ms
+stdout | test/lib/restartLimitRuntimeRace.test.ts > deploy during sampling prevents stale stop admission
+EXPECTED: no stop, running current service; ACTUAL: { stopped: [], status: 'running', calls: 0 }
+PROBLEM NOT REPRODUCED
+
+ ✓ test/lib/restartLimitRuntimeRace.test.ts > deploy during sampling prevents stale stop admission 183ms
+ ✓ test/lib/restartLimitRuntimeRace.test.ts > SQL admission catches runtime committed after earlier reads 160ms
+ ✓ test/lib/restartLimitRuntimeRace.test.ts > SQL admission catches deploy committed after earlier reads 167ms
+ ✓ test/lib/restartLimitRuntimeRace.test.ts > rejected runtime sample does not trip a later clean runtime baseline 172ms
+ ✓ test/lib/restartLimitRuntimeRace.test.ts > rejected deploy sample does not trip a later clean runtime baseline 156ms
+ ✓ test/lib/restartLimit.test.ts > recordRestarts > counts restarts per container from a baseline, within the window 187ms
+ ✓ test/lib/restartLimit.test.ts > recordRestarts > forgets restarts older than the window, and a new container starts from its own baseline 160ms
+ ✓ test/lib/restartLimit.test.ts > enforceRestartLimits > stops a crash-looping service like the Stop button, records the trip and reports it once 173ms
+ ✓ test/lib/restartLimit.test.ts > enforceRestartLimits > stops a crash-looping PM2 service through PM2, never through docker 176ms
+ ✓ test/lib/restartLimit.test.ts > enforceRestartLimits > leaves a service alone while it deploys, and does nothing without a limit 167ms
+ ✓ test/lib/restartLimit.test.ts > routes > reads and sets the limit, refuses bad values and turns it off 238ms
+ ✓ test/lib/restartLimit.test.ts > routes > refuses turning it on where the sweep never samples: a Swarm service; off stays allowed 171ms
+ ✓ test/lib/restartLimit.test.ts > routes > names the services the sweep samples 158ms
+ ✓ test/lib/restartLimitPolicyRace.test.ts > control: unchanged policy stops the loop and records one trip 169ms
+stdout | test/lib/restartLimitPolicyRace.test.ts > a raised threshold completed during sampling prevents the stale policy stop
+EXPECTED: no stop and maxRestarts10; ACTUAL: { stops: 0, maxRestarts: 10 }
+PROBLEM NOT REPRODUCED
+
+ ✓ test/lib/restartLimitPolicyRace.test.ts > a raised threshold completed during sampling prevents the stale policy stop 152ms
+stdout | test/lib/restartLimitPolicyRace.test.ts > disabling the policy during an admitted stop does not recreate its setting
+EXPECTED: disabled/null; ACTUAL: null
+PROBLEM NOT REPRODUCED
+
+ ✓ test/lib/restartLimitPolicyRace.test.ts > disabling the policy during an admitted stop does not recreate its setting 146ms
+ ✓ test/lib/restartLimitPolicyRace.test.ts > old stop completion preserves history started by a newly enabled policy 157ms
+
+ Test Files  3 passed (3)
+      Tests  19 passed (19)
+   Start at  00:34:21
+   Duration  6.15s (tests 68%, import 29%, transform 3%)
+
+    Isolate  3 workers spawned · ~450ms startup each (spawn + environment, per file)
+             at least ~900ms faster with isolate: false — reuses workers across files instead of one per file

@@ -1,0 +1,2 @@
+ M CHANGELOG.md
+ M docs/plans/COMPETITIVE_ROADMAP_2026-11.md

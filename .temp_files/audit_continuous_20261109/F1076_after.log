@@ -1,0 +1,19 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1076_restartRuntime.test.ts > control: unchanged runtime without deployment is stopped 188ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1076_restartRuntime.test.ts > runtime during sampling prevents stale stop admission
+EXPECTED: no stop, running current service; ACTUAL: { stopped: [], status: 'running', calls: 0 }
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1076_restartRuntime.test.ts > runtime during sampling prevents stale stop admission 168ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1076_restartRuntime.test.ts > deploy during sampling prevents stale stop admission
+EXPECTED: no stop, running current service; ACTUAL: { stopped: [], status: 'running', calls: 0 }
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1076_restartRuntime.test.ts > deploy during sampling prevents stale stop admission 194ms
+
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
+   Start at  00:32:31
+   Duration  1.30s (tests 47%, import 41%, transform 12%)

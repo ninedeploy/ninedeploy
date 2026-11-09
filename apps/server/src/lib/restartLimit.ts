@@ -1,4 +1,4 @@
-import { and, eq, exists, inArray } from 'drizzle-orm';
+import { and, eq, exists, inArray, isNull, notExists } from 'drizzle-orm';
 import { deployments, services, settings, type DB, type Service } from '@ninedeploy/db';
 import { restartLimitConfig, type RestartLimitConfig, type RestartLimitView } from '@ninedeploy/schemas';
 import { pm2RestartCounts, pm2Stop } from '../engine/builders/pm2.js';
@@ -167,9 +167,20 @@ export async function enforceRestartLimits(db: DB, deps: RestartLimitDeps = {}, 
     const restarts = history.get(id)?.restarts.length ?? limit.maxRestarts;
     // As the Stop button: `stopped` first, so the runtime reconcile does not revive it.
     const admitted = await db.update(services).set({ status: 'stopped', asleepAt: null })
-      .where(and(eq(services.id, id), exists(db.select({ key: settings.key }).from(settings).where(ownsPolicy))))
+      .where(and(
+        eq(services.id, id), eq(services.runtimeId, runtimeId), eq(services.type, svc.type),
+        eq(services.status, 'running'), isNull(services.serverId),
+        svc.orchestrator === null ? isNull(services.orchestrator) : eq(services.orchestrator, svc.orchestrator),
+        exists(db.select({ key: settings.key }).from(settings).where(ownsPolicy)),
+        notExists(db.select({ id: deployments.id }).from(deployments).where(and(
+          eq(deployments.serviceId, id), inArray(deployments.status, ['queued', 'building', 'deploying']),
+        ))),
+      ))
       .returning({ id: services.id });
-    if (admitted.length === 0) continue;
+    if (admitted.length === 0) {
+      if (policyOwners.get(db)?.get(id) === owner && history.get(id) === sampledHistory) history.delete(id);
+      continue;
+    }
     if (pm2) await (deps.stopPm2 ?? pm2Stop)(runtimeId).catch(() => undefined);
     else await (deps.stop ?? (async (n: string[]) => void (await capture('docker', ['stop', '-t', '5', ...n]).catch(() => undefined))))(names);
     if (policyOwners.get(db)?.get(id) === owner) {
