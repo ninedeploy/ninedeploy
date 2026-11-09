@@ -44,7 +44,8 @@
     "smoke:node-canary": "node scripts/smoke-node-canary.mjs",
     "smoke:node-limits": "node scripts/smoke-node-limits.mjs",
     "smoke:volume-files": "node scripts/smoke-volume-file-helper.mjs",
-    "smoke:database-clients": "node scripts/smoke-database-clients.mjs"
+    "smoke:database-clients": "node scripts/smoke-database-clients.mjs",
+    "smoke:node-operations": "node scripts/smoke-node-operations.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.14",
