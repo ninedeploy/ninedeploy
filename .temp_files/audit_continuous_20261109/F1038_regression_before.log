@@ -1,0 +1,42 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ × test/lib/backupCryptoTruncation.test.ts > truncated encrypted backups > does not open a late output or leak a descriptor with only 0 tag bytes 18ms
+   → expected false to be true // Object.is equality
+ × test/lib/backupCryptoTruncation.test.ts > truncated encrypted backups > does not open a late output or leak a descriptor with only 1 tag bytes 9ms
+   → expected false to be true // Object.is equality
+ × test/lib/backupCryptoTruncation.test.ts > truncated encrypted backups > does not open a late output or leak a descriptor with only 8 tag bytes 8ms
+   → expected false to be true // Object.is equality
+ × test/lib/backupCryptoTruncation.test.ts > truncated encrypted backups > does not open a late output or leak a descriptor with only 15 tag bytes 8ms
+   → expected false to be true // Object.is equality
+ ✓ test/lib/backupCryptoTruncation.test.ts > truncated encrypted backups > control: an empty authenticated backup still creates and closes a valid empty output 7ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/lib/backupCryptoTruncation.test.ts > truncated encrypted backups > does not open a late output or leak a descriptor with only 0 tag bytes
+ FAIL  test/lib/backupCryptoTruncation.test.ts > truncated encrypted backups > does not open a late output or leak a descriptor with only 1 tag bytes
+ FAIL  test/lib/backupCryptoTruncation.test.ts > truncated encrypted backups > does not open a late output or leak a descriptor with only 8 tag bytes
+ FAIL  test/lib/backupCryptoTruncation.test.ts > truncated encrypted backups > does not open a late output or leak a descriptor with only 15 tag bytes
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ test/lib/backupCryptoTruncation.test.ts:41:81
+     39|       });
+     40|     }
+     41|     expect(observed.streams.every(stream => stream.closed && stream.de…
+       |                                                                                 ^
+     42|     expect(existsSync(output)).toBe(false);
+     43|     expect(readFileSync(input)).toEqual(truncated);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  4 failed | 1 passed (5)
+   Start at  17:34:13
+   Duration  484ms (import 48%, tests 32%, transform 19%, worker 2%)

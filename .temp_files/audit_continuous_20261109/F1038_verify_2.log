@@ -1,0 +1,12 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/verify_F1038_truncated_backup_output.test.ts > keeps every incomplete-tag boundary resource-free and preserves authenticated empty/nonempty files
+FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1038_truncated_backup_output.test.ts > keeps every incomplete-tag boundary resource-free and preserves authenticated empty/nonempty files 237ms
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  17:35:53
+   Duration  489ms (tests 64%, import 30%, transform 5%, worker 1%)

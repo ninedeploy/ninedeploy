@@ -1,0 +1,16 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1038_truncated_backup_output.test.ts > does not open an orphan plaintext stream after rejecting a truncated encrypted envelope
+CONTROL EXPECTED: valid envelope finishes and closes output | ACTUAL: plaintext correct, stream closed
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1038_truncated_backup_output.test.ts > does not open an orphan plaintext stream after rejecting a truncated encrypted envelope
+EXPECTED: orphan streams=0 outputExists=false | ACTUAL: {"leaked":0,"outputExists":false}
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1038_truncated_backup_output.test.ts > does not open an orphan plaintext stream after rejecting a truncated encrypted envelope 20ms
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  17:35:46
+   Duration  504ms (import 60%, transform 22%, tests 15%, worker 3%)

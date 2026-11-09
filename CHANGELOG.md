@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Truncated encrypted backup envelopes are rejected before opening a plaintext output, preventing late empty staging files and leaked write descriptors when the authentication tag is incomplete.
 - Backup replica retention rechecks the current destination list and copy limit before every remote delete. Removing a replica or raising its retained-copy count during a slow upload no longer lets the old policy delete recovery points afterward.
 - Image cleanup no longer reports images removed or space reclaimed when both deletion and the follow-up inspection are unconfirmed; a daemon, permission or timeout error is kept separate from a missing image.
 - Webhook replay detection keeps delivery IDs separate per provider and service, so one repository event can reach each configured service. Docker runtime patrols skip unreadable inspections instead of reporting a missing container and a false outage.

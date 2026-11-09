@@ -145,6 +145,7 @@ export async function decryptBackupFile(file: string, outputPath: string): Promi
     header = prefix.subarray(0, newline + 1).toString('utf8');
     dataStart = newline + 1;
     dataEnd = stat.size - GCM_TAG_BYTES - 1;
+    if (dataEnd < dataStart - 1) throw new Error('Encrypted backup is truncated');
   } finally {
     await handle.close();
   }

@@ -1,0 +1,39 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1038_truncated_backup_output.test.ts > does not open an orphan plaintext stream after rejecting a truncated encrypted envelope
+CONTROL EXPECTED: valid envelope finishes and closes output | ACTUAL: plaintext correct, stream closed
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1038_truncated_backup_output.test.ts > does not open an orphan plaintext stream after rejecting a truncated encrypted envelope
+EXPECTED: orphan streams=0 outputExists=false | ACTUAL: {"leaked":1,"outputExists":true}
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/prove_F1038_truncated_backup_output.test.ts > does not open an orphan plaintext stream after rejecting a truncated encrypted envelope 28ms
+   → expected 1 to be +0 // Object.is equality
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1038_truncated_backup_output.test.ts > does not open an orphan plaintext stream after rejecting a truncated encrypted envelope
+AssertionError: expected 1 to be +0 // Object.is equality
+
+- Expected
++ Received
+
+- 0
++ 1
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1038_truncated_backup_output.test.ts:39:20
+     37|     console.log('EXPECTED: orphan streams=0 outputExists=false | ACTUA…
+     38|     console.log(leaked || existsSync(brokenOutput) ? 'PROBLEM CONFIRME…
+     39|     expect(leaked).toBe(0); expect(existsSync(brokenOutput)).toBe(fals…
+       |                    ^
+     40|   } finally { await closeStreams(); vi.useRealTimers(); rmSync(dir, { …
+     41| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed (1)
+   Start at  17:32:43
+   Duration  706ms (import 55%, transform 28%, tests 14%, worker 2%)

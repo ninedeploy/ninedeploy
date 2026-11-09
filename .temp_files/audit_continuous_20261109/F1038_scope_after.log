@@ -1,0 +1,197 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/lib/backupCryptoTruncation.test.ts > truncated encrypted backups > does not open a late output or leak a descriptor with only 0 tag bytes 16ms
+ ✓ test/lib/backupCryptoTruncation.test.ts > truncated encrypted backups > does not open a late output or leak a descriptor with only 1 tag bytes 8ms
+ ✓ test/lib/backupCryptoTruncation.test.ts > truncated encrypted backups > does not open a late output or leak a descriptor with only 8 tag bytes 8ms
+ ✓ test/lib/backupCryptoTruncation.test.ts > truncated encrypted backups > does not open a late output or leak a descriptor with only 15 tag bytes 7ms
+ ✓ test/lib/backupCryptoTruncation.test.ts > truncated encrypted backups > control: an empty authenticated backup still creates and closes a valid empty output 7ms
+ ✓ test/lib/backupDrill.test.ts > real restore drill staging and history > records restore timings and exact probe verdict without persisting probe SQL or data 8ms
+ ✓ test/lib/backupDrill.test.ts > real restore drill staging and history > decrypts an encrypted backup before restore and removes only its private staging file 4ms
+ ✓ test/lib/backupDrill.test.ts > real restore drill staging and history > fetches a remote-only backup, verifies its staged copy and removes the fetched file 4ms
+ ✓ test/lib/backupDrill.test.ts > real restore drill staging and history > persists a failed verifier result without reporting structural success 3ms
+ ✓ test/lib/backupDrill.test.ts > real restore drill staging and history > persists a unverifiable verifier result without reporting structural success 3ms
+ ✓ test/lib/backupDrill.test.ts > real restore drill staging and history > sanitizes unexpected restore errors and still drops encrypted staging 4ms
+ ✓ test/lib/backupDrill.test.ts > real restore drill staging and history > makes the engine image present on the panel host before verifying (a node database may lack it) 3ms
+ ✓ test/lib/backupDrill.test.ts > real restore drill staging and history > is unverifiable, before decrypting anything, when the engine image cannot be pulled 2ms
+ ✓ test/lib/backupDrill.test.ts > real restore drill staging and history > does not pull images for the structural drill 5ms
+ ✓ test/lib/backupDrill.test.ts > real restore drill staging and history > admits once the running row exists, before any staging or verification 3ms
+ ✓ test/lib/backupDrill.test.ts > real restore drill staging and history > verifies a mysql backup (version null) in its own engine image mysql:9.7 4ms
+ ✓ test/lib/backupDrill.test.ts > real restore drill staging and history > verifies a mariadb backup (version null) in its own engine image mariadb:12.3 3ms
+ ✓ test/lib/backupDrill.test.ts > real restore drill staging and history > verifies a mysql backup (version 8.4) in its own engine image mysql:8.4 3ms
+ ✓ test/lib/backupDrill.test.ts > real restore drill staging and history > verifies a mongo backup (version null) in its own engine image mongo:8.0 3ms
+ ✓ test/lib/backupDrill.test.ts > real restore drill staging and history > verifies a redis backup (version null) in its own engine image redis:8.8 3ms
+ ✓ test/lib/backupDrill.test.ts > real restore drill staging and history > verifies a valkey backup (version null) in its own engine image valkey/valkey:9.1 3ms
+ ✓ test/lib/backupDrill.test.ts > real restore drill staging and history > verifies a dragonfly backup (version null) in its own engine image ghcr.io/dragonflydb/dragonfly:v1.34.2 3ms
+ ✓ test/lib/backupDrill.test.ts > real restore drill staging and history > verifies a clickhouse backup (version null) in its own engine image clickhouse/clickhouse-server:25.8 3ms
+ ✓ test/lib/backupDrill.test.ts > real restore drill staging and history > refuses an unsupported engine before inserting history or invoking an engine 2ms
+ ✓ test/lib/backupDrill.test.ts > real restore drill staging and history > verifies a Meilisearch dump with an API-path probe in its own engine image 3ms
+ ✓ test/lib/backupDrill.test.ts > real restore drill staging and history > verifies RabbitMQ definitions with a rabbitmqctl list probe in its own engine image 5ms
+ ✓ test/lib/backupDrill.test.ts > real restore drill staging and history > refuses a probe the engine cannot take before admitting it (no row, no verifier) 2ms
+ ✓ test/lib/backupDrill.test.ts > real restore drill staging and history > refuses incomplete backups before invoking the verifier 1ms
+ ✓ test/lib/backupDrill.test.ts > real restore drill staging and history > removes a partially fetched remote backup before recording an unavailable result 2ms
+ ✓ test/lib/backupDrill.test.ts > real restore drill staging and history > does not pass when decrypted staging cleanup cannot be confirmed 4ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > runBackupDrill > rejects when the database does not exist 1ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > runBackupDrill > rejects when the backup does not exist 1ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > runBackupDrill > rejects when the backup belongs to a different database 1ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > runBackupDrill > fails for an unsupported engine without a validator 2ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > r356: postgres > passes a complete plain-SQL pg_dump structurally, with no tool and no docker 5ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > r356: postgres > fails a truncated plain-SQL dump (no "dump complete" trailer) 5ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > r356: postgres > fails a dump whose \restrict key has no matching \unrestrict 5ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > r356: postgres > fails SQL that is not a pg_dump at all 4ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > r356: postgres > lists a custom-format archive with pg_restore INSIDE the database image (argv, no network) 7ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > r356: postgres > uses the pgvector image for a pgvector database 4ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > r356: postgres > fails when pg_restore rejects the custom archive 4ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > r356: postgres > is unverifiable — not failed — when docker is unreachable 4ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > r356: mysql / mariadb > passes a dump with the banner and the "Dump completed" trailer 5ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > r356: mysql / mariadb > fails a truncated dump that lost its "Dump completed" trailer 4ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > r356: mysql / mariadb > F132: passes a mariadb-dump whose first line is the sandbox-mode marker 4ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > r356: mysql / mariadb > fails a dump when the banner is missing 4ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > r356: redis / valkey > runs redis-check-rdb inside the redis image, never on the host 3ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > r356: redis / valkey > uses the database's pinned version for the image 3ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > r356: redis / valkey > runs valkey-check-rdb inside the valkey image 3ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > r356: redis / valkey > runs keydb-check-rdb inside the KeyDB image 3ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > r356: redis / valkey > is unverifiable when the KeyDB image does not carry keydb-check-rdb 3ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > r356: redis / valkey > fails when the checker rejects the file, and still removes the container 3ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > r356: redis / valkey > is unverifiable when docker is not installed (spawn ENOENT) 3ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > r356: redis / valkey > is unverifiable when the image does not carry the checker 3ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > r356: redis / valkey > dragonfly: runs redis-check-rdb inside the Dragonfly image, and a zero-padded dump is not reported as truncated 3ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > r356: redis / valkey > dragonfly: a dump the image's checker rejects (exit 1, truncated) fails, and the container is removed 4ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > r356: redis / valkey > is unverifiable when the check times out 3ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > r356: mongo > passes a complete gzipped mongodump archive with no tool and no docker 7ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > r356: mongo > fails a truncated gzip stream 12ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > r356: mongo > fails an archive that does not end with the terminator 5ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > r356: mongo > fails a gzip stream that is not a mongodump archive 4ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > r356: mongo > fails a file that is not gzip at all 4ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > G1.8: clickhouse / meilisearch / rabbitmq > lists a ClickHouse archive with unzip inside the ClickHouse image 4ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > G1.8: clickhouse / meilisearch / rabbitmq > fails a ClickHouse backup that is not a zip, or that unzip rejects 6ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > G1.8: clickhouse / meilisearch / rabbitmq > reads metadata.json from a Meilisearch dump inside the Meilisearch image 4ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > G1.8: clickhouse / meilisearch / rabbitmq > fails a Meilisearch dump that is not gzip, that tar rejects, or whose metadata names no version 7ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > G1.8: clickhouse / meilisearch / rabbitmq > is unverifiable when the engine image is not on the host 6ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > G1.8: clickhouse / meilisearch / rabbitmq > parses a RabbitMQ definitions export and reports what it holds 20ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > G1.8: clickhouse / meilisearch / rabbitmq > fails a RabbitMQ backup that is cut off, not an object, or names no version 10ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > staging and cleanup > fetches a missing remote-only backup and cleans up the temp file 5ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > staging and cleanup > r189: decrypts a fetched remote copy that is an encrypted envelope 5ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > staging and cleanup > fails cleanly when the file is missing and no remote key is recorded 3ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > staging and cleanup > decrypts an encrypted envelope to a temp file and cleans up 4ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > staging and cleanup > r356: the decrypted dump is what enters the drill container, and it is removed afterwards 3ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > staging and cleanup > r356: the decrypted dump is removed on the unverifiable and failed paths too 4ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > staging and cleanup > F133: concurrent drills of one encrypted backup never share or unlink each other's plaintext 6ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > listBackupDrills + findDrillById > returns the most-recent N rows in descending order with parsed details 1ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > listBackupDrills + findDrillById > honours the limit argument 1ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > listBackupDrills + findDrillById > findDrillById returns null for an unknown id 1ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > listBackupDrills + findDrillById > findDrillById parses detailsJson back to an object 1ms
+ ✓ test/lib/backupDrill.test.ts > lib/backupDrill > listBackupDrills + findDrillById > never whole-file-reads a dump — header sniffing stays bounded (r034 regression) 1ms
+ ✓ test/lib/backupRestoreVerification.test.ts > isolated real PostgreSQL restore verifier orchestration > restores plain SQL, queries known data, confirms removal and never changes the source 11ms
+ ✓ test/lib/backupRestoreVerification.test.ts > isolated real PostgreSQL restore verifier orchestration > uses the archive restore tool for custom dumps with strict error handling 5ms
+ ✓ test/lib/backupRestoreVerification.test.ts > isolated real PostgreSQL restore verifier orchestration > refuses to certify unavailable or incomplete image execution 2ms
+ ✓ test/lib/backupRestoreVerification.test.ts > isolated real PostgreSQL restore verifier orchestration > refuses to certify unavailable or incomplete create execution 3ms
+ ✓ test/lib/backupRestoreVerification.test.ts > isolated real PostgreSQL restore verifier orchestration > refuses to certify unavailable or incomplete copy execution 3ms
+ ✓ test/lib/backupRestoreVerification.test.ts > isolated real PostgreSQL restore verifier orchestration > refuses to certify unavailable or incomplete ready execution 3ms
+ ✓ test/lib/backupRestoreVerification.test.ts > isolated real PostgreSQL restore verifier orchestration > refuses to certify unavailable or incomplete timeout execution 3ms
+ ✓ test/lib/backupRestoreVerification.test.ts > isolated real PostgreSQL restore verifier orchestration > refuses to certify unavailable or incomplete output execution 3ms
+ ✓ test/lib/backupRestoreVerification.test.ts > isolated real PostgreSQL restore verifier orchestration > refuses to certify unavailable or incomplete cleanup execution 3ms
+ ✓ test/lib/backupRestoreVerification.test.ts > isolated real PostgreSQL restore verifier orchestration > refuses to certify unavailable or incomplete retained execution 3ms
+ ✓ test/lib/backupRestoreVerification.test.ts > isolated real PostgreSQL restore verifier orchestration > fails restore without exposing restored content 3ms
+ ✓ test/lib/backupRestoreVerification.test.ts > isolated real PostgreSQL restore verifier orchestration > fails query without exposing restored content 3ms
+ ✓ test/lib/backupRestoreVerification.test.ts > isolated real PostgreSQL restore verifier orchestration > fails mismatch without exposing restored content 3ms
+ ✓ test/lib/backupRestoreVerification.test.ts > isolated real PostgreSQL restore verifier orchestration > attempts owned cleanup even after a lost create response 3ms
+ ✓ test/lib/backupRestoreVerification.test.ts > isolated real PostgreSQL restore verifier orchestration > rejects invalid probes before any Docker work 2ms
+ ✓ test/lib/backupRestoreVerification.test.ts > isolated real PostgreSQL restore verifier orchestration > refuses malformed image identity before creating a helper 2ms
+ ✓ test/lib/backupRestoreVerification.test.ts > bounded helper capacity is never reported as a broken backup > refuses a dump too large for the scratch before any helper or copy exists 3ms
+ ✓ test/lib/backupRestoreVerification.test.ts > bounded helper capacity is never reported as a broken backup > reports an out-of-space restore as unverifiable, without keeping the engine message 3ms
+ ✓ test/lib/backupRestoreVerification.test.ts > bounded helper capacity is never reported as a broken backup > reports a cgroup OOM kill during restore as unverifiable 3ms
+ ✓ test/lib/backupRestoreVerification.test.ts > bounded helper capacity is never reported as a broken backup > does not blame the backup when the helper state cannot be read 4ms
+ ✓ test/lib/backupRestoreVerification.test.ts > bounded helper capacity is never reported as a broken backup > still fails a genuine restore error on a healthy helper 3ms
+ ✓ test/lib/backupRestoreVerification.test.ts > bounded helper capacity is never reported as a broken backup > does not blame the backup when the helper stopped during the restore 4ms
+ ✓ test/lib/backupRestoreVerification.test.ts > bounded helper capacity is never reported as a broken backup > does not blame the backup when the client lost its server, even before Docker reports the helper stopped 3ms
+ ✓ test/lib/backupRestoreVerification.test.ts > MySQL and MariaDB restore helpers > restores a mysqldump into a hardened, networkless MySQL helper and probes the managed database 4ms
+ ✓ test/lib/backupRestoreVerification.test.ts > MySQL and MariaDB restore helpers > uses the MariaDB client, admin tool, socket directory and empty-root variable 4ms
+ ✓ test/lib/backupRestoreVerification.test.ts > MySQL and MariaDB restore helpers > never reads a MySQL dump as a PostgreSQL custom archive 4ms
+ ✓ test/lib/backupRestoreVerification.test.ts > MySQL and MariaDB restore helpers > fails a genuine restore error or a probe mismatch on a healthy helper without exposing either 5ms
+ ✓ test/lib/backupRestoreVerification.test.ts > MySQL and MariaDB restore helpers > reports a full scratch ("The table … is full") as capacity, without the table name 4ms
+ ✓ test/lib/backupRestoreVerification.test.ts > MySQL and MariaDB restore helpers > treats a MariaDB server that aborted mid-restore (lost connection) as unverifiable 4ms
+ ✓ test/lib/backupRestoreVerification.test.ts > MySQL and MariaDB restore helpers > names capacity when the aborted MariaDB helper logged a full tmpfs, keeping no log text 3ms
+ ✓ test/lib/backupRestoreVerification.test.ts > MySQL and MariaDB restore helpers > stays unverifiable without a capacity claim when the stopped helper log cannot be read 3ms
+ ✓ test/lib/backupRestoreVerification.test.ts > MySQL and MariaDB restore helpers > does not read logs when a healthy helper reports a genuine restore error 5ms
+ ✓ test/lib/backupRestoreVerification.test.ts > MySQL and MariaDB restore helpers > is unverifiable when the MySQL helper never accepts TCP connections 6ms
+ ✓ test/lib/backupRestoreVerification.test.ts > MySQL and MariaDB restore helpers > refuses an engine without an adapter before any Docker work 2ms
+ ✓ test/lib/backupRestoreVerification.test.ts > MongoDB restore helper > streams the archive straight into mongorestore in a hardened helper, with the whole scratch for data 5ms
+ ✓ test/lib/backupRestoreVerification.test.ts > MongoDB restore helper > fails a corrupt archive on a healthy helper, and a probe mismatch, without exposing either 6ms
+ ✓ test/lib/backupRestoreVerification.test.ts > MongoDB restore helper > is unverifiable when the streamed restore ends with a stopped helper 3ms
+ ✓ test/lib/backupRestoreVerification.test.ts > MongoDB restore helper > is unverifiable when mongod never answers the readiness ping 3ms
+ ✓ test/lib/backupRestoreVerification.test.ts > crashed restore helpers are swept > removes only labelled helpers with the generated name that outlived the age floor 2ms
+ ✓ test/lib/backupRestoreVerification.test.ts > crashed restore helpers are swept > keeps sweeping after one container vanishes mid-scan, and ignores non-id lines 2ms
+ ✓ test/lib/backupRestoreVerification.test.ts > RabbitMQ restore helper (a definitions export, applied asynchronously) > imports the definitions, waits until every named object exists, then runs the list probe 5ms
+ ✓ test/lib/backupRestoreVerification.test.ts > RabbitMQ restore helper (a definitions export, applied asynchronously) > compares listed rows as a set: rabbitmqctl lists them in no fixed order 10ms
+ ✓ test/lib/backupRestoreVerification.test.ts > RabbitMQ restore helper (a definitions export, applied asynchronously) > fails a definitions file RabbitMQ cannot import, without the engine message 3ms
+ ✓ test/lib/backupRestoreVerification.test.ts > RabbitMQ restore helper (a definitions export, applied asynchronously) > is unverifiable when the imported definitions never all appear 4ms
+ ✓ test/lib/backupRestoreVerification.test.ts > RabbitMQ restore helper (a definitions export, applied asynchronously) > bounds the whole settle wait by its deadline, however many vhosts the file names 5ms
+ ✓ test/lib/backupRestoreVerification.test.ts > RabbitMQ restore helper (a definitions export, applied asynchronously) > refuses "eval rabbit:stop()" before any Docker work: it is not one list command 2ms
+ ✓ test/lib/backupRestoreVerification.test.ts > RabbitMQ restore helper (a definitions export, applied asynchronously) > refuses "list_queues; reboot" before any Docker work: it is not one list command 2ms
+ ✓ test/lib/backupRestoreVerification.test.ts > RabbitMQ restore helper (a definitions export, applied asynchronously) > refuses "LIST_QUEUES name" before any Docker work: it is not one list command 2ms
+ ✓ test/lib/backupRestoreVerification.test.ts > RabbitMQ restore helper (a definitions export, applied asynchronously) > refuses "status" before any Docker work: it is not one list command 2ms
+ ✓ test/lib/backupRestoreVerification.test.ts > RabbitMQ restore helper (a definitions export, applied asynchronously) > refuses "list_queues  name" before any Docker work: it is not one list command 2ms
+ ✓ test/lib/backupRestoreVerification.test.ts > Meilisearch restore helper (the dump is imported at startup) > copies the dump into a gated helper, releases the import, waits for health and GETs the probe path 3ms
+ ✓ test/lib/backupRestoreVerification.test.ts > Meilisearch restore helper (the dump is imported at startup) > fails a dump Meilisearch refused to import, keeping no log text 3ms
+ ✓ test/lib/backupRestoreVerification.test.ts > Meilisearch restore helper (the dump is imported at startup) > is unverifiable when Meilisearch exits during the import without naming the dump 3ms
+ ✓ test/lib/backupRestoreVerification.test.ts > Meilisearch restore helper (the dump is imported at startup) > refuses "GET /indexes" as a probe before any Docker work: it is not an API path 2ms
+ ✓ test/lib/backupRestoreVerification.test.ts > Meilisearch restore helper (the dump is imported at startup) > refuses "indexes/movies" as a probe before any Docker work: it is not an API path 2ms
+ ✓ test/lib/backupRestoreVerification.test.ts > Meilisearch restore helper (the dump is imported at startup) > refuses "/indexes/movies documents" as a probe before any Docker work: it is not an API path 2ms
+ ✓ test/lib/backupRestoreVerification.test.ts > Meilisearch restore helper (the dump is imported at startup) > refuses "" as a probe before any Docker work: it is not an API path 1ms
+ ✓ test/lib/backupRestoreVerification.test.ts > Meilisearch restore helper (the dump is imported at startup) > fails a probe mismatch without exposing the response 4ms
+ ✓ test/lib/backupRestoreVerification.test.ts > ClickHouse restore helper > copies the BACKUP archive under the allowed backups path, restores ALL and probes the managed database 3ms
+ ✓ test/lib/backupRestoreVerification.test.ts > ClickHouse restore helper > fails an archive ClickHouse cannot open on a healthy helper, without the engine message 3ms
+ ✓ test/lib/backupRestoreVerification.test.ts > ClickHouse restore helper > reports NOT_ENOUGH_SPACE during RESTORE as capacity 3ms
+ ✓ test/lib/backupRestoreVerification.test.ts > ClickHouse restore helper > is unverifiable when the server never answers 3ms
+ ✓ test/lib/backupRestoreVerification.test.ts > Redis-family restore helpers (the server loads its RDB at startup) > copies the RDB into a gated, hardened helper, releases the server, waits for the load and probes on stdin 3ms
+ ✓ test/lib/backupRestoreVerification.test.ts > Redis-family restore helpers (the server loads its RDB at startup) > runs valkey with its own user, server and client 3ms
+ ✓ test/lib/backupRestoreVerification.test.ts > Redis-family restore helpers (the server loads its RDB at startup) > runs keydb with its own user, server and client 3ms
+ ✓ test/lib/backupRestoreVerification.test.ts > Redis-family restore helpers (the server loads its RDB at startup) > fails a backup whose RDB the engine refused while loading, keeping no log text 3ms
+ ✓ test/lib/backupRestoreVerification.test.ts > Redis-family restore helpers (the server loads its RDB at startup) > names capacity when the engine ran out of memory loading the RDB, even beside a short-read line 3ms
+ ✓ test/lib/backupRestoreVerification.test.ts > Redis-family restore helpers (the server loads its RDB at startup) > is unverifiable when the server exits while loading without saying the file was bad 3ms
+ ✓ test/lib/backupRestoreVerification.test.ts > Redis-family restore helpers (the server loads its RDB at startup) > runs Dragonfly as dfly with the managed snapshot flags and probes it with redis-cli 3ms
+ ✓ test/lib/backupRestoreVerification.test.ts > Redis-family restore helpers (the server loads its RDB at startup) > fails a Dragonfly backup whose RDB it refused ("Rdb load failed") 3ms
+ ✓ test/lib/backupRestoreVerification.test.ts > Redis-family restore helpers (the server loads its RDB at startup) > fails a probe mismatch on a loaded dataset without exposing it 3ms
+ ✓ test/lib/backupCrypto.test.ts > lib/backupCrypto > round-trips a 0-byte backup across ciphertext boundaries 18ms
+ ✓ test/lib/backupCrypto.test.ts > lib/backupCrypto > round-trips a 1-byte backup across ciphertext boundaries 8ms
+ ✓ test/lib/backupCrypto.test.ts > lib/backupCrypto > round-trips a 65537-byte backup across ciphertext boundaries 97ms
+ ✓ test/lib/backupCrypto.test.ts > lib/backupCrypto > authenticates an empty backup and removes output when its tag is corrupt 10ms
+ ✓ test/lib/backupCrypto.test.ts > lib/backupCrypto > isEncryptedBackupFile returns false for a plaintext file 4ms
+ ✓ test/lib/backupCrypto.test.ts > lib/backupCrypto > encryptBackupFile adds the NDBK1: header + trailing GCM tag and round-trips 16ms
+ ✓ test/lib/backupCrypto.test.ts > lib/backupCrypto > encryptBackupFile is idempotent (a second call is a no-op) 16ms
+ ✓ test/lib/backupCrypto.test.ts > lib/backupCrypto > decryptBackupFile refuses a plaintext input (no NDBK1: magic) 4ms
+ ✓ test/lib/backupCrypto.test.ts > lib/backupCrypto > removes plaintext output when an encrypted backup has a corrupt authentication tag 15ms
+ ✓ test/lib/backupCrypto.test.ts > lib/backupCrypto > readBackupHeader reports the key version and IV base64 7ms
+ ✓ test/lib/backupCrypto.test.ts > lib/backupCrypto > encryptBackupFile throws (and leaves the source intact) when the file is unreadable 3ms
+ ✓ test/lib/backupCrypto.test.ts > lib/backupCrypto > readBackupHeader returns null for an empty file 2ms
+ ✓ test/lib/backupCrypto.test.ts > lib/backupCrypto > reencryptSecretEnvelope re-encrypts a secrets-at-rest envelope under the active key version 1ms
+ ✓ test/lib/backupDrill.coverage.test.ts > staging: legacy envelopes and failures after a fetch > decrypts a legacy single-line v<n>: envelope to a sibling temp file and removes it 17ms
+ ✓ test/lib/backupDrill.coverage.test.ts > staging: legacy envelopes and failures after a fetch > a fetched legacy envelope that cannot be decrypted fails setup and drops the fetched copy (F134) 5ms
+ ✓ test/lib/backupDrill.coverage.test.ts > staging: legacy envelopes and failures after a fetch > an encrypted backup whose decryption throws fails setup with the message 4ms
+ ✓ test/lib/backupDrill.coverage.test.ts > staging: legacy envelopes and failures after a fetch > a non-Error thrown during setup is stringified 2ms
+ ✓ test/lib/backupDrill.coverage.test.ts > staging: legacy envelopes and failures after a fetch > cleanup tolerates scratch files that never appeared (best-effort unlink) 4ms
+ ✓ test/lib/backupDrill.coverage.test.ts > staging: legacy envelopes and failures after a fetch > throws when the running row cannot be inserted 3ms
+ ✓ test/lib/backupDrill.coverage.test.ts > drill container bookkeeping > is unverifiable when the drill container cannot be created 3ms
+ ✓ test/lib/backupDrill.coverage.test.ts > drill container bookkeeping > is unverifiable when the dump cannot be copied in, and still removes the container 2ms
+ ✓ test/lib/backupDrill.coverage.test.ts > drill container bookkeeping > a rejection with no tool output names only the error; the rm failure is ignored 3ms
+ ✓ test/lib/backupDrill.coverage.test.ts > drill container bookkeeping > keeps only the last 40 lines of tool output 5ms
+ ✓ test/lib/backupDrill.coverage.test.ts > drill container bookkeeping > ClickHouse output without a file-count summary reports files: null 4ms
+ ✓ test/lib/backupDrill.coverage.test.ts > validateDumpFile without a known image > redis is unverifiable and runs no docker 3ms
+ ✓ test/lib/backupDrill.coverage.test.ts > validateDumpFile without a known image > keydb is unverifiable and runs no docker 3ms
+ ✓ test/lib/backupDrill.coverage.test.ts > validateDumpFile without a known image > postgres is unverifiable and runs no docker 4ms
+ ✓ test/lib/backupDrill.coverage.test.ts > validateDumpFile without a known image > clickhouse is unverifiable and runs no docker 3ms
+ ✓ test/lib/backupDrill.coverage.test.ts > validateDumpFile without a known image > meilisearch is unverifiable and runs no docker 2ms
+ ✓ test/lib/backupDrill.coverage.test.ts > validateDumpFile without a known image > an unknown engine is not supported 2ms
+ ✓ test/lib/backupDrill.coverage.test.ts > validateDumpFile without a known image > a RabbitMQ definitions file above 64 MiB is not parsed 3ms
+ ✓ test/lib/backupDrill.coverage.test.ts > validateDumpFile without a known image > a JSON null RabbitMQ file is not an object 2ms
+ ✓ test/lib/backupDrill.coverage.test.ts > list / find with numeric timestamps > passes numeric startedAt through and keeps a null completedAt 3ms
+ ✓ test/lib/backupDrill.coverage.test.ts > pruneDrillLeftovers (r302) > removes only old drill scratch files, skipping directories, fresh files and missing dirs 9ms
+
+ Test Files  5 passed (5)
+      Tests  186 passed (186)
+   Start at  17:36:13
+   Duration  5.32s (import 52%, tests 38%, transform 9%, worker 1%)
+
+    Isolate  5 workers spawned · ~597ms startup each (spawn + environment, per file)
+             at least ~2.39s faster with isolate: false — reuses workers across files instead of one per file
