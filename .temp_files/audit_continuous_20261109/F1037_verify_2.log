@@ -1,0 +1,12 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/verify_F1037_stale_replica_retention.test.ts > gates policy changes during upload and deletion, preserves current policy and failure isolation
+FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1037_stale_replica_retention.test.ts > gates policy changes during upload and deletion, preserves current policy and failure isolation 2545ms
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  17:25:48
+   Duration  4.20s (tests 67%, import 29%, transform 3%)

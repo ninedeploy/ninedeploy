@@ -117,8 +117,14 @@ export async function replicateBackup(db: DB, databaseId: number, file: string, 
       made++;
       log(`☁ Replica copy to ${dest.bucket}/${objectKey}`);
       // Retention: the newest `retainCount` copies stay; an older one leaves the log only once it is deleted.
-      const mine = copies.filter((c) => c.destinationId === replica.destinationId).sort((a, b) => b.at.localeCompare(a.at));
-      for (const old of mine.slice(replica.retainCount)) {
+      for (;;) {
+        // Uploads and deletes may outlive a policy edit. Only the current
+        // destination list and retention count authorize the next deletion.
+        const current = (await read(db, databaseId)).replicas.find((r) => r.destinationId === replica.destinationId);
+        if (!current) break;
+        const mine = copies.filter((c) => c.destinationId === replica.destinationId).sort((a, b) => b.at.localeCompare(a.at));
+        const old = mine[current.retainCount];
+        if (!old) break;
         await remove(cfg, old.key);
         copies = copies.filter((c) => c !== old);
       }

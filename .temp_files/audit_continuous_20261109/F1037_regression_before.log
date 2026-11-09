@@ -1,0 +1,103 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ × test/lib/backupReplicas.test.ts > replicateBackup > does not prune under a policy changed during upload: remove 218ms
+   → expected "vi.fn()" to not be called at all, but actually been called 1 times
+
+Received:
+
+  1st vi.fn() call:
+
+    Array [
+      Object {
+        "accessKeyId": "k",
+        "bucket": "b",
+        "endpoint": "https://s3.b.example",
+        "region": "us-east-1",
+        "secretAccessKey": "s",
+      },
+      "nd/old.dump",
+    ]
+
+
+Number of calls: 1
+
+ × test/lib/backupReplicas.test.ts > replicateBackup > does not prune under a policy changed during upload: raise 172ms
+   → expected "vi.fn()" to not be called at all, but actually been called 1 times
+
+Received:
+
+  1st vi.fn() call:
+
+    Array [
+      Object {
+        "accessKeyId": "k",
+        "bucket": "b",
+        "endpoint": "https://s3.b.example",
+        "region": "us-east-1",
+        "secretAccessKey": "s",
+      },
+      "nd/old.dump",
+    ]
+
+
+Number of calls: 1
+
+ × test/lib/backupReplicas.test.ts > replicateBackup > rechecks retention between asynchronous deletes when the operator raises it 153ms
+   → expected "vi.fn()" to be called 1 times, but got 3 times
+ ✓ test/lib/backupReplicas.test.ts > replicateBackup > copies each dump to every replica and keeps each one to its own retention 198ms
+ ✓ test/lib/backupReplicas.test.ts > replicateBackup > records a failing destination without failing the others, and keeps a copy whose delete failed 177ms
+ ✓ test/lib/backupReplicas.test.ts > replicateBackup > does nothing without replicas, and reports a destination that was deleted 160ms
+ ✓ test/lib/backupReplicas.test.ts > routes > lets an operator set the list, refuses others, unknown destinations and duplicates 234ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/lib/backupReplicas.test.ts > replicateBackup > does not prune under a policy changed during upload: remove
+ FAIL  test/lib/backupReplicas.test.ts > replicateBackup > does not prune under a policy changed during upload: raise
+AssertionError: expected "vi.fn()" to not be called at all, but actually been called 1 times
+
+Received:
+
+  1st vi.fn() call:
+
+    Array [
+      Object {
+        "accessKeyId": "k",
+        "bucket": "b",
+        "endpoint": "https://s3.b.example",
+        "region": "us-east-1",
+        "secretAccessKey": "s",
+      },
+      "nd/old.dump",
+    ]
+
+
+Number of calls: 1
+
+ ❯ test/lib/backupReplicas.test.ts:46:24
+     44|     finally { release(); }
+     45|     expect(await job).toBe(1);
+     46|     expect(remove).not.toHaveBeenCalled();
+       |                        ^
+     47|     const view = await lib.getBackupReplicas(db, 3);
+     48|     if (edit === 'remove') expect(view.replicas).toEqual([]);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  test/lib/backupReplicas.test.ts > replicateBackup > rechecks retention between asynchronous deletes when the operator raises it
+AssertionError: expected "vi.fn()" to be called 1 times, but got 3 times
+ ❯ test/lib/backupReplicas.test.ts:65:20
+     63|     finally { release(); }
+     64|     expect(await job).toBe(1);
+     65|     expect(remove).toHaveBeenCalledTimes(1);
+       |                    ^
+     66|     expect((await lib.getBackupReplicas(db, 3)).replicas[0]).toMatchOb…
+     67|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  3 failed | 4 passed (7)
+   Start at  17:24:12
+   Duration  2.46s (tests 67%, import 26%, transform 7%)

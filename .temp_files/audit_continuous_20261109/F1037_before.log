@@ -1,0 +1,47 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1037_stale_replica_retention.test.ts > does not delete a recovery point under policy withdrawn or raised while uploading
+CONTROL EXPECTED: unchanged keep=1 deletes old.dump | ACTUAL: ["nd/old.dump"]
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1037_stale_replica_retention.test.ts > does not delete a recovery point under policy withdrawn or raised while uploading
+EXPECTED: removed-policy deletes=[]; raised-policy deletes=[] | ACTUAL: {"removed":["nd/old.dump"],"raised":["nd/old.dump"]}
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/prove_F1037_stale_replica_retention.test.ts > does not delete a recovery point under policy withdrawn or raised while uploading 908ms
+   → expected { removed: [ 'nd/old.dump' ], …(1) } to deeply equal { removed: [], raised: [] }
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1037_stale_replica_retention.test.ts > does not delete a recovery point under policy withdrawn or raised while uploading
+AssertionError: expected { removed: [ 'nd/old.dump' ], …(1) } to deeply equal { removed: [], raised: [] }
+
+- Expected
++ Received
+
+  {
+-   "raised": [],
+-   "removed": [],
++   "raised": [
++     "nd/old.dump",
++   ],
++   "removed": [
++     "nd/old.dump",
++   ],
+  }
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1037_stale_replica_retention.test.ts:36:31
+     34|   console.log('EXPECTED: removed-policy deletes=[]; raised-policy dele…
+     35|   console.log(removed.length || raised.length ? 'PROBLEM CONFIRMED' : …
+     36|   expect({ removed, raised }).toEqual({ removed: [], raised: [] });
+       |                               ^
+     37| });
+     38|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed (1)
+   Start at  17:22:33
+   Duration  7.43s (transform 45%, import 40%, tests 15%)

@@ -1,0 +1,16 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1037_stale_replica_retention.test.ts > does not delete a recovery point under policy withdrawn or raised while uploading
+CONTROL EXPECTED: unchanged keep=1 deletes old.dump | ACTUAL: ["nd/old.dump"]
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1037_stale_replica_retention.test.ts > does not delete a recovery point under policy withdrawn or raised while uploading
+EXPECTED: removed-policy deletes=[]; raised-policy deletes=[] | ACTUAL: {"removed":[],"raised":[]}
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1037_stale_replica_retention.test.ts > does not delete a recovery point under policy withdrawn or raised while uploading 804ms
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  17:25:10
+   Duration  2.64s (tests 40%, import 38%, transform 22%)

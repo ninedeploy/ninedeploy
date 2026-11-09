@@ -29,6 +29,43 @@ afterEach(() => closeMigratedDb(db));
 const at = (n: number) => () => new Date(Date.UTC(2026, 9, 1, 0, n));
 
 describe('replicateBackup', () => {
+  it.each(['remove', 'raise'] as const)('does not prune under a policy changed during upload: %s', async edit => {
+    await lib.setBackupReplicas(db, 3, [{ destinationId: 2, retainCount: 1 }]);
+    await lib.replicateBackup(db, 3, '/b/old.dump', () => undefined, { put: async () => undefined, now: at(0) });
+    let entered!: () => void, release!: () => void;
+    const uploading = new Promise<void>(resolve => { entered = resolve; });
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const remove = vi.fn(async () => undefined);
+    const job = lib.replicateBackup(db, 3, '/b/new.dump', () => undefined, {
+      put: async () => { entered(); await gate; }, remove, now: at(1),
+    });
+    await uploading;
+    try { await lib.setBackupReplicas(db, 3, edit === 'remove' ? [] : [{ destinationId: 2, retainCount: 2 }]); }
+    finally { release(); }
+    expect(await job).toBe(1);
+    expect(remove).not.toHaveBeenCalled();
+    const view = await lib.getBackupReplicas(db, 3);
+    if (edit === 'remove') expect(view.replicas).toEqual([]);
+    else expect(view.replicas[0]).toMatchObject({ retainCount: 2, copies: 2 });
+  });
+
+  it('rechecks retention between asynchronous deletes when the operator raises it', async () => {
+    await lib.setBackupReplicas(db, 3, [{ destinationId: 2, retainCount: 3 }]);
+    for (let i = 0; i < 3; i++) await lib.replicateBackup(db, 3, `/b/pg-${i}.dump`, () => undefined, { put: async () => undefined, now: at(i) });
+    await lib.setBackupReplicas(db, 3, [{ destinationId: 2, retainCount: 1 }]);
+    let entered!: () => void, release!: () => void;
+    const deleting = new Promise<void>(resolve => { entered = resolve; });
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const remove = vi.fn(async () => { if (remove.mock.calls.length === 1) { entered(); await gate; } });
+    const job = lib.replicateBackup(db, 3, '/b/pg-3.dump', () => undefined, { put: async () => undefined, remove, now: at(3) });
+    await deleting;
+    try { await lib.setBackupReplicas(db, 3, [{ destinationId: 2, retainCount: 3 }]); }
+    finally { release(); }
+    expect(await job).toBe(1);
+    expect(remove).toHaveBeenCalledTimes(1);
+    expect((await lib.getBackupReplicas(db, 3)).replicas[0]).toMatchObject({ retainCount: 3, copies: 3 });
+  });
+
   it('copies each dump to every replica and keeps each one to its own retention', async () => {
     await lib.setBackupReplicas(db, 3, [
       { destinationId: 2, retainCount: 2 },
