@@ -3,6 +3,9 @@ contact_links:
   - name: Report a security vulnerability
     url: https://github.com/ninedeploy/ninedeploy/security/advisories/new
     about: Please report vulnerabilities privately, not as an issue.
+  - name: Ask a question
+    url: https://github.com/ninedeploy/ninedeploy/discussions
+    about: Questions and ideas go to Discussions, so issues stay for bugs and feature requests.
   - name: Documentation
     url: https://ninedeploy.com
     about: Guides and reference.
