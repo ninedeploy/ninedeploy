@@ -233,7 +233,12 @@ export const databaseImportRoutes: FastifyPluginAsync<DatabaseImportRouteOptions
           throw conflict('The staging file is gone; cancel this import and start again');
         });
         try {
-          await fh.write(body, 0, body.length, index * row.chunkSize);
+          let offset = 0;
+          while (offset < body.length) {
+            const { bytesWritten } = await fh.write(body, offset, body.length - offset, index * row.chunkSize + offset);
+            if (bytesWritten === 0) throw new Error('The staging file write made no progress');
+            offset += bytesWritten;
+          }
         } finally {
           await fh.close();
         }

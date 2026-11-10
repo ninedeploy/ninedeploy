@@ -36,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Database-import chunks now complete short native writes before advancing upload metadata and fail without acknowledging a zero-progress write (F1091).
 - Concurrent database-import chunk retries now preserve acknowledged bytes by serializing native writes and rechecking upload metadata before writing (F1090).
 - A stale database-import refusal now returns a conflict without deleting staging owned by an admitted worker or emitting a false failure audit (F1089).
 - CLI database import retries reconcile known server jobs, resume interrupted uploads and avoid restarting completed restores after lost responses; recorded job IDs cannot be rebound to a different dump (F1088).

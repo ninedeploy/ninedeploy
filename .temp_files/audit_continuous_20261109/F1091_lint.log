@@ -1,0 +1,25 @@
+apps\server\test\modules\databaseImportShortWrite.test.ts:17:10 lint/correctness/noUnusedVariables  FIXABLE  ━━━━━━━━━━
+
+  ! This function gate is unused.
+
+    15 │ let db: DB, app: FastifyInstance, root: string, databaseId: number;
+    16 │ const narrow = () => asUser({ id: 2, isOperator: false, role: 'member' });
+  > 17 │ function gate() { let release!: () => void; const promise = new Promise<void>(resolve => { release = resolve; }); return { promise, release }; }
+       │          ^^^^
+    18 │ function owned(file: string) { if (!path.resolve(file).startsWith(path.resolve(root) + path.sep)) throw new Error('Unowned fixture path'); return file; }
+    19 │ beforeEach(async () => {
+
+  i Unused variables are often the result of typos, incomplete refactors, or other sources of bugs.
+
+  i Unsafe fix: If this is intentional, prepend gate with an underscore.
+
+    15 15 │   let db: DB, app: FastifyInstance, root: string, databaseId: number;
+    16 16 │   const narrow = () => asUser({ id: 2, isOperator: false, role: 'member' });
+    17    │ - function·gate()·{·let·release!:·()·=>·void;·const·promise·=·new·Promise<void>(resolve·=>·{·release·=·resolve;·});·return·{·promise,·release·};·}
+       17 │ + function·_gate()·{·let·release!:·()·=>·void;·const·promise·=·new·Promise<void>(resolve·=>·{·release·=·resolve;·});·return·{·promise,·release·};·}
+    18 18 │   function owned(file: string) { if (!path.resolve(file).startsWith(path.resolve(root) + path.sep)) throw new Error('Unowned fixture path'); return file; }
+    19 19 │   beforeEach(async () => {
+
+
+Checked 2 files in 11ms. No fixes applied.
+Found 1 warning.

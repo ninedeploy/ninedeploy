@@ -667,3 +667,11 @@ permanent gated cases were seen red (five races, three controls), then passed;
 eight independent controls passed three times. Different imports remain independent.
 Native SQLite and disposable files were exercised; no live restore, distributed
 locking or native Mac acceptance is claimed.
+
+Round 72 (F1091) completes short native chunk writes before acknowledging upload
+metadata. Buffer offsets and absolute file positions advance by bytesWritten;
+zero progress or an error keeps metadata retryable. Eight permanent cases were
+seen red (seven failures, one full-write control); eight independent cases passed
+three times. Partial bytes were really written to disposable native files through
+an injected write seam. This does not establish short-write frequency, live
+restore behavior or native Mac acceptance.

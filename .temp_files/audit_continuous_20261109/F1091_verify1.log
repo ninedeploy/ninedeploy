@@ -1,0 +1,19 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1091_importWrite.test.ts > completes each short write size=1 262ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1091_importWrite.test.ts > completes each short write size=3 172ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1091_importWrite.test.ts > completes each short write size=9 172ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1091_importWrite.test.ts > completes each short write size=10 160ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1091_importWrite.test.ts > advances native buffer offset, remaining length and absolute file position 171ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1091_importWrite.test.ts > unsuccessful partial sequence 0 leaves metadata retryable 171ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1091_importWrite.test.ts > unsuccessful partial sequence 3,0 leaves metadata retryable 162ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1091_importWrite.test.ts
+FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1091_importWrite.test.ts > unsuccessful partial sequence 3,-1 leaves metadata retryable 166ms
+
+ Test Files  1 passed (1)
+      Tests  8 passed (8)
+   Start at  02:38:48
+   Duration  2.22s (tests 67%, import 24%, transform 9%)

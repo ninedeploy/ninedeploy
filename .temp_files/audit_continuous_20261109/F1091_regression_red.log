@@ -1,0 +1,152 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ × test/modules/databaseImportShortWrite.test.ts > completes each short write size=1 404ms
+   → expected Buffer[ 83 ] to deeply equal Buffer[ 83, 69, 76, 69, 67, 84, …(-21) ]
+ × test/modules/databaseImportShortWrite.test.ts > completes each short write size=3 248ms
+   → expected Buffer[ 83, 69, 76 ] to deeply equal Buffer[ 83, 69, 76, 69, 67, 84, …(-21) ]
+ × test/modules/databaseImportShortWrite.test.ts > completes each short write size=9 341ms
+   → expected Buffer[ 83, 69, 76, 69, 67, 84, …(-22) ] to deeply equal Buffer[ 83, 69, 76, 69, 67, 84, …(-21) ]
+ ✓ test/modules/databaseImportShortWrite.test.ts > completes each short write size=10 272ms
+ × test/modules/databaseImportShortWrite.test.ts > advances native buffer offset, remaining length and absolute file position 263ms
+   → expected [ [ +0, 10, 10 ] ] to deeply equal [ [ +0, 10, 10 ], [ 2, 8, 12 ], …(2) ]
+ × test/modules/databaseImportShortWrite.test.ts > unsuccessful partial sequence 0 leaves metadata retryable 319ms
+   → expected 200 to be 500 // Object.is equality
+ × test/modules/databaseImportShortWrite.test.ts > unsuccessful partial sequence 3,0 leaves metadata retryable 250ms
+   → expected 200 to be 500 // Object.is equality
+ × test/modules/databaseImportShortWrite.test.ts > unsuccessful partial sequence 3,-1 leaves metadata retryable 233ms
+   → expected 200 to be 500 // Object.is equality
+
+ Test Files  1 failed (1)
+      Tests  7 failed | 1 passed (8)
+   Start at  02:39:13
+   Duration  3.65s (tests 68%, import 24%, transform 8%)
+
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 7 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/modules/databaseImportShortWrite.test.ts > completes each short write size=1
+AssertionError: expected Buffer[ 83 ] to deeply equal Buffer[ 83, 69, 76, 69, 67, 84, …(-21) ]
+
+- Expected
++ Received
+
+  {
+    "data": [
+      83,
+-     69,
+-     76,
+-     69,
+-     67,
+-     84,
+-     32,
+-     49,
+-     59,
+-     10,
+    ],
+    "type": "Buffer",
+  }
+
+ ❯ test/modules/databaseImportShortWrite.test.ts:51:316
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/7]⎯
+
+ FAIL  test/modules/databaseImportShortWrite.test.ts > completes each short write size=3
+AssertionError: expected Buffer[ 83, 69, 76 ] to deeply equal Buffer[ 83, 69, 76, 69, 67, 84, …(-21) ]
+
+- Expected
++ Received
+
+  {
+    "data": [
+      83,
+      69,
+      76,
+-     69,
+-     67,
+-     84,
+-     32,
+-     49,
+-     59,
+-     10,
+    ],
+    "type": "Buffer",
+  }
+
+ ❯ test/modules/databaseImportShortWrite.test.ts:51:316
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/7]⎯
+
+ FAIL  test/modules/databaseImportShortWrite.test.ts > completes each short write size=9
+AssertionError: expected Buffer[ 83, 69, 76, 69, 67, 84, …(-22) ] to deeply equal Buffer[ 83, 69, 76, 69, 67, 84, …(-21) ]
+
+- Expected
++ Received
+
+@@ -7,9 +7,8 @@
+      67,
+      84,
+      32,
+      49,
+      59,
+-     10,
+    ],
+    "type": "Buffer",
+  }
+
+ ❯ test/modules/databaseImportShortWrite.test.ts:51:316
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/7]⎯
+
+ FAIL  test/modules/databaseImportShortWrite.test.ts > advances native buffer offset, remaining length and absolute file position
+AssertionError: expected [ [ +0, 10, 10 ] ] to deeply equal [ [ +0, 10, 10 ], [ 2, 8, 12 ], …(2) ]
+
+- Expected
++ Received
+
+@@ -2,21 +2,6 @@
+    [
+      0,
+      10,
+      10,
+    ],
+-   [
+-     2,
+-     8,
+-     12,
+-   ],
+-   [
+-     3,
+-     7,
+-     13,
+-   ],
+-   [
+-     7,
+-     3,
+-     17,
+-   ],
+  ]
+
+ ❯ test/modules/databaseImportShortWrite.test.ts:52:290
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/7]⎯
+
+ FAIL  test/modules/databaseImportShortWrite.test.ts > unsuccessful partial sequence 0 leaves metadata retryable
+ FAIL  test/modules/databaseImportShortWrite.test.ts > unsuccessful partial sequence 3,0 leaves metadata retryable
+ FAIL  test/modules/databaseImportShortWrite.test.ts > unsuccessful partial sequence 3,-1 leaves metadata retryable
+AssertionError: expected 200 to be 500 // Object.is equality
+
+- Expected
++ Received
+
+- 500
++ 200
+
+ ❯ test/modules/databaseImportShortWrite.test.ts:53:244
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/7]⎯

@@ -1,0 +1,178 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/modules/databaseImportShortWrite.test.ts > completes each short write size=1 255ms
+ ✓ test/modules/databaseImportShortWrite.test.ts > completes each short write size=3 170ms
+ ✓ test/modules/databaseImportShortWrite.test.ts > completes each short write size=9 172ms
+ ✓ test/modules/databaseImportShortWrite.test.ts > completes each short write size=10 163ms
+ ✓ test/modules/databaseImportShortWrite.test.ts > advances native buffer offset, remaining length and absolute file position 200ms
+ ✓ test/modules/databaseImportShortWrite.test.ts > unsuccessful partial sequence 0 leaves metadata retryable 210ms
+ ✓ test/modules/databaseImportShortWrite.test.ts > unsuccessful partial sequence 3,0 leaves metadata retryable 187ms
+ ✓ test/modules/databaseImportShortWrite.test.ts > unsuccessful partial sequence 3,-1 leaves metadata retryable 186ms
+ ✓ test/modules/databaseImports.test.ts > upload > creates a staging file the server names, takes chunks in order and completes 298ms
+ ✓ test/modules/databaseImports.test.ts > upload > refuses a malformed index and a non-octet-stream body 187ms
+ ✓ test/modules/databaseImports.test.ts > upload > only the creator may upload or start; viewers and outsiders get nothing 180ms
+ ✓ test/modules/databaseImports.test.ts > upload > an import id under another database is not found 252ms
+ ✓ test/modules/databaseImports.test.ts > upload > refuses sizes over NINEDEPLOY_IMPORT_MAX_BYTES, unsupported engines and stray options 239ms
+ ✓ test/modules/databaseImports.test.ts > upload > lets only an operator, or a database created minutes ago, skip the safety backup 198ms
+ ✓ test/modules/databaseImports.test.ts > body parsing > has a route-level body limit of one chunk + 1 KiB 284ms
+ ✓ test/modules/databaseImports.test.ts > body parsing > swaps the octet-stream parser inside its own scope only: sibling routes keep the root parser 225ms
+ ✓ test/modules/databaseImports.test.ts > body parsing > authenticates before reading a body 202ms
+ ✓ test/modules/databaseImports.test.ts > S3 source > is operator-only: an admin sending an S3 body gets 403, before any network call 182ms
+ ✓ test/modules/databaseImports.test.ts > S3 source > checks the destination, the key prefix and the object size, then downloads in the background 197ms
+ ✓ test/modules/databaseImports.test.ts > S3 source > chunks are refused for an S3 import 262ms
+ ✓ test/modules/databaseImports.test.ts > start > answers 202 and starts the job with the caller and the sandbox flag 255ms
+ ✓ test/modules/databaseImports.test.ts > start > refuses an unfinished upload and a stopped database without failing the import 274ms
+ ✓ test/modules/databaseImports.test.ts > start > refuses an envelope from a non-operator: 422, the import fails and the file is deleted 282ms
+ ✓ test/modules/databaseImports.test.ts > start > lets an operator start an envelope import (decrypted in the job) 279ms
+ ✓ test/modules/databaseImports.test.ts > start > refuses formats the engine cannot take, and clean on plain SQL 631ms
+ ✓ test/modules/databaseImports.test.ts > start > mysql without a sandbox flag: refused for an admin, allowed for an operator 289ms
+ ✓ test/modules/databaseImports.test.ts > start > re-checks the safety-backup rule at start 238ms
+ ✓ test/modules/databaseImports.test.ts > cancel and listing > cancels an uploading or pending import and deletes its file; nothing else 253ms
+ ✓ test/modules/databaseImports.test.ts > cancel and listing > lists newest first for a database admin only 249ms
+ ✓ test/lib/databaseImport.test.ts > format detection > reads magic bytes, inside one layer of gzip too 6ms
+ ✓ test/lib/databaseImport.test.ts > format detection > sniffs a file by its head only 3ms
+ ✓ test/lib/databaseImport.test.ts > format detection > maps each engine to its format and refuses the rest with 422 0ms
+ ✓ test/lib/databaseImport.test.ts > options, engines and the safety-backup rule > refuses keys that do not apply to the engine 1ms
+ ✓ test/lib/databaseImport.test.ts > options, engines and the safety-backup rule > defaults singleTransaction on for postgres only, and requires confirmReplace for an RDB 0ms
+ ✓ test/lib/databaseImport.test.ts > options, engines and the safety-backup rule > lets only an operator, or a database initialised < 10 minutes ago, skip the safety backup 1ms
+ ✓ test/lib/databaseImport.test.ts > disk, size and S3 keys > needs 2 × size + 512 MiB free (507 otherwise) 1ms
+ ✓ test/lib/databaseImport.test.ts > disk, size and S3 keys > caps the size at NINEDEPLOY_IMPORT_MAX_BYTES (413), default 10 GiB 0ms
+ ✓ test/lib/databaseImport.test.ts > disk, size and S3 keys > keeps S3 keys inside the destination prefix, with no dot segments 0ms
+ ✓ test/lib/databaseImport.test.ts > disk, size and S3 keys > creates a 0600 staging file once, and removes it with its decompressed sibling 4ms
+ ✓ test/lib/databaseImport.test.ts > streaming helpers > hashes a file 2ms
+ ✓ test/lib/databaseImport.test.ts > streaming helpers > decompresses within a byte cap, and refuses a bomb 8ms
+ ✓ test/lib/databaseImport.test.ts > psql meta-command allowlist (operators and non-operators alike) > accepts real pg_dump plain output, gzip-free, CRLF too 6ms
+ ✓ test/lib/databaseImport.test.ts > psql meta-command allowlist (operators and non-operators alike) > a COPY header whose COPY fails: its data is skipped here, and psql stops on the failure 4ms
+ ✓ test/lib/databaseImport.test.ts > psql meta-command allowlist (operators and non-operators alike) > refuses shell escape 2ms
+ ✓ test/lib/databaseImport.test.ts > psql meta-command allowlist (operators and non-operators alike) > refuses shell escape mid-line 2ms
+ ✓ test/lib/databaseImport.test.ts > psql meta-command allowlist (operators and non-operators alike) > refuses shell escape after a closed literal 2ms
+ ✓ test/lib/databaseImport.test.ts > psql meta-command allowlist (operators and non-operators alike) > refuses \set with backticks 2ms
+ ✓ test/lib/databaseImport.test.ts > psql meta-command allowlist (operators and non-operators alike) > refuses \set of another variable 2ms
+ ✓ test/lib/databaseImport.test.ts > psql meta-command allowlist (operators and non-operators alike) > refuses \i 2ms
+ ✓ test/lib/databaseImport.test.ts > psql meta-command allowlist (operators and non-operators alike) > refuses \ir 5ms
+ ✓ test/lib/databaseImport.test.ts > psql meta-command allowlist (operators and non-operators alike) > refuses \include 2ms
+ ✓ test/lib/databaseImport.test.ts > psql meta-command allowlist (operators and non-operators alike) > refuses \o to a file 2ms
+ ✓ test/lib/databaseImport.test.ts > psql meta-command allowlist (operators and non-operators alike) > refuses \o to a pipe 2ms
+ ✓ test/lib/databaseImport.test.ts > psql meta-command allowlist (operators and non-operators alike) > refuses \g to a pipe 2ms
+ ✓ test/lib/databaseImport.test.ts > psql meta-command allowlist (operators and non-operators alike) > refuses \w 2ms
+ ✓ test/lib/databaseImport.test.ts > psql meta-command allowlist (operators and non-operators alike) > refuses \lo_import 1ms
+ ✓ test/lib/databaseImport.test.ts > psql meta-command allowlist (operators and non-operators alike) > refuses \lo_export 2ms
+ ✓ test/lib/databaseImport.test.ts > psql meta-command allowlist (operators and non-operators alike) > refuses \prompt 2ms
+ ✓ test/lib/databaseImport.test.ts > psql meta-command allowlist (operators and non-operators alike) > refuses \copy … program 2ms
+ ✓ test/lib/databaseImport.test.ts > psql meta-command allowlist (operators and non-operators alike) > refuses \setenv 1ms
+ ✓ test/lib/databaseImport.test.ts > psql meta-command allowlist (operators and non-operators alike) > refuses \gexec 2ms
+ ✓ test/lib/databaseImport.test.ts > psql meta-command allowlist (operators and non-operators alike) > refuses \connect with a backtick 2ms
+ ✓ test/lib/databaseImport.test.ts > psql meta-command allowlist (operators and non-operators alike) > refuses \connect with a pipe 2ms
+ ✓ test/lib/databaseImport.test.ts > psql meta-command allowlist (operators and non-operators alike) > refuses \connect with a variable 2ms
+ ✓ test/lib/databaseImport.test.ts > psql meta-command allowlist (operators and non-operators alike) > refuses \restrict with a non-alphanumeric key 1ms
+ ✓ test/lib/databaseImport.test.ts > psql meta-command allowlist (operators and non-operators alike) > refuses E-string escape hiding a quote 2ms
+ ✓ test/lib/databaseImport.test.ts > psql meta-command allowlist (operators and non-operators alike) > refuses COPY header inside a block comment 2ms
+ ✓ test/lib/databaseImport.test.ts > psql meta-command allowlist (operators and non-operators alike) > refuses COPY header inside a dollar body 2ms
+ ✓ test/lib/databaseImport.test.ts > psql meta-command allowlist (operators and non-operators alike) > refuses COPY header inside a literal 2ms
+ ✓ test/lib/databaseImport.test.ts > psql meta-command allowlist (operators and non-operators alike) > refuses COPY header with a trailing comment 2ms
+ ✓ test/lib/databaseImport.test.ts > psql meta-command allowlist (operators and non-operators alike) > refuses COPY header that is not a statement 2ms
+ ✓ test/lib/databaseImport.test.ts > psql meta-command allowlist (operators and non-operators alike) > refuses COPY header after an unfinished statement 2ms
+ ✓ test/lib/databaseImport.test.ts > psql meta-command allowlist (operators and non-operators alike) > refuses COPY header after another statement on the line 1ms
+ ✓ test/lib/databaseImport.test.ts > psql meta-command allowlist (operators and non-operators alike) > refuses the set_config bypass 2ms
+ ✓ test/lib/databaseImport.test.ts > psql meta-command allowlist (operators and non-operators alike) > refuses a quoted SET bypass 2ms
+ ✓ test/lib/databaseImport.test.ts > psql meta-command allowlist (operators and non-operators alike) > dual lex: refuses a dump whose line states differ with backslash escapes on and off 6ms
+ ✓ test/lib/databaseImport.test.ts > psql meta-command allowlist (operators and non-operators alike) > refuses a line too long to lex outside COPY data 28ms
+ ✓ test/lib/databaseImport.test.ts > mysql dump filter (non-operators) > accepts a real mysqldump, a mariadb-dump sandbox header and USE app 6ms
+ ✓ test/lib/databaseImport.test.ts > mysql dump filter (non-operators) > refuses USE mysql 2ms
+ ✓ test/lib/databaseImport.test.ts > mysql dump filter (non-operators) > refuses use `sys` 2ms
+ ✓ test/lib/databaseImport.test.ts > mysql dump filter (non-operators) > refuses USE of another database 2ms
+ ✓ test/lib/databaseImport.test.ts > mysql dump filter (non-operators) > refuses USE split over lines 2ms
+ ✓ test/lib/databaseImport.test.ts > mysql dump filter (non-operators) > refuses CREATE DATABASE mysql 2ms
+ ✓ test/lib/databaseImport.test.ts > mysql dump filter (non-operators) > refuses CREATE DATABASE in a versioned comment 2ms
+ ✓ test/lib/databaseImport.test.ts > mysql dump filter (non-operators) > refuses INSERT INTO mysql.user 2ms
+ ✓ test/lib/databaseImport.test.ts > mysql dump filter (non-operators) > refuses UPDATE with spaced, quoted qualifier 2ms
+ ✓ test/lib/databaseImport.test.ts > mysql dump filter (non-operators) > refuses GRANT on mysql.* 2ms
+ ✓ test/lib/databaseImport.test.ts > mysql dump filter (non-operators) > refuses REPLACE INTO mysql 2ms
+ ✓ test/lib/databaseImport.test.ts > mysql dump filter (non-operators) > refuses a comment between keyword and schema 2ms
+ ✓ test/lib/databaseImport.test.ts > mysql dump filter (non-operators) > refuses information_schema 2ms
+ ✓ test/lib/databaseImport.test.ts > mysql dump filter (non-operators) > refuses sys qualifier after a keyword-free context 2ms
+ ✓ test/lib/databaseImport.test.ts > mysql dump filter (non-operators) > refuses a qualifier inside a versioned comment 2ms
+ ✓ test/lib/databaseImport.test.ts > mysql dump filter (non-operators) > refuses a qualifier after a backslash-escaped literal 2ms
+ ✓ test/lib/databaseImport.test.ts > mysql dump filter (non-operators) > refuses \! shell escape 2ms
+ ✓ test/lib/databaseImport.test.ts > mysql dump filter (non-operators) > refuses \! mid-line 2ms
+ ✓ test/lib/databaseImport.test.ts > mysql dump filter (non-operators) > refuses \u 2ms
+ ✓ test/lib/databaseImport.test.ts > mysql dump filter (non-operators) > refuses \r 2ms
+ ✓ test/lib/databaseImport.test.ts > mysql dump filter (non-operators) > refuses \. source 2ms
+ ✓ test/lib/databaseImport.test.ts > mysql dump filter (non-operators) > refuses source 2ms
+ ✓ test/lib/databaseImport.test.ts > mysql dump filter (non-operators) > refuses system 1ms
+ ✓ test/lib/databaseImport.test.ts > mysql dump filter (non-operators) > refuses connect 2ms
+ ✓ test/lib/databaseImport.test.ts > mysql dump filter (non-operators) > refuses tee 2ms
+ ✓ test/lib/databaseImport.test.ts > mysql dump filter (non-operators) > refuses NO_BACKSLASH_ESCAPES 2ms
+ ✓ test/lib/databaseImport.test.ts > mysql dump filter (non-operators) > refuses ANSI_QUOTES 2ms
+ ✓ test/lib/databaseImport.test.ts > mysql dump filter (non-operators) > refuses sql_mode ANSI 2ms
+ ✓ test/lib/databaseImport.test.ts > mysql dump filter (non-operators) > finds a hit past the first 64 KiB of code 5ms
+ ✓ test/lib/databaseImport.test.ts > runImportJob > verifies, takes the safety backup, imports, probes — and records it all 192ms
+ ✓ test/lib/databaseImport.test.ts > runImportJob > marks a failed safety backup and fails the import 173ms
+ ✓ test/lib/databaseImport.test.ts > runImportJob > skips the safety backup when the options say so (the routes enforce who may) 181ms
+ ✓ test/lib/databaseImport.test.ts > runImportJob > reports changed credentials as completed_with_warnings 197ms
+ ✓ test/lib/databaseImport.test.ts > runImportJob > fails on a sha256 mismatch before touching the database 158ms
+ ✓ test/lib/databaseImport.test.ts > runImportJob > refuses an envelope from a non-operator; an operator goes through stageForRestore 169ms
+ ✓ test/lib/databaseImport.test.ts > runImportJob > refuses a gzipped envelope and an envelope that decrypts to another one 176ms
+ ✓ test/lib/databaseImport.test.ts > runImportJob > decompresses a gzipped SQL dump for psql, but hands mongo its gzip archive as-is 161ms
+ ✓ test/lib/databaseImport.test.ts > runImportJob > refuses the wrong format, and clean on plain SQL 178ms
+ ✓ test/lib/databaseImport.test.ts > runImportJob > applies the psql allowlist to operators too 148ms
+ ✓ test/lib/databaseImport.test.ts > runImportJob > mysql: the system-schema scan and the sandbox flag bind non-operators only 175ms
+ ✓ test/lib/databaseImport.test.ts > runImportJob > adds the DEFINER hint to a mysql error naming a definer privilege 158ms
+ ✓ test/lib/databaseImport.test.ts > runImportJob > redis: validates the RDB in the engine image first, and refuses an invalid one 156ms
+ ✓ test/lib/databaseImport.test.ts > runImportJob > fails cleanly when the database or the file is gone, and ignores an unknown id 211ms
+ ✓ test/lib/databaseImport.test.ts > S3 download > promotes the import to pending once the size matches 210ms
+ ✓ test/lib/databaseImport.test.ts > S3 download > fails on a size mismatch or a download error, and drops the file 222ms
+ ✓ test/lib/databaseImport.test.ts > S3 download > a cancel during the download wins: the file is deleted, not promoted 242ms
+ ✓ test/lib/databaseImport.test.ts > recovery, expiry and retention > boot: running imports become failed ("interrupted by panel restart") 224ms
+ ✓ test/lib/databaseImport.test.ts > recovery, expiry and retention > expires uploading/pending imports idle for 24h and deletes their staging 224ms
+ ✓ test/lib/databaseImport.test.ts > recovery, expiry and retention > prunes finished rows older than 90 days, never live ones 239ms
+ ✓ test/lib/databaseImport.test.ts > recovery, expiry and retention > deletes orphan staging files older than 24h, keeping live imports and other files 216ms
+ ✓ test/lib/databaseImport.test.ts > recovery, expiry and retention > serializes without the staging path 223ms
+ ✓ test/modules/databaseImportAdmissionRace.test.ts > mysql: winning refusal still fails and cleans its own upload 256ms
+ ✓ test/modules/databaseImportAdmissionRace.test.ts > mysql: older refusal loses to admitted start without touching its staging 170ms
+ ✓ test/modules/databaseImportAdmissionRace.test.ts > mysql: older refusal loses to cancellation without a second failure receipt 181ms
+ ✓ test/modules/databaseImportAdmissionRace.test.ts > mariadb: winning refusal still fails and cleans its own upload 180ms
+ ✓ test/modules/databaseImportAdmissionRace.test.ts > mariadb: older refusal loses to admitted start without touching its staging 186ms
+ ✓ test/modules/databaseImportAdmissionRace.test.ts > mariadb: older refusal loses to cancellation without a second failure receipt 181ms
+ ✓ test/modules/databaseImportAdmissionRace.test.ts > four competing allowed starts retain one admitted worker 176ms
+ ✓ test/modules/databaseImportAdmissionRace.test.ts > SQL refusal-write failure preserves pending input and emits no success-shaped failure audit 178ms
+ ✓ test/modules/databaseImportAdmissionRace.test.ts > another database import can finish refusal while this one waits 185ms
+stdout | test/modules/databaseImportAdmissionRace.test.ts
+FIX VERIFIED
+
+ ✓ test/modules/databaseImportAdmissionRace.test.ts > another creator remains forbidden before probing or touching files 175ms
+ ✓ test/modules/databaseImportChunkRace.test.ts > queued retry preserves winner and advances once final=false identical=false 319ms
+ ✓ test/modules/databaseImportChunkRace.test.ts > queued retry preserves winner and advances once final=false identical=true 197ms
+ ✓ test/modules/databaseImportChunkRace.test.ts > queued retry preserves winner and advances once final=true identical=false 186ms
+ ✓ test/modules/databaseImportChunkRace.test.ts > queued retry preserves winner and advances once final=true identical=true 197ms
+ ✓ test/modules/databaseImportChunkRace.test.ts > next chunk queued behind held first uses fresh offset 189ms
+ ✓ test/modules/databaseImportChunkRace.test.ts > unrelated import completes while another native writer is held 216ms
+ ✓ test/modules/databaseImportChunkRace.test.ts > native write failure closes ownership and permits retry 245ms
+ ✓ test/modules/databaseImportChunkRace.test.ts > validation failure releases admission for valid chunk 212ms
+ ✓ test/databaseImport014Wiring.test.ts > dump-import routes (M1) > registers every import route under the module prefix, the chunk route with its own body limit 49ms
+ ✓ test/databaseImport014Wiring.test.ts > backup-destination objects route (M16) > is registered next to the destination routes 2ms
+ ✓ test/databaseImport014Wiring.test.ts > database-imports plugin (M2) > recovers interrupted imports at boot and sweeps stale ones on its interval 257ms
+ ✓ test/databaseImport014Wiring.test.ts > database-imports plugin (M2) > never blocks startup when the database is unavailable 1ms
+ ✓ test/engine/databaseImportEngine.test.ts > importCommand (argv per engine) > postgres custom format: pg_restore without owners or ACLs, stopping on the first error 5ms
+ ✓ test/engine/databaseImportEngine.test.ts > importCommand (argv per engine) > postgres plain SQL: psql with ON_ERROR_STOP and standard_conforming_strings forced on 3ms
+ ✓ test/engine/databaseImportEngine.test.ts > importCommand (argv per engine) > mysql/mariadb: stdin through a positional sh -c, with the sandbox flag when there is one 0ms
+ ✓ test/engine/databaseImportEngine.test.ts > importCommand (argv per engine) > mongo: mongorestore excluding admin, config and local 0ms
+ ✓ test/engine/databaseImportEngine.test.ts > importCommand (argv per engine) > refuses a format the engine cannot take 0ms
+ ✓ test/engine/databaseImportEngine.test.ts > importDatabase > takes the safety backup first, under the same lock, then copies, runs and cleans up 13ms
+ ✓ test/engine/databaseImportEngine.test.ts > importDatabase > a failed safety backup records the failure and never imports 3ms
+ ✓ test/engine/databaseImportEngine.test.ts > importDatabase > redis/valkey: stop, copy over dump.rdb, and always start again 2ms
+ ✓ test/engine/databaseImportEngine.test.ts > importDatabase > refuses rdb for a non-redis engine and a database with no container 5ms
+ ✓ test/engine/databaseImportEngine.test.ts > importDatabase > still removes the in-container copy when the restore tool fails 3ms
+ ✓ test/engine/databaseImportEngine.test.ts > probeMysqlSandboxFlag > finds mariadb --sandbox and mysql --system-command in --help 0ms
+ ✓ test/engine/databaseImportEngine.test.ts > probeMysqlSandboxFlag > is null when the client lacks the flag, the probe fails, or the engine is not mysql 0ms
+ ✓ test/engine/databaseImportEngine.test.ts > probeDatabaseCredentials > signs in for real on every engine 0ms
+ ✓ test/engine/databaseImportEngine.test.ts > probeDatabaseCredentials > retries, then reports changed credentials 0ms
+
+ Test Files  7 passed (7)
+      Tests  164 passed (164)
+   Start at  02:39:18
+   Duration  21.06s (tests 80%, import 18%, transform 1%)
+
+    Isolate  7 workers spawned · ~266ms startup each (spawn + environment, per file)
+             at least ~1.60s faster with isolate: false — reuses workers across files instead of one per file

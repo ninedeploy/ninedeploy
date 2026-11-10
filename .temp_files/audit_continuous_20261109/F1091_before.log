@@ -1,0 +1,46 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1091_importWrite.test.ts > control: full successful native write acknowledges exact bytes 252ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1091_importWrite.test.ts > short successful native writes must persist full chunk before acknowledging
+EXPECTED: SELECT 1;
+ ACTUAL: SEL acknowledged: 10
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/prove_F1091_importWrite.test.ts > short successful native writes must persist full chunk before acknowledging 195ms
+   → expected Buffer[ 83, 69, 76 ] to deeply equal Buffer[ 83, 69, 76, 69, 67, 84, …(-21) ]
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1091_importWrite.test.ts > short successful native writes must persist full chunk before acknowledging
+AssertionError: expected Buffer[ 83, 69, 76 ] to deeply equal Buffer[ 83, 69, 76, 69, 67, 84, …(-21) ]
+
+- Expected
++ Received
+
+  {
+    "data": [
+      83,
+      69,
+      76,
+-     69,
+-     67,
+-     84,
+-     32,
+-     49,
+-     59,
+-     10,
+    ],
+    "type": "Buffer",
+  }
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1091_importWrite.test.ts:50:461
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 1 passed (2)
+   Start at  02:38:07
+   Duration  1.57s (import 44%, tests 38%, transform 18%)

@@ -1,0 +1,16 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/modules/databaseImportShortWrite.test.ts > completes each short write size=1 279ms
+ ✓ test/modules/databaseImportShortWrite.test.ts > completes each short write size=3 186ms
+ ✓ test/modules/databaseImportShortWrite.test.ts > completes each short write size=9 157ms
+ ✓ test/modules/databaseImportShortWrite.test.ts > completes each short write size=10 174ms
+ ✓ test/modules/databaseImportShortWrite.test.ts > advances native buffer offset, remaining length and absolute file position 186ms
+ ✓ test/modules/databaseImportShortWrite.test.ts > unsuccessful partial sequence 0 leaves metadata retryable 174ms
+ ✓ test/modules/databaseImportShortWrite.test.ts > unsuccessful partial sequence 3,0 leaves metadata retryable 178ms
+ ✓ test/modules/databaseImportShortWrite.test.ts > unsuccessful partial sequence 3,-1 leaves metadata retryable 172ms
+
+ Test Files  1 passed (1)
+      Tests  8 passed (8)
+   Start at  02:40:18
+   Duration  2.41s (tests 66%, import 25%, transform 9%)
