@@ -950,3 +950,26 @@ Mac or full release is claimed. This round fences policy publication; it does
 not claim to cancel work already admitted before close. Round73's native worker
 fault remains unresolved. Round84's initial push failed DNS resolution; the same
 commit was successfully pushed on retry and origin identity was verified.
+
+Round 86 (F1107) revokes new dump admission when the backup scheduler closes.
+A policy read that began before close previously resumed and called the engine
+after the Fastify close hook had stopped the scheduler. The shared backupOne
+entry now checks its running state before admitting a dump, covering both cron
+and daily callbacks, including a daily loop between databases.
+
+Original before: one failure/one open-scheduler control; after: two passes. Nine
+permanent cases were seen red (four failures/five controls). The verifier passed
+three times with the original proof plus those nine cases. Explicit gates cover
+pending policy/database reads, daily enumeration, close during the first of two
+dumps, admitted work settling and in-flight exclusion. Final scope passed 78
+tests in eight files; GOMAXPROCS=4 typecheck/build, two-file lint and diff checks
+passed.
+
+```bash
+pnpm --dir apps/server exec vitest run test/plugins/backupSchedulerShutdown.test.ts test/plugins/backupSchedulerPolicyRace.test.ts test/plugins/backupScheduler.test.ts test/plugins/backupSchedulerPolicy.test.ts --coverage=false
+```
+
+This uses actual Fastify close hooks and Cron with a fake clock, controlled DB
+and engine seams, without sleeps. It does not cancel a dump or its remaining
+work already admitted before close. No real backup, native SQLite shutdown,
+physical Mac or full release certification is claimed; round73 remains open.

@@ -1,0 +1,76 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/plugins/backupSchedulerShutdown.test.ts > control: open policy scheduler admits its due backup 77ms
+ ✓ test/plugins/backupSchedulerShutdown.test.ts > control: open daily scheduler admits its due backup 3ms
+ × test/plugins/backupSchedulerShutdown.test.ts > close while awaiting policy prevents later policy backup admission 12ms
+   → expected [ 5 ] to deeply equal []
+ × test/plugins/backupSchedulerShutdown.test.ts > close while awaiting database prevents later policy backup admission 3ms
+   → expected [ 5 ] to deeply equal []
+ × test/plugins/backupSchedulerShutdown.test.ts > close while daily database enumeration waits prevents later backup admission 4ms
+   → expected [ 5 ] to deeply equal []
+ × test/plugins/backupSchedulerShutdown.test.ts > close during the first daily dump does not admit the next database 3ms
+   → expected [ 5, 6 ] to deeply equal [ 5 ]
+ ✓ test/plugins/backupSchedulerShutdown.test.ts > an already-admitted policy backup may settle after close without another admission 1ms
+ ✓ test/plugins/backupSchedulerShutdown.test.ts > the existing in-flight guard prevents overlapping policy dumps 1ms
+ ✓ test/plugins/backupSchedulerShutdown.test.ts > close before a due timer admits no backup 1ms
+
+ Test Files  1 failed (1)
+      Tests  4 failed | 5 passed (9)
+   Start at  13:23:43
+   Duration  1.13s (import 73%, transform 16%, tests 11%)
+
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/plugins/backupSchedulerShutdown.test.ts > close while awaiting policy prevents later policy backup admission
+ FAIL  test/plugins/backupSchedulerShutdown.test.ts > close while awaiting database prevents later policy backup admission
+AssertionError: expected [ 5 ] to deeply equal []
+
+- Expected
++ Received
+
+- []
++ [
++   5,
++ ]
+
+ ❯ test/plugins/backupSchedulerShutdown.test.ts:30:295
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  test/plugins/backupSchedulerShutdown.test.ts > close while daily database enumeration waits prevents later backup admission
+AssertionError: expected [ 5 ] to deeply equal []
+
+- Expected
++ Received
+
+- []
++ [
++   5,
++ ]
+
+ ❯ test/plugins/backupSchedulerShutdown.test.ts:31:273
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+ FAIL  test/plugins/backupSchedulerShutdown.test.ts > close during the first daily dump does not admit the next database
+AssertionError: expected [ 5, 6 ] to deeply equal [ 5 ]
+
+- Expected
++ Received
+
+  [
+    5,
++   6,
+  ]
+
+ ❯ test/plugins/backupSchedulerShutdown.test.ts:32:296
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+
+
+EXIT 1

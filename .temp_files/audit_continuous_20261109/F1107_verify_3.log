@@ -1,0 +1,34 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1107_backupShutdown.test.ts > F1107: a policy read finishing after close cannot admit a new backup
+EXPECTED post-close engine calls:0 ACTUAL: []
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1107_backupShutdown.test.ts > control: open scheduler executes the due policy backup 116ms
+ ✓ .temp_files/audit_continuous_20261109/prove_F1107_backupShutdown.test.ts > F1107: a policy read finishing after close cannot admit a new backup 5ms
+
+ Test Files  1 passed (1)
+      Tests  2 passed (2)
+   Start at  13:24:03
+   Duration  1.40s (import 69%, transform 20%, tests 10%)
+
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/plugins/backupSchedulerShutdown.test.ts > control: open policy scheduler admits its due backup 98ms
+ ✓ test/plugins/backupSchedulerShutdown.test.ts > control: open daily scheduler admits its due backup 3ms
+ ✓ test/plugins/backupSchedulerShutdown.test.ts > close while awaiting policy prevents later policy backup admission 3ms
+ ✓ test/plugins/backupSchedulerShutdown.test.ts > close while awaiting database prevents later policy backup admission 2ms
+ ✓ test/plugins/backupSchedulerShutdown.test.ts > close while daily database enumeration waits prevents later backup admission 2ms
+ ✓ test/plugins/backupSchedulerShutdown.test.ts > close during the first daily dump does not admit the next database 2ms
+ ✓ test/plugins/backupSchedulerShutdown.test.ts > an already-admitted policy backup may settle after close without another admission 1ms
+ ✓ test/plugins/backupSchedulerShutdown.test.ts > the existing in-flight guard prevents overlapping policy dumps 3ms
+ ✓ test/plugins/backupSchedulerShutdown.test.ts > close before a due timer admits no backup 1ms
+
+ Test Files  1 passed (1)
+      Tests  9 passed (9)
+   Start at  13:24:07
+   Duration  1.21s (import 75%, transform 13%, tests 11%)
+
+FIX VERIFIED

@@ -1,0 +1,34 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1107_backupShutdown.test.ts > F1107: a policy read finishing after close cannot admit a new backup
+EXPECTED post-close engine calls:0 ACTUAL: [ 5 ]
+PROBLEM CONFIRMED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1107_backupShutdown.test.ts > control: open scheduler executes the due policy backup 198ms
+ × .temp_files/audit_continuous_20261109/prove_F1107_backupShutdown.test.ts > F1107: a policy read finishing after close cannot admit a new backup 8ms
+   → expected [ 5 ] to deeply equal []
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1107_backupShutdown.test.ts > F1107: a policy read finishing after close cannot admit a new backup
+AssertionError: expected [ 5 ] to deeply equal []
+
+- Expected
++ Received
+
+- []
++ [
++   5,
++ ]
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1107_backupShutdown.test.ts:9:563
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 1 passed (2)
+   Start at  13:22:01
+   Duration  1.93s (import 77%, tests 12%, transform 11%)

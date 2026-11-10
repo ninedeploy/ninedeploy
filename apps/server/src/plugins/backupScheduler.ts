@@ -125,6 +125,7 @@ export default fp(
     /** Dump one database, record it, upload it, audit it, then apply
      *  retention. `policy` null = the built-in rules. Never throws. */
     const backupOne = async (d: DatabaseRow, policy: DatabaseBackupPolicy | null, budget: RemoteBudget) => {
+      if (!running) return;
       if (inFlight.has(d.id)) {
         fastify.log.warn({ databaseId: d.id }, `scheduled backup for ${d.name} skipped: the previous one is still running`);
         return;
