@@ -1,0 +1,45 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ × test/lib/gitLfsEmpty.test.ts > hydrates 1 empty references without HTTP 579ms
+   → No remote transfer allowed
+ × test/lib/gitLfsEmpty.test.ts > hydrates 2 empty references without HTTP 572ms
+   → No remote transfer allowed
+ × test/lib/gitLfsEmpty.test.ts > hydrates 3 empty references without HTTP 262ms
+   → No remote transfer allowed
+ × test/lib/gitLfsEmpty.test.ts > excludes empty objects from mixed batch requests 279ms
+   → Git LFS: object e3b0c44298fc is larger than its pointer says
+ ✓ test/lib/gitLfsEmpty.test.ts > leaves all pointers intact when a mixed transfer fails 597ms
+ ✓ test/lib/gitLfsEmpty.test.ts > does not trust size zero with a different hash 321ms
+ ✓ test/lib/gitLfsEmpty.test.ts > does not bypass a nonzero empty-hash declaration 273ms
+ ✓ test/lib/gitLfsEmpty.test.ts > still rejects conflicting sizes for the empty hash 272ms
+ ✓ test/lib/gitLfsEmpty.test.ts > retains normal nonempty verification and deduplication 524ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/lib/gitLfsEmpty.test.ts > hydrates 1 empty references without HTTP
+ FAIL  test/lib/gitLfsEmpty.test.ts > hydrates 2 empty references without HTTP
+ FAIL  test/lib/gitLfsEmpty.test.ts > hydrates 3 empty references without HTTP
+Error: No remote transfer allowed
+ ❯ test/lib/gitLfsEmpty.test.ts:19:185
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  test/lib/gitLfsEmpty.test.ts > excludes empty objects from mixed batch requests
+Error: Git LFS: object e3b0c44298fc is larger than its pointer says
+ ❯ Readable.<anonymous> src/lib/gitLfs.ts:210:37
+    208|   source.on('data', (chunk: Buffer) => {
+    209|     seen += chunk.length;
+    210|     if (seen > size) source.destroy(new Error(`Git LFS: object ${oid.s…
+       |                                     ^
+    211|     hash.update(chunk);
+    212|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  4 failed | 5 passed (9)
+   Start at  16:05:21
+   Duration  5.44s (tests 99%, transform 1%)

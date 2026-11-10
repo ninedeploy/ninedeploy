@@ -1,0 +1,38 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1115_lfsEmpty.test.ts > hydrates known empty content without requiring a stored remote object
+EXPECTED: one empty file, zero bytes, no network; ACTUAL: {
+  result: undefined,
+  error: "Error: Git LFS: the repository's LFS API answered 404 — a private repository needs a Git credential with read access",
+  requests: 1
+}
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/prove_F1115_lfsEmpty.test.ts > hydrates known empty content without requiring a stored remote object 258ms
+   → expected Error: Git LFS: the repository's LFS API … to be undefined
+ ✓ .temp_files/audit_continuous_20261109/prove_F1115_lfsEmpty.test.ts > control: nonempty content still transfers and verifies 233ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1115_lfsEmpty.test.ts > hydrates known empty content without requiring a stored remote object
+AssertionError: expected Error: Git LFS: the repository's LFS API … to be undefined
+
+- Expected:
+undefined
+
++ Received:
+Error {
+  "message": "Git LFS: the repository's LFS API answered 404 — a private repository needs a Git credential with read access",
+}
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1115_lfsEmpty.test.ts:15:752
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 1 passed (2)
+   Start at  16:02:45
+   Duration  965ms (tests 87%, transform 9%, import 4%, worker 1%)

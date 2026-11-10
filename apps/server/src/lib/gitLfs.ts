@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { closeSync, createReadStream, createWriteStream, lstatSync, mkdirSync, openSync, readSync, renameSync, rmSync } from 'node:fs';
+import { closeSync, createReadStream, createWriteStream, lstatSync, mkdirSync, openSync, readSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -155,7 +155,14 @@ export async function fetchLfsObjects(
   rmSync(store, { recursive: true, force: true });
   try {
     const fetched = new Map<string, string>();
-    const entries = [...objects.entries()];
+    const emptyOid = createHash('sha256').digest('hex');
+    if (objects.get(emptyOid) === 0) {
+      mkdirSync(store, { recursive: true, mode: 0o700 });
+      const emptyFile = path.join(store, emptyOid);
+      writeFileSync(emptyFile, '');
+      fetched.set(emptyOid, emptyFile);
+    }
+    const entries = [...objects.entries()].filter(([oid]) => !fetched.has(oid));
     for (let i = 0; i < entries.length; i += BATCH_SIZE) {
       const chunk = entries.slice(i, i + BATCH_SIZE).map(([oid, size]) => ({ oid, size }));
       const res = await guardedFetch(`${endpoint}/objects/batch`, {

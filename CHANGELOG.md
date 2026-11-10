@@ -37,6 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Git LFS builds now hydrate verified empty objects locally, avoiding a failed download or misleading credential error when no remote empty object is stored (F1115).
 - Git LFS builds now reject conflicting sizes for the same object before downloading or changing checkout files, instead of silently accepting the last pointer declaration (F1114).
 - Git LFS recognition now validates the complete basic-v1 pointer, preserving ordinary text with pointer-looking prefixes (F1112).
 - Git LFS hydration now accepts native-compatible CRLF, omitted final newlines and outer Unicode whitespace for basic-v1 pointers (F1113).

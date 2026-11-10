@@ -1,0 +1,25 @@
+{
+  "version": "git-lfs/3.8.1 (GitHub; windows amd64; go 1.27.3; git a662a6db)",
+  "report": [
+    {
+      "name": "canonical",
+      "check": 0,
+      "strict": 0,
+      "emptyObjectCached": false,
+      "smudgeExit": 0,
+      "outputBytes": 32,
+      "smudgedToBody": true,
+      "preservedInput": false
+    },
+    {
+      "name": "empty_pointer",
+      "check": 0,
+      "strict": 2,
+      "emptyObjectCached": false,
+      "smudgeExit": 0,
+      "outputBytes": 0,
+      "smudgedToBody": false,
+      "preservedInput": false
+    }
+  ]
+}

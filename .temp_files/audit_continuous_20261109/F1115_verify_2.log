@@ -1,0 +1,34 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1115_lfsEmpty.test.ts > hydrates known empty content without requiring a stored remote object
+EXPECTED: one empty file, zero bytes, no network; ACTUAL: { result: { files: 1, bytes: 0 }, error: 'undefined', requests: 0 }
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1115_lfsEmpty.test.ts > hydrates known empty content without requiring a stored remote object 3944ms
+ ✓ .temp_files/audit_continuous_20261109/prove_F1115_lfsEmpty.test.ts > control: nonempty content still transfers and verifies 311ms
+
+ Test Files  1 passed (1)
+      Tests  2 passed (2)
+   Start at  16:05:37
+   Duration  4.49s (tests 99%, import 1%)
+
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/lib/gitLfsEmpty.test.ts > hydrates 1 empty references without HTTP 254ms
+ ✓ test/lib/gitLfsEmpty.test.ts > hydrates 2 empty references without HTTP 570ms
+ ✓ test/lib/gitLfsEmpty.test.ts > hydrates 3 empty references without HTTP 234ms
+ ✓ test/lib/gitLfsEmpty.test.ts > excludes empty objects from mixed batch requests 248ms
+ ✓ test/lib/gitLfsEmpty.test.ts > leaves all pointers intact when a mixed transfer fails 558ms
+ ✓ test/lib/gitLfsEmpty.test.ts > does not trust size zero with a different hash 204ms
+ ✓ test/lib/gitLfsEmpty.test.ts > does not bypass a nonzero empty-hash declaration 206ms
+ ✓ test/lib/gitLfsEmpty.test.ts > still rejects conflicting sizes for the empty hash 233ms
+ ✓ test/lib/gitLfsEmpty.test.ts > retains normal nonempty verification and deduplication 224ms
+
+ Test Files  1 passed (1)
+      Tests  9 passed (9)
+   Start at  16:05:44
+   Duration  2.94s (tests 98%, import 1%)
+
+FIX VERIFIED

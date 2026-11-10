@@ -1137,3 +1137,8 @@ The focused Mac lane also checks shared LFS object size consistency in
 `test/lib/gitLfsObjectSizes.test.ts` (26 server files). Contradictory pointer
 sizes must be rejected before network requests or checkout changes.
 Native LFS shared-size checkpoint: [run 42829905100](https://github.com/ninedeploy/ninedeploy/actions/runs/42829905100) passed at source `de41df9eef4640334fcb36deb241ea7d88391db0` on macOS 26.7.2 arm64: 333 server, 20 native CLI and four workspace MCP tests, 357 tests in 31 files. See the [receipt](../.temp_files/audit_continuous_20261109/round93_receipt.json). The full release suite remains outside this focused run.
+
+The focused Mac lane also covers locally verified empty LFS content in
+`test/lib/gitLfsEmpty.test.ts` (27 server files). Empty SHA-256 plus size zero
+requires no remote object; mixed and contradictory declarations retain checks.
+Native empty LFS follow-up: pending the new Mac run.
