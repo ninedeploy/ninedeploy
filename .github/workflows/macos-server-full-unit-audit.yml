@@ -1,0 +1,138 @@
+name: macOS server full unit audit
+
+# Opt-in native evidence for backend regressions; no daemon, GUI or deployment.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-server-full-unit-audit-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  native:
+    name: Full native server unit suite and controlled CLI
+    runs-on: macos-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+    env:
+      GOMAXPROCS: '4'
+      DOCKER_HOST: tcp://127.0.0.1:9
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+      HOMEBREW_NO_ANALYTICS: '1'
+    steps:
+      - name: Initialize evidence
+        run: |
+          mkdir -p "$RUNNER_TEMP/ninedeploy-server-full-unit-audit"
+          printf 'AUDIT_LOG_DIR=%s\n' "$RUNNER_TEMP/ninedeploy-server-full-unit-audit" >> "$GITHUB_ENV"
+          printf 'ref=%s\nsha=%s\n' "$GITHUB_REF" "$GITHUB_SHA" > "$RUNNER_TEMP/ninedeploy-server-full-unit-audit/bootstrap.txt"
+          uname -sm >> "$RUNNER_TEMP/ninedeploy-server-full-unit-audit/bootstrap.txt"
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - name: Record environment
+        run: |
+          node --input-type=module <<'NODE'
+          import { execFileSync } from 'node:child_process';
+          import { writeFileSync } from 'node:fs';
+          import { join } from 'node:path';
+          const read = (command, args) => execFileSync(command, args, { encoding: 'utf8' }).trim();
+          const data = {
+            sha: read('git', ['rev-parse', 'HEAD']),
+            eventSha: process.env.GITHUB_SHA,
+            runId: process.env.GITHUB_RUN_ID,
+            timestamp: new Date().toISOString(),
+            platform: process.platform,
+            architecture: process.arch,
+            macOS: read('sw_vers', ['-productVersion']),
+            node: process.versions.node,
+            pnpm: read('pnpm', ['--version']),
+            git: read('git', ['--version']),
+          };
+          if (data.sha !== data.eventSha || data.platform !== 'darwin') throw new Error('Unexpected audit checkout or platform');
+          writeFileSync(join(process.env.AUDIT_LOG_DIR, 'environment.json'), `${JSON.stringify(data, null, 2)}\n`);
+          console.log(data);
+          NODE
+          node scripts/dev-macos.mjs --check
+
+      - name: Install frozen workspace
+        run: |
+          set -euo pipefail
+          pnpm install --frozen-lockfile 2>&1 | tee "$AUDIT_LOG_DIR/install.log"
+
+      - name: Build server and workspace dependencies
+        run: |
+          set -euo pipefail
+          pnpm --filter '@ninedeploy/server...' build 2>&1 | tee "$AUDIT_LOG_DIR/build.log"
+          pnpm --dir apps/server typecheck 2>&1 | tee "$AUDIT_LOG_DIR/typecheck.log"
+
+      - name: Verify workspace MCP executable
+        run: |
+          set -euo pipefail
+          node scripts/check-workspace-mcp.mjs 2>&1 | tee "$AUDIT_LOG_DIR/mcp-bin.log"
+          pnpm --dir packages/mcp exec vitest run test/workspaceBin.test.ts --coverage=false --maxWorkers=1 --reporter=verbose 2>&1 | tee "$AUDIT_LOG_DIR/mcp-cold-install.log"
+
+      - name: Install Docker CLI without a daemon
+        run: |
+          set -euo pipefail
+          if ! command -v docker >/dev/null 2>&1; then brew install docker; fi
+          docker --version | tee "$AUDIT_LOG_DIR/docker-cli.log"
+
+      - name: Full configured server unit suite
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import { execFileSync } from 'node:child_process';
+          import { createHash } from 'node:crypto';
+          import { readFileSync, writeFileSync } from 'node:fs';
+          import { join } from 'node:path';
+          const files = execFileSync('git', ['ls-files', '-z', 'apps/server/test'], { encoding: 'utf8' })
+            .split('\0').filter(p => p.endsWith('.test.ts') && !/^apps\/server\/test\/(integration|diag)\//.test(p) && !/(?:^|\/)(node_modules|dist)\//.test(p)).sort();
+          const manifest = {
+            sourceSha: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
+            configSha256: createHash('sha256').update(readFileSync('apps/server/vitest.config.ts')).digest('hex'),
+            coverage: false,
+            maxWorkers: 1,
+            expectedFiles: files,
+            expectedFileCount: files.length,
+          };
+          writeFileSync(join(process.env.AUDIT_LOG_DIR, 'unit-manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
+          NODE
+          pnpm --dir apps/server exec vitest run --coverage=false --reporter=verbose --maxWorkers=1 2>&1 | tee "$AUDIT_LOG_DIR/unit.log"
+
+      - name: Controlled native Docker CLI regressions
+        run: |
+          set -euo pipefail
+          pnpm --dir apps/server exec vitest run \
+            --config vitest.integration.config.ts \
+            test/integration/registryCredentialStore.test.ts \
+            test/integration/registryCredentialLogout.test.ts \
+            test/integration/registryImageReference.test.ts \
+            test/integration/backupDrillHelperLifecycle.test.ts \
+            --coverage=false --reporter=verbose --maxWorkers=1 \
+            2>&1 | tee "$AUDIT_LOG_DIR/native-cli.log"
+
+      - name: Upload audit diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: macos-server-full-unit-audit-${{ github.sha }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/ninedeploy-server-full-unit-audit
+          if-no-files-found: error
+          retention-days: 14
