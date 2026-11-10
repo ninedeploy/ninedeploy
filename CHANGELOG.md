@@ -37,6 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Teams and Resend success responses and Lark HTTP refusal responses now release unused bodies while retaining provider diagnostics and Lark application error handling (F1119).
 - Basic webhook, chat and push notification deliveries now release unused HTTP response bodies on success and refusal, preserving Telegram diagnostic text and existing channel payloads (F1118).
 - PagerDuty and Opsgenie deliveries now release unused success-response bodies before returning, while preserving provider refusal details and notification payloads (F1117).
 - GitLab, Gitea and Bitbucket commit-status reports now cancel unused response bodies before returning, releasing HTTP resources on success and failure without affecting deployments (F1116).

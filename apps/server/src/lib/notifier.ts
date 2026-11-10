@@ -396,7 +396,10 @@ async function sendLark(webhookUrl: string, message: string): Promise<void> {
     body: JSON.stringify({ msg_type: 'text', content: { text: message } }),
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
-  if (!res.ok) throw new Error(`Lark ${res.status}`);
+  if (!res.ok) {
+    await res.body?.cancel().catch(() => undefined);
+    throw new Error(`Lark ${res.status}`);
+  }
   try {
     const body = (await res.json()) as { code?: number; msg?: string };
     if (typeof body.code === 'number' && body.code !== 0) {
@@ -471,6 +474,7 @@ async function sendTeams(target: string, message: string): Promise<void> {
     }
     throw new Error(detail ? `Teams ${res.status}: ${detail}` : `Teams ${res.status}`);
   }
+  await res.body?.cancel().catch(() => undefined);
 }
 
 export interface ResendTarget {
@@ -526,6 +530,7 @@ async function sendResend(target: string, subject: string, message: string, reci
     }
     throw new Error(detail ? `Resend ${res.status}: ${detail}` : `Resend ${res.status}`);
   }
+  await res.body?.cancel().catch(() => undefined);
 }
 
 export interface EmailTarget {

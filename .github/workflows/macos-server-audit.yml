@@ -125,6 +125,7 @@ jobs:
             test/lib/incidentResponse.test.ts \
             test/lib/notifier.test.ts \
             test/lib/notifierResponse.test.ts \
+            test/lib/notifierCustomResponse.test.ts \
             --coverage=false --reporter=verbose --maxWorkers=1 \
             2>&1 | tee "$AUDIT_LOG_DIR/unit.log"
 

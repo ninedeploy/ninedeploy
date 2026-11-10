@@ -1,0 +1,72 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1119_notifierCustomResponse.test.ts > disposes native teams response 201
+EXPECTED: response disposed before delivery settles; ACTUAL: { provider: 'teams', status: 201, cancelled: 1, error: 'undefined' }
+PROBLEM NOT REPRODUCED
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1119_notifierCustomResponse.test.ts > disposes native resend response 201
+EXPECTED: response disposed before delivery settles; ACTUAL: { provider: 'resend', status: 201, cancelled: 1, error: 'undefined' }
+PROBLEM NOT REPRODUCED
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1119_notifierCustomResponse.test.ts > disposes native lark response 503
+EXPECTED: response disposed before delivery settles; ACTUAL: {
+  provider: 'lark',
+  status: 503,
+  cancelled: 1,
+  error: 'Error: Lark 503'
+}
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1119_notifierCustomResponse.test.ts > disposes native teams response 201 36ms
+ ✓ .temp_files/audit_continuous_20261109/prove_F1119_notifierCustomResponse.test.ts > disposes native resend response 201 5ms
+ ✓ .temp_files/audit_continuous_20261109/prove_F1119_notifierCustomResponse.test.ts > disposes native lark response 503 6ms
+ ✓ .temp_files/audit_continuous_20261109/prove_F1119_notifierCustomResponse.test.ts > control: Lark consumes semantic success JSON 1ms
+ ✓ .temp_files/audit_continuous_20261109/prove_F1119_notifierCustomResponse.test.ts > control: Teams consumes text refusal details 1ms
+ ✓ .temp_files/audit_continuous_20261109/prove_F1119_notifierCustomResponse.test.ts > control: Resend consumes JSON refusal details 0ms
+
+ Test Files  1 passed (1)
+      Tests  6 passed (6)
+   Start at  16:30:26
+   Duration  978ms (import 73%, transform 19%, tests 7%)
+
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+stdout | test/lib/notifierCustomResponse.test.ts > disposes native teams response 201
+EXPECTED: response disposed before delivery settles; ACTUAL: { provider: 'teams', status: 201, cancelled: 1, error: 'undefined' }
+PROBLEM NOT REPRODUCED
+
+stdout | test/lib/notifierCustomResponse.test.ts > disposes native resend response 201
+EXPECTED: response disposed before delivery settles; ACTUAL: { provider: 'resend', status: 201, cancelled: 1, error: 'undefined' }
+PROBLEM NOT REPRODUCED
+
+stdout | test/lib/notifierCustomResponse.test.ts > disposes native lark response 503
+EXPECTED: response disposed before delivery settles; ACTUAL: {
+  provider: 'lark',
+  status: 503,
+  cancelled: 1,
+  error: 'Error: Lark 503'
+}
+PROBLEM NOT REPRODUCED
+
+ ✓ test/lib/notifierCustomResponse.test.ts > disposes native teams response 201 40ms
+ ✓ test/lib/notifierCustomResponse.test.ts > disposes native resend response 201 5ms
+ ✓ test/lib/notifierCustomResponse.test.ts > disposes native lark response 503 4ms
+ ✓ test/lib/notifierCustomResponse.test.ts > control: Lark consumes semantic success JSON 1ms
+ ✓ test/lib/notifierCustomResponse.test.ts > control: Teams consumes text refusal details 1ms
+ ✓ test/lib/notifierCustomResponse.test.ts > control: Resend consumes JSON refusal details 0ms
+ ✓ test/lib/notifierCustomResponse.test.ts > handles teams bodyless response 0ms
+ ✓ test/lib/notifierCustomResponse.test.ts > retains teams outcome when cancellation rejects 0ms
+ ✓ test/lib/notifierCustomResponse.test.ts > handles resend bodyless response 0ms
+ ✓ test/lib/notifierCustomResponse.test.ts > retains resend outcome when cancellation rejects 0ms
+ ✓ test/lib/notifierCustomResponse.test.ts > handles lark bodyless response 0ms
+ ✓ test/lib/notifierCustomResponse.test.ts > retains lark outcome when cancellation rejects 0ms
+ ✓ test/lib/notifierCustomResponse.test.ts > preserves Lark application rejection JSON 0ms
+
+ Test Files  1 passed (1)
+      Tests  13 passed (13)
+   Start at  16:30:28
+   Duration  1.15s (import 72%, transform 19%, tests 8%)
+
+FIX VERIFIED

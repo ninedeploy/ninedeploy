@@ -1,0 +1,53 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1119_notifierCustomResponse.test.ts > disposes native teams response 201
+EXPECTED: response disposed before delivery settles; ACTUAL: { provider: 'teams', status: 201, cancelled: 0, error: 'undefined' }
+PROBLEM CONFIRMED
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1119_notifierCustomResponse.test.ts > disposes native resend response 201
+EXPECTED: response disposed before delivery settles; ACTUAL: { provider: 'resend', status: 201, cancelled: 0, error: 'undefined' }
+PROBLEM CONFIRMED
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1119_notifierCustomResponse.test.ts > disposes native lark response 503
+EXPECTED: response disposed before delivery settles; ACTUAL: {
+  provider: 'lark',
+  status: 503,
+  cancelled: 0,
+  error: 'Error: Lark 503'
+}
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/prove_F1119_notifierCustomResponse.test.ts > disposes native teams response 201 46ms
+   → expected +0 to be 1 // Object.is equality
+ × .temp_files/audit_continuous_20261109/prove_F1119_notifierCustomResponse.test.ts > disposes native resend response 201 6ms
+   → expected +0 to be 1 // Object.is equality
+ × .temp_files/audit_continuous_20261109/prove_F1119_notifierCustomResponse.test.ts > disposes native lark response 503 5ms
+   → expected +0 to be 1 // Object.is equality
+ ✓ .temp_files/audit_continuous_20261109/prove_F1119_notifierCustomResponse.test.ts > control: Lark consumes semantic success JSON 1ms
+ ✓ .temp_files/audit_continuous_20261109/prove_F1119_notifierCustomResponse.test.ts > control: Teams consumes text refusal details 1ms
+ ✓ .temp_files/audit_continuous_20261109/prove_F1119_notifierCustomResponse.test.ts > control: Resend consumes JSON refusal details 0ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1119_notifierCustomResponse.test.ts > disposes native teams response 201
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1119_notifierCustomResponse.test.ts > disposes native resend response 201
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1119_notifierCustomResponse.test.ts > disposes native lark response 503
+AssertionError: expected +0 to be 1 // Object.is equality
+
+- Expected
++ Received
+
+- 1
++ 0
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1119_notifierCustomResponse.test.ts:10:1302
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  3 failed | 3 passed (6)
+   Start at  16:25:02
+   Duration  1.01s (import 69%, transform 24%, tests 7%)

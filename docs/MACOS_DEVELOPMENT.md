@@ -1160,3 +1160,9 @@ disposal in `test/lib/notifier.test.ts` and
 `test/lib/notifierResponse.test.ts` (33 server files). Ten channel types use
 inert targets and controlled loopback HTTP; no real notifications are sent.
 Native basic notification response checkpoint: [run 42833847554](https://github.com/ninedeploy/ninedeploy/actions/runs/42833847554) passed at source `73fecd8a1a8d8b12ba8afbd31f85ce3195521bba` on macOS 26.7.2 arm64: 525 server, 20 native CLI and four workspace MCP tests, 549 tests in 38 files. See the [receipt](../.temp_files/audit_continuous_20261109/round97_receipt.json). Full release certification remains outside this focused run.
+
+The focused Mac lane checks custom notification response semantics in
+`test/lib/notifierCustomResponse.test.ts` (34 server files). Teams text errors,
+Resend JSON errors and Lark application codes remain visible while unused
+response bodies are released. These fixtures make no vendor requests.
+Native custom notification response follow-up: pending the new Mac run.
