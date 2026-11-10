@@ -1238,3 +1238,10 @@ Windows full run failed with native worker exit `0xC0000005` in
 1 unhandled error. That file passed 27 tests in isolation afterward; the full
 Windows failure remains unresolved. Do not treat this as complete cross-platform
 or release acceptance.
+
+A subsequent fixture-only follow-up (F1133) found 27 native database clients left
+open by `swarmDeploy.test.ts`. Each case now awaits readiness and explicitly
+closes its client. The original ownership probe changed from 27 open clients to
+zero, three lifecycle verifiers passed, and 70 nearby Swarm tests passed. This
+does not establish the cause or resolution of the native Windows access violation;
+the full suite was not rerun for this fixture change.

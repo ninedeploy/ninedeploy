@@ -1,0 +1,401 @@
+apps\server\test\swarmDeploy.test.ts:31:12 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+    29 │ const h = vi.hoisted(() => ({
+    30 │   docker: [] as string[][],
+  > 31 │   imageId: 'sha256:' + 'a'.repeat(64),
+       │            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    32 │   spec: null as null | { services: Array<Record<string, any>> },
+    33 │   /** `docker service ls` answers, consumed in order (the last one repeats). */
+
+  i Unsafe fix: Use a template literal.
+
+     29  29 │   const h = vi.hoisted(() => ({␍
+     30  30 │     docker: [] as string[][],␍
+     31     │ - ··imageId:·'sha256:'·+·'a'.repeat(64),␍
+         31 │ + ··imageId:·`sha256:${'a'.repeat(64)}`,␍
+     32  32 │     spec: null as null | { services: Array<Record<string, any>> },␍
+     33  33 │     /** `docker service ls` answers, consumed in order (the last one repeats). */␍
+
+
+apps\server\test\swarmDeploy.test.ts:57:50 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+    55 │       return h.network;
+    56 │     }
+  > 57 │     if (a === 'image' && b === 'inspect') return h.imageId + '|42';
+       │                                                  ^^^^^^^^^^^^^^^^^
+    58 │     if (a === 'service' && b === 'inspect' && args.some(x => x.includes('"version"'))) return JSON.stringify({ id: 'svc0000000000000000000001', version: 7, image: h.spec?.services[0]?.image, service: h.spec?.services[0]?.labels['ninedeploy.service'], deployment: h.spec?.services[0]?.labels['ninedeploy.deployment'] });
+    59 │     if (a === 'service' && b === 'ps' && args.includes('--quiet')) return Array.from({ length: h.spec?.services[0]?.replicas ?? 2 }, (_, n) => ('task' + n).padEnd(25, '0')).join('\n');
+
+  i Unsafe fix: Use a template literal.
+
+     55  55 │         return h.network;␍
+     56  56 │       }␍
+     57     │ - ····if·(a·===·'image'·&&·b·===·'inspect')·return·h.imageId·+·'|42';␍
+         57 │ + ····if·(a·===·'image'·&&·b·===·'inspect')·return·`${h.imageId}|42`;␍
+     58  58 │       if (a === 'service' && b === 'inspect' && args.some(x => x.includes('"version"'))) return JSON.stringify({ id: 'svc0000000000000000000001', version: 7, image: h.spec?.services[0]?.image, service: h.spec?.services[0]?.labels['ninedeploy.service'], deployment: h.spec?.services[0]?.labels['ninedeploy.deployment'] });␍
+     59  59 │       if (a === 'service' && b === 'ps' && args.includes('--quiet')) return Array.from({ length: h.spec?.services[0]?.replicas ?? 2 }, (_, n) => ('task' + n).padEnd(25, '0')).join('\n');␍
+
+
+apps\server\test\swarmDeploy.test.ts:59:145 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+    57 │     if (a === 'image' && b === 'inspect') return h.imageId + '|42';
+    58 │     if (a === 'service' && b === 'inspect' && args.some(x => x.includes('"version"'))) return JSON.stringify({ id: 'svc0000000000000000000001', version: 7, image: h.spec?.services[0]?.image, service: h.spec?.services[0]?.labels['ninedeploy.service'], deployment: h.spec?.services[0]?.labels['ninedeploy.deployment'] });
+  > 59 │     if (a === 'service' && b === 'ps' && args.includes('--quiet')) return Array.from({ length: h.spec?.services[0]?.replicas ?? 2 }, (_, n) => ('task' + n).padEnd(25, '0')).join('\n');
+       │                                                                                                                                                 ^^^^^^^^^^
+    60 │     if (a === 'inspect' && args.includes('task')) return args.slice(5).map(id => JSON.stringify({ id, service: 'svc0000000000000000000001', node: MGR, desired: 'running', state: 'running', container: id[4]!.repeat(64) })).join('\n');
+    61 │     if (a === 'inspect' && args.includes('container')) return h.imageId;
+
+  i Unsafe fix: Use a template literal.
+
+     57  57 │       if (a === 'image' && b === 'inspect') return h.imageId + '|42';␍
+     58  58 │       if (a === 'service' && b === 'inspect' && args.some(x => x.includes('"version"'))) return JSON.stringify({ id: 'svc0000000000000000000001', version: 7, image: h.spec?.services[0]?.image, service: h.spec?.services[0]?.labels['ninedeploy.service'], deployment: h.spec?.services[0]?.labels['ninedeploy.deployment'] });␍
+     59     │ - ····if·(a·===·'service'·&&·b·===·'ps'·&&·args.includes('--quiet'))·return·Array.from({·length:·h.spec?.services[0]?.replicas·??·2·},·(_,·n)·=>·('task'·+·n).padEnd(25,·'0')).join('\n');␍
+         59 │ + ····if·(a·===·'service'·&&·b·===·'ps'·&&·args.includes('--quiet'))·return·Array.from({·length:·h.spec?.services[0]?.replicas·??·2·},·(_,·n)·=>·(`task${n}`).padEnd(25,·'0')).join('\n');␍
+     60  60 │       if (a === 'inspect' && args.includes('task')) return args.slice(5).map(id => JSON.stringify({ id, service: 'svc0000000000000000000001', node: MGR, desired: 'running', state: 'running', container: id[4]!.repeat(64) })).join('\n');␍
+     61  61 │       if (a === 'inspect' && args.includes('container')) return h.imageId;␍
+
+
+apps\server\test\swarmDeploy.test.ts:109:15 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+    107 │ beforeEach(async () => {
+    108 │   h.docker = [];
+  > 109 │   h.imageId = 'sha256:' + 'a'.repeat(64);
+        │               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    110 │   h.spec = null;
+    111 │   h.replicas = ['nd-web_web 2/2'];
+
+  i Unsafe fix: Use a template literal.
+
+    107 107 │   beforeEach(async () => {␍
+    108 108 │     h.docker = [];␍
+    109     │ - ··h.imageId·=·'sha256:'·+·'a'.repeat(64);␍
+        109 │ + ··h.imageId·=·`sha256:${'a'.repeat(64)}`;␍
+    110 110 │     h.spec = null;␍
+    111 111 │     h.replicas = ['nd-web_web 2/2'];␍
+
+
+apps\server\test\swarmDeploy.test.ts:334:98 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+    332 │     expect(specs[0]).toMatchObject({
+    333 │       resolveImage: 'never',
+  > 334 │       services: [{ image: 'ninedeploy/web:abc1234-b9', constraints: ['node.labels.nd.member==1', 'node.labels.nd.preload.web.g0==' + 'a'.repeat(64)], port: 3000 }],
+        │                                                                                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    335 │     });
+    336 │     expect(specs[0]!.services[0]!.env.PORT).toBe('3000'); // Nixpacks' run convention, like the container builder
+
+  i Unsafe fix: Use a template literal.
+
+    332 332 │       expect(specs[0]).toMatchObject({␍
+    333 333 │         resolveImage: 'never',␍
+    334     │ - ······services:·[{·image:·'ninedeploy/web:abc1234-b9',·constraints:·['node.labels.nd.member==1',·'node.labels.nd.preload.web.g0=='·+·'a'.repeat(64)],·port:·3000·}],␍
+        334 │ + ······services:·[{·image:·'ninedeploy/web:abc1234-b9',·constraints:·['node.labels.nd.member==1',·`node.labels.nd.preload.web.g0==${'a'.repeat(64)}`],·port:·3000·}],␍
+    335 335 │       });␍
+    336 336 │       expect(specs[0]!.services[0]!.env.PORT).toBe('3000'); // Nixpacks' run convention, like the container builder␍
+
+
+apps\server\test\swarmDeploy.test.ts:344:17 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+    342 │   it('does not revoke the serving generation constraint while preparing another image', async () => {
+    343 │     const oldKey = 'nd.preload.web', oldValue = 'aaaaaaaaaaaa';
+  > 344 │     h.imageId = 'sha256:' + 'b'.repeat(64);
+        │                 ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    345 │     const svc = await svcRow({ image: null, repoUrl: 'https://github.com/acme/web.git' });
+    346 │     const before = h.docker.length;
+
+  i Unsafe fix: Use a template literal.
+
+    342 342 │     it('does not revoke the serving generation constraint while preparing another image', async () => {␍
+    343 343 │       const oldKey = 'nd.preload.web', oldValue = 'aaaaaaaaaaaa';␍
+    344     │ - ····h.imageId·=·'sha256:'·+·'b'.repeat(64);␍
+        344 │ + ····h.imageId·=·`sha256:${'b'.repeat(64)}`;␍
+    345 345 │       const svc = await svcRow({ image: null, repoUrl: 'https://github.com/acme/web.git' });␍
+    346 346 │       const before = h.docker.length;␍
+
+
+apps\server\test\swarmDeploy.test.ts:347:104 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+    345 │     const svc = await svcRow({ image: null, repoUrl: 'https://github.com/acme/web.git' });
+    346 │     const before = h.docker.length;
+  > 347 │     const buildOnPanel = vi.fn(async () => ({ buildHost: null, tag: 'ninedeploy/web:next-b9', imageId: 'sha256:' + 'b'.repeat(64), sizeBytes: 42, builtWithNixpacks: false, builtStatic: false }));
+        │                                                                                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    348 │     const { driver, specs } = fakeDriver();
+    349 │     await createSwarmBuilder(db, 'web', { driver, buildOnPanel: buildOnPanel as never }).buildAndRun(ctxFor(svc));
+
+  i Unsafe fix: Use a template literal.
+
+    345 345 │       const svc = await svcRow({ image: null, repoUrl: 'https://github.com/acme/web.git' });␍
+    346 346 │       const before = h.docker.length;␍
+    347     │ - ····const·buildOnPanel·=·vi.fn(async·()·=>·({·buildHost:·null,·tag:·'ninedeploy/web:next-b9',·imageId:·'sha256:'·+·'b'.repeat(64),·sizeBytes:·42,·builtWithNixpacks:·false,·builtStatic:·false·}));␍
+        347 │ + ····const·buildOnPanel·=·vi.fn(async·()·=>·({·buildHost:·null,·tag:·'ninedeploy/web:next-b9',·imageId:·`sha256:${'b'.repeat(64)}`,·sizeBytes:·42,·builtWithNixpacks:·false,·builtStatic:·false·}));␍
+    348 348 │       const { driver, specs } = fakeDriver();␍
+    349 349 │       await createSwarmBuilder(db, 'web', { driver, buildOnPanel: buildOnPanel as never }).buildAndRun(ctxFor(svc));␍
+
+
+apps\server\test\swarmDeploy.test.ts:354:61 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+    352 │     for (const args of mutations) {
+    353 │       const added = args[args.indexOf('--label-add') + 1];
+  > 354 │       if (args.includes('--label-add') && added?.startsWith(oldKey + '=') && added !== oldKey + '=' + oldValue) oldConstraintStillSatisfied = false;
+        │                                                             ^^^^^^^^^^^^
+    355 │       if (args.includes('--label-rm') && args.includes(oldKey)) oldConstraintStillSatisfied = false;
+    356 │     }
+
+  i Unsafe fix: Use a template literal.
+
+    352 352 │       for (const args of mutations) {␍
+    353 353 │         const added = args[args.indexOf('--label-add') + 1];␍
+    354     │ - ······if·(args.includes('--label-add')·&&·added?.startsWith(oldKey·+·'=')·&&·added·!==·oldKey·+·'='·+·oldValue)·oldConstraintStillSatisfied·=·false;␍
+        354 │ + ······if·(args.includes('--label-add')·&&·added?.startsWith(`${oldKey}=`)·&&·added·!==·oldKey·+·'='·+·oldValue)·oldConstraintStillSatisfied·=·false;␍
+    355 355 │         if (args.includes('--label-rm') && args.includes(oldKey)) oldConstraintStillSatisfied = false;␍
+    356 356 │       }␍
+
+
+apps\server\test\swarmDeploy.test.ts:354:88 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+    352 │     for (const args of mutations) {
+    353 │       const added = args[args.indexOf('--label-add') + 1];
+  > 354 │       if (args.includes('--label-add') && added?.startsWith(oldKey + '=') && added !== oldKey + '=' + oldValue) oldConstraintStillSatisfied = false;
+        │                                                                                        ^^^^^^^^^^^^^^^^^^^^^^^
+    355 │       if (args.includes('--label-rm') && args.includes(oldKey)) oldConstraintStillSatisfied = false;
+    356 │     }
+
+  i Unsafe fix: Use a template literal.
+
+    352 352 │       for (const args of mutations) {␍
+    353 353 │         const added = args[args.indexOf('--label-add') + 1];␍
+    354     │ - ······if·(args.includes('--label-add')·&&·added?.startsWith(oldKey·+·'=')·&&·added·!==·oldKey·+·'='·+·oldValue)·oldConstraintStillSatisfied·=·false;␍
+        354 │ + ······if·(args.includes('--label-add')·&&·added?.startsWith(oldKey·+·'=')·&&·added·!==·`${oldKey}=${oldValue}`)·oldConstraintStillSatisfied·=·false;␍
+    355 355 │         if (args.includes('--label-rm') && args.includes(oldKey)) oldConstraintStillSatisfied = false;␍
+    356 356 │       }␍
+
+
+apps\server\test\swarmDeploy.test.ts:358:58 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+    356 │     }
+    357 │     expect(oldConstraintStillSatisfied).toBe(true);
+  > 358 │     expect(specs[0]?.services[0]?.constraints).toContain('node.labels.nd.preload.web.g0==' + 'b'.repeat(64));
+        │                                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    359 │   });
+    360 │
+
+  i Unsafe fix: Use a template literal.
+
+    356 356 │       }␍
+    357 357 │       expect(oldConstraintStillSatisfied).toBe(true);␍
+    358     │ - ····expect(specs[0]?.services[0]?.constraints).toContain('node.labels.nd.preload.web.g0=='·+·'b'.repeat(64));␍
+        358 │ + ····expect(specs[0]?.services[0]?.constraints).toContain(`node.labels.nd.preload.web.g0==${'b'.repeat(64)}`);␍
+    359 359 │     });␍
+    360 360 │   ␍
+
+
+apps\server\test\swarmDeploy.test.ts:391:106 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+    389 │       expect(driver.deployStack).not.toHaveBeenCalled();
+    390 │     });
+  > 391 │     const buildOnPanel = vi.fn(async () => ({ buildHost: null, tag: 'ninedeploy/web:source-b9', imageId: 'sha256:' + 'a'.repeat(64), sizeBytes: 42, builtWithNixpacks: true, builtStatic: false }));
+        │                                                                                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    392 │     await createSwarmBuilder(db, 'web', { driver, buildOnPanel: buildOnPanel as never }).buildAndRun(ctxFor(svc, { recordDockerArtifact: true, captureSwarmArtifact: captureArtifact }));
+    393 │     expect(captureArtifact).toHaveBeenCalledWith({ imageId: 'sha256:' + 'a'.repeat(64), builtWithNixpacks: true, builtStatic: false });
+
+  i Unsafe fix: Use a template literal.
+
+    389 389 │         expect(driver.deployStack).not.toHaveBeenCalled();␍
+    390 390 │       });␍
+    391     │ - ····const·buildOnPanel·=·vi.fn(async·()·=>·({·buildHost:·null,·tag:·'ninedeploy/web:source-b9',·imageId:·'sha256:'·+·'a'.repeat(64),·sizeBytes:·42,·builtWithNixpacks:·true,·builtStatic:·false·}));␍
+        391 │ + ····const·buildOnPanel·=·vi.fn(async·()·=>·({·buildHost:·null,·tag:·'ninedeploy/web:source-b9',·imageId:·`sha256:${'a'.repeat(64)}`,·sizeBytes:·42,·builtWithNixpacks:·true,·builtStatic:·false·}));␍
+    392 392 │       await createSwarmBuilder(db, 'web', { driver, buildOnPanel: buildOnPanel as never }).buildAndRun(ctxFor(svc, { recordDockerArtifact: true, captureSwarmArtifact: captureArtifact }));␍
+    393 393 │       expect(captureArtifact).toHaveBeenCalledWith({ imageId: 'sha256:' + 'a'.repeat(64), builtWithNixpacks: true, builtStatic: false });␍
+
+
+apps\server\test\swarmDeploy.test.ts:393:61 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+    391 │     const buildOnPanel = vi.fn(async () => ({ buildHost: null, tag: 'ninedeploy/web:source-b9', imageId: 'sha256:' + 'a'.repeat(64), sizeBytes: 42, builtWithNixpacks: true, builtStatic: false }));
+    392 │     await createSwarmBuilder(db, 'web', { driver, buildOnPanel: buildOnPanel as never }).buildAndRun(ctxFor(svc, { recordDockerArtifact: true, captureSwarmArtifact: captureArtifact }));
+  > 393 │     expect(captureArtifact).toHaveBeenCalledWith({ imageId: 'sha256:' + 'a'.repeat(64), builtWithNixpacks: true, builtStatic: false });
+        │                                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    394 │   });
+    395 │
+
+  i Unsafe fix: Use a template literal.
+
+    391 391 │       const buildOnPanel = vi.fn(async () => ({ buildHost: null, tag: 'ninedeploy/web:source-b9', imageId: 'sha256:' + 'a'.repeat(64), sizeBytes: 42, builtWithNixpacks: true, builtStatic: false }));␍
+    392 392 │       await createSwarmBuilder(db, 'web', { driver, buildOnPanel: buildOnPanel as never }).buildAndRun(ctxFor(svc, { recordDockerArtifact: true, captureSwarmArtifact: captureArtifact }));␍
+    393     │ - ····expect(captureArtifact).toHaveBeenCalledWith({·imageId:·'sha256:'·+·'a'.repeat(64),·builtWithNixpacks:·true,·builtStatic:·false·});␍
+        393 │ + ····expect(captureArtifact).toHaveBeenCalledWith({·imageId:·`sha256:${'a'.repeat(64)}`,·builtWithNixpacks:·true,·builtStatic:·false·});␍
+    394 394 │     });␍
+    395 395 │   ␍
+
+
+apps\server\test\swarmDeploy.test.ts:400:106 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+    398 │     const svc = await svcRow({ image: null, repoUrl: 'https://github.com/acme/web.git' });
+    399 │     const { driver } = fakeDriver();
+  > 400 │     const buildOnPanel = vi.fn(async () => ({ buildHost: null, tag: 'ninedeploy/web:source-b9', imageId: 'sha256:' + 'a'.repeat(64), sizeBytes: 42, builtWithNixpacks: false, builtStatic: false }));
+        │                                                                                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    401 │     await expect(createSwarmBuilder(db, 'web', { driver, buildOnPanel: buildOnPanel as never }).buildAndRun(ctxFor(svc, { recordDockerArtifact: true, captureSwarmArtifact: async () => { throw Error('archive unavailable'); } }))).rejects.toThrow('archive unavailable');
+    402 │     expect(driver.deployStack).not.toHaveBeenCalled();
+
+  i Unsafe fix: Use a template literal.
+
+    398 398 │       const svc = await svcRow({ image: null, repoUrl: 'https://github.com/acme/web.git' });␍
+    399 399 │       const { driver } = fakeDriver();␍
+    400     │ - ····const·buildOnPanel·=·vi.fn(async·()·=>·({·buildHost:·null,·tag:·'ninedeploy/web:source-b9',·imageId:·'sha256:'·+·'a'.repeat(64),·sizeBytes:·42,·builtWithNixpacks:·false,·builtStatic:·false·}));␍
+        400 │ + ····const·buildOnPanel·=·vi.fn(async·()·=>·({·buildHost:·null,·tag:·'ninedeploy/web:source-b9',·imageId:·`sha256:${'a'.repeat(64)}`,·sizeBytes:·42,·builtWithNixpacks:·false,·builtStatic:·false·}));␍
+    401 401 │       await expect(createSwarmBuilder(db, 'web', { driver, buildOnPanel: buildOnPanel as never }).buildAndRun(ctxFor(svc, { recordDockerArtifact: true, captureSwarmArtifact: async () => { throw Error('archive unavailable'); } }))).rejects.toThrow('archive unavailable');␍
+    402 402 │       expect(driver.deployStack).not.toHaveBeenCalled();␍
+
+
+apps\server\test\swarmDeploy.test.ts:411:21 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+    409 │     const { driver, specs } = fakeDriver();
+    410 │     const buildOnPanel = vi.fn(async () => { throw Error('must not build'); });
+  > 411 │     const imageId = 'sha256:' + 'a'.repeat(64);
+        │                     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    412 │     const ctx = ctxFor(svc, { prebuiltImage: { tag: imageId, imageId, builtWithNixpacks: true, builtStatic: false }, env: { PORT: '9182', TARGET_ENV: 'production' } });
+    413 │     const runtime = await createSwarmBuilder(db, 'web', { driver, buildOnPanel: buildOnPanel as never }).buildAndRun(ctx);
+
+  i Unsafe fix: Use a template literal.
+
+    409 409 │       const { driver, specs } = fakeDriver();␍
+    410 410 │       const buildOnPanel = vi.fn(async () => { throw Error('must not build'); });␍
+    411     │ - ····const·imageId·=·'sha256:'·+·'a'.repeat(64);␍
+        411 │ + ····const·imageId·=·`sha256:${'a'.repeat(64)}`;␍
+    412 412 │       const ctx = ctxFor(svc, { prebuiltImage: { tag: imageId, imageId, builtWithNixpacks: true, builtStatic: false }, env: { PORT: '9182', TARGET_ENV: 'production' } });␍
+    413 413 │       const runtime = await createSwarmBuilder(db, 'web', { driver, buildOnPanel: buildOnPanel as never }).buildAndRun(ctx);␍
+
+
+apps\server\test\swarmDeploy.test.ts:420:34 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+    418 │   });
+    419 │   it('refuses a mismatched artifact tag before any stack or placement change', async () => {
+  > 420 │     h.exists = true; h.imageId = 'sha256:' + 'b'.repeat(64);
+        │                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    421 │     const svc = await svcRow({ image: null, repoUrl: 'https://github.com/acme/web.git' });
+    422 │     const { driver } = fakeDriver(); const imageId = 'sha256:' + 'a'.repeat(64);
+
+  i Unsafe fix: Use a template literal.
+
+    418 418 │     });␍
+    419 419 │     it('refuses a mismatched artifact tag before any stack or placement change', async () => {␍
+    420     │ - ····h.exists·=·true;·h.imageId·=·'sha256:'·+·'b'.repeat(64);␍
+        420 │ + ····h.exists·=·true;·h.imageId·=·`sha256:${'b'.repeat(64)}`;␍
+    421 421 │       const svc = await svcRow({ image: null, repoUrl: 'https://github.com/acme/web.git' });␍
+    422 422 │       const { driver } = fakeDriver(); const imageId = 'sha256:' + 'a'.repeat(64);␍
+
+
+apps\server\test\swarmDeploy.test.ts:422:54 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+    420 │     h.exists = true; h.imageId = 'sha256:' + 'b'.repeat(64);
+    421 │     const svc = await svcRow({ image: null, repoUrl: 'https://github.com/acme/web.git' });
+  > 422 │     const { driver } = fakeDriver(); const imageId = 'sha256:' + 'a'.repeat(64);
+        │                                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    423 │     await expect(createSwarmBuilder(db, 'web', { driver }).buildAndRun(ctxFor(svc, { prebuiltImage: { tag: imageId, imageId } }))).rejects.toThrow('tag identity');
+    424 │     expect(driver.deployStack).not.toHaveBeenCalled(); expect(nodeUpdates()).toEqual([]);
+
+  i Unsafe fix: Use a template literal.
+
+    420 420 │       h.exists = true; h.imageId = 'sha256:' + 'b'.repeat(64);␍
+    421 421 │       const svc = await svcRow({ image: null, repoUrl: 'https://github.com/acme/web.git' });␍
+    422     │ - ····const·{·driver·}·=·fakeDriver();·const·imageId·=·'sha256:'·+·'a'.repeat(64);␍
+        422 │ + ····const·{·driver·}·=·fakeDriver();·const·imageId·=·`sha256:${'a'.repeat(64)}`;␍
+    423 423 │       await expect(createSwarmBuilder(db, 'web', { driver }).buildAndRun(ctxFor(svc, { prebuiltImage: { tag: imageId, imageId } }))).rejects.toThrow('tag identity');␍
+    424 424 │       expect(driver.deployStack).not.toHaveBeenCalled(); expect(nodeUpdates()).toEqual([]);␍
+
+
+apps\server\test\swarmDeploy.test.ts:433:144 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+    431 │     const { driver } = fakeDriver();
+    432 │     driver.deployStack.mockImplementationOnce(async spec => { h.spec = { services: [{ ...spec.services[0], labels: { 'ninedeploy.service': '1', 'ninedeploy.deployment': 'other' } }] }; return { name: spec.name, services: [], appliedAt: '' }; });
+  > 433 │     await expect(createSwarmBuilder(db, 'web', { driver }).buildAndRun(ctxFor(svc, { prebuiltImage: { tag: 'ninedeploy/web:built-b9', imageId: 'sha256:' + 'a'.repeat(64) } }))).rejects.toThrow('image identity is unconfirmed');
+        │                                                                                                                                                ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    434 │     expect(h.docker.some(a => a[1] === 'rollback' || a[0] === 'stack' && a[1] === 'rm')).toBe(false);
+    435 │   });
+
+  i Unsafe fix: Use a template literal.
+
+    431 431 │       const { driver } = fakeDriver();␍
+    432 432 │       driver.deployStack.mockImplementationOnce(async spec => { h.spec = { services: [{ ...spec.services[0], labels: { 'ninedeploy.service': '1', 'ninedeploy.deployment': 'other' } }] }; return { name: spec.name, services: [], appliedAt: '' }; });␍
+    433     │ - ····await·expect(createSwarmBuilder(db,·'web',·{·driver·}).buildAndRun(ctxFor(svc,·{·prebuiltImage:·{·tag:·'ninedeploy/web:built-b9',·imageId:·'sha256:'·+·'a'.repeat(64)·}·}))).rejects.toThrow('image·identity·is·unconfirmed');␍
+        433 │ + ····await·expect(createSwarmBuilder(db,·'web',·{·driver·}).buildAndRun(ctxFor(svc,·{·prebuiltImage:·{·tag:·'ninedeploy/web:built-b9',·imageId:·`sha256:${'a'.repeat(64)}`·}·}))).rejects.toThrow('image·identity·is·unconfirmed');␍
+    434 434 │       expect(h.docker.some(a => a[1] === 'rollback' || a[0] === 'stack' && a[1] === 'rm')).toBe(false);␍
+    435 435 │     });␍
+
+
+apps\server\test\swarmDeploy.test.ts:440:119 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+    438 │     const svc = await svcRow({ image: null, repoUrl: 'https://github.com/acme/web.git' });
+    439 │     const { driver } = fakeDriver(); const builder = createSwarmBuilder(db, 'web', { driver });
+  > 440 │     const runtime = await builder.buildAndRun(ctxFor(svc, { prebuiltImage: { tag: 'ninedeploy/web:built-b9', imageId: 'sha256:' + 'a'.repeat(64) } }));
+        │                                                                                                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    441 │     h.imageId = 'sha256:' + 'b'.repeat(64);
+    442 │     expect(await builder.isHealthy(runtime, 1)).toBe(false);
+
+  i Unsafe fix: Use a template literal.
+
+    438 438 │       const svc = await svcRow({ image: null, repoUrl: 'https://github.com/acme/web.git' });␍
+    439 439 │       const { driver } = fakeDriver(); const builder = createSwarmBuilder(db, 'web', { driver });␍
+    440     │ - ····const·runtime·=·await·builder.buildAndRun(ctxFor(svc,·{·prebuiltImage:·{·tag:·'ninedeploy/web:built-b9',·imageId:·'sha256:'·+·'a'.repeat(64)·}·}));␍
+        440 │ + ····const·runtime·=·await·builder.buildAndRun(ctxFor(svc,·{·prebuiltImage:·{·tag:·'ninedeploy/web:built-b9',·imageId:·`sha256:${'a'.repeat(64)}`·}·}));␍
+    441 441 │       h.imageId = 'sha256:' + 'b'.repeat(64);␍
+    442 442 │       expect(await builder.isHealthy(runtime, 1)).toBe(false);␍
+
+
+apps\server\test\swarmDeploy.test.ts:441:17 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+    439 │     const { driver } = fakeDriver(); const builder = createSwarmBuilder(db, 'web', { driver });
+    440 │     const runtime = await builder.buildAndRun(ctxFor(svc, { prebuiltImage: { tag: 'ninedeploy/web:built-b9', imageId: 'sha256:' + 'a'.repeat(64) } }));
+  > 441 │     h.imageId = 'sha256:' + 'b'.repeat(64);
+        │                 ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    442 │     expect(await builder.isHealthy(runtime, 1)).toBe(false);
+    443 │     expect(h.docker.some(a => a[1] === 'rollback')).toBe(false);
+
+  i Unsafe fix: Use a template literal.
+
+    439 439 │       const { driver } = fakeDriver(); const builder = createSwarmBuilder(db, 'web', { driver });␍
+    440 440 │       const runtime = await builder.buildAndRun(ctxFor(svc, { prebuiltImage: { tag: 'ninedeploy/web:built-b9', imageId: 'sha256:' + 'a'.repeat(64) } }));␍
+    441     │ - ····h.imageId·=·'sha256:'·+·'b'.repeat(64);␍
+        441 │ + ····h.imageId·=·`sha256:${'b'.repeat(64)}`;␍
+    442 442 │       expect(await builder.isHealthy(runtime, 1)).toBe(false);␍
+    443 443 │       expect(h.docker.some(a => a[1] === 'rollback')).toBe(false);␍
+
+
+Checked 1 file in 84ms. No fixes applied.
+Found 19 infos.

@@ -1,0 +1,39 @@
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - import "../../apps/server/vitest.config" without a file extension (.temp_files/audit_continuous_20261109/F1133.config.ts:3:18). Add the file extension
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/pipeline.test.ts > explicit Stop during primary readiness > node pipeline with capacity support true, database false, topology change false and port configured 8532ms
+ ✓ test/pipeline.test.ts > explicit Stop during primary readiness > node pipeline with capacity support true, database true, topology change false and port configured 8311ms
+ ✓ test/pipeline.test.ts > explicit Stop during primary readiness > node pipeline with capacity support false, database false, topology change false and port configured 8237ms
+ ✓ test/pipeline.test.ts > explicit Stop during primary readiness > node pipeline with capacity support false, database true, topology change false and port configured 8249ms
+ ✓ test/pipeline.test.ts > explicit Stop during primary readiness > node pipeline with capacity support true, database true, topology change true and port configured 229ms
+ ✓ test/pipeline.test.ts > explicit Stop during primary readiness > node pipeline with capacity support true, database true, topology change alias and port configured 250ms
+ ✓ test/pipeline.test.ts > explicit Stop during primary readiness > node pipeline with capacity support true, database false, topology change false and port nixpacks 8299ms
+ ✓ test/pipeline.test.ts > explicit Stop during primary readiness > node pipeline with capacity support true, database false, topology change false and port portless 4191ms
+ ✓ test/pipeline.test.ts > explicit Stop during primary readiness > persists deployment authority before the first node operation 171ms
+ ✓ test/pipeline.test.ts > explicit Stop during primary readiness > does not create or clean up a runtime after a successful old pull reply loses authority 187ms
+ ✓ test/pipeline.test.ts > explicit Stop during primary readiness > does not settle a newer owner after an old node reply rejects: new deployment 180ms
+ ✓ test/pipeline.test.ts > explicit Stop during primary readiness > does not settle a newer owner after an old node reply rejects: moved node 167ms
+ ✓ test/pipeline.test.ts > explicit Stop during primary readiness > does not replace Stop authority when cancellation wins before node deployment admission 177ms
+ ✓ test/pipeline.test.ts > explicit Stop during primary readiness > does not replay a non-claimable deployment: running 171ms
+ ✓ test/pipeline.test.ts > explicit Stop during primary readiness > does not replay a non-claimable deployment: failed 191ms
+ ✓ test/pipeline.test.ts > explicit Stop during primary readiness > does not replay a non-claimable deployment: superseded 209ms
+ ✓ test/pipeline.test.ts > explicit Stop during primary readiness > does not replay a non-claimable deployment: cancelled 179ms
+ ✓ test/pipeline.test.ts > explicit Stop during primary readiness > does not replay a non-claimable deployment: deploying 214ms
+ ✓ test/pipeline.test.ts > explicit Stop during primary readiness > does not replay a non-claimable deployment: awaiting_ci 211ms
+ ✓ test/pipeline.test.ts > explicit Stop during primary readiness > does not replay a non-claimable deployment: awaiting_approval 184ms
+ ✓ test/pipeline.test.ts > explicit Stop during primary readiness > still executes an eligible deployment: queued 208ms
+ ✓ test/pipeline.test.ts > explicit Stop during primary readiness > still executes an eligible deployment: building 215ms
+ ✓ test/pipeline.test.ts > explicit Stop during primary readiness > abandons a deployment that loses its conditional claim to running 171ms
+ ✓ test/pipeline.test.ts > explicit Stop during primary readiness > abandons a deployment that loses its conditional claim to failed 210ms
+ ✓ test/pipeline.test.ts > explicit Stop during primary readiness > abandons a deployment that loses its conditional claim to superseded 328ms
+ ✓ test/pipeline.test.ts > explicit Stop during primary readiness > abandons a deployment that loses its conditional claim to deploying 230ms
+ ✓ test/pipeline.test.ts > explicit Stop during primary readiness > abandons a deployment that loses its conditional claim to awaiting_ci 171ms
+ ✓ test/pipeline.test.ts > explicit Stop during primary readiness > abandons a deployment that loses its conditional claim to awaiting_approval 190ms
+ ✓ test/pipeline.test.ts > explicit Stop during primary readiness > refuses a completed node deployment before any agent call or log-end notification 176ms
+ ✓ test/pipeline.test.ts > explicit Stop during primary readiness > preserves Stop that commits immediately after the queued deployment claim 205ms
+ ✓ test/pipeline.test.ts > explicit Stop during primary readiness > does not restore running after Stop won while the healthcheck was pending 311ms
+ ✓ test/pipeline.test.ts > artifact promotion pipeline > recorded-image fan-out > runs the recorded image and target env on an extra node without Git ({"primary":null}) 4039ms
+ ✓ test/pipeline.test.ts > artifact promotion pipeline > recorded-image fan-out > runs the recorded image and target env on an extra node without Git ({"port":"9182","primary":null}) 4027ms

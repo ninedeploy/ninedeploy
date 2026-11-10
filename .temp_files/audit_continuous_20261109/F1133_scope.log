@@ -1,0 +1,78 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/swarmDeploy.test.ts > isSwarmService / refusals (design §7.1) > only an opted-in, non-preview service is a Swarm service; NULL is 0.15 207ms
+ ✓ test/swarmDeploy.test.ts > isSwarmService / refusals (design §7.1) > refuses compose, pm2, a node pin, the primary volume, the socket, a published port, attachments, databases and fan-out targets 193ms
+ ✓ test/swarmDeploy.test.ts > isSwarmService / refusals (design §7.1) > the deploy also needs Swarm enabled and the panel an active manager 152ms
+ ✓ test/swarmDeploy.test.ts > the Swarm builder (design §7.4) > an image release: encrypted overlay + Traefik, one stack spec with the member constraint, registry auth in a private config, runtime nd-<slug>_web 176ms
+ ✓ test/swarmDeploy.test.ts > the Swarm builder (design §7.4) > ROADMAP item 10: init, nofile, capabilities and shared memory ride in the task spec; only GPUs are left out, and the log says so 176ms
+ ✓ test/swarmDeploy.test.ts > the Swarm builder (design §7.4) > a service whose container options are all off sends none and logs nothing about them 162ms
+ ✓ test/swarmDeploy.test.ts > the Swarm builder (design §7.4) > M4: two deploys never share a client config; a service without registry auth logs in nowhere and forwards nothing 168ms
+ ✓ test/swarmDeploy.test.ts > the Swarm builder (design §7.4) > L3: an existing nd-swarm-<slug> network that is not an encrypted overlay is refused, never reused or removed 183ms
+ ✓ test/swarmDeploy.test.ts > the Swarm builder (design §7.4) > a source build without a registry: built on the panel, preloaded onto member nodes, a positive preload label on exactly the nodes that hold it (D7f, M1d) 174ms
+ ✓ test/swarmDeploy.test.ts > the Swarm builder (design §7.4) > does not revoke the serving generation constraint while preparing another image 158ms
+ ✓ test/swarmDeploy.test.ts > the Swarm builder (design §7.4) > a source build with a push registry: deployed by digest with the registry credential, no preload, only the member constraint 176ms
+ ✓ test/swarmDeploy.test.ts > the Swarm builder (design §7.4) > records the source image before any Swarm placement or stack mutation 157ms
+ ✓ test/swarmDeploy.test.ts > the Swarm builder (design §7.4) > leaves the serving stack unchanged when required artifact capture fails 205ms
+ ✓ test/swarmDeploy.test.ts > the Swarm builder (design §7.4) > gives a recorded image a verified deployment tag without source checkout or build 195ms
+ ✓ test/swarmDeploy.test.ts > the Swarm builder (design §7.4) > refuses a mismatched artifact tag before any stack or placement change 158ms
+ ✓ test/swarmDeploy.test.ts > the Swarm builder (design §7.4) > retains a changed manager spec instead of rolling back an unknown owner 162ms
+ ✓ test/swarmDeploy.test.ts > the Swarm builder (design §7.4) > rechecks actual task images after readiness and retains an unconfirmed runtime 156ms
+ ✓ test/swarmDeploy.test.ts > the Swarm builder (design §7.4) > a first deploy that fails to converge leaves nothing behind and fails the deployment 184ms
+ ✓ test/swarmDeploy.test.ts > the Swarm builder (design §7.4) > the panel-side convergence wait fails a deploy that Swarm rolled back after the detached submit 193ms
+ ✓ test/swarmDeploy.test.ts > the Swarm builder (design §7.4) > a failed update of an existing service keeps (or restores) the previous spec, never removes the stack 185ms
+ ✓ test/swarmDeploy.test.ts > dockerAuthKey (review M4) > normalises the registry the way the Docker CLI looks it up 171ms
+ ✓ test/swarmDeploy.test.ts > health and rollback (design §7.4 step 6) > healthy once the running replicas reach the desired count and the port answers through Traefik (<500 counts) 168ms
+ ✓ test/swarmDeploy.test.ts > health and rollback (design §7.4 step 6) > R2: `running` and command readiness are the converged tasks, never a probe through Traefik (a non-HTTP port would fail it) 190ms
+ ✓ test/swarmDeploy.test.ts > health and rollback (design §7.4 step 6) > R2: the deployed runtime carries the service’s `running` mode (it used to be dropped, so the deploy probed HTTP) 184ms
+ ✓ test/swarmDeploy.test.ts > health and rollback (design §7.4 step 6) > a probe that never answers fails, and an in-place update is rolled back to the previous spec 193ms
+ ✓ test/swarmDeploy.test.ts > health and rollback (design §7.4 step 6) > a runtime that is not THIS service’s Swarm service goes to the container builder; the stack removed is named from the slug (L1) 180ms
+ ✓ test/swarmDeploy.test.ts > health and rollback (design §7.4 step 6) > withSwarmRetirement: a service leaving Swarm retires its own stack; every other runtime is the wrapped builder’s 156ms
+ ✓ test/swarmPipeline.test.ts > the pipeline and Swarm (M5) > retains a source artifact in the database before the Swarm update can be applied 232ms
+ ✓ test/swarmPipeline.test.ts > the pipeline and Swarm (M5) > does not apply a Swarm update if its verified panel artifact cannot be retained 230ms
+ ✓ test/swarmPipeline.test.ts > the pipeline and Swarm (M5) > runs a queued Swarm artifact with target environment and skips Git and source builds 186ms
+ ✓ test/swarmPipeline.test.ts > the pipeline and Swarm (M5) > does not announce a completed hook while a journalled Swarm job is still pending 177ms
+ ✓ test/swarmPipeline.test.ts > the pipeline and Swarm (M5) > fails an unavailable-manager preparation without stranding a building job 206ms
+ ✓ test/swarmPipeline.test.ts > the pipeline and Swarm (M5) > a NULL orchestrator deploys exactly as before: the container builder, nothing Swarm 191ms
+ ✓ test/swarmPipeline.test.ts > the pipeline and Swarm (M5) > orchestrator 'container' is the same as NULL 196ms
+ ✓ test/swarmPipeline.test.ts > the pipeline and Swarm (M5) > orchestrator 'swarm' deploys through the Swarm builder and routes to nd-<slug>_web with one backend 179ms
+ ✓ test/swarmPipeline.test.ts > the pipeline and Swarm (M5) > a Swarm refusal fails the deployment before anything is built 190ms
+ ✓ test/swarmPipeline.test.ts > the pipeline and Swarm (M5) > a redeploy of a Swarm service updates it in place (the previous runtime is the same service; nothing is retired) 191ms
+ ✓ test/swarmPipeline.test.ts > the pipeline and Swarm (M5) > a service leaving Swarm: the container goes live first, then its stack is retired 184ms
+ ✓ test/swarmRuntime.test.ts > Swarm runtime ids > nd-<slug>_web is a Swarm runtime; no container, compose or PM2 runtime can look like one 2ms
+ ✓ test/swarmRuntime.test.ts > the managed namespace covers Swarm (review L3) > nd-swarm-<slug> overlays and nd-<slug>_web.<slot>.<task> task containers are NineDeploy’s 3ms
+ ✓ test/swarmRuntime.test.ts > swarmRuntimeOf: the one place that decides a row runs on Swarm (review L1) > a compose service whose container_name is nd-victim_web is never Swarm, so nothing of nd-victim is touched 0ms
+ ✓ test/swarmRuntime.test.ts > the runtime helpers (lib/swarm.ts) > scale / restart / logs 0ms
+ ✓ test/swarmRuntime.test.ts > the runtime helpers (lib/swarm.ts) > R2: the log history is in time order, newest `tail` lines (the CLI tails each task and prints them one after another) 5ms
+ ✓ test/swarmRuntime.test.ts > the runtime helpers (lib/swarm.ts) > R2: the running tasks wherever they run, and one task’s lines through the manager 1ms
+ ✓ test/swarmRuntime.test.ts > the runtime helpers (lib/swarm.ts) > the terminal / job task: a local task by slot, else where the replica runs 0ms
+ ✓ test/swarmRuntime.test.ts > the runtime helpers (lib/swarm.ts) > stats: one task’s worth, the average of the local tasks; nothing for a service with no local task 0ms
+ ✓ test/swarmRuntime.test.ts > the runtime helpers (lib/swarm.ts) > GET /v1/services/:id/swarm view: null stack off Swarm; counts and tasks on it 0ms
+ ✓ test/swarmRuntime.test.ts > service routes on a Swarm runtime (modules/services.ts) > stop scales to 0, start back to the replicas, restart forces a rolling update at the replicas, logs read every task 185ms
+ ✓ test/swarmRuntime.test.ts > service routes on a Swarm runtime (modules/services.ts) > review L1: a compose service whose container_name is nd-victim_web never drives the nd-victim stack 3ms
+ ✓ test/swarmRuntime.test.ts > service routes on a Swarm runtime (modules/services.ts) > limits apply at the next deploy (the stack is redeployed), never by docker update 6ms
+ ✓ test/swarmRuntime.test.ts > every runtimeId reader has a Swarm branch or an exemption (static) > the list is exactly the readers (a new reader must be classified; a stale entry is removed) 0ms
+ ✓ test/swarmRuntime.test.ts > every runtimeId reader has a Swarm branch or an exemption (static) > each Swarm-aware reader really branches on a Swarm runtime 2ms
+ ✓ test/swarmRuntime.test.ts > every runtimeId reader has a Swarm branch or an exemption (static) > the driver's deployStack has a non-test caller (design §7.9: the flow is wired, not just written) 0ms
+ ✓ test/swarmServiceSpec.test.ts > managed Swarm ServiceSpec > preserves literal runtime values, command healthcheck, placement, limits and graceful stop 2ms
+ ✓ test/swarmServiceSpec.test.ts > managed Swarm ServiceSpec > uses the existing ten-second stop default and keeps the image command and healthcheck inherited 1ms
+ ✓ test/swarmServiceSpec.test.ts > managed Swarm ServiceSpec > ROADMAP item 10: carries init, nofile, capabilities and shared memory in the shape Docker round-trips 1ms
+ ✓ test/swarmServiceSpec.test.ts > managed Swarm ServiceSpec > sets none of the container options when the service has none 0ms
+ ✓ test/swarmServiceSpec.test.ts > managed Swarm ServiceSpec > refuses a capability outside the CAP_ form: NET_ADMIN 1ms
+ ✓ test/swarmServiceSpec.test.ts > managed Swarm ServiceSpec > refuses a capability outside the CAP_ form: CAP_net_admin 0ms
+ ✓ test/swarmServiceSpec.test.ts > managed Swarm ServiceSpec > refuses a capability outside the CAP_ form: CAP_X;rm 0ms
+ ✓ test/swarmServiceSpec.test.ts > managed Swarm ServiceSpec > refuses an unconfirmed overlay identity: --help 0ms
+ ✓ test/swarmServiceSpec.test.ts > managed Swarm ServiceSpec > refuses an unconfirmed overlay identity: network-name 0ms
+ ✓ test/swarmServiceSpec.test.ts > managed Swarm ServiceSpec > refuses an unconfirmed overlay identity: ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff 0ms
+ ✓ test/swarmServiceSpec.test.ts > managed Swarm ServiceSpec > rejects a multi-service or mounted secret shape outside the managed service contract 0ms
+ ✓ test/swarmServiceSpec.test.ts > full Swarm spec fingerprints > ignores only daemon defaults and object ordering 0ms
+ ✓ test/swarmServiceSpec.test.ts > full Swarm spec fingerprints > preserves explicit false and meaningful zero values: {"ContainerSpec":{"Init":false}} 0ms
+ ✓ test/swarmServiceSpec.test.ts > full Swarm spec fingerprints > preserves explicit false and meaningful zero values: {"ContainerSpec":{"StopGracePeriod":0}} 0ms
+ ✓ test/swarmServiceSpec.test.ts > full Swarm spec fingerprints > preserves explicit false and meaningful zero values: {"unexpected":false} 0ms
+ ✓ test/swarmServiceSpec.test.ts > full Swarm spec fingerprints > keeps empty and special label keys in the fingerprint 0ms
+ ✓ test/swarmServiceSpec.test.ts > full Swarm spec fingerprints > detects environment, command, image and placement changes 0ms
+
+ Test Files  4 passed (4)
+      Tests  70 passed (70)
+   Start at  21:57:30
+   Duration  11.03s (tests 68%, import 25%, transform 7%)

@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDb, type DB, databaseAttachments, databases, runMigrations, servers, services, serviceTargets, serviceVolumeAttachments, settings } from '@ninedeploy/db';
 
 /**
@@ -95,6 +95,15 @@ const {
 const { dockerBuilder } = await import('../src/engine/builders/docker.js');
 
 let db: DB;
+let fixture: ReturnType<typeof createDb> | undefined;
+afterEach(() => {
+  const client = fixture?.client;
+  fixture = undefined;
+  if (client) {
+    client.close();
+    expect(client.closed).toBe(true);
+  }
+});
 beforeEach(async () => {
   h.docker = [];
   h.imageId = 'sha256:' + 'a'.repeat(64);
@@ -106,7 +115,9 @@ beforeEach(async () => {
   h.probe = 'ok';
   h.network = null;
   h.nodes = `{"ID":"${MGR}","Hostname":"panel","ManagerStatus":"Leader","Availability":"Active","Status":"Ready"}`;
-  ({ db } = createDb({ url: ':memory:' }));
+  fixture = createDb({ url: ':memory:' });
+  ({ db } = fixture);
+  await fixture.ready;
   await runMigrations(db, fileURLToPath(new URL('../../../packages/db/src/migrations', import.meta.url)));
 });
 

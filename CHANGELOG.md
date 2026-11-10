@@ -38,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Swarm deployment regression tests now await database readiness and close their native database clients after every case (F1133).
 - CloudWatch log drains retain captured batches when HTTP 200 acknowledges rejected log events, preserving accepted-event and rejection-boundary handling (F1126).
 - Elasticsearch log drains send bulk NDJSON to the index bulk operation while preserving configured index, query parameters and authentication (F1124).
 - Elasticsearch drains retain queued logs when a bulk acknowledgement is unreadable or malformed instead of recording delivery success (F1122).
