@@ -70,6 +70,7 @@ Without `--yes`, `import data` prints the order that loses no writes, and the du
 - The commands produce what the panel's import accepts: `pg_dump -Fc`, `mysqldump` or `mariadb-dump` of the app's database, a gzipped `mongodump --archive`, or an RDB snapshot.
 - They read credentials from the database container's own environment, inside single quotes, so no password appears in the output or in your shell history.
 - The CapRover commands were run against a live CapRover v1.16.0: a PostgreSQL 16 one-click app with 500 rows arrived with the same row count and checksum. The Coolify and Dokploy commands follow their source code.
+- The MySQL command was run against a MySQL 8.4 container: 500 rows arrived in the managed database with the same checksum. It names the database without `--databases`, because that form adds `CREATE DATABASE` and `USE` lines, which would put the rows in a second database beside the one NineDeploy connects your app to.
 
 **The import**
 - Each file goes through the panel's chunked dump import with its sha256 declared. The panel checks the hash before it restores anything.

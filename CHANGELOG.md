@@ -44,6 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `ninedeploy import data` now prints a MySQL/MariaDB dump command without `--databases`. That flag writes `CREATE DATABASE` and `USE` into the dump, and the panel restores the file as written. For an admin the import reported success but put every row in a second database beside the managed `app` database, which the app's connection string names; anyone else was refused. Checked live with MySQL 8.4: the old form put 500 rows into `shopdb` and left `app` empty, while the new form put them into `app` with the same checksum. Dumps taken with the earlier command should be taken again.
 - Swarm deployment regression tests now await database readiness and close their native database clients after every case (F1133).
 - CloudWatch log drains retain captured batches when HTTP 200 acknowledges rejected log events, preserving accepted-event and rejection-boundary handling (F1126).
 - Elasticsearch log drains send bulk NDJSON to the index bulk operation while preserving configured index, query parameters and authentication (F1124).

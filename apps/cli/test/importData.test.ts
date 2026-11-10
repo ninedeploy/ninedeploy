@@ -50,9 +50,11 @@ describe('dump commands', () => {
       file: 'pg.dump', notes: [],
     });
     expect(dumpCommand(db({ engine: 'mysql', name: 'm', runtime: { kind: 'container', name: 'abc123' } }))!.command)
-      .toBe(`docker exec abc123 sh -c 'exec mysqldump -uroot -p"$MYSQL_ROOT_PASSWORD" --single-transaction --routines --triggers --databases "$MYSQL_DATABASE"' > m.sql`);
+      .toBe(`docker exec abc123 sh -c 'exec mysqldump -uroot -p"$MYSQL_ROOT_PASSWORD" --single-transaction --routines --triggers "$MYSQL_DATABASE"' > m.sql`);
     expect(dumpCommand(db({ engine: 'mariadb', runtime: undefined }))!).toMatchObject({ file: 'pg.sql', notes: [expect.stringMatching(/Replace <container>/), expect.stringMatching(/MARIADB_DATABASE/)] });
     expect(dumpCommand(db({ engine: 'mariadb', runtime: undefined }))!.command).toMatch(/^docker exec <container> sh -c 'exec mariadb-dump /);
+    // --databases would write CREATE DATABASE/USE, and the panel restores into `app` as the file says.
+    for (const engine of ['mysql', 'mariadb'] as const) expect(dumpCommand(db({ engine }))!.command).not.toContain('--databases');
     expect(dumpCommand(db({ engine: 'mongo' }))!.command).toMatch(/'exec mongodump --archive --gzip -u "\$MONGO_INITDB_ROOT_USERNAME" -p "\$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin' > pg\.archive\.gz$/);
     const redis = dumpCommand(db({ engine: 'redis' }))!;
     expect(redis.command).toMatch(/^docker exec -e REDISCLI_AUTH \$\(docker ps .*\) sh -c 'redis-cli --rdb \/tmp\/nd-dump\.rdb >\/dev\/null && cat \/tmp\/nd-dump\.rdb && rm -f \/tmp\/nd-dump\.rdb' > pg\.rdb$/);

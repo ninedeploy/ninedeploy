@@ -52,6 +52,12 @@ const DUMP_FILE: Record<PlanEngine, (n: string) => string> = {
  * accepts: pg_dump custom format, mysqldump/mariadb-dump SQL of the app
  * database (not the system schemas, which the import refuses), a gzipped
  * mongodump archive, an RDB snapshot.
+ *
+ * The MySQL/MariaDB dump names the database positionally, never with
+ * --databases: that form writes `CREATE DATABASE shopdb; USE shopdb;`, and
+ * the panel feeds the file to `mysql … app` as it is, so the rows would land
+ * in `shopdb` instead of the managed `app` database (and the panel refuses
+ * any `USE` other than `USE app` from a non-operator).
  */
 export function dumpCommand(db: PlanDatabase): { command: string; file: string; notes: string[] } | null {
   if (!db.engine || !IMPORTABLE[db.engine]) return null;
@@ -72,12 +78,12 @@ export function dumpCommand(db: PlanDatabase): { command: string; file: string; 
       inner = 'pg_dump -Fc -U "${POSTGRES_USER:-postgres}" "${POSTGRES_DB:-${POSTGRES_USER:-postgres}}"';
       break;
     case 'mysql':
-      inner = 'exec mysqldump -uroot -p"$MYSQL_ROOT_PASSWORD" --single-transaction --routines --triggers --databases "$MYSQL_DATABASE"';
+      inner = 'exec mysqldump -uroot -p"$MYSQL_ROOT_PASSWORD" --single-transaction --routines --triggers "$MYSQL_DATABASE"';
       notes.push('If the container has no MYSQL_DATABASE, put the database name in its place.');
       break;
     case 'mariadb':
       // biome-ignore lint/suspicious/noTemplateCurlyInString: shell parameter expansion, run inside the container
-      inner = 'exec mariadb-dump -uroot -p"${MARIADB_ROOT_PASSWORD:-$MYSQL_ROOT_PASSWORD}" --single-transaction --routines --triggers --databases "${MARIADB_DATABASE:-$MYSQL_DATABASE}"';
+      inner = 'exec mariadb-dump -uroot -p"${MARIADB_ROOT_PASSWORD:-$MYSQL_ROOT_PASSWORD}" --single-transaction --routines --triggers "${MARIADB_DATABASE:-$MYSQL_DATABASE}"';
       notes.push('If the container has no MARIADB_DATABASE or MYSQL_DATABASE, put the database name in its place.');
       break;
     case 'mongo':
