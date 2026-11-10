@@ -1,0 +1,112 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/lib/gitLfsCleanup.test.ts > control: complete verified content replaces its pointer and removes the temporary store 711ms
+stdout | test/lib/gitLfsCleanup.test.ts > F1109: disconnect after native file drain removes partial private objects and preserves pointer
+EXPECTED retained cachebytes:0 ACTUAL: [
+  {
+    name: '07faa6f6b33f3d094b331c9b7e748d28e6b7516453e289e7d5a2c68840f5174c.part',
+    bytes: 1048576
+  }
+]
+PROBLEM CONFIRMED
+
+ × test/lib/gitLfsCleanup.test.ts > F1109: disconnect after native file drain removes partial private objects and preserves pointer 877ms
+   → expected true to be false // Object.is equality
+ × test/lib/gitLfsCleanup.test.ts > cleans object store after short rejection 613ms
+   → expected true to be false // Object.is equality
+ × test/lib/gitLfsCleanup.test.ts > cleans object store after oversized rejection 575ms
+   → expected true to be false // Object.is equality
+ × test/lib/gitLfsCleanup.test.ts > cleans object store after hash-mismatch rejection 917ms
+   → expected true to be false // Object.is equality
+ × test/lib/gitLfsCleanup.test.ts > cleans an already verified first object when a later object returns404 252ms
+   → expected true to be false // Object.is equality
+ ✓ test/lib/gitLfsCleanup.test.ts > handles a failed http batch without leaving a store 657ms
+ ✓ test/lib/gitLfsCleanup.test.ts > handles a failed json batch without leaving a store 911ms
+ × test/lib/gitLfsCleanup.test.ts > retry on the same checkout succeeds after failed content and starts with no cached objects 662ms
+   → expected true to be false // Object.is equality
+ × test/lib/gitLfsCleanup.test.ts > native checkout write-open failure still removes all verified cached objects 1167ms
+   → expected true to be false // Object.is equality
+
+ Test Files  1 failed (1)
+      Tests  7 failed | 3 passed (10)
+   Start at  13:48:00
+   Duration  8.29s (tests 99%)
+
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 7 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/lib/gitLfsCleanup.test.ts > F1109: disconnect after native file drain removes partial private objects and preserves pointer
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ test/lib/gitLfsCleanup.test.ts:9:383
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/7]⎯
+
+ FAIL  test/lib/gitLfsCleanup.test.ts > cleans object store after short rejection
+ FAIL  test/lib/gitLfsCleanup.test.ts > cleans object store after oversized rejection
+ FAIL  test/lib/gitLfsCleanup.test.ts > cleans object store after hash-mismatch rejection
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ test/lib/gitLfsCleanup.test.ts:19:494
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/7]⎯
+
+ FAIL  test/lib/gitLfsCleanup.test.ts > cleans an already verified first object when a later object returns404
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ test/lib/gitLfsCleanup.test.ts:20:554
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/7]⎯
+
+ FAIL  test/lib/gitLfsCleanup.test.ts > retry on the same checkout succeeds after failed content and starts with no cached objects
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ test/lib/gitLfsCleanup.test.ts:22:298
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/7]⎯
+
+ FAIL  test/lib/gitLfsCleanup.test.ts > native checkout write-open failure still removes all verified cached objects
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ test/lib/gitLfsCleanup.test.ts:23:363
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/7]⎯
+
+
+EXIT 1

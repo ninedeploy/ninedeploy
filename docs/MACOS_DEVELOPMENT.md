@@ -1001,3 +1001,30 @@ The first audit control closed before createDb.ready completed and caused its
 own CLIENT_CLOSED rejection; the corrected control awaits readiness and runs
 cleanly. This confirmed ownership leak is not proof of the cause or resolution
 of round73's native worker fault, which remains open.
+
+Round 88 (F1109) cleans the Git LFS temporary object store when the owned
+fetch/copy phase exits with an error. Beforeproof gated a controlled disconnect
+after a native write-stream drain: a 1 MiB .part file remained in .git/nd-lfs,
+while the complete-download control removed the store. Pipeline workspaces are
+reused per service; the helper now removes its store in finally and logs success
+after cleanup completes.
+
+Original before: one failure/one control; after: two passes. Ten permanent cases
+were seen red (seven failures/three controls). The final verifier combined the
+original two with those ten and passed three times after the last test edit.
+Cases cover disconnect, short/oversized/hash-mismatched content, an already
+verified object followed by a second-object failure, batch HTTP/JSON errors,
+retry in the same checkout and a native checkout write-open failure. Final
+scope passed 17 tests in two files; bounded typecheck/build, two-file lint and
+diff checks passed.
+
+```bash
+pnpm --dir apps/server exec vitest run test/lib/gitLfsCleanup.test.ts test/gitLfs.test.ts --coverage=false
+```
+
+Tests use real temporary Git repositories and native files/streams; HTTP is
+controlled at guardedFetch. Git is required; no git-lfs binary is needed for
+these regressions. No live provider, egress-security, concurrent-checkout,
+whole-checkout rollback, native Mac or full release claim. Historical stores
+outside an initialized fetch attempt are not swept, and a filesystem refusal
+can still prevent cleanup. Round73's native worker fault remains unresolved.

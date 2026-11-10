@@ -1,0 +1,39 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1109_lfsCleanup.test.ts > control: complete verified content replaces its pointer and removes the temporary store 996ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1109_lfsCleanup.test.ts > F1109: disconnect after native file drain removes partial private objects and preserves pointer
+EXPECTED retained cachebytes:0 ACTUAL: []
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1109_lfsCleanup.test.ts > F1109: disconnect after native file drain removes partial private objects and preserves pointer 772ms
+
+ Test Files  1 passed (1)
+      Tests  2 passed (2)
+   Start at  13:48:27
+   Duration  2.06s (tests 98%, import 1%, transform 1%)
+
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/lib/gitLfsCleanup.test.ts > control: complete verified content replaces its pointer and removes the temporary store 1718ms
+stdout | test/lib/gitLfsCleanup.test.ts > F1109: disconnect after native file drain removes partial private objects and preserves pointer
+EXPECTED retained cachebytes:0 ACTUAL: []
+PROBLEM NOT REPRODUCED
+
+ ✓ test/lib/gitLfsCleanup.test.ts > F1109: disconnect after native file drain removes partial private objects and preserves pointer 530ms
+ ✓ test/lib/gitLfsCleanup.test.ts > cleans object store after short rejection 243ms
+ ✓ test/lib/gitLfsCleanup.test.ts > cleans object store after oversized rejection 603ms
+ ✓ test/lib/gitLfsCleanup.test.ts > cleans object store after hash-mismatch rejection 211ms
+ ✓ test/lib/gitLfsCleanup.test.ts > cleans an already verified first object when a later object returns404 571ms
+ ✓ test/lib/gitLfsCleanup.test.ts > handles a failed http batch without leaving a store 869ms
+ ✓ test/lib/gitLfsCleanup.test.ts > handles a failed json batch without leaving a store 881ms
+ ✓ test/lib/gitLfsCleanup.test.ts > retry on the same checkout succeeds after failed content and starts with no cached objects 797ms
+ ✓ test/lib/gitLfsCleanup.test.ts > native checkout write-open failure still removes all verified cached objects 554ms
+
+ Test Files  1 passed (1)
+      Tests  10 passed (10)
+   Start at  13:48:31
+   Duration  7.48s (tests 100%)
+
+FIX VERIFIED

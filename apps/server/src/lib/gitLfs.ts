@@ -144,39 +144,42 @@ export async function fetchLfsObjects(
   if (auth) apiHeaders['Authorization'] = `Basic ${Buffer.from(`${auth.username}:${auth.password}`).toString('base64')}`;
   const store = path.join(dir, '.git', 'nd-lfs');
   rmSync(store, { recursive: true, force: true });
-  const fetched = new Map<string, string>();
-  const entries = [...objects.entries()];
-  for (let i = 0; i < entries.length; i += BATCH_SIZE) {
-    const chunk = entries.slice(i, i + BATCH_SIZE).map(([oid, size]) => ({ oid, size }));
-    const res = await guardedFetch(`${endpoint}/objects/batch`, {
-      method: 'POST',
-      headers: apiHeaders,
-      body: JSON.stringify({ operation: 'download', transfers: ['basic'], objects: chunk }),
-      signal: AbortSignal.timeout(60_000),
-    });
-    if (!res.ok) {
-      await res.body?.cancel().catch(() => undefined);
-      throw new Error(
-        `Git LFS: the repository's LFS API answered ${res.status}${res.status === 401 || res.status === 403 || res.status === 404 ? ' — a private repository needs a Git credential with read access' : ''}`,
-      );
+  try {
+    const fetched = new Map<string, string>();
+    const entries = [...objects.entries()];
+    for (let i = 0; i < entries.length; i += BATCH_SIZE) {
+      const chunk = entries.slice(i, i + BATCH_SIZE).map(([oid, size]) => ({ oid, size }));
+      const res = await guardedFetch(`${endpoint}/objects/batch`, {
+        method: 'POST',
+        headers: apiHeaders,
+        body: JSON.stringify({ operation: 'download', transfers: ['basic'], objects: chunk }),
+        signal: AbortSignal.timeout(60_000),
+      });
+      if (!res.ok) {
+        await res.body?.cancel().catch(() => undefined);
+        throw new Error(
+          `Git LFS: the repository's LFS API answered ${res.status}${res.status === 401 || res.status === 403 || res.status === 404 ? ' — a private repository needs a Git credential with read access' : ''}`,
+        );
+      }
+      const body = (await res.json()) as { objects?: BatchObject[] };
+      for (const obj of body.objects ?? []) {
+        if (!objects.has(obj.oid)) continue;
+        if (obj.error) throw new Error(`Git LFS: object ${obj.oid.slice(0, 12)} — ${obj.error.message} (${obj.error.code})`);
+        const download = obj.actions?.download;
+        if (!download?.href) throw new Error(`Git LFS: no download offered for object ${obj.oid.slice(0, 12)}`);
+        fetched.set(obj.oid, await downloadObject(store, obj.oid, objects.get(obj.oid)!, download.href, download.header ?? {}));
+      }
     }
-    const body = (await res.json()) as { objects?: BatchObject[] };
-    for (const obj of body.objects ?? []) {
-      if (!objects.has(obj.oid)) continue;
-      if (obj.error) throw new Error(`Git LFS: object ${obj.oid.slice(0, 12)} — ${obj.error.message} (${obj.error.code})`);
-      const download = obj.actions?.download;
-      if (!download?.href) throw new Error(`Git LFS: no download offered for object ${obj.oid.slice(0, 12)}`);
-      fetched.set(obj.oid, await downloadObject(store, obj.oid, objects.get(obj.oid)!, download.href, download.header ?? {}));
-    }
-  }
-  const missing = [...objects.keys()].filter((oid) => !fetched.has(oid));
-  if (missing.length > 0) throw new Error(`Git LFS: the server did not return ${missing.length} object(s), e.g. ${missing[0]!.slice(0, 12)}`);
+    const missing = [...objects.keys()].filter((oid) => !fetched.has(oid));
+    if (missing.length > 0) throw new Error(`Git LFS: the server did not return ${missing.length} object(s), e.g. ${missing[0]!.slice(0, 12)}`);
 
-  for (const p of pointers) {
-    // A copy per path, so two paths sharing an object never share an inode.
-    await pipeline(createReadStream(fetched.get(p.oid)!), createWriteStream(path.join(dir, p.path)));
+    for (const p of pointers) {
+      // A copy per path, so two paths sharing an object never share an inode.
+      await pipeline(createReadStream(fetched.get(p.oid)!), createWriteStream(path.join(dir, p.path)));
+    }
+  } finally {
+    rmSync(store, { recursive: true, force: true });
   }
-  rmSync(store, { recursive: true, force: true });
   log(`Git LFS: ${pointers.length} file(s) replaced with their content`);
   return { files: pointers.length, bytes: total };
 }

@@ -1,0 +1,37 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1109_lfsCleanup.test.ts > control: complete verified content replaces its pointer and removes the temporary store 470ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1109_lfsCleanup.test.ts > F1109: disconnect after native file drain removes partial private objects and preserves pointer
+EXPECTED retained cachebytes:0 ACTUAL: [
+  {
+    name: '07faa6f6b33f3d094b331c9b7e748d28e6b7516453e289e7d5a2c68840f5174c.part',
+    bytes: 1048576
+  }
+]
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/prove_F1109_lfsCleanup.test.ts > F1109: disconnect after native file drain removes partial private objects and preserves pointer 189ms
+   → expected true to be false // Object.is equality
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1109_lfsCleanup.test.ts > F1109: disconnect after native file drain removes partial private objects and preserves pointer
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1109_lfsCleanup.test.ts:9:383
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 1 passed (2)
+   Start at  13:41:15
+   Duration  828ms (tests 92%, transform 5%, import 3%)

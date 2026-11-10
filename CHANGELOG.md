@@ -36,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Git LFS fetches now remove temporary objects on batch, stream, verification or checkout-copy failure before returning (F1109).
 - Autoscaler regression fixtures now await SQLite readiness and release owned native clients after each test, with permanent ownership guards (F1108).
 - Backup scheduler now refuses new dump admission after close, including callbacks resuming from pending reads and daily loops between databases (F1107).
 - Backup policy cron publication now ignores superseded reads from saves, periodic refreshes and startup while preserving independent database changes (F1106).

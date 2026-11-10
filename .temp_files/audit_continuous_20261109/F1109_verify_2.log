@@ -1,0 +1,38 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1109_lfsCleanup.test.ts > control: complete verified content replaces its pointer and removes the temporary store 1165ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1109_lfsCleanup.test.ts > F1109: disconnect after native file drain removes partial private objects and preserves pointer
+EXPECTED retained cachebytes:0 ACTUAL: []
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1109_lfsCleanup.test.ts > F1109: disconnect after native file drain removes partial private objects and preserves pointer 1414ms
+
+ Test Files  1 passed (1)
+      Tests  2 passed (2)
+   Start at  13:44:57
+   Duration  2.79s (tests 99%, import 1%)
+
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/lib/gitLfsCleanup.test.ts > control: complete verified content replaces its pointer and removes the temporary store 603ms
+stdout | test/lib/gitLfsCleanup.test.ts > F1109: disconnect after native file drain removes partial private objects and preserves pointer
+EXPECTED retained cachebytes:0 ACTUAL: []
+PROBLEM NOT REPRODUCED
+
+ ✓ test/lib/gitLfsCleanup.test.ts > F1109: disconnect after native file drain removes partial private objects and preserves pointer 1724ms
+ ✓ test/lib/gitLfsCleanup.test.ts > cleans object store after short rejection 574ms
+ ✓ test/lib/gitLfsCleanup.test.ts > cleans object store after oversized rejection 1112ms
+ ✓ test/lib/gitLfsCleanup.test.ts > cleans object store after hash-mismatch rejection 1528ms
+ ✓ test/lib/gitLfsCleanup.test.ts > cleans an already verified first object when a later object returns404 858ms
+ ✓ test/lib/gitLfsCleanup.test.ts > handles a failed http batch without leaving a store 654ms
+ ✓ test/lib/gitLfsCleanup.test.ts > handles a failed json batch without leaving a store 2360ms
+ ✓ test/lib/gitLfsCleanup.test.ts > retry on the same checkout succeeds after failed content and starts with no cached objects 695ms
+
+ Test Files  1 passed (1)
+      Tests  9 passed (9)
+   Start at  13:45:03
+   Duration  10.80s (tests 100%)
+
+FIX VERIFIED

@@ -1,0 +1,29 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/lib/gitLfsCleanup.test.ts > control: complete verified content replaces its pointer and removes the temporary store 692ms
+stdout | test/lib/gitLfsCleanup.test.ts > F1109: disconnect after native file drain removes partial private objects and preserves pointer
+EXPECTED retained cachebytes:0 ACTUAL: []
+PROBLEM NOT REPRODUCED
+
+ ✓ test/lib/gitLfsCleanup.test.ts > F1109: disconnect after native file drain removes partial private objects and preserves pointer 604ms
+ ✓ test/lib/gitLfsCleanup.test.ts > cleans object store after short rejection 470ms
+ ✓ test/lib/gitLfsCleanup.test.ts > cleans object store after oversized rejection 871ms
+ ✓ test/lib/gitLfsCleanup.test.ts > cleans object store after hash-mismatch rejection 1010ms
+ ✓ test/lib/gitLfsCleanup.test.ts > cleans an already verified first object when a later object returns404 1914ms
+ ✓ test/lib/gitLfsCleanup.test.ts > handles a failed http batch without leaving a store 1901ms
+ ✓ test/lib/gitLfsCleanup.test.ts > handles a failed json batch without leaving a store 816ms
+ ✓ test/lib/gitLfsCleanup.test.ts > retry on the same checkout succeeds after failed content and starts with no cached objects 1181ms
+ ✓ test/lib/gitLfsCleanup.test.ts > native checkout write-open failure still removes all verified cached objects 601ms
+ ✓ test/gitLfs.test.ts > lfsEndpoint > is the repository's own .git/info/lfs, without credentials; SSH has none 451ms
+ ✓ test/gitLfs.test.ts > Git LFS fetch > finds only the tracked pointer files 662ms
+ ✓ test/gitLfs.test.ts > Git LFS fetch > replaces each pointer with its verified content; the credential goes to the repository host only 713ms
+ ✓ test/gitLfs.test.ts > Git LFS fetch > refuses content that does not match its pointer, and leaves the pointer in place 480ms
+ ✓ test/gitLfs.test.ts > Git LFS fetch > explains a refused API call, an object error, a missing object and an SSH repository 2162ms
+ ✓ test/gitLfs.test.ts > Git LFS fetch > a commit without LFS files asks nothing of the network 1636ms
+ ✓ test/gitLfs.test.ts > Git LFS fetch > stops a redirect loop 2573ms
+
+ Test Files  2 passed (2)
+      Tests  17 passed (17)
+   Start at  13:48:59
+   Duration  19.35s (tests 100%)
