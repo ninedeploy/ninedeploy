@@ -1,0 +1,19 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+stdout | test/engine/cloudWatchAcknowledgement.test.ts > retains a log rejected at inclusive too-new index zero despite HTTP 200
+EXPECTED: one pending event, shipped0; ACTUAL: { pending: 1, result: { shipped: 0, failed: 1, queued: 0, paused: 0 } }
+PROBLEM NOT REPRODUCED
+
+ ✓ test/engine/cloudWatchAcknowledgement.test.ts > retains a log rejected at inclusive too-new index zero despite HTTP 200 361ms
+ ✓ test/engine/cloudWatchAcknowledgement.test.ts > control: accepted events are delivered for {} 475ms
+ ✓ test/engine/cloudWatchAcknowledgement.test.ts > control: accepted events are delivered for {"rejectedEntityInfo":{"errorType":"InvalidEntity"}} 169ms
+ ✓ test/engine/cloudWatchAcknowledgement.test.ts > retains batches with old or expired event rejections {"tooOldLogEventEndIndex":1} 432ms
+ ✓ test/engine/cloudWatchAcknowledgement.test.ts > retains batches with old or expired event rejections {"expiredLogEventEndIndex":0} 157ms
+ ✓ test/engine/cloudWatchAcknowledgement.test.ts > accepts an empty rejection range {} 154ms
+ ✓ test/engine/cloudWatchAcknowledgement.test.ts > accepts an empty rejection range {"tooOldLogEventEndIndex":0} 421ms
+
+ Test Files  1 passed (1)
+      Tests  7 passed (7)
+   Start at  18:45:56
+   Duration  3.12s (tests 76%, import 21%, transform 4%)

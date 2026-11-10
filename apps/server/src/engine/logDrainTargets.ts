@@ -170,7 +170,17 @@ export async function postCloudWatch(
     }
     const ok = res.ok;
     const error = ok ? undefined : (await res.text().catch(() => '')).slice(0, 300);
-    if (ok) await res.body?.cancel().catch(() => undefined);
+    if (ok) {
+      const acknowledgement = (await res.json()) as {
+        rejectedLogEventsInfo?: { tooNewLogEventStartIndex?: number; tooOldLogEventEndIndex?: number; expiredLogEventEndIndex?: number };
+      };
+      const rejected = acknowledgement.rejectedLogEventsInfo;
+      // The too-new boundary is inclusive, while the too-old boundary is exclusive.
+      if (rejected && ((rejected.tooNewLogEventStartIndex ?? -1) >= 0 ||
+        (rejected.tooOldLogEventEndIndex ?? 0) > 0 || (rejected.expiredLogEventEndIndex ?? -1) >= 0)) {
+        return { ok: false, status: res.status, error: 'CloudWatch rejected log events in the batch' };
+      }
+    }
     return { ok, status: res.status, ...(error && { error }) };
   } catch (err) {
     return { ok: false, status: 0, error: err instanceof Error ? err.message : String(err) };

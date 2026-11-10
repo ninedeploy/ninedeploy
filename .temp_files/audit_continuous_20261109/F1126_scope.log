@@ -1,0 +1,117 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/engine/logShipper.test.ts > durable log-drain shipper > prunes retired empty cursors while preserving recent sources and cursors with pending logs 181ms
+ ✓ test/engine/logShipper.test.ts > durable log-drain shipper > starts without backfill and delivers only newer timestamps 177ms
+ ✓ test/engine/logShipper.test.ts > durable log-drain shipper > captures a failed delivery in ciphertext and retries without re-reading its stopped source 179ms
+ ✓ test/engine/logShipper.test.ts > durable log-drain shipper > does not resend a successful destination when another destination retries 167ms
+ ✓ test/engine/logShipper.test.ts > durable log-drain shipper > binds queued payloads to the destination and credentials under which they were captured 177ms
+ ✓ test/engine/logShipper.test.ts > durable log-drain shipper > keeps queues while disabled and resumes after being enabled 215ms
+ ✓ test/engine/logShipper.test.ts > durable log-drain shipper > keeps distinct host cursors for identically named containers 183ms
+ ✓ test/engine/logShipper.test.ts > durable log-drain shipper > respects per-service drain selection 169ms
+ ✓ test/engine/logShipper.test.ts > durable log-drain shipper > preserves lines that share a timestamp across bounded batches 321ms
+ ✓ test/engine/logShipper.test.ts > durable log-drain shipper > rolls a failed capture back without advancing the durable cursor 182ms
+ ✓ test/engine/logShipper.test.ts > durable log-drain shipper > pauses at the encrypted payload limit and retains the unprocessed cursor 400ms
+ ✓ test/engine/logShipper.test.ts > durable log-drain shipper > reports oversized lines without dropping or advancing them 243ms
+ ✓ test/engine/logShipper.test.ts > durable log-drain shipper > leaves a stopped or deleted source independent of delivery and cleans foreign keys on deletion 439ms
+ ✓ test/engine/logShipper.test.ts > durable log-drain shipper > rotates queued payloads through the normal master-key registry 541ms
+ ✓ test/engine/logShipper.test.ts > durable log-drain shipper > stops work on cancellation without acknowledging queued entries 223ms
+ ✓ test/engine/logShipper.test.ts > durable log-drain shipper > retries a failed log read without advancing its cursor 371ms
+ ✓ test/engine/logShipper.test.ts > durable log-drain shipper > parses timestamps and rejects malformed timestamps 0ms
+ ✓ test/engine/logShipper.test.ts > durable log-drain shipper > labels Loki streams the way log search queries them 0ms
+ ✓ test/engine/logShipper.test.ts > R2: a Swarm service ships the lines of every task, wherever it runs > one cursor per task; never `docker logs` against the Swarm service name, which no container has 236ms
+ ✓ test/engine/logShipper.test.ts > R2: a Swarm service ships the lines of every task, wherever it runs > no destination takes the service: the manager is not asked for its tasks 244ms
+ ✓ test/engine/logShipper.test.ts > R2: a Swarm service ships the lines of every task, wherever it runs > a manager that cannot list the tasks skips the service this round, without a cursor 236ms
+ ✓ test/engine/logShipper.test.ts > R2: a Swarm service ships the lines of every task, wherever it runs > a compose service whose runtime id looks like a Swarm service is read as containers (review L1) 229ms
+stdout | test/engine/elasticsearchAcknowledgement.test.ts > retains captured logs after a native truncated HTTP 200 bulk response
+EXPECTED: truncated ack preserves one pending batch, shipped0; ACTUAL: {
+  receivedHeaders: true,
+  pending: 1,
+  result: { shipped: 0, failed: 1, queued: 0, paused: 0 }
+}
+PROBLEM NOT REPRODUCED
+
+ ✓ test/engine/elasticsearchAcknowledgement.test.ts > retains captured logs after a native truncated HTTP 200 bulk response 1005ms
+stdout | test/engine/elasticsearchAcknowledgement.test.ts > retains filtered bulk failures without a top-level errors flag
+EXPECTED: filtered item error keeps one queued batch, shipped0; ACTUAL: { pending: 1, result: { shipped: 0, failed: 1, queued: 0, paused: 0 } }
+PROBLEM NOT REPRODUCED
+
+ ✓ test/engine/elasticsearchAcknowledgement.test.ts > control: a complete successful bulk acknowledgement deletes the delivered batch 158ms
+ ✓ test/engine/elasticsearchAcknowledgement.test.ts > retains filtered bulk failures without a top-level errors flag 308ms
+ ✓ test/engine/elasticsearchAcknowledgement.test.ts > control: explicit errors true is already refused 160ms
+ ✓ test/engine/elasticsearchAcknowledgement.test.ts > retains exact encrypted payload after invalid acknowledgement: truncated JSON 163ms
+ ✓ test/engine/elasticsearchAcknowledgement.test.ts > retains exact encrypted payload after invalid acknowledgement: HTML 291ms
+ ✓ test/engine/elasticsearchAcknowledgement.test.ts > retains exact encrypted payload after invalid acknowledgement: empty 164ms
+ ✓ test/engine/elasticsearchAcknowledgement.test.ts > retains exact encrypted payload after invalid acknowledgement: null 246ms
+ ✓ test/engine/elasticsearchAcknowledgement.test.ts > retains exact encrypted payload after invalid acknowledgement: string 261ms
+ ✓ test/engine/elasticsearchAcknowledgement.test.ts > retains exact encrypted payload after invalid acknowledgement: array 217ms
+ ✓ test/engine/elasticsearchAcknowledgement.test.ts > retains exact encrypted payload after invalid acknowledgement: wrong items type 220ms
+ ✓ test/engine/elasticsearchAcknowledgement.test.ts > retains exact encrypted payload after invalid acknowledgement: numeric flag 237ms
+ ✓ test/engine/elasticsearchAcknowledgement.test.ts > retains exact encrypted payload after invalid acknowledgement: null flag 235ms
+ ✓ test/engine/elasticsearchAcknowledgement.test.ts > refuses a filtered item error without a reason string 390ms
+ ✓ test/engine/elasticsearchAcknowledgement.test.ts > preserves valid filtered acknowledgement {} 412ms
+ ✓ test/engine/elasticsearchAcknowledgement.test.ts > preserves valid filtered acknowledgement {"items":[{}]} 241ms
+ ✓ test/engine/elasticsearchAcknowledgement.test.ts > accepts a flag-only successful filter 375ms
+ ✓ test/engine/elasticsearchAcknowledgement.test.ts > refuses a flag-only failed filter 224ms
+stdout | test/engine/cloudWatchAcknowledgement.test.ts > retains a log rejected at inclusive too-new index zero despite HTTP 200
+EXPECTED: one pending event, shipped0; ACTUAL: { pending: 1, result: { shipped: 0, failed: 1, queued: 0, paused: 0 } }
+PROBLEM NOT REPRODUCED
+
+ ✓ test/engine/cloudWatchAcknowledgement.test.ts > retains a log rejected at inclusive too-new index zero despite HTTP 200 203ms
+ ✓ test/engine/cloudWatchAcknowledgement.test.ts > control: accepted events are delivered for {} 165ms
+ ✓ test/engine/cloudWatchAcknowledgement.test.ts > control: accepted events are delivered for {"rejectedEntityInfo":{"errorType":"InvalidEntity"}} 290ms
+ ✓ test/engine/cloudWatchAcknowledgement.test.ts > retains batches with old or expired event rejections {"tooOldLogEventEndIndex":1} 189ms
+ ✓ test/engine/cloudWatchAcknowledgement.test.ts > retains batches with old or expired event rejections {"expiredLogEventEndIndex":0} 173ms
+ ✓ test/engine/cloudWatchAcknowledgement.test.ts > accepts an empty rejection range {} 169ms
+ ✓ test/engine/cloudWatchAcknowledgement.test.ts > accepts an empty rejection range {"tooOldLogEventEndIndex":0} 187ms
+ ✓ test/logDrains.test.ts > log drains API > lists all log drains and supports serviceId filtering 55ms
+ ✓ test/logDrains.test.ts > log drains API > gets a single log drain by id or returns 404 6ms
+ ✓ test/logDrains.test.ts > log drains API > creates a log drain with validation and encryption 7ms
+ ✓ test/logDrains.test.ts > log drains API > G3.4: accepts the new targets and refuses a URL that does not name what they need 3ms
+ ✓ test/logDrains.test.ts > log drains API > updates an existing log drain with all optional fields 6ms
+ ✓ test/logDrains.test.ts > log drains API > deletes a log drain or returns 404 4ms
+ ✓ test/logDrains.test.ts > log drains API > tests connection to log drain destination with and without api key 13ms
+ ✓ test/logDrains.test.ts > log drains API > F600: refuses a serviceId that names no service (404, nothing written) 2ms
+ ✓ test/logDrains.test.ts > log drains API > F601: refuses drain URLs the http(s)-only transport can never deliver to 2ms
+ ✓ test/logDrains.test.ts > log drains API > requires admin permissions 1ms
+stdout | test/engine/elasticsearchEndpoint.test.ts > routes an accepted index target to a documented bulk endpoint
+EXPECTED: bulk operation and one accepted log; ACTUAL: {
+  urls: [ 'https://elastic.example.test/logs-fixture/_bulk' ],
+  outcome: { ok: true, status: 200 },
+  stored: 1
+}
+PROBLEM NOT REPRODUCED
+
+ ✓ test/engine/elasticsearchEndpoint.test.ts > routes an accepted index target to a documented bulk endpoint 19ms
+ ✓ test/engine/elasticsearchEndpoint.test.ts > control: ordinary HTTP drains keep their configured URL 1ms
+ ✓ test/engine/elasticsearchEndpoint.test.ts > preserves index, origin, query and headers for endpoint suffix  1ms
+ ✓ test/engine/elasticsearchEndpoint.test.ts > preserves index, origin, query and headers for endpoint suffix / 0ms
+ ✓ test/engine/elasticsearchEndpoint.test.ts > preserves index, origin, query and headers for endpoint suffix /// 0ms
+ ✓ test/engine/elasticsearchEndpoint.test.ts > preserves index, origin, query and headers for endpoint suffix ?filter_path=errors&refresh=wait_for 0ms
+ ✓ test/engine/elasticsearchEndpoint.test.ts > preserves index, origin, query and headers for endpoint suffix /?routing=owned 0ms
+ ✓ test/engine/logDrainTargets.test.ts > formats > writes an Elasticsearch bulk body into the index from the URL 2ms
+ ✓ test/engine/logDrainTargets.test.ts > formats > writes Splunk HEC events, New Relic, Axiom and Better Stack bodies 1ms
+ ✓ test/engine/logDrainTargets.test.ts > formats > sorts CloudWatch events by time and reads the group and stream from the URL 1ms
+ ✓ test/engine/logDrainTargets.test.ts > auth and URLs > presents each key the way its service expects 0ms
+ ✓ test/engine/logDrainTargets.test.ts > auth and URLs > refuses URLs that do not name what the target needs 0ms
+ ✓ test/engine/logDrainTargets.test.ts > delivery > reports the failed items of an Elasticsearch bulk request that answered 200 13ms
+ ✓ test/engine/logDrainTargets.test.ts > delivery > signs CloudWatch calls, and creates a missing stream once before retrying 2ms
+ ✓ test/engine/logDrainTargets.test.ts > delivery > refuses a CloudWatch drain without key pair 0ms
+ ✓ test/engine/logDrainManager.test.ts > logDrainManager engine > preserves timestamp 0 in single and batch payloads 2ms
+ ✓ test/engine/logDrainManager.test.ts > logDrainManager engine > preserves timestamp 1 in single and batch payloads 0ms
+ ✓ test/engine/logDrainManager.test.ts > logDrainManager engine > preserves timestamp -1 in single and batch payloads 0ms
+ ✓ test/engine/logDrainManager.test.ts > logDrainManager engine > formats loki payloads correctly 0ms
+ ✓ test/engine/logDrainManager.test.ts > logDrainManager engine > formats datadog payloads correctly 0ms
+ ✓ test/engine/logDrainManager.test.ts > logDrainManager engine > formats raw and rfc5424 text payloads 0ms
+ ✓ test/engine/logDrainManager.test.ts > logDrainManager engine > formats default json payloads 0ms
+ ✓ test/engine/logDrainManager.test.ts > logDrainManager engine > dispatches logs to drain with API key and custom headers 1ms
+ ✓ test/engine/logDrainManager.test.ts > logDrainManager engine > handles network errors during dispatch gracefully 0ms
+ ✓ test/engine/logDrainManager.test.ts > logDrainManager engine > tests connection probe successfully and reports errors 0ms
+
+ Test Files  7 passed (7)
+      Tests  82 passed (82)
+   Start at  18:46:55
+   Duration  16.05s (tests 83%, import 15%, transform 2%)
+
+    Isolate  7 workers spawned · ~174ms startup each (spawn + environment, per file)
+             at least ~1.04s faster with isolate: false — reuses workers across files instead of one per file

@@ -1,0 +1,38 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1126_cloudWatchAck.test.ts > retains a log rejected at inclusive too-new index zero despite HTTP 200
+EXPECTED: one pending event, shipped0; ACTUAL: { pending: 0, result: { shipped: 1, failed: 0, queued: 0, paused: 0 } }
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/prove_F1126_cloudWatchAck.test.ts > retains a log rejected at inclusive too-new index zero despite HTTP 200 184ms
+   → expected [] to have a length of 1 but got +0
+ ✓ .temp_files/audit_continuous_20261109/prove_F1126_cloudWatchAck.test.ts > control: accepted events are delivered for {} 158ms
+ ✓ .temp_files/audit_continuous_20261109/prove_F1126_cloudWatchAck.test.ts > control: accepted events are delivered for {"rejectedEntityInfo":{"errorType":"InvalidEntity"}} 174ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1126_cloudWatchAck.test.ts > retains a log rejected at inclusive too-new index zero despite HTTP 200
+AssertionError: expected [] to have a length of 1 but got +0
+
+- Expected
++ Received
+
+- 1
++ 0
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1126_cloudWatchAck.test.ts:39:24
+     37|   console.log('EXPECTED: one pending event, shipped0; ACTUAL:', { pend…
+     38|   console.log(outcome.rows.length === 1 && outcome.result.shipped === …
+     39|   expect(outcome.rows).toHaveLength(1);
+       |                        ^
+     40|   expect(outcome.rows[0]!.payloadEncrypted).toBe(outcome.payload);
+     41|   expect(outcome.result).toMatchObject({ shipped: 0, failed: 1 });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 2 passed (3)
+   Start at  18:44:39
+   Duration  1.14s (tests 49%, import 38%, transform 13%)

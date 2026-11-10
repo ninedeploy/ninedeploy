@@ -1212,7 +1212,14 @@ passed at `e1de1ee8`: 609 server tests in 39 files, 20 controlled native CLI tes
 in 4 files and 4 workspace MCP tests in 1 file (633 tests, 44 files total).
 This focused result does not certify the separate full native suite.
 
-The next focused lane adds API-only query-token logging and Elasticsearch bulk
-acknowledgement/endpoint regressions (F1122–F1125). Local affected log-drain tests
-passed 65 cases across 5 files; this is controlled HTTP/native SQLite evidence,
-not a live Elasticsearch cluster test. Native follow-up is pending its own run.
+The focused lane including API-only query-token logging and Elasticsearch bulk
+acknowledgement/endpoint regressions (F1122–F1125) passed at `cbaa0466`:
+[run 42857461706](https://github.com/ninedeploy/ninedeploy/actions/runs/42857461706)
+ran 640 server tests in 42 files, 20 controlled native CLI tests in 4 files and
+4 workspace MCP tests in 1 file (664 tests, 47 files). The downloaded ZIP's SHA-256
+matched GitHub's artifact digest. This is controlled HTTP/native SQLite evidence,
+not a live Elasticsearch cluster test or full native acceptance.
+
+CloudWatch event-rejection acknowledgement (F1126) adds 7 further regression
+cases. The affected local scope passed 82 tests across 7 files; native follow-up
+for this later change is pending.

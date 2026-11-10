@@ -134,6 +134,7 @@ jobs:
             test/plugins/staticFilesLogging.test.ts \
             test/engine/elasticsearchAcknowledgement.test.ts \
             test/engine/elasticsearchEndpoint.test.ts \
+            test/engine/cloudWatchAcknowledgement.test.ts \
             --coverage=false --reporter=verbose --maxWorkers=1 \
             2>&1 | tee "$AUDIT_LOG_DIR/unit.log"
 

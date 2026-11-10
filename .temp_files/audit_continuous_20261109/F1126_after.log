@@ -1,0 +1,15 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1126_cloudWatchAck.test.ts > retains a log rejected at inclusive too-new index zero despite HTTP 200
+EXPECTED: one pending event, shipped0; ACTUAL: { pending: 1, result: { shipped: 0, failed: 1, queued: 0, paused: 0 } }
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1126_cloudWatchAck.test.ts > retains a log rejected at inclusive too-new index zero despite HTTP 200 198ms
+ ✓ .temp_files/audit_continuous_20261109/prove_F1126_cloudWatchAck.test.ts > control: accepted events are delivered for {} 155ms
+ ✓ .temp_files/audit_continuous_20261109/prove_F1126_cloudWatchAck.test.ts > control: accepted events are delivered for {"rejectedEntityInfo":{"errorType":"InvalidEntity"}} 165ms
+
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
+   Start at  18:45:20
+   Duration  1.15s (tests 49%, import 38%, transform 12%)
