@@ -1130,5 +1130,5 @@ pnpm --dir apps/server exec vitest run test/lib/gitLfsPointer.test.ts test/lib/g
 This covers bounded basic current-v1 inputs. Legacy version identifiers and LFS
 extensions are not newly implemented; no full native-format equivalence or live
 deployment certification is claimed. The Mac lane now includes the pointer
-suite (25 server files). Native LFS pointer follow-up: pending the new Mac run.
+suite (25 server files). Native LFS pointer checkpoint: [run 42828009923](https://github.com/ninedeploy/ninedeploy/actions/runs/42828009923) passed at source `16daeba30c9ce7ad5963a573096b43cc473963c7` on macOS 26.7.2 arm64: 324 server, 20 native CLI and four workspace MCP tests, 348 tests in 30 files. See the [receipt](../.temp_files/audit_continuous_20261109/round92_receipt.json). This focused run does not certify the full release suite.
 Full root release/coverage and round73's Windows native fault remain unresolved.
