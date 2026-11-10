@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Manual macOS server audit workflow records native filesystem, SQLite and controlled Docker CLI regressions without starting a daemon or desktop GUI (round 89).
 - **A read-only import plan for Coolify, Dokploy and CapRover.** `ninedeploy import plan <coolify|dokploy|caprover> --url …` reads the other platform's API from your machine and lists what NineDeploy would create:
   - services, with their repository, image or compose source, build pack, port, limits, domains and first volume;
   - environment variable names;

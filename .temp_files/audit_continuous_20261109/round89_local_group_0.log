@@ -1,0 +1,344 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/lib/gitLfsCleanup.test.ts > control: complete verified content replaces its pointer and removes the temporary store 278ms
+stdout | test/lib/gitLfsCleanup.test.ts > F1109: disconnect after native file drain removes partial private objects and preserves pointer
+EXPECTED retained cachebytes:0 ACTUAL: []
+PROBLEM NOT REPRODUCED
+
+ ✓ test/lib/gitLfsCleanup.test.ts > F1109: disconnect after native file drain removes partial private objects and preserves pointer 537ms
+ ✓ test/lib/gitLfsCleanup.test.ts > cleans object store after short rejection 215ms
+ ✓ test/lib/gitLfsCleanup.test.ts > cleans object store after oversized rejection 277ms
+ ✓ test/lib/gitLfsCleanup.test.ts > cleans object store after hash-mismatch rejection 226ms
+ ✓ test/lib/gitLfsCleanup.test.ts > cleans an already verified first object when a later object returns404 549ms
+ ✓ test/lib/gitLfsCleanup.test.ts > handles a failed http batch without leaving a store 237ms
+ ✓ test/lib/gitLfsCleanup.test.ts > handles a failed json batch without leaving a store 324ms
+ ✓ test/lib/gitLfsCleanup.test.ts > retry on the same checkout succeeds after failed content and starts with no cached objects 857ms
+ ✓ test/lib/gitLfsCleanup.test.ts > native checkout write-open failure still removes all verified cached objects 578ms
+ ✓ test/gitLfs.test.ts > lfsEndpoint > is the repository's own .git/info/lfs, without credentials; SSH has none 158ms
+ ✓ test/gitLfs.test.ts > Git LFS fetch > finds only the tracked pointer files 577ms
+ ✓ test/gitLfs.test.ts > Git LFS fetch > replaces each pointer with its verified content; the credential goes to the repository host only 757ms
+ ✓ test/gitLfs.test.ts > Git LFS fetch > refuses content that does not match its pointer, and leaves the pointer in place 582ms
+ ✓ test/gitLfs.test.ts > Git LFS fetch > explains a refused API call, an object error, a missing object and an SSH repository 909ms
+ ✓ test/gitLfs.test.ts > Git LFS fetch > a commit without LFS files asks nothing of the network 1281ms
+ ✓ test/gitLfs.test.ts > Git LFS fetch > stops a redirect loop 1080ms
+ ✓ test/lib/autoscaler.test.ts > measure > cpu is the average per serving container, in percent of its limit or of one core 266ms
+ ✓ test/lib/autoscaler.test.ts > measure > memory is the percent of the limit; a missing limit holds scaling 189ms
+ ✓ test/lib/autoscaler.test.ts > measure > holds without stats, and rps needs traffic analytics 161ms
+ ✓ test/lib/autoscaler.test.ts > requestRate > counts per service in ten-second buckets, leaves out the last bucket, and forgets after a day 186ms
+ ✓ test/lib/autoscaler.test.ts > decide > scales up once the need has lasted the up window, to the smallest count asked for 182ms
+ ✓ test/lib/autoscaler.test.ts > decide > scales down only after the down window, to the largest count asked for in it 171ms
+ ✓ test/lib/autoscaler.test.ts > decide > a value back near the target, or a swing the other way, restarts the window 163ms
+ ✓ test/lib/autoscaler.test.ts > decide > does not act when the window asks for the current count after all, and labels rps 169ms
+ ✓ test/lib/autoscaler.test.ts > scaleService > up: starts and probes each spare, then routes them and audits 172ms
+ ✓ test/lib/autoscaler.test.ts > scaleService > up: stops at a spare that fails its healthcheck, and says so 208ms
+ ✓ test/lib/autoscaler.test.ts > scaleService > up: a spare that does not exist (autoscaling turned on since the deploy) leaves everything as it was 216ms
+ ✓ test/lib/autoscaler.test.ts > scaleService > down: routes the containers away first, then stops them 232ms
+ ✓ test/lib/autoscaler.test.ts > scaleService > down: a failed stop is logged; the containers are already unrouted 262ms
+ ✓ test/lib/autoscaler.test.ts > scaleService > a deploy that replaced the runtime meanwhile wins: nothing is written or audited 265ms
+ ✓ test/lib/autoscaler.test.ts > autoscaleStep > holds with the reason and touches nothing 242ms
+ ✓ test/lib/autoscaler.test.ts > autoscaleStep > stops a spare that runs unrouted 249ms
+ ✓ test/lib/autoscaler.test.ts > autoscaleStep > moves inside new bounds at once 243ms
+ ✓ test/lib/autoscaler.test.ts > autoscaleStep > G5.6: raises to a scheduled floor while its window is in force, and names it 286ms
+ ✓ test/lib/autoscaler.test.ts > autoscaleStep > G5.6: outside the window the floor does not hold capacity 290ms
+ ✓ test/lib/autoscaler.test.ts > autoscaleStep > measures, waits the window, then scales; status shows what it saw 286ms
+ ✓ test/lib/autoscaler.test.ts > autoscaleStep > starts a new decision window and confirms routing after a redeploy between ticks 262ms
+ ✓ test/lib/autoscaler.test.ts > autoscaleStep > does not treat a long unobserved gap as sustained load 246ms
+ ✓ test/lib/autoscaler.test.ts > autoscaleStep > does not scale on the same cached sample twice 282ms
+ ✓ test/lib/autoscaler.test.ts > autoscaleStep > restarts the decision window when the collector sample timestamp moves backwards 257ms
+ ✓ test/lib/autoscaler.test.ts > autoscaleStep > holds when the metric cannot be read 254ms
+ ✓ test/lib/autoscaler.test.ts > holdReason, autoscaleOf, status > names each reason not to measure 243ms
+ ✓ test/lib/autoscaler.test.ts > holdReason, autoscaleOf, status > reads a stored configuration, and none from an invalid one 235ms
+ ✓ test/lib/autoscaler.test.ts > holdReason, autoscaleOf, status > lists the metrics each placement can act on 252ms
+ ✓ test/lib/autoscaler.test.ts > createAutoscaler > dispatches node work separately and cancels it during shutdown 258ms
+ ✓ test/lib/autoscaler.test.ts > createAutoscaler > releases a node service after a worker failure so a later tick can retry 446ms
+ ✓ test/lib/autoscaler.test.ts > createAutoscaler > runs recovery even without configured autoscaling services 265ms
+ ✓ test/lib/autoscaler.test.ts > createAutoscaler > cancels an in-flight recovery and waits for it before shutdown 281ms
+ ✓ test/lib/autoscaler.test.ts > createAutoscaler > reports recovery failure while continuing the ordinary autoscaler tick 238ms
+ ✓ test/lib/autoscaler.test.ts > createAutoscaler > looks at autoscaled services only, one step per service at a time 393ms
+ ✓ test/lib/autoscaler.test.ts > createAutoscaler > does nothing without autoscaled services, and reports a failed load 262ms
+ ✓ test/lib/autoscaler.test.ts > createAutoscaler > reports a failed step 254ms
+ ✓ test/plugins/backupSchedulerPolicyRace.test.ts > control: unchanged ten-minute policy does not run at minute two 391ms
+stdout | test/plugins/backupSchedulerPolicyRace.test.ts > F1106: an older gated policy snapshot cannot override the newer cron
+EXPECTED backups:[] ACTUAL: []
+PROBLEM NOT REPRODUCED
+
+ ✓ test/plugins/backupSchedulerPolicyRace.test.ts > F1106: an older gated policy snapshot cannot override the newer cron 232ms
+ ✓ test/plugins/backupSchedulerPolicyRace.test.ts > independent database changes do not cancel each other 282ms
+ ✓ test/plugins/backupSchedulerPolicyRace.test.ts > a stale enabled snapshot cannot rearm a disabled policy 210ms
+ ✓ test/plugins/backupSchedulerPolicyRace.test.ts > an old periodic refresh cannot replace a newer saved cron 203ms
+ ✓ test/plugins/backupSchedulerPolicyRace.test.ts > a pending changed-event read cannot publish after close 297ms
+ ✓ test/plugins/backupSchedulerPolicyRace.test.ts > a failed save read leaves the existing cron armed until a successful refresh 315ms
+ ✓ test/plugins/backupSchedulerPolicyRace.test.ts > a boot snapshot cannot overwrite a save published while startup is waiting 259ms
+ ✓ test/plugins/backupSchedulerPolicyRace.test.ts > a newer completed periodic refresh fences an older changed-event read 277ms
+ ✓ test/plugins/backupSchedulerPolicyRace.test.ts > removing a policy during a full refresh still fences its older pending read 304ms
+ ✓ test/modules/databaseImportShortWrite.test.ts > completes each short write size=1 300ms
+ ✓ test/modules/databaseImportShortWrite.test.ts > completes each short write size=3 207ms
+ ✓ test/modules/databaseImportShortWrite.test.ts > completes each short write size=9 242ms
+ ✓ test/modules/databaseImportShortWrite.test.ts > completes each short write size=10 275ms
+ ✓ test/modules/databaseImportShortWrite.test.ts > advances native buffer offset, remaining length and absolute file position 385ms
+ ✓ test/modules/databaseImportShortWrite.test.ts > unsuccessful partial sequence 0 leaves metadata retryable 301ms
+ ✓ test/modules/databaseImportShortWrite.test.ts > unsuccessful partial sequence 3,0 leaves metadata retryable 337ms
+ ✓ test/modules/databaseImportShortWrite.test.ts > unsuccessful partial sequence 3,-1 leaves metadata retryable 263ms
+ ✓ test/modules/databaseImportChunkRace.test.ts > queued retry preserves winner and advances once final=false identical=false 429ms
+ ✓ test/modules/databaseImportChunkRace.test.ts > queued retry preserves winner and advances once final=false identical=true 277ms
+ ✓ test/modules/databaseImportChunkRace.test.ts > queued retry preserves winner and advances once final=true identical=false 207ms
+ ✓ test/modules/databaseImportChunkRace.test.ts > queued retry preserves winner and advances once final=true identical=true 199ms
+ ✓ test/modules/databaseImportChunkRace.test.ts > next chunk queued behind held first uses fresh offset 202ms
+ ✓ test/modules/databaseImportChunkRace.test.ts > unrelated import completes while another native writer is held 227ms
+ ✓ test/modules/databaseImportChunkRace.test.ts > native write failure closes ownership and permits retry 196ms
+ ✓ test/modules/databaseImportChunkRace.test.ts > validation failure releases admission for valid chunk 227ms
+ ✓ test/lib/backupDrillHistory.test.ts > control: single entry exposes its required database identity 285ms
+stdout | test/lib/backupDrillHistory.test.ts > F1105: history exposes the same required database identity as detail
+EXPECTED databaseId:5 ACTUAL: 5
+PROBLEM NOT REPRODUCED
+
+ ✓ test/lib/backupDrillHistory.test.ts > F1105: history exposes the same required database identity as detail 233ms
+stdout | test/lib/backupDrillHistory.test.ts > ordering candidate: equal-second rows retain newest id first in current SQLite
+ORDER EXPECTED [13,12] ACTUAL [ 13, 12 ]
+
+ ✓ test/lib/backupDrillHistory.test.ts > ordering candidate: equal-second rows retain newest id first in current SQLite 212ms
+ ✓ test/lib/backupDrillHistory.test.ts > history and detail agree on all advertised identity and timing fields 209ms
+ ✓ test/lib/backupDrillHistory.test.ts > database filtering preserves every returned database identity 188ms
+ ✓ test/lib/backupDrillHistory.test.ts > existing database with no drills returns an empty history 192ms
+ ✓ test/lib/backupDrillHistory.test.ts > retains the HTTP history cap with identity on every row 168ms
+ ✓ test/lib/backupDrillHistory.test.ts > retains not-found behavior for missing database history 165ms
+ ✓ test/lib/crossProcessLock.test.ts > acquireCrossProcessLock > acquires, releases, and allows immediate re-acquisition 11ms
+ ✓ test/lib/crossProcessLock.test.ts > acquireCrossProcessLock > writes the holder identity into the lock file 3ms
+ ✓ test/lib/crossProcessLock.test.ts > acquireCrossProcessLock > refuses a second acquisition while held and throws LockUnavailableError 310ms
+ ✓ test/lib/crossProcessLock.test.ts > acquireCrossProcessLock > steals a stale lock whose holder stopped heartbeating 264ms
+ ✓ test/lib/crossProcessLock.test.ts > acquireCrossProcessLock > does not steal a live lock just because the waiter is impatient 309ms
+ ✓ test/lib/crossProcessLock.test.ts > acquireCrossProcessLock > mutually excludes a REAL second process and steals the lock after a crash 544ms
+ ✓ test/lib/registryCredentialLogout.test.ts > image/source-build/push agree on the same Hub session identity: alpine:3.23 261ms
+ ✓ test/lib/registryCredentialLogout.test.ts > image/source-build/push agree on the same Hub session identity: docker.io/library/alpine:3.23 240ms
+ ✓ test/lib/registryCredentialLogout.test.ts > image/source-build/push agree on the same Hub session identity: docker.io/acme/app@sha256:1111111111111111111111111111111111111111111111111111111111111111 222ms
+ ✓ test/lib/registryCredentialLogout.test.ts > non-Hub image/source-build/push keep the same explicit target 209ms
+ ✓ test/lib/registryCredentialLogout.test.ts > revoking the binding still withholds image and source-build credentials 230ms
+ ✓ test/lib/registryCredentialLogout.test.ts > multiple bindings do not guess a source-build or push target 206ms
+ ✓ test/lib/registryCredentialLogout.test.ts > an incomplete credential remains unavailable across all workflows 223ms
+ ✓ test/plugins/autoscaler.test.ts > autoscaler plugin > dispatches node services to the node worker instead of the panel Docker path 257ms
+ ✓ test/plugins/autoscaler.test.ts > autoscaler plugin > scales a busy service up after its window: starts and probes the spare, routes it, audits 272ms
+ ✓ test/plugins/autoscaler.test.ts > autoscaler plugin > holds while a deploy is in progress, and without the collector 381ms
+ ✓ test/plugins/autoscaler.test.ts > autoscaler plugin > a panel whose database predates migration 0088 looks at nothing 2ms
+ ✓ test/lib/imageWatchDigest.test.ts > accepts OCI syntax sha256:29cee9ce6d9eadb2b289937 14ms
+ ✓ test/lib/imageWatchDigest.test.ts > accepts OCI syntax sha512:dd39bdec42141e9f75aa6c5 1ms
+ ✓ test/lib/imageWatchDigest.test.ts > skips syntactically valid unsupported algorithm blake3 1ms
+ ✓ test/lib/imageWatchDigest.test.ts > skips syntactically valid unsupported algorithm sha256+b64u 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > skips syntactically valid unsupported algorithm multihash+base58 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > skips syntactically valid unsupported algorithm future.v1-hash_2 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > skips syntactically valid unsupported algorithm constructor 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > rejects malformed metadata not-a-digest length12 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > rejects malformed metadata sha256: length7 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > rejects malformed metadata :abc length4 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > rejects malformed metadata sha256:abc:def length14 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > rejects malformed metadata SHA256:aaaaaaaaaaaaaaaaaaaaaaa length71 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > rejects malformed metadata sha256:AAAAAAAAAAAAAAAAAAAAAAA length71 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > rejects malformed metadata sha256:ggggggggggggggggggggggg length71 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > rejects malformed metadata sha256:aaaaaaaaaaaaaaaaaaaaaaa length70 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > rejects malformed metadata sha256:aaaaaaaaaaaaaaaaaaaaaaa length72 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > rejects malformed metadata sha512:aaaaaaaaaaaaaaaaaaaaaaa length134 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > rejects malformed metadata sha512:aaaaaaaaaaaaaaaaaaaaaaa length136 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > rejects malformed metadata blake3:aaaaaaaaaaaaaaaaaaaaaaa length70 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > rejects malformed metadata future__hash:ABC length16 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > rejects malformed metadata future-:ABC length11 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > rejects malformed metadata -future:ABC length11 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > rejects malformed metadata future:abc+def length14 1ms
+ ✓ test/lib/imageWatchDigest.test.ts > rejects malformed metadata future:abc/def length14 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > rejects malformed metadata sha256 :aaaaaaaaaaaaaaaaaaaaaa length72 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > rejects malformed metadata sha256:29cee9ce6d9eadb2b289937 length144 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > validates the final manifest after the credentialed token retry and cancels both manifest bodies 3ms
+ ✓ test/lib/imageWatchDigest.test.ts > HTTP failure remains a status error rather than accepting a present digest 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > cleanup failure does not replace the safe malformed-header error or echo its input 1ms
+ ✓ test/lib/imageWatchDigest.test.ts > two malformed headers cannot seed a baseline or schedule an unchanged image 226ms
+ ✓ test/lib/imageWatchDigest.test.ts > malformed metadata preserves an existing valid baseline and creates no deployment 166ms
+ ✓ test/lib/imageWatchDigest.test.ts > unchanged valid metadata remains idle and a valid move enqueues once 197ms
+ ✓ test/plugins/backupSchedulerShutdown.test.ts > control: open policy scheduler admits its due backup 77ms
+ ✓ test/plugins/backupSchedulerShutdown.test.ts > control: open daily scheduler admits its due backup 3ms
+ ✓ test/plugins/backupSchedulerShutdown.test.ts > close while awaiting policy prevents later policy backup admission 2ms
+ ✓ test/plugins/backupSchedulerShutdown.test.ts > close while awaiting database prevents later policy backup admission 1ms
+ ✓ test/plugins/backupSchedulerShutdown.test.ts > close while daily database enumeration waits prevents later backup admission 2ms
+ ✓ test/plugins/backupSchedulerShutdown.test.ts > close during the first daily dump does not admit the next database 1ms
+ ✓ test/plugins/backupSchedulerShutdown.test.ts > an already-admitted policy backup may settle after close without another admission 1ms
+ ✓ test/plugins/backupSchedulerShutdown.test.ts > the existing in-flight guard prevents overlapping policy dumps 2ms
+ ✓ test/plugins/backupSchedulerShutdown.test.ts > close before a due timer admits no backup 1ms
+ ✓ test/lib/requestRateRetention.test.ts > bounds retained heap for30 days of traffic without rate-reader pruning 723ms
+ ✓ test/lib/requestRateRetention.test.ts > expires write-only history strictly outside24 hours while retaining the exact boundary 0ms
+ ✓ test/lib/requestRateRetention.test.ts > late expired requests cannot repopulate an evicted bucket 0ms
+ ✓ test/lib/requestRateRetention.test.ts > reset and rate-driven emptying release latest-bucket ownership 0ms
+ ✓ test/lib/crossProcessLockInit.test.ts > failed fail preparation leaves no artifact and immediately retries 14ms
+ ✓ test/lib/crossProcessLockInit.test.ts > failed partial preparation leaves no artifact and immediately retries 8ms
+ ✓ test/lib/crossProcessLockInit.test.ts > failed zero preparation leaves no artifact and immediately retries 9ms
+ ✓ test/lib/crossProcessLockInit.test.ts > public identity remains absent throughout preparation and is complete at publication 8ms
+ ✓ test/lib/crossProcessLockInit.test.ts > publication EACCES propagates without unsafe fallback or leaked candidate 7ms
+ ✓ test/lib/crossProcessLockInit.test.ts > publication ENOTSUP propagates without unsafe fallback or leaked candidate 8ms
+ ✓ test/lib/crossProcessLockInit.test.ts > a newer owner admitted at the publish barrier survives the loser cleanup 9ms
+ ✓ test/lib/crossProcessLockInit.test.ts > an existing live owner remains untouched by a rejected contender 7ms
+ ✓ test/lib/crossProcessLockInit.test.ts > a failed initialization cannot clean a later public owner at the write barrier 6ms
+ ✓ test/lib/crossProcessLockInit.test.ts > stale takeover leaves only the new public inode and release removes it 15ms
+ ✓ test/lib/crossProcessLockInit.test.ts > private exclusive-create collision preserves the pre-existing candidate 6ms
+ ✓ test/lib/crossProcessLockInit.test.ts > release retries a transient private-unlink failure without dropping ownership 10ms
+ ✓ test/lib/crossProcessLockInit.test.ts > heartbeat updates the published inode after its private link is removed 12ms
+ ✓ test/lib/registryLockStore.test.ts > preserves two registry snapshots in credential store null 8ms
+ ✓ test/lib/registryLockStore.test.ts > preserves two registry snapshots in credential store 4 7ms
+ ✓ test/lib/registryLockStore.test.ts > preserves two registry snapshots in credential store 8 6ms
+ ✓ test/lib/registryLockStore.test.ts > preserves two registry snapshots in credential store undefined 6ms
+ ✓ test/lib/registryLockStore.test.ts > different nodes progress while the local credential store is held 8ms
+ ✓ test/lib/registryLockStore.test.ts > a failing login releases the entire store for another registry 6ms
+ ✓ test/lib/registryLockStore.test.ts > late duplicate release cannot admit a third session over the next holder 0ms
+ ✓ test/lib/registryLockStore.test.ts > a mixed registry queue preserves every write and the unrelated entry 22ms
+ ✓ test/lib/imageWatchIntegrity.test.ts > verifies sha256 across binary chunk boundaries 23ms
+ ✓ test/lib/imageWatchIntegrity.test.ts > verifies sha512 across binary chunk boundaries 2ms
+ ✓ test/lib/imageWatchIntegrity.test.ts > rejects a validly encoded SHA256 for different bytes and releases its reader 1ms
+ ✓ test/lib/imageWatchIntegrity.test.ts > rejects a validly encoded SHA512 for different bytes 1ms
+ ✓ test/lib/imageWatchIntegrity.test.ts > accepts exactly the local byte cap without a content-length header 7ms
+ ✓ test/lib/imageWatchIntegrity.test.ts > bounds actual streamed bytes with declared length undefined 6ms
+ ✓ test/lib/imageWatchIntegrity.test.ts > bounds actual streamed bytes with declared length 1 6ms
+ ✓ test/lib/imageWatchIntegrity.test.ts > rejects oversized declared bodies before reading and cancels them 1ms
+ ✓ test/lib/imageWatchIntegrity.test.ts > cleanup errors cannot mask an overflow rejection 1ms
+ ✓ test/lib/imageWatchIntegrity.test.ts > propagates body read failure Error and releases the lock 1ms
+ ✓ test/lib/imageWatchIntegrity.test.ts > propagates body read failure TimeoutError and releases the lock 0ms
+ ✓ test/lib/imageWatchIntegrity.test.ts > preserves a fetch timeout signal for body consumption 1ms
+ ✓ test/lib/imageWatchIntegrity.test.ts > does not accept a null body even when the declared digest hashes empty bytes 0ms
+ ✓ test/lib/imageWatchIntegrity.test.ts > reports an opaque algorithm as unsupported and cancels its unread body 2ms
+ ✓ test/lib/imageWatchIntegrity.test.ts > native fetch aborts an incomplete manifest body when the probe deadline fires 24ms
+ ✓ test/lib/crossProcessLockWrite.test.ts > completes native identity writes limited to 1 bytes 9ms
+ ✓ test/lib/crossProcessLockWrite.test.ts > completes native identity writes limited to 2 bytes 7ms
+ ✓ test/lib/crossProcessLockWrite.test.ts > completes native identity writes limited to 3 bytes 7ms
+ ✓ test/lib/crossProcessLockWrite.test.ts > completes native identity writes limited to 7 bytes 5ms
+ ✓ test/lib/crossProcessLockWrite.test.ts > completes native identity writes limited to 1024 bytes 6ms
+ ✓ test/lib/crossProcessLockWrite.test.ts > advances the buffer offset through uneven native writes 5ms
+ ✓ test/lib/crossProcessLockWrite.test.ts > late old release preserves a later holder after the replacement barrier 5ms
+ ✓ test/lib/crossProcessLockWrite.test.ts > double release cannot delete a newly acquired owner 9ms
+ ✓ test/lib/crossProcessLockWrite.test.ts > zero progress refuses ownership and closes the native descriptor 3ms
+ ✓ test/lib/crossProcessLockWrite.test.ts > failure after a native partial write propagates and closes the descriptor 3ms
+ ✓ test/lib/backupDrillHelperLifecycle.test.ts > control: normal checker removes its owned helper and volume 9ms
+ ✓ test/lib/backupDrillHelperLifecycle.test.ts > cleans helper and volume after create 3ms
+ ✓ test/lib/backupDrillHelperLifecycle.test.ts > cleans helper and volume after create-timeout 4ms
+ ✓ test/lib/backupDrillHelperLifecycle.test.ts > cleans helper and volume after copy 7ms
+ ✓ test/lib/backupDrillHelperLifecycle.test.ts > cleans helper and volume after start 5ms
+ ✓ test/lib/backupDrillHelperLifecycle.test.ts > cleans helper and volume after timeout 4ms
+ ✓ test/lib/backupDrillHelperLifecycle.test.ts > does not attempt helper cleanup if image inspection failed before create 3ms
+ ✓ test/lib/backupDrillHelperLifecycle.test.ts > cleanup errors preserve the structural best-effort verdict policy 3ms
+ ✓ test/lib/backupDrillHelperLifecycle.test.ts > removes no unrelated container, volume or named-volume fixture 4ms
+ ✓ test/lib/backupDrillHelperLifecycle.test.ts > lost create cleanup remains scoped while another checker completes 4ms
+ ✓ test/lib/registryLock.test.ts > registry session lock (r230) > serialises the login → pull → logout window per registry 30ms
+ ✓ test/lib/registryLock.test.ts > registry session lock (r230) > shares one host store across registries while keeping nodes independent 0ms
+ ✓ test/lib/registryLock.test.ts > registry session lock (r230) > survives a holder that throws and a double release 0ms
+ ✓ test/lib/registryLock.test.ts > registry lock wiring (r230) > every registry login site takes the lock first 1ms
+stdout | test/lib/requestRateLargeHistory.test.ts > long-running valid request history returns latest bucket without throwing
+EXPECTED: 2000000000 error null; ACTUAL: 2000000000 null
+PROBLEM NOT REPRODUCED
+
+stdout | test/lib/requestRateLargeHistory.test.ts > long-running traffic history does not abort the scale-to-zero idle decision
+EXPECTED: idle decision null without error; ACTUAL: null null
+PROBLEM NOT REPRODUCED
+
+ ✓ test/lib/requestRateLargeHistory.test.ts > control: last timestamp works for a full day of distinct buckets 3ms
+ ✓ test/lib/requestRateLargeHistory.test.ts > long-running valid request history returns latest bucket without throwing 17ms
+ ✓ test/lib/requestRateLargeHistory.test.ts > long-running traffic history does not abort the scale-to-zero idle decision 20ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > reads the manifest digest from a direct anonymous response 22ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > performs the Docker Hub anonymous token dance on 401 2ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > performs the ghcr token dance with its own realm 1ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > refuses to chase realms of registries outside the known table 1ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > reports the registry status when the retry also fails 1ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > rejects a 200 that carries no digest header 1ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > maps network failures to a readable reason 0ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > names timeouts distinctly 0ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > reports a token endpoint failure instead of retrying blindly 1ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > probes private repos with Basic auth when credentials are given 1ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > runs the token dance WITH credentials for private Docker Hub repos 1ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > names rejected credentials when the token endpoint answers 401 1ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > still refuses unknown auth realms for credentialed probes 0ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > reports an unreachable token endpoint 0ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > r514: refuses a registry host that resolves to a private / metadata address, before any request 1ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > r514: never follows a registry redirect (and never with the credential header) 0ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > rejects a token response that carries no token 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified accepted ghcr.io/web:v1 5ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified accepted REGISTRY/web:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified accepted localhost:5000/web:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified accepted REGISTRY:5000/web:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified accepted [2001:4860:4860::8888]:5000/web:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified accepted registry.example.test:99999/web:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified refused ghcr.io?fixture=1/web:v1 1ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified refused ghcr.io#fixture/web:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified refused ghcr.io\extra/web:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified refused ghcr..io/web:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified refused -registry.example/web:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified refused registry_.example/web:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified refused ghcr.io:bad/web:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified refused [::1/web:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified refused bad%host.example/web:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified accepted ghcr.io/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified refused ghcr.io/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified accepted docker.io/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified refused docker.io/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified accepted index.docker.io/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified refused index.docker.io/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified accepted registry-1.docker.io/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified refused registry-1.docker.io/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified accepted REGISTRY/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified refused REGISTRY/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified accepted [2001:4860:4860::8888]:5000/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified refused [2001:4860:4860::8888]:5000/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified accepted aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified refused aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified accepted reg--istry.example:0005000/web:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified refused [::ffff:192.0.2.1]:5000/web:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified refused example.test./web:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified accepted foo_bar.example/web:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified accepted [:::]:5000/web:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified refused [::1%25eth0]:5000/web:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified accepted REGISTRY.EXAMPLE/web:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified accepted docker.io/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified refused docker.io/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified accepted index.docker.io/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified refused index.docker.io/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified accepted registry-1.docker.io/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified refused registry-1.docker.io/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > valid ordinary host still probes the exact v2 manifest path 20ms
+ ✓ test/lib/imageRefHostValidation.test.ts > valid repository255 remains probeable even though the full name is longer 1ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified accepted ghcr.io/acme/app__one--two.v3:v1_2.3-4 25ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/acme/../../outside:v1 1ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/acme//app:v1 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/./app:v1 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/-app:v1 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/.app:v1 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/app_:v1 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/a___b:v1 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/a..b:v1 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/acme/:v1 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified accepted ghcr.io/app_v2:v1 1ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified accepted ghcr.io/app__v2:v1 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified accepted ghcr.io/app-v2:v1 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified accepted ghcr.io/app--v2:v1 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified accepted ghcr.io/app.v2:v1 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified accepted ghcr.io/acme/deep/web:v1 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified accepted ghcr.io/acme/web:_valid 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified accepted ghcr.io/acme/web:_ 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified accepted ghcr.io/acme/web:9 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified accepted ghcr.io/acme/web:a.b-c_d 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified accepted ghcr.io/acme/web:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/acme/web:.. 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/acme/web:-bad 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/acme/web:.bad 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/acme/web:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/acme/web: 0ms
+ ✓ test/lib/autoscaleSchedule.test.ts > localTime > reads the weekday and minute in the time zone 13ms
+ ✓ test/lib/autoscaleSchedule.test.ts > windowActive > covers the start and stops at the end 0ms
+ ✓ test/lib/autoscaleSchedule.test.ts > windowActive > runs past midnight into the next day 0ms
+ ✓ test/lib/autoscaleSchedule.test.ts > effectiveMinimum > takes the highest floor in force, capped at the maximum 1ms
+ ✓ test/lib/autoscaleSchedule.test.ts > effectiveMinimum > keeps the configured minimum when it is higher 0ms
+ ✓ test/lib/autoscaleSchedule.test.ts > effectiveMinimum > describes a window for logs 0ms
+ ✓ test/lib/autoscaleSchedule.test.ts > the schema > refuses a bad time zone, an empty window, a floor above the maximum, and bad times 2ms
+ ✓ test/lib/autoscaleSchedule.test.ts > the schema > keeps a stored configuration without schedules as it was 0ms
+
+ Test Files  24 passed (24)
+      Tests  307 passed (307)
+   Start at  14:03:15
+   Duration  47.79s (tests 80%, import 18%, transform 2%)
+
+    Isolate  24 workers spawned · ~273ms startup each (spawn + environment, per file)
+             at least ~6.28s faster with isolate: false — reuses workers across files instead of one per file
+
+
+EXIT 0

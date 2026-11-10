@@ -1,0 +1,71 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+stdout | test/integration/registryCredentialLogout.test.ts > control: implicit Hub credential is removed by the paired logout
+EXPECTED only unrelated auth after logout ACTUAL: [ 'unrelated.invalid' ] resolved server: (default)
+PROBLEM NOT REPRODUCED
+
+ ✓ test/integration/registryCredentialLogout.test.ts > control: implicit Hub credential is removed by the paired logout 943ms
+stdout | test/integration/registryCredentialLogout.test.ts > explicit docker.io credential is removed by the paired logout
+EXPECTED only unrelated auth after logout ACTUAL: [ 'unrelated.invalid' ] resolved server: (default)
+PROBLEM NOT REPRODUCED
+
+ ✓ test/integration/registryCredentialLogout.test.ts > explicit docker.io credential is removed by the paired logout 983ms
+stdout | test/integration/registryCredentialLogout.test.ts > digest Hub reference also clears the exact credential key
+EXPECTED only unrelated auth after logout ACTUAL: [ 'unrelated.invalid' ] resolved server: (default)
+PROBLEM NOT REPRODUCED
+
+ ✓ test/integration/registryCredentialLogout.test.ts > digest Hub reference also clears the exact credential key 538ms
+stdout | test/integration/registryCredentialLogout.test.ts > non-Hub host remains literal and cleans its own key
+EXPECTED only unrelated auth after logout ACTUAL: [ 'unrelated.invalid' ] resolved server: ghcr.io
+PROBLEM NOT REPRODUCED
+
+ ✓ test/integration/registryCredentialLogout.test.ts > non-Hub host remains literal and cleans its own key 1096ms
+stdout | test/integration/registryCredentialLogout.test.ts > legacy Hub alias keeps its own matching login/logout spelling
+EXPECTED only unrelated auth after logout ACTUAL: [ 'unrelated.invalid' ] resolved server: index.docker.io
+PROBLEM NOT REPRODUCED
+
+ ✓ test/integration/registryCredentialLogout.test.ts > legacy Hub alias keeps its own matching login/logout spelling 944ms
+stdout | test/integration/registryCredentialLogout.test.ts > case spelling remains unchanged and cleans its literal key
+EXPECTED only unrelated auth after logout ACTUAL: [ 'unrelated.invalid' ] resolved server: Docker.IO
+PROBLEM NOT REPRODUCED
+
+ ✓ test/integration/registryCredentialLogout.test.ts > case spelling remains unchanged and cleans its literal key 927ms
+stdout | test/integration/registryCredentialLogout.test.ts > a repeated explicit Hub session leaves no completed auth behind
+EXPECTED only unrelated auth after logout ACTUAL: [ 'unrelated.invalid' ] resolved server: (default)
+PROBLEM NOT REPRODUCED
+
+stdout | test/integration/registryCredentialLogout.test.ts > a repeated explicit Hub session leaves no completed auth behind
+EXPECTED only unrelated auth after logout ACTUAL: [ 'unrelated.invalid' ] resolved server: (default)
+PROBLEM NOT REPRODUCED
+
+ ✓ test/integration/registryCredentialLogout.test.ts > a repeated explicit Hub session leaves no completed auth behind 3286ms
+ ✓ test/integration/backupDrillHelperLifecycle.test.ts > native CLI normal create is followed by container removal 1332ms
+ ✓ test/integration/backupDrillHelperLifecycle.test.ts > native CLI lost create response still reaches helper cleanup 1020ms
+ ✓ test/integration/backupDrillHelperLifecycle.test.ts > native CLI removal requests anonymous volume cleanup 930ms
+ ✓ test/integration/registryImageReference.test.ts > binding and watch classification match native Docker CLI for REGISTRY/web:v1 895ms
+ ✓ test/integration/registryImageReference.test.ts > binding and watch classification match native Docker CLI for LOCALHOST/web:v1 932ms
+ ✓ test/integration/registryImageReference.test.ts > binding and watch classification match native Docker CLI for Acme/web:Tag 904ms
+ ✓ test/integration/registryImageReference.test.ts > binding and watch classification match native Docker CLI for UPPERCASE/web 562ms
+ ✓ test/integration/registryImageReference.test.ts > binding and watch classification match native Docker CLI for ghcr.io/acme/web:v1 548ms
+ ✓ test/integration/registryImageReference.test.ts > binding and watch classification match native Docker CLI for acme/web:v1 586ms
+ ✓ test/integration/registryImageReference.test.ts > binding and watch classification match native Docker CLI for REGISTRY/web@sha256:1111111111111111111111111111111111111111111111111111111111111111 660ms
+ ✓ test/integration/registryImageReference.test.ts > uppercase repository remains refused by native CLI and the watch parser 429ms
+stdout | test/integration/registryCredentialStore.test.ts > keeps same-registry admission serialized with native Docker CLI
+same-registry control EXPECTED first registry auth retained:true ACTUAL: true overlap: false keys: [ 'one.invalid', 'unrelated.invalid' ]
+PROBLEM NOT REPRODUCED
+
+ ✓ test/integration/registryCredentialStore.test.ts > keeps same-registry admission serialized with native Docker CLI 688ms
+stdout | test/integration/registryCredentialStore.test.ts > preserves both different-registry credentials in one native Docker config
+different-registry race EXPECTED first registry auth retained:true ACTUAL: true overlap: false keys: [ 'one.invalid', 'two.invalid', 'unrelated.invalid' ]
+PROBLEM NOT REPRODUCED
+
+ ✓ test/integration/registryCredentialStore.test.ts > preserves both different-registry credentials in one native Docker config 561ms
+
+ Test Files  4 passed (4)
+      Tests  20 passed (20)
+   Start at  14:04:04
+   Duration  21.32s (tests 90%, import 8%, transform 2%)
+
+
+EXIT 0
