@@ -9,7 +9,7 @@
  *   `running` (succeeded). It is not an HTTP probe of the app, and this
  *   command never deploys.
  * - The DNS gate resolves each host here, with a direct DNS query (not the
- *   OS cache or hosts file), and passes when any A/AAAA address is one this
+ *   OS cache or hosts file), and passes when every A/AAAA address is one this
  *   panel expects: --expect, else Settings → DNS records' content. It stays
  *   strict because adding a domain makes Traefik request a certificate, and
  *   Let's Encrypt limits failed validations per hostname.
@@ -101,11 +101,11 @@ export async function expectedAddresses(client: CutoverClient, dns: DnsLookup, e
   }
   const addresses: string[] = [];
   for (const w of wanted) {
-    if (isIP(w)) addresses.push(w);
+    if (isIP(w)) addresses.push(canonicalIp(w));
     else {
       const resolved = await resolveHost(dns, w);
       if (resolved.length === 0) throw new Error(`The expected address ${w} (${source}) does not resolve.`);
-      addresses.push(...resolved);
+      addresses.push(...resolved.map(canonicalIp));
     }
   }
   return { addresses: [...new Set(addresses)], source: wanted.some((w) => !isIP(w)) ? `${source}, ${wanted.join(', ')} resolved` : source, cloudflare };
@@ -133,12 +133,35 @@ export interface CutoverResult {
 
 const lower = (h: string) => h.toLowerCase().replace(/\.$/, '');
 
+/** One spelling per address, so `2001:DB8:0::1` and `2001:db8::1` compare equal. */
+export function canonicalIp(ip: string): string {
+  return isIP(ip) === 6 ? new URL(`http://[${ip}]/`).hostname.slice(1, -1) : ip;
+}
+
+/**
+ * Why a host's DNS is not ready for a certificate, or null. Every A and AAAA
+ * must be this panel's: Let's Encrypt validates over IPv6 first when an AAAA
+ * exists, so a leftover record that still names the source fails the
+ * certificate even when another record already points here.
+ */
+export function dnsProblem(resolved: string[], expected: string[]): string | null {
+  if (resolved.length === 0) return 'does not resolve';
+  const stray = resolved.map(canonicalIp).filter((a) => !expected.includes(a));
+  if (stray.length === 0) return null;
+  const which = stray.map((a) => `${isIP(a) === 6 ? 'AAAA' : 'A'} ${a}`).join(', ');
+  return stray.length === resolved.length
+    ? `resolves to ${which}, not ${expected.join(', ')}`
+    : `${which} ${stray.length === 1 ? 'is' : 'are'} not this panel (expected ${expected.join(', ')}): remove ${stray.length === 1 ? 'it' : 'them'}, or pass --expect with ${stray.length === 1 ? 'it' : 'them'} if ${stray.length === 1 ? 'it is' : 'they are'} this panel's`;
+}
+
 /** Check readiness and DNS for every planned domain; with yes, add or verify those that pass. */
 export async function cutover(plan: ImportPlan, opts: CutoverOptions, deps: CutoverDeps): Promise<CutoverResult> {
   const { client, dns, expected, receipt } = deps;
   const now = deps.now ?? (() => new Date());
   const skip = new Set(opts.skipDnsCheck.map(lower));
   const out: string[] = [];
+  const planned = new Set(plan.services.flatMap((s) => s.domains.map((d) => lower(d.host))));
+  for (const h of skip) if (!planned.has(h)) out.push(`  ! --skip-dns-check ${h}: no planned domain has that host`);
   const res: CutoverResult = { lines: out, added: 0, waiting: 0, failed: 0 };
   const put = (item: Omit<ReceiptItem, 'at'>) => {
     receipt.items[`domain:${item.ref}`] = { ...item, at: now().toISOString() };
@@ -188,7 +211,6 @@ export async function cutover(plan: ImportPlan, opts: CutoverOptions, deps: Cuto
         continue;
       }
       // DNS gate.
-      let gate: string | null = null;
       let note: string | null = null;
       if (skip.has(host)) {
         if (expected.cloudflare !== 'off') {
@@ -200,11 +222,9 @@ export async function cutover(plan: ImportPlan, opts: CutoverOptions, deps: Cuto
         }
         note = 'DNS check skipped (--skip-dns-check)';
       } else {
-        const got = await resolveHost(dns, host);
-        if (got.length === 0) gate = 'does not resolve';
-        else if (!got.some((a) => expected.addresses.includes(a))) gate = `resolves to ${got.join(', ')}, not ${expected.addresses.join(', ')}`;
+        const gate = dnsProblem(await resolveHost(dns, host), expected.addresses);
         if (gate) {
-          out.push(`    ✗ ${host}: ${gate}; switch DNS first`);
+          out.push(`    ✗ ${host}: ${gate}; fix DNS first`);
           res.waiting++;
           continue;
         }
@@ -250,7 +270,9 @@ export async function cutover(plan: ImportPlan, opts: CutoverOptions, deps: Cuto
       if (made.dnsWarning) notes.push(`DNS provider: ${made.dnsWarning}`);
       if (made.status === 'pending') notes.push('ownership proof pending (TXT)');
       put({ kind: 'domain', ref, name: host, state: 'done', id: made.id, notes });
-      res.added++;
+      // A pending domain is not routed yet: it waits for its TXT proof.
+      if (made.status === 'pending') res.waiting++;
+      else res.added++;
       out.push(`    ✓ ${host}: added (#${made.id}, ${made.status})`);
       if (made.verification) {
         out.push(`        publish TXT ${made.verification.recordName} = ${made.verification.recordValue}, then run this again to verify`);

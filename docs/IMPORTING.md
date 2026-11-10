@@ -90,7 +90,7 @@ ninedeploy import cutover plan.json --yes              # adds the domains that p
 `import cutover` adds each planned domain to its service, but only when two checks pass:
 
 - **The service is ready.** It is `running` and its latest deployment succeeded. This is not an HTTP check of your app, so open it yourself before you switch DNS. The command never deploys.
-- **DNS already points here.** The host is resolved with a direct DNS query (not the OS cache or hosts file), and at least one A or AAAA address must be one this panel expects. The expected address is `--expect <address>` if given, otherwise Settings → DNS records (an admin can read it). A hostname there is resolved first. `--resolver <ip>` picks the DNS server; the output names the one used.
+- **DNS already points here.** The host is resolved with a direct DNS query (not the OS cache or hosts file), and every A and AAAA address must be one this panel expects. A leftover record that still names the old host fails the check even when another one already points here: Let's Encrypt validates over IPv6 first when an AAAA exists, so a stale AAAA alone fails the certificate. The expected address is `--expect <address>` if given (repeat it for a panel with both IPv4 and IPv6), otherwise Settings → DNS records (an admin can read it). A hostname there is resolved first. `--resolver <ip>` picks the DNS server; the output names the one used.
 
 The DNS check is strict on purpose. Adding a domain makes Traefik ask Let's Encrypt for a certificate, and Let's Encrypt limits failed attempts per hostname. A host that fails waits; switch its DNS and run the same command again.
 

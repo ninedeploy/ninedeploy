@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ImportReceipt } from '../src/commands/importApply.js';
-import { type CutoverClient, cutover, type DnsLookup, type Expected, expectedAddresses, importCutoverAction, resolveHost } from '../src/commands/importCutover.js';
+import { type CutoverClient, canonicalIp, cutover, type DnsLookup, dnsLookup, dnsProblem, type Expected, expectedAddresses, importCutoverAction, resolveHost } from '../src/commands/importCutover.js';
 import type { ImportPlan, PlanDomain } from '../src/lib/importers/plan.js';
 
 const PANEL = 'https://panel.example';
@@ -53,11 +53,11 @@ function fakePanel(st: PanelState = {}) {
         const status = st.createStatus ?? 'active';
         const d = { id: 40 + domains.length, hostname: input.hostname, status };
         domains.push(d);
-        return { ...d, dnsWarning: null, verification: status === 'pending' ? { recordName: `_nd.${input.hostname}`, recordType: 'TXT', recordValue: 'proof' } : null } as never;
+        return { ...d, dnsWarning: null, verification: status === 'pending' ? { recordName: `_nd.${input.hostname}`, recordType: 'TXT', recordValue: 'TXT-SENTINEL-9' } : null } as never;
       }),
       verify: vi.fn(async (_s, id) => (st.verified
         ? { id, verified: true, verification: null, dnsWarning: null }
-        : { id, verified: false, error: 'no TXT', verification: { recordName: '_nd.x', recordType: 'TXT', recordValue: 'proof' } }) as never),
+        : { id, verified: false, error: 'no TXT', verification: { recordName: '_nd.x', recordType: 'TXT', recordValue: 'TXT-SENTINEL-9' } }) as never),
     },
     settings: {
       dnsRecords: {
@@ -86,6 +86,21 @@ describe('resolveHost', () => {
     const dns = fakeDns({});
     dns.resolve4 = vi.fn(async () => { throw Object.assign(new Error('timeout'), { code: 'ETIMEOUT' }); });
     await expect(resolveHost(dns, 'x.example')).rejects.toThrow('timeout');
+  });
+});
+
+describe('dnsProblem', () => {
+  it('passes only when every A and AAAA is this panel\'s', () => {
+    expect(dnsProblem([HERE], [HERE])).toBeNull();
+    expect(dnsProblem([HERE, '2001:DB8:0::1'], [HERE, '2001:db8::1'])).toBeNull();
+    expect(dnsProblem([], [HERE])).toBe('does not resolve');
+    expect(dnsProblem([HERE, '2001:db8::5'], [HERE])).toBe('AAAA 2001:db8::5 is not this panel (expected 203.0.113.7): remove it, or pass --expect with it if it is this panel\'s');
+    expect(dnsProblem([HERE, '198.51.100.1', '2001:db8::5'], [HERE])).toMatch(/^A 198\.51\.100\.1, AAAA 2001:db8::5 are not this panel .*remove them, or pass --expect with them if they are/);
+    expect(dnsProblem(['198.51.100.1'], [HERE])).toBe('resolves to A 198.51.100.1, not 203.0.113.7');
+  });
+  it('spells an IPv6 address one way', () => {
+    expect(canonicalIp('2001:DB8:0:0::1')).toBe('2001:db8::1');
+    expect(canonicalIp(HERE)).toBe(HERE);
   });
 });
 
@@ -124,8 +139,20 @@ describe('cutover', () => {
     const res = await result;
     expect(client.domains.create).not.toHaveBeenCalled();
     expect(res).toMatchObject({ added: 0, waiting: 1 });
-    expect(res.lines.join('\n')).toMatch(/old\.example: resolves to 198\.51\.100\.9, not 203\.0\.113\.7; switch DNS first/);
+    expect(res.lines.join('\n')).toMatch(/old\.example: resolves to A 198\.51\.100\.9, not 203\.0\.113\.7; fix DNS first/);
     expect(res.lines.join('\n')).not.toContain('sslip');
+  });
+
+  it('holds back a half-switched host whose leftover AAAA still names the source', async () => {
+    const client = fakePanel();
+    const res = await run(plan([{ host: 'shop.example.com', https: true }]), receipt(), client, fakeDns({ 'shop.example.com': [HERE, '2001:db8::5'] })).result;
+    expect(client.domains.create).not.toHaveBeenCalled();
+    expect(res.lines.join('\n')).toMatch(/AAAA 2001:db8::5 is not this panel/);
+  });
+
+  it('says when a --skip-dns-check host is not in the plan', async () => {
+    const res = await run(plan([{ host: 'shop.example.com', https: true }]), receipt(), fakePanel(), fakeDns({ 'shop.example.com': [HERE] }), false, ['shpo.example.com']).result;
+    expect(res.lines[0]).toBe('  ! --skip-dns-check shpo.example.com: no planned domain has that host');
   });
 
   it('waits for a running service with a successful last deploy, and never deploys', async () => {
@@ -156,8 +183,8 @@ describe('cutover', () => {
     const r = receipt();
     res = await run(plan([{ host: 'shop.example.com', https: true }]), r, client, fakeDns({ 'shop.example.com': [HERE] })).result;
     expect(client.domains.verify).toHaveBeenCalledWith(12, 7);
-    expect(res.lines.join('\n')).toContain('publish TXT _nd.x = proof');
-    expect(JSON.stringify(r)).not.toContain('proof');
+    expect(res.lines.join('\n')).toContain('publish TXT _nd.x = TXT-SENTINEL-9');
+    expect(JSON.stringify(r)).not.toContain('TXT-SENTINEL-9');
     client = fakePanel({ domains: pending, verified: true });
     res = await run(plan([{ host: 'shop.example.com', https: true }]), r, client, fakeDns({ 'shop.example.com': [HERE] })).result;
     expect(res.added).toBe(1);
@@ -168,9 +195,10 @@ describe('cutover', () => {
     const client = fakePanel({ createStatus: 'pending' });
     const r = receipt();
     const res = await run(plan([{ host: 'shop.example.com', https: true }]), r, client, fakeDns({ 'shop.example.com': [HERE] })).result;
-    expect(res.lines.join('\n')).toContain('publish TXT _nd.shop.example.com = proof');
+    expect(res.lines.join('\n')).toContain('publish TXT _nd.shop.example.com = TXT-SENTINEL-9');
+    expect(res).toMatchObject({ added: 0, waiting: 1 });
     expect(r.items['domain:web:shop.example.com']!.notes).toEqual(['ownership proof pending (TXT)']);
-    expect(JSON.stringify(r)).not.toContain('proof"');
+    expect(JSON.stringify(r)).not.toContain('TXT-SENTINEL-9');
   });
 
   it('allows --skip-dns-check only while the Cloudflare integration is known to be off', async () => {
@@ -214,9 +242,75 @@ describe('cutover', () => {
   });
 });
 
+describe('edges', () => {
+  it('builds a resolver on the server asked for', () => {
+    expect(dnsLookup('9.9.9.9').servers()).toEqual(['9.9.9.9']);
+    const d = dnsLookup();
+    expect(typeof d.resolve4).toBe('function');
+    expect(typeof d.resolve6).toBe('function');
+  });
+  it('passes on a settings error other than "not allowed", and on an expected name that does not resolve', async () => {
+    const client = fakePanel();
+    client.settings.dnsRecords.get = vi.fn(async () => { throw Object.assign(new Error('down'), { status: 502 }); });
+    await expect(expectedAddresses(client, fakeDns({}), [HERE])).rejects.toThrow('down');
+    await expect(expectedAddresses(fakePanel(), fakeDns({}), ['gone.example'])).rejects.toThrow('The expected address gone.example (--expect) does not resolve.');
+  });
+  it('checks a host listed twice once, records a failed verify and the DNS provider\'s warning', async () => {
+    let client = fakePanel({ domains: [{ id: 7, hostname: 'shop.example.com', status: 'pending' }] });
+    client.domains.verify = vi.fn(async () => { throw new Error('verify down'); });
+    let res = await run(plan([{ host: 'shop.example.com', https: true }, { host: 'SHOP.example.com.', https: true }]), receipt(), client, fakeDns({ 'shop.example.com': [HERE] })).result;
+    expect(client.domains.verify).toHaveBeenCalledOnce();
+    expect(res).toMatchObject({ failed: 1 });
+    expect(res.lines.join('\n')).toContain('verify failed: verify down');
+    client = fakePanel({ domains: [{ id: 7, hostname: 'shop.example.com', status: 'pending' }], verified: true });
+    client.domains.verify = vi.fn(async () => ({ id: 7, verified: true, verification: null, dnsWarning: 'zone not found' }) as never);
+    const r = receipt();
+    await run(plan([{ host: 'shop.example.com', https: true }]), r, client, fakeDns({ 'shop.example.com': [HERE] })).result;
+    expect(r.items['domain:web:shop.example.com']!.notes).toEqual(['DNS provider: zone not found']);
+    client = fakePanel();
+    const create = client.domains.create;
+    client.domains.create = vi.fn(async (id, input) => ({ ...(await create(id, input)), dnsWarning: 'No Cloudflare zone matches' }) as never);
+    const r2 = receipt();
+    res = await run(plan([{ host: 'shop.example.com', https: true }]), r2, client, fakeDns({ 'shop.example.com': [HERE] })).result;
+    expect(r2.items['domain:web:shop.example.com']!.notes).toEqual(['DNS provider: No Cloudflare zone matches']);
+  });
+});
+
 describe('importCutoverAction', () => {
   let dir: string;
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
+  it('previews, refuses a bad resolver and a missing receipt, and says what still waits', async () => {
+    dir = mkdtempSync(path.join(tmpdir(), 'nd-cutover-'));
+    const planPath = path.join(dir, 'plan.json');
+    writeFileSync(planPath, JSON.stringify(plan([{ host: 'shop.example.com', https: true }, { host: 'old.example', https: true }])));
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const err = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const client = fakePanel({ dnsSettings: { enabled: true, content: HERE } });
+    const dns = fakeDns({ 'shop.example.com': [HERE], 'old.example': ['198.51.100.9'] });
+    await importCutoverAction(planPath, {}, { client, panel: PANEL, dns });
+    expect(err.mock.calls.flat().join('')).toMatch(/No receipt at/);
+    writeFileSync(path.join(dir, 'plan.receipt.json'), JSON.stringify(receipt()));
+    await importCutoverAction(planPath, { resolver: 'dns.example' }, { client, panel: PANEL, dns });
+    expect(err.mock.calls.flat().join('')).toMatch(/--resolver takes an IP address/);
+    await importCutoverAction(planPath, {}, { client, panel: PANEL, dns });
+    let printed = log.mock.calls.flat().join('\n');
+    expect(printed).toMatch(/Cloudflare integration is on/);
+    expect(printed).toMatch(/Nothing was added/);
+    expect(client.domains.create).not.toHaveBeenCalled();
+    await importCutoverAction(planPath, { yes: true }, { client, panel: PANEL, dns });
+    printed = log.mock.calls.flat().join('\n');
+    expect(printed).toMatch(/1 added, 1 waiting/);
+    client.domains.list = vi.fn(async () => []);
+    client.domains.create = vi.fn(async () => { throw new Error('boom'); });
+    await importCutoverAction(planPath, { yes: true }, { client, panel: PANEL, dns });
+    expect(err.mock.calls.flat().join('')).toMatch(/1 domain\(s\) failed/);
+    writeFileSync(planPath, JSON.stringify(plan([{ host: 'x.1.2.3.4.sslip.io', https: true, sourceDefault: true }])));
+    await importCutoverAction(planPath, { yes: true }, { client, panel: PANEL, dns });
+    expect(log.mock.calls.flat().join('\n')).toMatch(/No domains to move/);
+    log.mockRestore();
+    err.mockRestore();
+    process.exitCode = undefined;
+  });
   it('refuses a receipt for another panel, and writes the receipt after adding', async () => {
     dir = mkdtempSync(path.join(tmpdir(), 'nd-cutover-'));
     const planPath = path.join(dir, 'plan.json');
