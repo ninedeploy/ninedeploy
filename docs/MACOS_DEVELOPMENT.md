@@ -973,3 +973,31 @@ This uses actual Fastify close hooks and Cron with a fake clock, controlled DB
 and engine seams, without sleeps. It does not cancel a dump or its remaining
 work already admitted before close. No real backup, native SQLite shutdown,
 physical Mac or full release certification is claimed; round73 remains open.
+
+Round 87 (F1108) fixes native SQLite ownership in autoscaler test fixtures.
+The existing library fixture discarded createDb's client; plugin tests closed
+Fastify without closing their separately owned DB client. A temporary observer
+found one actual client still open after each selected fixture completed, while
+a real explicitly closed control passed. Fixtures now retain handles, await
+readiness and close clients after each test. Plugin apps settle before client
+cleanup, including assertion/setup failures. Permanent file-level guards assert
+that every native client the fixture opened is closed.
+
+The original selected proof passed three scenario tests but failed two ownership
+hooks; after patch all three hooks/files passed. The full independent verifier
+passed three times: 47 tests and all 41 actual native clients closed per run
+(36 library, four plugin, one control). Its extra boundary checks passed 9,884
+weekly interval comparisons plus overlap, UTC midnight and invalid metric cases.
+No production scheduling/measurement defect was reproduced. Final neighboring
+scope passed 70 tests in five files; bounded typecheck/build, two-file lint and
+diff checks passed.
+
+```bash
+pnpm --dir apps/server exec vitest run test/lib/autoscaler.test.ts test/plugins/autoscaler.test.ts test/lib/autoscaleSchedule.test.ts test/autoscaleRoutes.test.ts test/autoscale-safety.test.ts --coverage=false
+```
+
+Only test fixtures changed; no live scaling, native Mac or full release claim.
+The first audit control closed before createDb.ready completed and caused its
+own CLIENT_CLOSED rejection; the corrected control awaits readiness and runs
+cleanly. This confirmed ownership leak is not proof of the cause or resolution
+of round73's native worker fault, which remains open.

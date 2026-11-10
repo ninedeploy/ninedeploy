@@ -1,0 +1,61 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+ ↓ apps/server/test/lib/autoscaler.test.ts > measure > cpu is the average per serving container, in percent of its limit or of one core
+stdout | apps/server/test/lib/autoscaler.test.ts > createAutoscaler
+EXPECTED unclosed owned native clients:0 ACTUAL: 0 opened 1
+PROBLEM NOT REPRODUCED
+
+ ✓ apps/server/test/lib/autoscaler.test.ts > measure > memory is the percent of the limit; a missing limit holds scaling 221ms
+ ↓ apps/server/test/lib/autoscaler.test.ts > measure > holds without stats, and rps needs traffic analytics
+ ↓ apps/server/test/lib/autoscaler.test.ts > requestRate > counts per service in ten-second buckets, leaves out the last bucket, and forgets after a day
+ ↓ apps/server/test/lib/autoscaler.test.ts > decide > scales up once the need has lasted the up window, to the smallest count asked for
+ ↓ apps/server/test/lib/autoscaler.test.ts > decide > scales down only after the down window, to the largest count asked for in it
+ ↓ apps/server/test/lib/autoscaler.test.ts > decide > a value back near the target, or a swing the other way, restarts the window
+ ↓ apps/server/test/lib/autoscaler.test.ts > decide > does not act when the window asks for the current count after all, and labels rps
+ ↓ apps/server/test/lib/autoscaler.test.ts > scaleService > up: starts and probes each spare, then routes them and audits
+ ↓ apps/server/test/lib/autoscaler.test.ts > scaleService > up: stops at a spare that fails its healthcheck, and says so
+ ↓ apps/server/test/lib/autoscaler.test.ts > scaleService > up: a spare that does not exist (autoscaling turned on since the deploy) leaves everything as it was
+ ↓ apps/server/test/lib/autoscaler.test.ts > scaleService > down: routes the containers away first, then stops them
+ ↓ apps/server/test/lib/autoscaler.test.ts > scaleService > down: a failed stop is logged; the containers are already unrouted
+ ↓ apps/server/test/lib/autoscaler.test.ts > scaleService > a deploy that replaced the runtime meanwhile wins: nothing is written or audited
+ ↓ apps/server/test/lib/autoscaler.test.ts > autoscaleStep > holds with the reason and touches nothing
+ ↓ apps/server/test/lib/autoscaler.test.ts > autoscaleStep > stops a spare that runs unrouted
+ ↓ apps/server/test/lib/autoscaler.test.ts > autoscaleStep > moves inside new bounds at once
+ ↓ apps/server/test/lib/autoscaler.test.ts > autoscaleStep > G5.6: raises to a scheduled floor while its window is in force, and names it
+ ↓ apps/server/test/lib/autoscaler.test.ts > autoscaleStep > G5.6: outside the window the floor does not hold capacity
+ ↓ apps/server/test/lib/autoscaler.test.ts > autoscaleStep > measures, waits the window, then scales; status shows what it saw
+ ↓ apps/server/test/lib/autoscaler.test.ts > autoscaleStep > starts a new decision window and confirms routing after a redeploy between ticks
+ ↓ apps/server/test/lib/autoscaler.test.ts > autoscaleStep > does not treat a long unobserved gap as sustained load
+ ↓ apps/server/test/lib/autoscaler.test.ts > autoscaleStep > does not scale on the same cached sample twice
+ ↓ apps/server/test/lib/autoscaler.test.ts > autoscaleStep > restarts the decision window when the collector sample timestamp moves backwards
+ ↓ apps/server/test/lib/autoscaler.test.ts > autoscaleStep > holds when the metric cannot be read
+ ↓ apps/server/test/lib/autoscaler.test.ts > holdReason, autoscaleOf, status > names each reason not to measure
+ ↓ apps/server/test/lib/autoscaler.test.ts > holdReason, autoscaleOf, status > reads a stored configuration, and none from an invalid one
+ ↓ apps/server/test/lib/autoscaler.test.ts > holdReason, autoscaleOf, status > lists the metrics each placement can act on
+ ↓ apps/server/test/lib/autoscaler.test.ts > createAutoscaler > dispatches node work separately and cancels it during shutdown
+ ↓ apps/server/test/lib/autoscaler.test.ts > createAutoscaler > releases a node service after a worker failure so a later tick can retry
+ ↓ apps/server/test/lib/autoscaler.test.ts > createAutoscaler > runs recovery even without configured autoscaling services
+ ↓ apps/server/test/lib/autoscaler.test.ts > createAutoscaler > cancels an in-flight recovery and waits for it before shutdown
+ ↓ apps/server/test/lib/autoscaler.test.ts > createAutoscaler > reports recovery failure while continuing the ordinary autoscaler tick
+ ↓ apps/server/test/lib/autoscaler.test.ts > createAutoscaler > looks at autoscaled services only, one step per service at a time
+ ↓ apps/server/test/lib/autoscaler.test.ts > createAutoscaler > does nothing without autoscaled services, and reports a failed load
+ ↓ apps/server/test/lib/autoscaler.test.ts > createAutoscaler > reports a failed step
+stdout | apps/server/test/plugins/autoscaler.test.ts
+EXPECTED unclosed owned native clients:0 ACTUAL: 0 opened 1
+PROBLEM NOT REPRODUCED
+
+ ✓ apps/server/test/plugins/autoscaler.test.ts > autoscaler plugin > dispatches node services to the node worker instead of the panel Docker path 258ms
+ ↓ apps/server/test/plugins/autoscaler.test.ts > autoscaler plugin > scales a busy service up after its window: starts and probes the spare, routes it, audits
+ ↓ apps/server/test/plugins/autoscaler.test.ts > autoscaler plugin > holds while a deploy is in progress, and without the collector
+ ↓ apps/server/test/plugins/autoscaler.test.ts > autoscaler plugin > a panel whose database predates migration 0088 looks at nothing
+stdout | .temp_files/audit_continuous_20261109/prove_F1108_nativeControl.test.ts
+EXPECTED unclosed owned native clients:0 ACTUAL: 0 opened 1
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1108_nativeControl.test.ts > native ownership control explicitly closes its actual client 7ms
+
+ Test Files  3 passed (3)
+      Tests  3 passed | 38 skipped (41)
+   Start at  13:32:39
+   Duration  2.90s (import 65%, tests 20%, transform 14%, setup 1%)

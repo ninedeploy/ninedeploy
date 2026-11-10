@@ -1,0 +1,2 @@
+native client.closed before: false
+native client.closed after: true

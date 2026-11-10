@@ -1,0 +1,1 @@
+import fs from 'node:fs';const p='.temp_files/audit_continuous_20261109/F1108.config.ts';let s=fs.readFileSync(p,'utf8');s=s.replace("'.temp_files/audit_continuous_20261109/prove_F1108_nativeControl.test.ts']", "'.temp_files/audit_continuous_20261109/prove_F1108_nativeControl.test.ts', '.temp_files/audit_continuous_20261109/F1108_boundaries.test.ts']");fs.writeFileSync(p,s);

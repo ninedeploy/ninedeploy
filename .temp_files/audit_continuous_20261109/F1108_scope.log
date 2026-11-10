@@ -1,0 +1,81 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/lib/autoscaler.test.ts > measure > cpu is the average per serving container, in percent of its limit or of one core 171ms
+ ✓ test/lib/autoscaler.test.ts > measure > memory is the percent of the limit; a missing limit holds scaling 170ms
+ ✓ test/lib/autoscaler.test.ts > measure > holds without stats, and rps needs traffic analytics 179ms
+ ✓ test/lib/autoscaler.test.ts > requestRate > counts per service in ten-second buckets, leaves out the last bucket, and forgets after a day 208ms
+ ✓ test/lib/autoscaler.test.ts > decide > scales up once the need has lasted the up window, to the smallest count asked for 167ms
+ ✓ test/lib/autoscaler.test.ts > decide > scales down only after the down window, to the largest count asked for in it 165ms
+ ✓ test/lib/autoscaler.test.ts > decide > a value back near the target, or a swing the other way, restarts the window 154ms
+ ✓ test/lib/autoscaler.test.ts > decide > does not act when the window asks for the current count after all, and labels rps 158ms
+ ✓ test/lib/autoscaler.test.ts > scaleService > up: starts and probes each spare, then routes them and audits 187ms
+ ✓ test/lib/autoscaler.test.ts > scaleService > up: stops at a spare that fails its healthcheck, and says so 199ms
+ ✓ test/lib/autoscaler.test.ts > scaleService > up: a spare that does not exist (autoscaling turned on since the deploy) leaves everything as it was 159ms
+ ✓ test/lib/autoscaler.test.ts > scaleService > down: routes the containers away first, then stops them 185ms
+ ✓ test/lib/autoscaler.test.ts > scaleService > down: a failed stop is logged; the containers are already unrouted 169ms
+ ✓ test/lib/autoscaler.test.ts > scaleService > a deploy that replaced the runtime meanwhile wins: nothing is written or audited 231ms
+ ✓ test/lib/autoscaler.test.ts > autoscaleStep > holds with the reason and touches nothing 235ms
+ ✓ test/lib/autoscaler.test.ts > autoscaleStep > stops a spare that runs unrouted 238ms
+ ✓ test/lib/autoscaler.test.ts > autoscaleStep > moves inside new bounds at once 238ms
+ ✓ test/lib/autoscaler.test.ts > autoscaleStep > G5.6: raises to a scheduled floor while its window is in force, and names it 250ms
+ ✓ test/lib/autoscaler.test.ts > autoscaleStep > G5.6: outside the window the floor does not hold capacity 225ms
+ ✓ test/lib/autoscaler.test.ts > autoscaleStep > measures, waits the window, then scales; status shows what it saw 244ms
+ ✓ test/lib/autoscaler.test.ts > autoscaleStep > starts a new decision window and confirms routing after a redeploy between ticks 222ms
+ ✓ test/lib/autoscaler.test.ts > autoscaleStep > does not treat a long unobserved gap as sustained load 219ms
+ ✓ test/lib/autoscaler.test.ts > autoscaleStep > does not scale on the same cached sample twice 237ms
+ ✓ test/lib/autoscaler.test.ts > autoscaleStep > restarts the decision window when the collector sample timestamp moves backwards 230ms
+ ✓ test/lib/autoscaler.test.ts > autoscaleStep > holds when the metric cannot be read 222ms
+ ✓ test/lib/autoscaler.test.ts > holdReason, autoscaleOf, status > names each reason not to measure 222ms
+ ✓ test/lib/autoscaler.test.ts > holdReason, autoscaleOf, status > reads a stored configuration, and none from an invalid one 217ms
+ ✓ test/lib/autoscaler.test.ts > holdReason, autoscaleOf, status > lists the metrics each placement can act on 225ms
+ ✓ test/lib/autoscaler.test.ts > createAutoscaler > dispatches node work separately and cancels it during shutdown 215ms
+ ✓ test/lib/autoscaler.test.ts > createAutoscaler > releases a node service after a worker failure so a later tick can retry 387ms
+ ✓ test/lib/autoscaler.test.ts > createAutoscaler > runs recovery even without configured autoscaling services 220ms
+ ✓ test/lib/autoscaler.test.ts > createAutoscaler > cancels an in-flight recovery and waits for it before shutdown 233ms
+ ✓ test/lib/autoscaler.test.ts > createAutoscaler > reports recovery failure while continuing the ordinary autoscaler tick 220ms
+ ✓ test/lib/autoscaler.test.ts > createAutoscaler > looks at autoscaled services only, one step per service at a time 331ms
+ ✓ test/lib/autoscaler.test.ts > createAutoscaler > does nothing without autoscaled services, and reports a failed load 237ms
+ ✓ test/lib/autoscaler.test.ts > createAutoscaler > reports a failed step 228ms
+ ✓ test/autoscale-safety.test.ts > autoscale safety boundaries > does not scale a service whose terminal deploy still has a retained primary transition 190ms
+ ✓ test/autoscale-safety.test.ts > autoscale safety boundaries > does not treat an incomplete serving-replica sample as the service load 163ms
+ ✓ test/autoscale-safety.test.ts > autoscale safety boundaries > holds CPU scaling for an unknown, stale or future sample timestamp: null 158ms
+ ✓ test/autoscale-safety.test.ts > autoscale safety boundaries > holds CPU scaling for an unknown, stale or future sample timestamp: -90001 173ms
+ ✓ test/autoscale-safety.test.ts > autoscale safety boundaries > holds CPU scaling for an unknown, stale or future sample timestamp: 1 153ms
+ ✓ test/autoscale-safety.test.ts > autoscale safety boundaries > holds CPU scaling for an unknown, stale or future sample timestamp: NaN 167ms
+ ✓ test/autoscale-safety.test.ts > autoscale safety boundaries > does not use invalid CPU measurements: NaN 162ms
+ ✓ test/autoscale-safety.test.ts > autoscale safety boundaries > does not use invalid CPU measurements: Infinity 174ms
+ ✓ test/autoscale-safety.test.ts > autoscale safety boundaries > does not use invalid CPU measurements: -1 183ms
+ ✓ test/autoscale-safety.test.ts > autoscale safety boundaries > requires a new continuous load window after an unreadable sample 203ms
+ ✓ test/autoscale-safety.test.ts > autoscale safety boundaries > restores the serving count and keeps containers running when routing cannot be acknowledged 181ms
+ ✓ test/autoscale-safety.test.ts > autoscale safety boundaries > does not publish a scale-up if a deployment starts while its readiness probe is pending 171ms
+ ✓ test/autoscale-safety.test.ts > autoscale safety boundaries > does not publish a scale-up after its configuration changes during readiness 169ms
+ ✓ test/autoscale-safety.test.ts > autoscale safety boundaries > does not publish a scale-up after its runtime changes during readiness 175ms
+ ✓ test/autoscale-safety.test.ts > autoscale safety boundaries > does not publish a scale-up after its controller generation changes during readiness 218ms
+ ✓ test/autoscale-safety.test.ts > autoscale safety boundaries > reconfirms routing before stopping a spare left by a failed scale-up 231ms
+ ✓ test/autoscale-safety.test.ts > autoscale safety boundaries > drains a pending scale operation on shutdown and prevents publication after close begins 350ms
+ ✓ test/autoscaleRoutes.test.ts > autoscale configuration and status > reports why node autoscaling is held to the authorized service owner 236ms
+ ✓ test/autoscaleRoutes.test.ts > autoscale configuration and status > reports node request rate as supported, and as unsupported instead of a pending evaluation or a zero when withdrawn 169ms
+ ✓ test/autoscaleRoutes.test.ts > autoscale configuration and status > is off by default; a PATCH stores it with its defaults and the status shows it 172ms
+ ✓ test/autoscaleRoutes.test.ts > autoscale configuration and status > a change starts the windows again 164ms
+ ✓ test/autoscaleRoutes.test.ts > autoscale configuration and status > refuses bad bounds and services that are not docker; hides the status from others 173ms
+ ✓ test/plugins/autoscaler.test.ts > autoscaler plugin > dispatches node services to the node worker instead of the panel Docker path 237ms
+ ✓ test/plugins/autoscaler.test.ts > autoscaler plugin > scales a busy service up after its window: starts and probes the spare, routes it, audits 199ms
+ ✓ test/plugins/autoscaler.test.ts > autoscaler plugin > holds while a deploy is in progress, and without the collector 403ms
+ ✓ test/plugins/autoscaler.test.ts > autoscaler plugin > a panel whose database predates migration 0088 looks at nothing 6ms
+ ✓ test/lib/autoscaleSchedule.test.ts > localTime > reads the weekday and minute in the time zone 12ms
+ ✓ test/lib/autoscaleSchedule.test.ts > windowActive > covers the start and stops at the end 0ms
+ ✓ test/lib/autoscaleSchedule.test.ts > windowActive > runs past midnight into the next day 0ms
+ ✓ test/lib/autoscaleSchedule.test.ts > effectiveMinimum > takes the highest floor in force, capped at the maximum 1ms
+ ✓ test/lib/autoscaleSchedule.test.ts > effectiveMinimum > keeps the configured minimum when it is higher 0ms
+ ✓ test/lib/autoscaleSchedule.test.ts > effectiveMinimum > describes a window for logs 0ms
+ ✓ test/lib/autoscaleSchedule.test.ts > the schema > refuses a bad time zone, an empty window, a floor above the maximum, and bad times 2ms
+ ✓ test/lib/autoscaleSchedule.test.ts > the schema > keeps a stored configuration without schedules as it was 0ms
+
+ Test Files  5 passed (5)
+      Tests  70 passed (70)
+   Start at  13:34:30
+   Duration  16.89s (tests 82%, import 15%, transform 3%)
+
+    Isolate  5 workers spawned · ~239ms startup each (spawn + environment, per file)
+             at least ~956ms faster with isolate: false — reuses workers across files instead of one per file

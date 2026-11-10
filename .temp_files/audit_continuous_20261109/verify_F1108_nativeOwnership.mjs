@@ -1,0 +1,1 @@
+import {spawnSync} from 'node:child_process';const r=spawnSync('cmd.exe',['/d','/s','/c','pnpm.cmd exec vitest run --config .temp_files/audit_continuous_20261109/F1108.config.ts --reporter=verbose'],{encoding:'utf8'});process.stdout.write((r.stdout??'')+(r.stderr??''));if(r.status!==0)process.exit(r.status??1);console.log('FIX VERIFIED');

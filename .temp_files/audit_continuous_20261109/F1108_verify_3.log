@@ -1,0 +1,79 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+ ✓ apps/server/test/lib/autoscaler.test.ts > measure > cpu is the average per serving container, in percent of its limit or of one core 191ms
+ ✓ apps/server/test/lib/autoscaler.test.ts > measure > memory is the percent of the limit; a missing limit holds scaling 182ms
+ ✓ apps/server/test/lib/autoscaler.test.ts > measure > holds without stats, and rps needs traffic analytics 172ms
+ ✓ apps/server/test/lib/autoscaler.test.ts > requestRate > counts per service in ten-second buckets, leaves out the last bucket, and forgets after a day 253ms
+ ✓ apps/server/test/lib/autoscaler.test.ts > decide > scales up once the need has lasted the up window, to the smallest count asked for 208ms
+ ✓ apps/server/test/lib/autoscaler.test.ts > decide > scales down only after the down window, to the largest count asked for in it 239ms
+ ✓ apps/server/test/lib/autoscaler.test.ts > decide > a value back near the target, or a swing the other way, restarts the window 187ms
+ ✓ apps/server/test/lib/autoscaler.test.ts > decide > does not act when the window asks for the current count after all, and labels rps 171ms
+ ✓ apps/server/test/lib/autoscaler.test.ts > scaleService > up: starts and probes each spare, then routes them and audits 178ms
+ ✓ apps/server/test/lib/autoscaler.test.ts > scaleService > up: stops at a spare that fails its healthcheck, and says so 185ms
+ ✓ apps/server/test/lib/autoscaler.test.ts > scaleService > up: a spare that does not exist (autoscaling turned on since the deploy) leaves everything as it was 158ms
+ ✓ apps/server/test/lib/autoscaler.test.ts > scaleService > down: routes the containers away first, then stops them 217ms
+ ✓ apps/server/test/lib/autoscaler.test.ts > scaleService > down: a failed stop is logged; the containers are already unrouted 252ms
+ ✓ apps/server/test/lib/autoscaler.test.ts > scaleService > a deploy that replaced the runtime meanwhile wins: nothing is written or audited 232ms
+ ✓ apps/server/test/lib/autoscaler.test.ts > autoscaleStep > holds with the reason and touches nothing 232ms
+ ✓ apps/server/test/lib/autoscaler.test.ts > autoscaleStep > stops a spare that runs unrouted 226ms
+ ✓ apps/server/test/lib/autoscaler.test.ts > autoscaleStep > moves inside new bounds at once 214ms
+ ✓ apps/server/test/lib/autoscaler.test.ts > autoscaleStep > G5.6: raises to a scheduled floor while its window is in force, and names it 251ms
+ ✓ apps/server/test/lib/autoscaler.test.ts > autoscaleStep > G5.6: outside the window the floor does not hold capacity 243ms
+ ✓ apps/server/test/lib/autoscaler.test.ts > autoscaleStep > measures, waits the window, then scales; status shows what it saw 254ms
+ ✓ apps/server/test/lib/autoscaler.test.ts > autoscaleStep > starts a new decision window and confirms routing after a redeploy between ticks 240ms
+ ✓ apps/server/test/lib/autoscaler.test.ts > autoscaleStep > does not treat a long unobserved gap as sustained load 230ms
+ ✓ apps/server/test/lib/autoscaler.test.ts > autoscaleStep > does not scale on the same cached sample twice 225ms
+ ✓ apps/server/test/lib/autoscaler.test.ts > autoscaleStep > restarts the decision window when the collector sample timestamp moves backwards 230ms
+ ✓ apps/server/test/lib/autoscaler.test.ts > autoscaleStep > holds when the metric cannot be read 219ms
+ ✓ apps/server/test/lib/autoscaler.test.ts > holdReason, autoscaleOf, status > names each reason not to measure 235ms
+ ✓ apps/server/test/lib/autoscaler.test.ts > holdReason, autoscaleOf, status > reads a stored configuration, and none from an invalid one 235ms
+ ✓ apps/server/test/lib/autoscaler.test.ts > holdReason, autoscaleOf, status > lists the metrics each placement can act on 230ms
+ ✓ apps/server/test/lib/autoscaler.test.ts > createAutoscaler > dispatches node work separately and cancels it during shutdown 240ms
+ ✓ apps/server/test/lib/autoscaler.test.ts > createAutoscaler > releases a node service after a worker failure so a later tick can retry 356ms
+ ✓ apps/server/test/lib/autoscaler.test.ts > createAutoscaler > runs recovery even without configured autoscaling services 215ms
+ ✓ apps/server/test/lib/autoscaler.test.ts > createAutoscaler > cancels an in-flight recovery and waits for it before shutdown 211ms
+ ✓ apps/server/test/lib/autoscaler.test.ts > createAutoscaler > reports recovery failure while continuing the ordinary autoscaler tick 241ms
+ ✓ apps/server/test/lib/autoscaler.test.ts > createAutoscaler > looks at autoscaled services only, one step per service at a time 345ms
+ ✓ apps/server/test/lib/autoscaler.test.ts > createAutoscaler > does nothing without autoscaled services, and reports a failed load 227ms
+stdout | apps/server/test/lib/autoscaler.test.ts
+EXPECTED unclosed owned native clients:0 ACTUAL: 0 opened 36
+PROBLEM NOT REPRODUCED
+
+ ✓ apps/server/test/lib/autoscaler.test.ts > createAutoscaler > reports a failed step 211ms
+ ✓ apps/server/test/plugins/autoscaler.test.ts > autoscaler plugin > dispatches node services to the node worker instead of the panel Docker path 240ms
+ ✓ apps/server/test/plugins/autoscaler.test.ts > autoscaler plugin > scales a busy service up after its window: starts and probes the spare, routes it, audits 188ms
+stdout | apps/server/test/plugins/autoscaler.test.ts
+EXPECTED unclosed owned native clients:0 ACTUAL: 0 opened 4
+PROBLEM NOT REPRODUCED
+
+ ✓ apps/server/test/plugins/autoscaler.test.ts > autoscaler plugin > holds while a deploy is in progress, and without the collector 434ms
+ ✓ apps/server/test/plugins/autoscaler.test.ts > autoscaler plugin > a panel whose database predates migration 0088 looks at nothing 3ms
+stdout | .temp_files/audit_continuous_20261109/F1108_boundaries.test.ts > weekly interval oracle agrees at midnight, wraparound and half-open edges
+independent weekly comparisons 9884
+
+stdout | .temp_files/audit_continuous_20261109/F1108_boundaries.test.ts
+EXPECTED unclosed owned native clients:0 ACTUAL: 0 opened 0
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/F1108_boundaries.test.ts > weekly interval oracle agrees at midnight, wraparound and half-open edges 30ms
+ ✓ .temp_files/audit_continuous_20261109/F1108_boundaries.test.ts > UTC midnight uses the native UTC day and minute 11ms
+ ✓ .temp_files/audit_continuous_20261109/F1108_boundaries.test.ts > floor overlap uses the highest active floor and preserves the baseline 2ms
+ ✓ .temp_files/audit_continuous_20261109/F1108_boundaries.test.ts > invalid CPU samples hold instead of driving a replica decision 0ms
+ ✓ .temp_files/audit_continuous_20261109/F1108_boundaries.test.ts > invalid memory samples or limits hold 0ms
+ ✓ .temp_files/audit_continuous_20261109/F1108_boundaries.test.ts > fresh valid samples measure and missing replicas hold 0ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1108_nativeControl.test.ts
+EXPECTED unclosed owned native clients:0 ACTUAL: 0 opened 1
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1108_nativeControl.test.ts > native ownership control explicitly closes its actual client 7ms
+
+ Test Files  4 passed (4)
+      Tests  47 passed (47)
+   Start at  13:34:17
+   Duration  12.08s (tests 82%, import 15%, transform 2%)
+
+    Isolate  4 workers spawned · ~264ms startup each (spawn + environment, per file)
+             at least ~791ms faster with isolate: false — reuses workers across files instead of one per file
+
+FIX VERIFIED

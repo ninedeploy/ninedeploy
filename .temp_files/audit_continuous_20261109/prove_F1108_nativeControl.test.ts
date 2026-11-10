@@ -1,0 +1,1 @@
+import {expect,it} from 'vitest';import {createDb} from '@ninedeploy/db';it('native ownership control explicitly closes its actual client',async()=>{const {client,ready}=createDb({url:':memory:'});await ready;try{expect((await client!.execute('select 1')).rows).toHaveLength(1);}finally{client!.close();}expect(client!.closed).toBe(true);});

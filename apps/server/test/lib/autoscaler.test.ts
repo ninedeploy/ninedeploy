@@ -1,5 +1,5 @@
 import { fileURLToPath } from 'node:url';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDb, type DB, runMigrations, type Service, services, users } from '@ninedeploy/db';
 import { autoscaleConfig } from '@ninedeploy/schemas';
 import { eq } from 'drizzle-orm';
@@ -28,10 +28,15 @@ import type { ContainerStat } from '../../src/lib/stats.js';
  */
 
 let db: DB;
+let nativeHandle: ReturnType<typeof createDb> | undefined;
+const ownedClients: Array<NonNullable<ReturnType<typeof createDb>['client']>> = [];
 const cfg = autoscaleConfig.parse({ minReplicas: 1, maxReplicas: 4, target: 50, scaleUpSeconds: 60, scaleDownSeconds: 300 });
 
 beforeEach(async () => {
-  ({ db } = createDb({ url: ':memory:' }));
+  nativeHandle = createDb({ url: ':memory:' });
+  ({ db } = nativeHandle);
+  if (nativeHandle.client) ownedClients.push(nativeHandle.client);
+  await nativeHandle.ready;
   await runMigrations(db, fileURLToPath(new URL('../../../../packages/db/src/migrations', import.meta.url)));
   await db.insert(users).values({ id: 1, email: 'op@example.com', passwordHash: 'x', isInstanceOperator: true });
   await db.insert(services).values({
@@ -50,7 +55,12 @@ beforeEach(async () => {
   resetAutoscaleState();
   resetRequestRates();
 });
-afterEach(() => vi.useRealTimers());
+afterEach(async () => {
+  vi.useRealTimers();
+  try { await nativeHandle?.ready; }
+  finally { nativeHandle?.client?.close(); nativeHandle = undefined; }
+});
+afterAll(() => expect(ownedClients.filter(client => !client.closed).length).toBe(0));
 
 const row = async (): Promise<Service> => (await db.query.services.findFirst({ where: (s, { eq }) => eq(s.id, 5) }))!;
 const stat = (name: string, cpuPct: number, memBytes = 100, memLimitBytes = 1000): ContainerStat => ({ name, cpuPct, memBytes, memLimitBytes });

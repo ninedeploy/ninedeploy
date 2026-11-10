@@ -1,6 +1,6 @@
 import { fileURLToPath } from 'node:url';
-import Fastify from 'fastify';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import Fastify, { type FastifyInstance } from 'fastify';
+import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 import { createDb, deployments, runMigrations, servers, services, users } from '@ninedeploy/db';
 
 /**
@@ -28,13 +28,31 @@ vi.mock('../../src/lib/nodeAutoscaleWorker.js', () => ({ createNodeAutoscaleWork
 const { default: autoscalerPlugin } = await import('../../src/plugins/autoscaler.js');
 const { resetAutoscaleState } = await import('../../src/lib/autoscaler.js');
 
-afterEach(() => {
-  vi.useRealTimers();
-  resetAutoscaleState();
+const fixtureApps = new Set<FastifyInstance>();
+const fixtureHandles = new Set<ReturnType<typeof createDb>>();
+const ownedClients: Array<NonNullable<ReturnType<typeof createDb>['client']>> = [];
+afterEach(async () => {
+  const closed = await Promise.allSettled([...fixtureApps].map(app => app.close()));
+  fixtureApps.clear();
+  try {
+    for (const handle of fixtureHandles) {
+      try { await handle.ready; }
+      finally { handle.client?.close(); }
+    }
+  } finally {
+    fixtureHandles.clear(); vi.useRealTimers(); resetAutoscaleState();
+  }
+  const failed = closed.find(result => result.status === 'rejected');
+  if (failed?.status === 'rejected') throw failed.reason;
 });
+afterAll(() => expect(ownedClients.filter(client => !client.closed).length).toBe(0));
 
 async function boot(opts: { stats?: boolean; deploying?: boolean } = {}) {
-  const { db } = createDb({ url: ':memory:' });
+  const handle = createDb({ url: ':memory:' });
+  fixtureHandles.add(handle);
+  if (handle.client) ownedClients.push(handle.client);
+  await handle.ready;
+  const { db } = handle;
   await runMigrations(db, fileURLToPath(new URL('../../../../packages/db/src/migrations', import.meta.url)));
   await db.insert(users).values({ id: 1, email: 'op@example.com', passwordHash: 'x', isInstanceOperator: true });
   await db.insert(services).values({
@@ -54,6 +72,7 @@ async function boot(opts: { stats?: boolean; deploying?: boolean } = {}) {
   } as never);
   if (opts.deploying) await db.insert(deployments).values({ serviceId: 5, status: 'building' });
   const app = Fastify();
+  fixtureApps.add(app);
   app.decorate('db', db);
   if (opts.stats !== false) {
     app.decorate('stats', { raw: () => ({ containers: new Map([['web-9', { name: 'web-9', cpuPct: 150, memBytes: 1, memLimitBytes: 2 }]]), host: null, sampledAt: Date.now() }) });

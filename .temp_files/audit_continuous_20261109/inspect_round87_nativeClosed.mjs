@@ -1,0 +1,1 @@
+import {createDb} from '../../packages/db/dist/index.js';const handle=createDb({url:':memory:'});await handle.ready;console.log('native client.closed before:',handle.client?.closed);await handle.client.execute('select 1');handle.client.close();console.log('native client.closed after:',handle.client.closed);
