@@ -63,7 +63,15 @@ No panel or credential is contacted. Cold/prebuilt/offline-reinstall fixtures,
 MCP's full 52-test coverage gate and actual npm-layout packing passed locally.
 The package was packed for inspection, not published.
 
-Fresh MCP native Mac follow-up: pending the new workflow run.
+Fresh MCP native Mac checkpoint: [run 42819090055](https://github.com/ninedeploy/ninedeploy/actions/runs/42819090055)
+passed at `e20be68c60bb53e9737fc40612e8a31bc4d71ab0` on macOS 26.7.2 arm64 with
+Node 26.12.1/pnpm 11.23.0. The real workspace launcher resolved, all three cold
+install/reinstall cases passed, and the 307-unit/20-native-CLI groups passed
+again: 330 tests across 29 files. The install log no longer reports the MCP bin
+creation warning. See the [receipt](../.temp_files/audit_continuous_20261109/round90_receipt.json)
+for exact identity and original/normalized diagnostic hashes. This is native
+workspace-launcher evidence, not npm publication, full release, physical Mac or
+SSH native-acceleration acceptance.
 
 ## Open the same source revision
 
