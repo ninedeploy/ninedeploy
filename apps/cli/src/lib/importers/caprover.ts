@@ -99,6 +99,8 @@ function appItem(app: Obj, rootDomain: string): PlanService | null {
     ref: name, name, kind, create, domains,
     env: list(app['envVars']).map((e) => str(e['key'])).filter((k): k is string => !!k).map((key) => ({ key })),
     volumes, issues,
+    // The Swarm service, as for one-click databases (srv-captain-- only for isLegacyAppName apps).
+    runtime: { kind: 'swarm-service', name: app['isLegacyAppName'] === true ? `srv-captain--${name}` : name },
   };
 }
 

@@ -62,6 +62,11 @@ export interface PlanService {
   env: Array<{ key: string }>;
   volumes: Array<{ mountPath: string; source: 'volume' | 'bind' | 'file'; name?: string }>;
   issues: PlanIssue[];
+  /**
+   * Where it runs on the source host, for the volume command of `import
+   * data` (same shape as PlanDatabase.runtime). Optional and additive.
+   */
+  runtime?: { kind: 'container' | 'swarm-service'; name: string };
 }
 
 export type PlanEngine = 'postgres' | 'mysql' | 'mariadb' | 'mongo' | 'redis' | 'keydb' | 'dragonfly' | 'clickhouse';

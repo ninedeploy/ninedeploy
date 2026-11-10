@@ -5,6 +5,12 @@ import {
   pruneOrphanStaging,
   recoverInterruptedImports,
 } from '../lib/databaseImport.js';
+import {
+  expireStaleVolumeImports,
+  pruneFinishedVolumeImports,
+  pruneOrphanVolumeStaging,
+  recoverInterruptedVolumeImports,
+} from '../lib/volumeImport.js';
 
 const HOUR_MS = 60 * 60 * 1000;
 
@@ -17,6 +23,9 @@ const HOUR_MS = 60 * 60 * 1000;
  *    owns are deleted, and finished rows older than 90 days are pruned — the
  *    table's retention, on the audit log's window, so it never grows without
  *    bound (housekeeping.ts sweeps the other event tables the same way).
+ *
+ * Service volume imports (A1, lib/volumeImport.ts) get the same recovery,
+ * expiry, orphan-staging and retention steps.
  *
  * Every step is isolated and never blocks startup.
  */
@@ -40,6 +49,9 @@ export default fp(
       await step('expire-stale', () => expireStaleImports(fastify.db, now));
       await step('orphan-staging', () => pruneOrphanStaging(fastify.db, undefined, now));
       await step('retention', () => pruneFinishedImports(fastify.db, now));
+      await step('volume-expire-stale', () => expireStaleVolumeImports(fastify.db, now));
+      await step('volume-orphan-staging', () => pruneOrphanVolumeStaging(fastify.db, undefined, now));
+      await step('volume-retention', () => pruneFinishedVolumeImports(fastify.db, now));
     };
     const tick = async () => {
       try {
@@ -60,6 +72,7 @@ export default fp(
     // Nothing this process started can be running yet: every `running` row is
     // the previous process's.
     await step('recover-interrupted', () => recoverInterruptedImports(fastify.db));
+    await step('volume-recover-interrupted', () => recoverInterruptedVolumeImports(fastify.db));
     await sweep();
     timer = setTimeout(() => void tick(), interval);
     timer.unref();

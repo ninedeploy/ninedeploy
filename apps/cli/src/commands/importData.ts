@@ -24,9 +24,10 @@ import { loadConfig } from '../config.js';
 import { c, error, header, info, success } from '../lib/format.js';
 import type { ImportPlan, PlanDatabase, PlanEngine, SourceKind } from '../lib/importers/plan.js';
 import { type ImportReceipt, renderReceipt, validatePlan, writeReceipt } from './importApply.js';
+import { importVolumes, renderVolumePreview, type VolumeClient } from './importVolumes.js';
 
 /** The panel calls `import data` makes; NineDeployClient satisfies it. */
-export interface DataClient {
+export interface DataClient extends VolumeClient {
   databases: {
     importFile: NineDeployClient['databases']['importFile'];
     imports: {
@@ -139,7 +140,7 @@ export function renderDataPreview(plan: ImportPlan, receipt: ImportReceipt | nul
     out.push(`      then: --dump ${db.name}=${cmd.file}`);
   }
   if (!SOURCE_CHECKED_LIVE[plan.source.kind]) out.push('', `The ${plan.source.kind} commands follow its source code and have not been run against a live instance yet.`);
-  out.push('', 'Volumes are not moved by this command. Copy their files from the source host, then upload them in the service\'s Volumes & Storage tab.');
+  out.push(...renderVolumePreview(plan, receipt));
   return out.join('\n');
 }
 
@@ -242,6 +243,7 @@ async function hashFile(file: string): Promise<{ sha256: string; bytes: number }
 export interface ImportDataOpts {
   receipt?: string;
   dump?: string[];
+  volume?: string[];
   yes?: boolean;
 }
 
@@ -253,24 +255,32 @@ export async function importDataAction(planPath: string, opts: ImportDataOpts, d
     const receipt = JSON.parse(readFileSync(receiptPath, 'utf8')) as ImportReceipt;
     const panel = (deps.panel ?? loadConfig().baseUrl).replace(/\/+$/, '');
     if (receipt.panel !== panel) throw new Error(`The receipt is for ${receipt.panel}, but the CLI is signed in to ${panel}.`);
-    const dumps: Record<string, string> = {};
-    for (const spec of opts.dump ?? []) {
-      const eq = spec.indexOf('=');
-      if (eq <= 0 || eq === spec.length - 1) throw new Error(`--dump takes <database>=<file>, got "${spec}".`);
-      dumps[spec.slice(0, eq)] = spec.slice(eq + 1);
-    }
+    const pairs = (flag: string, what: string, specs: string[] = []) => {
+      const out: Record<string, string> = {};
+      for (const spec of specs) {
+        const eq = spec.indexOf('=');
+        if (eq <= 0 || eq === spec.length - 1) throw new Error(`--${flag} takes <${what}>=<file>, got "${spec}".`);
+        out[spec.slice(0, eq)] = spec.slice(eq + 1);
+      }
+      return out;
+    };
+    const dumps = pairs('dump', 'database', opts.dump);
+    const archives = pairs('volume', 'service', opts.volume);
     header(`Data into ${panel}`);
-    if (!opts.yes || Object.keys(dumps).length === 0) {
+    if (!opts.yes || Object.keys(dumps).length + Object.keys(archives).length === 0) {
       console.log(renderDataPreview(plan, receipt));
-      info(`${c.dim('Nothing was imported.')} Pass --dump <database>=<file> with --yes to import.`);
+      info(`${c.dim('Nothing was imported.')} Pass --dump <database>=<file> or --volume <service>=<file> with --yes to import.`);
       return;
     }
-    await importData(plan, dumps, {
-      client: deps.client ?? getClient(), receipt, save: (r) => writeReceipt(receiptPath, r), hashFile,
-      open: (file) => (offset) => createReadStream(file, { start: offset }),
-    });
-    const items = Object.values(receipt.items).filter((i) => i.kind === 'data');
-    console.log(renderReceipt({ ...receipt, items: Object.fromEntries(items.map((i) => [`data:${i.ref}`, i])) }));
+    const client = deps.client ?? getClient();
+    const common = {
+      client, receipt, save: (r: ImportReceipt) => writeReceipt(receiptPath, r), hashFile,
+      open: (file: string) => (offset: number) => createReadStream(file, { start: offset }),
+    };
+    await importData(plan, dumps, common);
+    await importVolumes(plan, archives, common);
+    const items = Object.values(receipt.items).filter((i) => i.kind === 'data' || i.kind === 'volume');
+    console.log(renderReceipt({ ...receipt, items: Object.fromEntries(items.map((i) => [`${i.kind}:${i.ref}`, i])) }));
     const failed = items.filter((i) => i.state === 'failed').length;
     if (failed) error(`${failed} import(s) failed. Fix the cause and run the same command again. Receipt: ${receiptPath}`);
     else success(`Done. Receipt: ${receiptPath}. Next: deploy and check each service, switch DNS, then run import cutover.`);

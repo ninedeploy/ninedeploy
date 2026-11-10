@@ -1295,6 +1295,7 @@ export const databaseImportStatus = [
   'expired',
 ] as const;
 export const databaseImportFormat = ['pg_custom', 'pg_plain', 'mysql_sql', 'mongo_archive', 'rdb'] as const;
+export const volumeImportStatus = ['uploading', 'pending', 'running', 'completed', 'failed', 'cancelled', 'expired'] as const;
 // G3.2 added gcp, azure, onepassword and exec; the column is plain text (no CHECK), so no migration.
 export const secretProviderKind = ['vault', 'aws', 'gcp', 'azure', 'onepassword', 'exec'] as const;
 
@@ -1395,6 +1396,40 @@ export const databaseImports = sqliteTable(
   (t) => ({
     dbCreatedIdx: index('database_imports_db_created_idx').on(t.databaseId, t.createdAt),
     statusIdx: index('database_imports_status_idx').on(t.status),
+  }),
+);
+
+// A1 step 3: one row per volume import — a gzipped tar uploaded in chunks and
+// restored into a service's data volume. Boot recovery fails `running` rows
+// and expires stale `uploading` / `pending` ones, as for database imports.
+export const volumeImports = sqliteTable(
+  'volume_imports',
+  {
+    id: id(),
+    serviceId: integer('service_id')
+      .notNull()
+      .references(() => services.id, { onDelete: 'cascade' }),
+    /** The volume resolved at create (`nd-svc-<slug>-data`); never client-named. */
+    volumeName: text('volume_name').notNull(),
+    status: text('status', { enum: volumeImportStatus }).notNull().default('uploading'),
+    sizeBytes: integer('size_bytes').notNull().default(0),
+    receivedBytes: integer('received_bytes').notNull().default(0),
+    chunkSize: integer('chunk_size').notNull().default(0),
+    sha256: text('sha256').notNull(),
+    filename: text('filename'),
+    /** Server-chosen `<backupsDir>/volume-imports/<id>.part`. */
+    stagingPath: text('staging_path'),
+    safetyBackupId: integer('safety_backup_id').references(() => backups.id, { onDelete: 'set null' }),
+    error: text('error'),
+    createdByUserId: integer('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: ts('created_at'),
+    updatedAt: tsUpdatable('updated_at'),
+    startedAt: integer('started_at', { mode: 'timestamp' }),
+    completedAt: integer('completed_at', { mode: 'timestamp' }),
+  },
+  (t) => ({
+    serviceCreatedIdx: index('volume_imports_service_created_idx').on(t.serviceId, t.createdAt),
+    statusIdx: index('volume_imports_status_idx').on(t.status),
   }),
 );
 

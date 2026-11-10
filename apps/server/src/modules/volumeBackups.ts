@@ -50,7 +50,7 @@ function newBackupFile(volumeName: string, label?: string): { file: string; dir:
  * running" — here that let a restore swap files under a live service. A
  * failed probe refuses the restore (503) instead.
  */
-async function runningForRestore(container: string): Promise<boolean> {
+export async function runningForRestore(container: string): Promise<boolean> {
   let out: string;
   try {
     out = await capture('docker', ['ps', '--filter', `name=^${container}$`, '-q']);

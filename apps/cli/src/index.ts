@@ -720,9 +720,10 @@ importCmd
   .command('data <plan>')
   .description('Move database contents into the databases import apply created. Without --yes it prints the cutover order and the dump command to run on the source host for each database.')
   .option('--dump <database=file>', 'A dump to import into that database (repeatable); its sha256 is checked by the panel', (v: string, prev: string[]) => [...prev, v], [] as string[])
-  .option('--yes', 'Import the dumps')
+  .option('--volume <service=file>', 'A gzipped tar of that service\'s data volume (repeatable); restored after a snapshot of what is there', (v: string, prev: string[]) => [...prev, v], [] as string[])
+  .option('--yes', 'Import the dumps and archives')
   .option('--receipt <file>', 'Receipt file (default: <plan>.receipt.json)')
-  .action((plan: string, opts: { dump?: string[]; yes?: boolean; receipt?: string }) => importDataAction(plan, opts));
+  .action((plan: string, opts: { dump?: string[]; volume?: string[]; yes?: boolean; receipt?: string }) => importDataAction(plan, opts));
 importCmd
   .command('cutover <plan>')
   .description('Add the planned domains once each service runs a successful deploy and the hostname\'s DNS already points at this panel. Without --yes it only reports what is ready.')

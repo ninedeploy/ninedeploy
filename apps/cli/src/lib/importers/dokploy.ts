@@ -105,7 +105,12 @@ async function applicationItem(get: SourceGet, id: string): Promise<PlanService>
   const volumes = volumesOf(app['mounts']);
   const mount = firstVolumeMount(volumes, issues);
   if (mount) create.volumeMount = mount;
-  return { ref: id, name, kind, create, domains: domains.map(({ host, https }) => planDomain(host, https)), env: envNames(str(app['env'])), volumes, issues };
+  const appName = str(app['appName']);
+  return {
+    ref: id, name, kind, create, domains: domains.map(({ host, https }) => planDomain(host, https)), env: envNames(str(app['env'])), volumes, issues,
+    // Dokploy runs an application as a Swarm service named after its appName.
+    ...(appName ? { runtime: { kind: 'swarm-service' as const, name: appName } } : {}),
+  };
 }
 
 async function composeItem(get: SourceGet, id: string): Promise<PlanService> {

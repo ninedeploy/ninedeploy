@@ -6,6 +6,7 @@ import {
   backupReplicasInput,
   createDatabase,
   databaseImportCreate,
+  volumeImportCreate,
   publicAccessPut,
   setLimits,
 } from '@ninedeploy/schemas';
@@ -301,6 +302,41 @@ export const databasesSpecs: RouteSpecMap = {
     summary: 'Run an uploaded dump import',
     tag: 'databases',
     floor: 'admin',
+  },
+  'GET /v1/services/:id/volume-imports': {
+    summary: "List a service's volume imports",
+    tag: 'services',
+    floor: 'operator',
+  },
+  'POST /v1/services/:id/volume-imports': {
+    summary: "Start a volume import into the service's data volume (a gzipped tar, uploaded in chunks)",
+    tag: 'services',
+    description: 'Docker services on the panel host with a volume mount only. The sha256 is required and checked before the volume is touched.',
+    floor: 'operator',
+    body: volumeImportCreate,
+    validation: 'zod',
+  },
+  'GET /v1/services/:id/volume-imports/:importId': {
+    summary: 'Get a volume import',
+    tag: 'services',
+    floor: 'operator',
+  },
+  'DELETE /v1/services/:id/volume-imports/:importId': {
+    summary: 'Cancel a volume import',
+    tag: 'services',
+    floor: 'operator',
+  },
+  'PUT /v1/services/:id/volume-imports/:importId/chunks/:index': {
+    summary: 'Upload one chunk of a volume archive (octet-stream)',
+    tag: 'services',
+    description: 'The request body is the raw chunk (application/octet-stream), not JSON.',
+    floor: 'operator',
+  },
+  'POST /v1/services/:id/volume-imports/:importId/start': {
+    summary: 'Restore an uploaded archive into the service data volume',
+    tag: 'services',
+    description: 'Refused while the service runs or deploys. A volume that exists is snapshotted first (a pre-import volume backup).',
+    floor: 'operator',
   },
   'GET /v1/backups': {
     summary: 'Every backup the caller can see',

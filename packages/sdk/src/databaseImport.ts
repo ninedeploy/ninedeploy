@@ -5,6 +5,8 @@ import type {
   DatabaseImport,
   DatabaseImportCreate,
   DatabaseImportOptions,
+  VolumeImport,
+  VolumeImportCreate,
 } from '@ninedeploy/schemas';
 import { NineDeployError } from './errors.js';
 import type { Transport } from './transport.js';
@@ -18,8 +20,11 @@ export const DATABASE_IMPORT_FINISHED_STATUSES: ReadonlyArray<DatabaseImport['st
   'expired',
 ];
 
-/** 0.14: `databases.imports.wait` polling options. */
-export interface ImportWaitOptions {
+/** A1: a volume import that no longer changes (`VolumeImport['status']`). */
+export const VOLUME_IMPORT_FINISHED_STATUSES: ReadonlyArray<VolumeImport['status']> = ['completed', 'failed', 'cancelled', 'expired'];
+
+/** 0.14: `databases.imports.wait` (and A1 `volumeImports.wait`) polling options. */
+export interface ImportWaitOptions<Row = DatabaseImport> {
   /**
    * `finished` (default) waits for a final status; `uploaded` returns as soon
    * as the import leaves `uploading` (an S3 download landing in `pending`).
@@ -30,7 +35,7 @@ export interface ImportWaitOptions {
   /** Give up after this long (default: never). Throws `import_wait_timeout`. */
   timeoutMs?: number;
   /** Called with every polled row. */
-  onStatus?: (row: DatabaseImport) => void;
+  onStatus?: (row: Row) => void;
 }
 
 /**
@@ -58,6 +63,22 @@ export interface ImportFileOptions {
   onCreated?: (row: DatabaseImport) => void;
   /** Called after every accepted chunk. */
   onProgress?: (progress: { receivedBytes: number; sizeBytes: number; row: DatabaseImport }) => void;
+}
+
+/**
+ * A1: `volumeImports.importFile` options: a gzipped tar of a volume's
+ * contents, restored into a service's data volume. The sha256 is required
+ * (the server checks it before the volume is touched) unless resuming.
+ */
+export interface VolumeImportFileOptions {
+  sizeBytes?: number;
+  filename?: string;
+  sha256?: string;
+  resumeImportId?: number;
+  start?: boolean;
+  poll?: boolean | Omit<ImportWaitOptions<VolumeImport>, 'until'>;
+  onCreated?: (row: VolumeImport) => void;
+  onProgress?: (progress: { receivedBytes: number; sizeBytes: number; row: VolumeImport }) => void;
 }
 
 /** 0.14: the import bytes from `offset` on (a factory seeks; the rest skip). */
@@ -102,29 +123,51 @@ async function* rechunk(source: AsyncIterable<Uint8Array>, size: number): AsyncI
   if (len > 0) yield buf.subarray(0, len);
 }
 
-/** Chunked dump-import helpers bound to one transport (used by `databases`). */
-export function createImportHelpers(t: Transport) {
+interface UploadRow {
+  id: number;
+  status: string;
+  sizeBytes: number;
+  receivedBytes: number;
+  chunkSize: number;
+}
+interface UploadFileOptions<Row> {
+  sizeBytes?: number;
+  resumeImportId?: number;
+  start?: boolean;
+  poll?: boolean | Omit<ImportWaitOptions<Row>, 'until'>;
+  onCreated?: (row: Row) => void;
+  onProgress?: (progress: { receivedBytes: number; sizeBytes: number; row: Row }) => void;
+}
+
+/**
+ * The chunked, resumable upload shared by dump imports and volume imports:
+ * create (or resume) a row under `base(id)`, send ordered chunks of the
+ * size the server advertised, start, and optionally poll to a final status.
+ */
+function chunkedUploads<Row extends UploadRow, Opts extends UploadFileOptions<Row>>(
+  t: Transport,
+  cfg: { base: (id: number) => string; createBody: (sizeBytes: number, opts: Opts) => unknown; finished: ReadonlyArray<string> },
+) {
   const { get, send, request } = t;
-  // ── 0.14 dump import helpers ─────────────────────────────────────────────
-  const importPath = (id: number, importId?: number) => `/v1/databases/${id}/imports${importId === undefined ? '' : `/${importId}`}`;
-  const getImport = (id: number, importId: number) => get<DatabaseImport>(importPath(id, importId));
+  const importPath = (id: number, importId?: number) => `${cfg.base(id)}${importId === undefined ? '' : `/${importId}`}`;
+  const getImport = (id: number, importId: number) => get<Row>(importPath(id, importId));
   /** An 8 MiB chunk over a slow uplink outlasts the default 30 s budget. */
   const CHUNK_TIMEOUT_MS = 10 * 60_000;
   const uploadChunk = (id: number, importId: number, index: number, chunk: Uint8Array) =>
-    request<DatabaseImport>(`${importPath(id, importId)}/chunks/${index}`, { method: 'PUT', raw: chunk }, CHUNK_TIMEOUT_MS);
-  const startImport = (id: number, importId: number) => send<DatabaseImport>('POST', `${importPath(id, importId)}/start`);
+    request<Row>(`${importPath(id, importId)}/chunks/${index}`, { method: 'PUT', raw: chunk }, CHUNK_TIMEOUT_MS);
+  const startImport = (id: number, importId: number) => send<Row>('POST', `${importPath(id, importId)}/start`);
   const sleep = (ms: number) =>
     new Promise<void>((resolve) => {
       (globalThis as unknown as { setTimeout: (fn: () => void, ms: number) => unknown }).setTimeout(resolve, ms);
     });
 
-  async function waitForImport(id: number, importId: number, o: ImportWaitOptions = {}): Promise<DatabaseImport> {
+  async function waitForImport(id: number, importId: number, o: ImportWaitOptions<Row> = {}): Promise<Row> {
     const interval = o.intervalMs ?? 2000;
     const deadline = o.timeoutMs === undefined ? Number.POSITIVE_INFINITY : Date.now() + o.timeoutMs;
     for (;;) {
       const row = await getImport(id, importId);
       o.onStatus?.(row);
-      const done = o.until === 'uploaded' ? row.status !== 'uploading' : DATABASE_IMPORT_FINISHED_STATUSES.includes(row.status);
+      const done = o.until === 'uploaded' ? row.status !== 'uploading' : cfg.finished.includes(row.status);
       if (done) return row;
       if (Date.now() + interval > deadline) {
         throw new NineDeployError(0, 'import_wait_timeout', `Import ${importId} is still ${row.status}`);
@@ -133,18 +176,14 @@ export function createImportHelpers(t: Transport) {
     }
   }
 
-  async function importFile(id: number, data: ImportFileData, opts: ImportFileOptions = {}): Promise<DatabaseImport> {
+  async function importFile(id: number, data: ImportFileData, opts: Opts = {} as Opts): Promise<Row> {
     const declared = data instanceof Uint8Array ? data.length : opts.sizeBytes;
-    let row: DatabaseImport;
+    let row: Row;
     if (opts.resumeImportId !== undefined) {
       row = await getImport(id, opts.resumeImportId);
     } else {
       if (declared === undefined) throw new NineDeployError(0, 'import_size_required', 'sizeBytes is required for a streamed import');
-      const input: DatabaseImportCreate = { source: 'upload', sizeBytes: declared };
-      if (opts.sha256 !== undefined) input.sha256 = opts.sha256;
-      if (opts.filename !== undefined) input.filename = opts.filename;
-      if (opts.options !== undefined) input.options = opts.options;
-      row = await send<DatabaseImport>('POST', importPath(id), input);
+      row = await send<Row>('POST', importPath(id), cfg.createBody(declared, opts));
       opts.onCreated?.(row);
     }
     const size = row.sizeBytes;
@@ -171,4 +210,33 @@ export function createImportHelpers(t: Transport) {
   }
 
   return { importPath, getImport, uploadChunk, startImport, waitForImport, importFile };
+}
+
+/** Chunked dump-import helpers bound to one transport (used by `databases`). */
+export function createImportHelpers(t: Transport) {
+  return chunkedUploads<DatabaseImport, ImportFileOptions>(t, {
+    base: (id) => `/v1/databases/${id}/imports`,
+    createBody: (sizeBytes, opts) => {
+      const input: DatabaseImportCreate = { source: 'upload', sizeBytes };
+      if (opts.sha256 !== undefined) input.sha256 = opts.sha256;
+      if (opts.filename !== undefined) input.filename = opts.filename;
+      if (opts.options !== undefined) input.options = opts.options;
+      return input;
+    },
+    finished: DATABASE_IMPORT_FINISHED_STATUSES,
+  });
+}
+
+/** A1: chunked volume-import helpers (`/v1/services/:id/volume-imports`). */
+export function createVolumeImportHelpers(t: Transport) {
+  return chunkedUploads<VolumeImport, VolumeImportFileOptions>(t, {
+    base: (id) => `/v1/services/${id}/volume-imports`,
+    createBody: (sizeBytes, opts) => {
+      if (opts.sha256 === undefined) throw new NineDeployError(0, 'import_sha256_required', "A volume import needs the archive's sha256");
+      const input: VolumeImportCreate = { sizeBytes, sha256: opts.sha256 };
+      if (opts.filename !== undefined) input.filename = opts.filename;
+      return input;
+    },
+    finished: VOLUME_IMPORT_FINISHED_STATUSES,
+  });
 }

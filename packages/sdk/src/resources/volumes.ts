@@ -9,7 +9,9 @@ import type {
   VolumeFileWriteInput,
   VolumePathCreateInput,
   VolumeCreateInput,
+  VolumeImport,
 } from '@ninedeploy/schemas';
+import { createVolumeImportHelpers, type ImportFileData, type ImportWaitOptions, type VolumeImportFileOptions } from '../databaseImport.js';
 import { apiGetUrl } from '../apiPath.js';
 import type { VolumeListEntry, VolumeCreateResult, ContainerInspectData, ContainerComposeData } from '../types.js';
 import type { Transport } from '../transport.js';
@@ -78,10 +80,28 @@ export interface VolumesApi {
       input: { filePath: string; attachmentId?: number; volumeName?: string },
     ) => Promise<{ ok: boolean; deploymentId: number }>;
   };
+  /**
+   * A1: restore a gzipped tar of another host's volume into a service's data
+   * volume (`nd-svc-<slug>-data`). Operator only; docker services on the
+   * panel host with a volume mount. Uploads in ordered chunks with the
+   * archive's sha256; `start` is refused while the service runs, and a volume
+   * that exists is snapshotted first (a `pre-import` volume backup). A panel
+   * older than this feature answers 404.
+   */
+  volumeImports: {
+    list: (serviceId: number) => Promise<VolumeImport[]>;
+    get: (serviceId: number, importId: number) => Promise<VolumeImport>;
+    cancel: (serviceId: number, importId: number) => Promise<VolumeImport>;
+    start: (serviceId: number, importId: number) => Promise<VolumeImport>;
+    wait: (serviceId: number, importId: number, options?: ImportWaitOptions<VolumeImport>) => Promise<VolumeImport>;
+    /** Create (or resume), upload, start and optionally poll, like `databases.importFile`. */
+    importFile: (serviceId: number, data: ImportFileData, options?: VolumeImportFileOptions) => Promise<VolumeImport>;
+  };
 }
 
 export function volumesApi(t: Transport): VolumesApi {
   const { get, send, request } = t;
+  const vi = createVolumeImportHelpers(t);
   const volumePath = (name: string, suffix: string, options?: { serverId?: number }) => {
     const id = options?.serverId;
     if (id != null && (!Number.isSafeInteger(id) || id < 1)) throw new TypeError('Invalid volume node id');
@@ -147,6 +167,14 @@ export function volumesApi(t: Transport): VolumesApi {
       },
       repairConfig: (serviceId, input) =>
         send<{ ok: boolean; deploymentId: number }>('POST', `/v1/services/${serviceId}/volumes/config-repair`, input),
+    },
+    volumeImports: {
+      list: (serviceId) => get<VolumeImport[]>(vi.importPath(serviceId)),
+      get: vi.getImport,
+      cancel: (serviceId, importId) => send<VolumeImport>('DELETE', vi.importPath(serviceId, importId)),
+      start: vi.startImport,
+      wait: vi.waitForImport,
+      importFile: vi.importFile,
     },
   };
 }

@@ -35,6 +35,11 @@ function fakePanel(status: string = 'completed') {
         wait: vi.fn(async (_id, importId) => ({ id: importId, status }) as never),
       },
     },
+    volumeImports: {
+      importFile: vi.fn(async () => ({ id: 77, status: 'running' }) as never),
+      get: vi.fn(async () => ({ id: 77, status: 'running' }) as never),
+      wait: vi.fn(async () => ({ id: 77, status: 'completed', volumeName: 'nd-svc-x-data', safetyBackupId: null }) as never),
+    },
   };
   return { client, calls };
 }

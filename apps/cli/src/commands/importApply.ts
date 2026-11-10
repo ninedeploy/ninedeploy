@@ -52,13 +52,13 @@ export interface ApplyClient {
 
 export type ReceiptState = 'pending' | 'done' | 'skipped' | 'failed';
 export interface ReceiptItem {
-  kind: 'service' | 'database' | 'env' | 'data' | 'domain' | 'attach';
+  kind: 'service' | 'database' | 'env' | 'data' | 'domain' | 'attach' | 'volume';
   ref: string;
   name: string;
   state: ReceiptState;
   /** The NineDeploy id (the service's for an env item, the database's for a data item, the domain's for a domain item). */
   id?: number;
-  /** Data items (`import data`): the panel's import id, and the dump's sha256 and size. */
+  /** Data and volume items (`import data`): the panel's import id, and the file's sha256 and size. */
   importId?: number;
   sha256?: string;
   bytes?: number;
@@ -331,8 +331,8 @@ const MARK: Record<ReceiptState, string> = { done: '✓', skipped: '–', failed
 export function renderReceipt(receipt: ImportReceipt): string {
   const out: string[] = [];
   for (const item of Object.values(receipt.items)) {
-    const id = item.id !== undefined && item.kind !== 'env' && item.kind !== 'data' ? ` #${item.id}` : '';
-    const label = item.kind === 'env' ? `env of ${item.name}` : item.kind === 'data' ? `data of ${item.name}` : `${item.kind} ${item.name}`;
+    const id = item.id !== undefined && item.kind !== 'env' && item.kind !== 'data' && item.kind !== 'volume' ? ` #${item.id}` : '';
+    const label = item.kind === 'env' ? `env of ${item.name}` : item.kind === 'data' ? `data of ${item.name}` : item.kind === 'volume' ? `volume of ${item.name}` : `${item.kind} ${item.name}`;
     out.push(`  ${MARK[item.state]} ${label}${id}: ${item.state}`);
     for (const n of item.notes) out.push(`      ${n}`);
   }

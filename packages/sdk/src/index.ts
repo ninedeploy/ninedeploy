@@ -76,12 +76,14 @@ export type {
 
 export {
   DATABASE_IMPORT_FINISHED_STATUSES,
+  VOLUME_IMPORT_FINISHED_STATUSES,
 } from './databaseImport.js';
 
 export type {
   ImportWaitOptions,
   ImportFileData,
   ImportFileOptions,
+  VolumeImportFileOptions,
 } from './databaseImport.js';
 
 export type {

@@ -24,6 +24,7 @@ export * from './githubApp.js';
 export * from './publicAccess.js';
 export * from './proxyConfig.js';
 export * from './databaseImport.js';
+export * from './volumeImport.js';
 export * from './secretProviders.js';
 export * from './terminals.js';
 export * from './traffic.js';
