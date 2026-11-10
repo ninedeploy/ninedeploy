@@ -1,0 +1,21 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1089_importAdmission.test.ts > mysql: winning refusal still fails and cleans its own upload 300ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1089_importAdmission.test.ts > mysql: older refusal loses to admitted start without touching its staging 193ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1089_importAdmission.test.ts > mysql: older refusal loses to cancellation without a second failure receipt 173ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1089_importAdmission.test.ts > mariadb: winning refusal still fails and cleans its own upload 255ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1089_importAdmission.test.ts > mariadb: older refusal loses to admitted start without touching its staging 182ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1089_importAdmission.test.ts > mariadb: older refusal loses to cancellation without a second failure receipt 172ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1089_importAdmission.test.ts > four competing allowed starts retain one admitted worker 175ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1089_importAdmission.test.ts > SQL refusal-write failure preserves pending input and emits no success-shaped failure audit 178ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1089_importAdmission.test.ts > another database import can finish refusal while this one waits 182ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1089_importAdmission.test.ts
+FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1089_importAdmission.test.ts > another creator remains forbidden before probing or touching files 162ms
+
+ Test Files  1 passed (1)
+      Tests  10 passed (10)
+   Start at  02:18:28
+   Duration  2.87s (tests 71%, import 21%, transform 8%)

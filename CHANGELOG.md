@@ -36,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A stale database-import refusal now returns a conflict without deleting staging owned by an admitted worker or emitting a false failure audit (F1089).
 - CLI database import retries reconcile known server jobs, resume interrupted uploads and avoid restarting completed restores after lost responses; recorded job IDs cannot be rebound to a different dump (F1088).
 - Bare :memory: SQLite transactions no longer borrow a nonexistent replacement connection; commit, rollback and foreign-key enforcement match file::memory: (F1087).
 - Failed reset-link replacement rolls back deletion and preserves the previously delivered token on precommit failure (F1086).

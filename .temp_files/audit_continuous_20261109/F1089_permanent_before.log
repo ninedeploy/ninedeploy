@@ -1,0 +1,55 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/modules/databaseImportAdmissionRace.test.ts > mysql: winning refusal still fails and cleans its own upload 271ms
+ × test/modules/databaseImportAdmissionRace.test.ts > mysql: older refusal loses to admitted start without touching its staging 203ms
+   → expected 422 to be 409 // Object.is equality
+ × test/modules/databaseImportAdmissionRace.test.ts > mysql: older refusal loses to cancellation without a second failure receipt 195ms
+   → expected 422 to be 409 // Object.is equality
+ ✓ test/modules/databaseImportAdmissionRace.test.ts > mariadb: winning refusal still fails and cleans its own upload 172ms
+ × test/modules/databaseImportAdmissionRace.test.ts > mariadb: older refusal loses to admitted start without touching its staging 193ms
+   → expected 422 to be 409 // Object.is equality
+ × test/modules/databaseImportAdmissionRace.test.ts > mariadb: older refusal loses to cancellation without a second failure receipt 196ms
+   → expected 422 to be 409 // Object.is equality
+ ✓ test/modules/databaseImportAdmissionRace.test.ts > four competing allowed starts retain one admitted worker 192ms
+ ✓ test/modules/databaseImportAdmissionRace.test.ts > SQL refusal-write failure preserves pending input and emits no success-shaped failure audit 183ms
+ ✓ test/modules/databaseImportAdmissionRace.test.ts > another database import can finish refusal while this one waits 226ms
+ ✓ test/modules/databaseImportAdmissionRace.test.ts > another creator remains forbidden before probing or touching files 192ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/modules/databaseImportAdmissionRace.test.ts > mysql: older refusal loses to admitted start without touching its staging
+ FAIL  test/modules/databaseImportAdmissionRace.test.ts > mariadb: older refusal loses to admitted start without touching its staging
+AssertionError: expected 422 to be 409 // Object.is equality
+
+- Expected
++ Received
+
+- 409
++ 422
+
+ ❯ test/modules/databaseImportAdmissionRace.test.ts:47:173
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  test/modules/databaseImportAdmissionRace.test.ts > mysql: older refusal loses to cancellation without a second failure receipt
+ FAIL  test/modules/databaseImportAdmissionRace.test.ts > mariadb: older refusal loses to cancellation without a second failure receipt
+AssertionError: expected 422 to be 409 // Object.is equality
+
+- Expected
++ Received
+
+- 409
++ 422
+
+ ❯ test/modules/databaseImportAdmissionRace.test.ts:51:254
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  4 failed | 6 passed (10)
+   Start at  02:19:40
+   Duration  3.01s (tests 70%, import 19%, transform 10%)

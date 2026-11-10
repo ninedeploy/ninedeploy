@@ -251,10 +251,12 @@ export const databaseImportRoutes: FastifyPluginAsync<DatabaseImportRouteOptions
 
     // A refusal inherent to the file is final: the row fails and the file goes.
     const refuse = async (message: string): Promise<never> => {
-      await app.db
+      const [refused] = await app.db
         .update(databaseImports)
         .set({ status: 'failed', error: message, completedAt: new Date(), stagingPath: null })
-        .where(and(eq(databaseImports.id, row.id), eq(databaseImports.status, 'pending')));
+        .where(and(eq(databaseImports.id, row.id), eq(databaseImports.status, 'pending')))
+        .returning({ id: databaseImports.id });
+      if (!refused) throw conflict('The import was started or cancelled by another request');
       await removeStaging(row.stagingPath);
       void audit(app.db, req.user!.id, 'database.import.fail', d.name, { ...importAuditMeta(row), error: message });
       throw unprocessable(message, 'import_refused');

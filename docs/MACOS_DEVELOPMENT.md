@@ -651,3 +651,12 @@ configured floors. Resource-bound CLI typecheck/build and scoped lint passed.
 Receipt serialization and a target-data marker model were tested; no real process
 restart, power loss, live database loss/restore or native Mac acceptance was claimed.
 A create response lost before an import id is received remains outside recovery.
+
+Round 70 (F1089) protects an admitted database-import worker's staging file from
+an older start refusal. Cleanup/failure audit now require winning the conditional
+pending-to-failed transition; a loser gets conflict409, while ordinary refusal
+keeps422. Ten permanent native route/SQLite/file cases were seen red (four races,
+six controls), then 134 neighboring import/job/wiring tests passed. Ten independent
+MySQL/MariaDB start/cancel/SQL-error/creator controls passed three times with
+explicit gates. No live restore/data loss, auth bypass, multi-process or native
+Mac acceptance was claimed.

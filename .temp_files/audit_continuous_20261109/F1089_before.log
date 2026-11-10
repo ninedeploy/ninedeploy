@@ -1,0 +1,41 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1089_importAdmission.test.ts > control: ordinary narrow refusal owns failure and removes its own input 591ms
+ ✓ .temp_files/audit_continuous_20261109/prove_F1089_importAdmission.test.ts > control: competing allowed starts dispatch one worker and preserve its file 190ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1089_importAdmission.test.ts > a stale refusing start cannot remove staging owned by an admitted worker
+EXPECTED: stale refusal409/running/file kept/one job/no failure audit; ACTUAL: { response: 422, status: 'running', file: false, jobs: 1, failures: 1 }
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/prove_F1089_importAdmission.test.ts > a stale refusing start cannot remove staging owned by an admitted worker 250ms
+   → expected { response: 422, …(4) } to deeply equal { response: 409, …(4) }
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1089_importAdmission.test.ts > a stale refusing start cannot remove staging owned by an admitted worker
+AssertionError: expected { response: 422, …(4) } to deeply equal { response: 409, …(4) }
+
+- Expected
++ Received
+
+  {
+-   "failures": 0,
+-   "file": true,
++   "failures": 1,
++   "file": false,
+    "jobs": 1,
+-   "response": 409,
++   "response": 422,
+    "status": "running",
+  }
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1089_importAdmission.test.ts:48:223
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 2 passed (3)
+   Start at  02:15:05
+   Duration  2.65s (tests 41%, import 35%, transform 24%)
