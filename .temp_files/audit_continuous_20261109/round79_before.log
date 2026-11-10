@@ -1,0 +1,317 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1097_imageRepository.test.ts > rejects native-invalid repository ghcr.io/acme/../../outside:v1 before probing
+EXPECTED null/no probe ACTUAL: {
+  parsed: { registry: 'ghcr.io', repository: 'acme/../../outside', tag: 'v1' },
+  urls: [ 'https://ghcr.io/outside/manifests/v1' ]
+}
+PROBLEM CONFIRMED
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1097_imageRepository.test.ts > rejects native-invalid repository ghcr.io/acme//app:v1 before probing
+EXPECTED null/no probe ACTUAL: {
+  parsed: { registry: 'ghcr.io', repository: 'acme//app', tag: 'v1' },
+  urls: [ 'https://ghcr.io/v2/acme//app/manifests/v1' ]
+}
+PROBLEM CONFIRMED
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1097_imageRepository.test.ts > rejects native-invalid repository ghcr.io/./app:v1 before probing
+EXPECTED null/no probe ACTUAL: {
+  parsed: { registry: 'ghcr.io', repository: './app', tag: 'v1' },
+  urls: [ 'https://ghcr.io/v2/app/manifests/v1' ]
+}
+PROBLEM CONFIRMED
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1097_imageRepository.test.ts > rejects native-invalid repository ghcr.io/-app:v1 before probing
+EXPECTED null/no probe ACTUAL: {
+  parsed: { registry: 'ghcr.io', repository: '-app', tag: 'v1' },
+  urls: [ 'https://ghcr.io/v2/-app/manifests/v1' ]
+}
+PROBLEM CONFIRMED
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1097_imageRepository.test.ts > rejects native-invalid repository ghcr.io/.app:v1 before probing
+EXPECTED null/no probe ACTUAL: {
+  parsed: { registry: 'ghcr.io', repository: '.app', tag: 'v1' },
+  urls: [ 'https://ghcr.io/v2/.app/manifests/v1' ]
+}
+PROBLEM CONFIRMED
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1097_imageRepository.test.ts > rejects native-invalid repository ghcr.io/app_:v1 before probing
+EXPECTED null/no probe ACTUAL: {
+  parsed: { registry: 'ghcr.io', repository: 'app_', tag: 'v1' },
+  urls: [ 'https://ghcr.io/v2/app_/manifests/v1' ]
+}
+PROBLEM CONFIRMED
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1097_imageRepository.test.ts > rejects native-invalid repository ghcr.io/a___b:v1 before probing
+EXPECTED null/no probe ACTUAL: {
+  parsed: { registry: 'ghcr.io', repository: 'a___b', tag: 'v1' },
+  urls: [ 'https://ghcr.io/v2/a___b/manifests/v1' ]
+}
+PROBLEM CONFIRMED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1097_imageRepository.test.ts > control: accepted separator combinations probe an exact v2 manifest 16ms
+ × .temp_files/audit_continuous_20261109/prove_F1097_imageRepository.test.ts > rejects native-invalid repository ghcr.io/acme/../../outside:v1 before probing 3ms
+   → expected { registry: 'ghcr.io', …(2) } to be null
+ × .temp_files/audit_continuous_20261109/prove_F1097_imageRepository.test.ts > rejects native-invalid repository ghcr.io/acme//app:v1 before probing 1ms
+   → expected { registry: 'ghcr.io', …(2) } to be null
+ × .temp_files/audit_continuous_20261109/prove_F1097_imageRepository.test.ts > rejects native-invalid repository ghcr.io/./app:v1 before probing 1ms
+   → expected { registry: 'ghcr.io', …(2) } to be null
+ × .temp_files/audit_continuous_20261109/prove_F1097_imageRepository.test.ts > rejects native-invalid repository ghcr.io/-app:v1 before probing 1ms
+   → expected { registry: 'ghcr.io', …(2) } to be null
+ × .temp_files/audit_continuous_20261109/prove_F1097_imageRepository.test.ts > rejects native-invalid repository ghcr.io/.app:v1 before probing 1ms
+   → expected { registry: 'ghcr.io', …(2) } to be null
+ × .temp_files/audit_continuous_20261109/prove_F1097_imageRepository.test.ts > rejects native-invalid repository ghcr.io/app_:v1 before probing 0ms
+   → expected { registry: 'ghcr.io', …(2) } to be null
+ × .temp_files/audit_continuous_20261109/prove_F1097_imageRepository.test.ts > rejects native-invalid repository ghcr.io/a___b:v1 before probing 1ms
+   → expected { registry: 'ghcr.io', …(2) } to be null
+stdout | .temp_files/audit_continuous_20261109/prove_F1098_imageTag.test.ts > rejects native-invalid tag length2 prefix..
+EXPECTED null/no probe ACTUAL: {
+  parsed: { registry: 'ghcr.io', repository: 'acme/web', tag: '..' },
+  urls: [ 'https://ghcr.io/v2/acme/web/' ]
+}
+PROBLEM CONFIRMED
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1098_imageTag.test.ts > rejects native-invalid tag length4 prefix-bad
+EXPECTED null/no probe ACTUAL: {
+  parsed: { registry: 'ghcr.io', repository: 'acme/web', tag: '-bad' },
+  urls: [ 'https://ghcr.io/v2/acme/web/manifests/-bad' ]
+}
+PROBLEM CONFIRMED
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1098_imageTag.test.ts > rejects native-invalid tag length4 prefix.bad
+EXPECTED null/no probe ACTUAL: {
+  parsed: { registry: 'ghcr.io', repository: 'acme/web', tag: '.bad' },
+  urls: [ 'https://ghcr.io/v2/acme/web/manifests/.bad' ]
+}
+PROBLEM CONFIRMED
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1098_imageTag.test.ts > rejects native-invalid tag length129 prefixaaaa
+EXPECTED null/no probe ACTUAL: {
+  parsed: {
+    registry: 'ghcr.io',
+    repository: 'acme/web',
+    tag: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+  },
+  urls: [
+    'https://ghcr.io/v2/acme/web/manifests/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+  ]
+}
+PROBLEM CONFIRMED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1098_imageTag.test.ts > control: native-valid tag length6 16ms
+ ✓ .temp_files/audit_continuous_20261109/prove_F1098_imageTag.test.ts > control: native-valid tag length128 1ms
+ × .temp_files/audit_continuous_20261109/prove_F1098_imageTag.test.ts > rejects native-invalid tag length2 prefix.. 3ms
+   → expected { registry: 'ghcr.io', …(2) } to be null
+ × .temp_files/audit_continuous_20261109/prove_F1098_imageTag.test.ts > rejects native-invalid tag length4 prefix-bad 1ms
+   → expected { registry: 'ghcr.io', …(2) } to be null
+ × .temp_files/audit_continuous_20261109/prove_F1098_imageTag.test.ts > rejects native-invalid tag length4 prefix.bad 1ms
+   → expected { registry: 'ghcr.io', …(2) } to be null
+ × .temp_files/audit_continuous_20261109/prove_F1098_imageTag.test.ts > rejects native-invalid tag length129 prefixaaaa 1ms
+   → expected { registry: 'ghcr.io', …(2) } to be null
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 11 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1097_imageRepository.test.ts > rejects native-invalid repository ghcr.io/acme/../../outside:v1 before probing
+AssertionError: expected { registry: 'ghcr.io', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "ghcr.io",
+  "repository": "acme/../../outside",
+  "tag": "v1",
+}
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1097_imageRepository.test.ts:3:460
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/11]⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1097_imageRepository.test.ts > rejects native-invalid repository ghcr.io/acme//app:v1 before probing
+AssertionError: expected { registry: 'ghcr.io', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "ghcr.io",
+  "repository": "acme//app",
+  "tag": "v1",
+}
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1097_imageRepository.test.ts:3:460
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/11]⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1097_imageRepository.test.ts > rejects native-invalid repository ghcr.io/./app:v1 before probing
+AssertionError: expected { registry: 'ghcr.io', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "ghcr.io",
+  "repository": "./app",
+  "tag": "v1",
+}
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1097_imageRepository.test.ts:3:460
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/11]⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1097_imageRepository.test.ts > rejects native-invalid repository ghcr.io/-app:v1 before probing
+AssertionError: expected { registry: 'ghcr.io', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "ghcr.io",
+  "repository": "-app",
+  "tag": "v1",
+}
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1097_imageRepository.test.ts:3:460
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/11]⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1097_imageRepository.test.ts > rejects native-invalid repository ghcr.io/.app:v1 before probing
+AssertionError: expected { registry: 'ghcr.io', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "ghcr.io",
+  "repository": ".app",
+  "tag": "v1",
+}
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1097_imageRepository.test.ts:3:460
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/11]⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1097_imageRepository.test.ts > rejects native-invalid repository ghcr.io/app_:v1 before probing
+AssertionError: expected { registry: 'ghcr.io', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "ghcr.io",
+  "repository": "app_",
+  "tag": "v1",
+}
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1097_imageRepository.test.ts:3:460
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/11]⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1097_imageRepository.test.ts > rejects native-invalid repository ghcr.io/a___b:v1 before probing
+AssertionError: expected { registry: 'ghcr.io', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "ghcr.io",
+  "repository": "a___b",
+  "tag": "v1",
+}
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1097_imageRepository.test.ts:3:460
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/11]⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1098_imageTag.test.ts > rejects native-invalid tag length2 prefix..
+AssertionError: expected { registry: 'ghcr.io', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "ghcr.io",
+  "repository": "acme/web",
+  "tag": "..",
+}
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1098_imageTag.test.ts:3:379
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/11]⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1098_imageTag.test.ts > rejects native-invalid tag length4 prefix-bad
+AssertionError: expected { registry: 'ghcr.io', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "ghcr.io",
+  "repository": "acme/web",
+  "tag": "-bad",
+}
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1098_imageTag.test.ts:3:379
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/11]⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1098_imageTag.test.ts > rejects native-invalid tag length4 prefix.bad
+AssertionError: expected { registry: 'ghcr.io', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "ghcr.io",
+  "repository": "acme/web",
+  "tag": ".bad",
+}
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1098_imageTag.test.ts:3:379
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/11]⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1098_imageTag.test.ts > rejects native-invalid tag length129 prefixaaaa
+AssertionError: expected { registry: 'ghcr.io', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "ghcr.io",
+  "repository": "acme/web",
+  "tag": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+}
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1098_imageTag.test.ts:3:379
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[11/11]⎯
+
+
+ Test Files  2 failed (2)
+      Tests  11 failed | 3 passed (14)
+   Start at  11:20:19
+   Duration  646ms (import 61%, transform 25%, tests 12%, worker 2%)

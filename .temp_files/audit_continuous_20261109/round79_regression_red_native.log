@@ -1,0 +1,284 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/integration/imageReferenceValidation.test.ts > watch parser matches native CLI acceptance for ghcr.io/acme/app__one--two.v3:v1_2.3-4 680ms
+ × test/integration/imageReferenceValidation.test.ts > watch parser matches native CLI acceptance for ghcr.io/acme/../../outside:v1 142ms
+   → expected { registry: 'ghcr.io', …(2) } to be null
+ × test/integration/imageReferenceValidation.test.ts > watch parser matches native CLI acceptance for ghcr.io/acme//app:v1 219ms
+   → expected { registry: 'ghcr.io', …(2) } to be null
+ × test/integration/imageReferenceValidation.test.ts > watch parser matches native CLI acceptance for ghcr.io/./app:v1 341ms
+   → expected { registry: 'ghcr.io', …(2) } to be null
+ × test/integration/imageReferenceValidation.test.ts > watch parser matches native CLI acceptance for ghcr.io/-app:v1 160ms
+   → expected { registry: 'ghcr.io', …(2) } to be null
+ × test/integration/imageReferenceValidation.test.ts > watch parser matches native CLI acceptance for ghcr.io/.app:v1 166ms
+   → expected { registry: 'ghcr.io', …(2) } to be null
+ × test/integration/imageReferenceValidation.test.ts > watch parser matches native CLI acceptance for ghcr.io/app_:v1 131ms
+   → expected { registry: 'ghcr.io', …(2) } to be null
+ × test/integration/imageReferenceValidation.test.ts > watch parser matches native CLI acceptance for ghcr.io/a___b:v1 327ms
+   → expected { registry: 'ghcr.io', …(2) } to be null
+ × test/integration/imageReferenceValidation.test.ts > watch parser matches native CLI acceptance for ghcr.io/a..b:v1 155ms
+   → expected { registry: 'ghcr.io', …(2) } to be null
+ × test/integration/imageReferenceValidation.test.ts > watch parser matches native CLI acceptance for ghcr.io/acme/:v1 288ms
+   → expected { registry: 'ghcr.io', …(2) } to be null
+ ✓ test/integration/imageReferenceValidation.test.ts > watch parser matches native CLI acceptance for ghcr.io/app_v2:v1 138ms
+ ✓ test/integration/imageReferenceValidation.test.ts > watch parser matches native CLI acceptance for ghcr.io/app__v2:v1 509ms
+ ✓ test/integration/imageReferenceValidation.test.ts > watch parser matches native CLI acceptance for ghcr.io/app-v2:v1 289ms
+ ✓ test/integration/imageReferenceValidation.test.ts > watch parser matches native CLI acceptance for ghcr.io/app--v2:v1 169ms
+ ✓ test/integration/imageReferenceValidation.test.ts > watch parser matches native CLI acceptance for ghcr.io/app.v2:v1 372ms
+ ✓ test/integration/imageReferenceValidation.test.ts > watch parser matches native CLI acceptance for ghcr.io/acme/deep/web:v1 428ms
+ ✓ test/integration/imageReferenceValidation.test.ts > watch parser matches native CLI acceptance for ghcr.io/acme/web:_valid 162ms
+ ✓ test/integration/imageReferenceValidation.test.ts > watch parser matches native CLI acceptance for ghcr.io/acme/web:_ 475ms
+ ✓ test/integration/imageReferenceValidation.test.ts > watch parser matches native CLI acceptance for ghcr.io/acme/web:9 337ms
+ ✓ test/integration/imageReferenceValidation.test.ts > watch parser matches native CLI acceptance for ghcr.io/acme/web:a.b-c_d 863ms
+ ✓ test/integration/imageReferenceValidation.test.ts > watch parser matches native CLI acceptance for ghcr.io/acme/web:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 131ms
+ × test/integration/imageReferenceValidation.test.ts > watch parser matches native CLI acceptance for ghcr.io/acme/web:.. 180ms
+   → expected { registry: 'ghcr.io', …(2) } to be null
+ × test/integration/imageReferenceValidation.test.ts > watch parser matches native CLI acceptance for ghcr.io/acme/web:-bad 347ms
+   → expected { registry: 'ghcr.io', …(2) } to be null
+ × test/integration/imageReferenceValidation.test.ts > watch parser matches native CLI acceptance for ghcr.io/acme/web:.bad 130ms
+   → expected { registry: 'ghcr.io', …(2) } to be null
+ × test/integration/imageReferenceValidation.test.ts > watch parser matches native CLI acceptance for ghcr.io/acme/web:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 124ms
+   → expected { registry: 'ghcr.io', …(2) } to be null
+ ✓ test/integration/imageReferenceValidation.test.ts > watch parser matches native CLI acceptance for ghcr.io/acme/web: 126ms
+
+ Test Files  1 failed (1)
+      Tests  13 failed | 13 passed (26)
+   Start at  11:29:08
+   Duration  7.77s (tests 97%, import 2%, transform 1%)
+
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 13 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/integration/imageReferenceValidation.test.ts > watch parser matches native CLI acceptance for ghcr.io/acme/../../outside:v1
+AssertionError: expected { registry: 'ghcr.io', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "ghcr.io",
+  "repository": "acme/../../outside",
+  "tag": "v1",
+}
+
+ ❯ test/integration/imageReferenceValidation.test.ts:144:596
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/13]⎯
+
+ FAIL  test/integration/imageReferenceValidation.test.ts > watch parser matches native CLI acceptance for ghcr.io/acme//app:v1
+AssertionError: expected { registry: 'ghcr.io', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "ghcr.io",
+  "repository": "acme//app",
+  "tag": "v1",
+}
+
+ ❯ test/integration/imageReferenceValidation.test.ts:144:596
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/13]⎯
+
+ FAIL  test/integration/imageReferenceValidation.test.ts > watch parser matches native CLI acceptance for ghcr.io/./app:v1
+AssertionError: expected { registry: 'ghcr.io', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "ghcr.io",
+  "repository": "./app",
+  "tag": "v1",
+}
+
+ ❯ test/integration/imageReferenceValidation.test.ts:144:596
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/13]⎯
+
+ FAIL  test/integration/imageReferenceValidation.test.ts > watch parser matches native CLI acceptance for ghcr.io/-app:v1
+AssertionError: expected { registry: 'ghcr.io', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "ghcr.io",
+  "repository": "-app",
+  "tag": "v1",
+}
+
+ ❯ test/integration/imageReferenceValidation.test.ts:144:596
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/13]⎯
+
+ FAIL  test/integration/imageReferenceValidation.test.ts > watch parser matches native CLI acceptance for ghcr.io/.app:v1
+AssertionError: expected { registry: 'ghcr.io', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "ghcr.io",
+  "repository": ".app",
+  "tag": "v1",
+}
+
+ ❯ test/integration/imageReferenceValidation.test.ts:144:596
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/13]⎯
+
+ FAIL  test/integration/imageReferenceValidation.test.ts > watch parser matches native CLI acceptance for ghcr.io/app_:v1
+AssertionError: expected { registry: 'ghcr.io', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "ghcr.io",
+  "repository": "app_",
+  "tag": "v1",
+}
+
+ ❯ test/integration/imageReferenceValidation.test.ts:144:596
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/13]⎯
+
+ FAIL  test/integration/imageReferenceValidation.test.ts > watch parser matches native CLI acceptance for ghcr.io/a___b:v1
+AssertionError: expected { registry: 'ghcr.io', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "ghcr.io",
+  "repository": "a___b",
+  "tag": "v1",
+}
+
+ ❯ test/integration/imageReferenceValidation.test.ts:144:596
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/13]⎯
+
+ FAIL  test/integration/imageReferenceValidation.test.ts > watch parser matches native CLI acceptance for ghcr.io/a..b:v1
+AssertionError: expected { registry: 'ghcr.io', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "ghcr.io",
+  "repository": "a..b",
+  "tag": "v1",
+}
+
+ ❯ test/integration/imageReferenceValidation.test.ts:144:596
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/13]⎯
+
+ FAIL  test/integration/imageReferenceValidation.test.ts > watch parser matches native CLI acceptance for ghcr.io/acme/:v1
+AssertionError: expected { registry: 'ghcr.io', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "ghcr.io",
+  "repository": "acme/",
+  "tag": "v1",
+}
+
+ ❯ test/integration/imageReferenceValidation.test.ts:144:596
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/13]⎯
+
+ FAIL  test/integration/imageReferenceValidation.test.ts > watch parser matches native CLI acceptance for ghcr.io/acme/web:..
+AssertionError: expected { registry: 'ghcr.io', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "ghcr.io",
+  "repository": "acme/web",
+  "tag": "..",
+}
+
+ ❯ test/integration/imageReferenceValidation.test.ts:144:596
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/13]⎯
+
+ FAIL  test/integration/imageReferenceValidation.test.ts > watch parser matches native CLI acceptance for ghcr.io/acme/web:-bad
+AssertionError: expected { registry: 'ghcr.io', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "ghcr.io",
+  "repository": "acme/web",
+  "tag": "-bad",
+}
+
+ ❯ test/integration/imageReferenceValidation.test.ts:144:596
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[11/13]⎯
+
+ FAIL  test/integration/imageReferenceValidation.test.ts > watch parser matches native CLI acceptance for ghcr.io/acme/web:.bad
+AssertionError: expected { registry: 'ghcr.io', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "ghcr.io",
+  "repository": "acme/web",
+  "tag": ".bad",
+}
+
+ ❯ test/integration/imageReferenceValidation.test.ts:144:596
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[12/13]⎯
+
+ FAIL  test/integration/imageReferenceValidation.test.ts > watch parser matches native CLI acceptance for ghcr.io/acme/web:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+AssertionError: expected { registry: 'ghcr.io', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "ghcr.io",
+  "repository": "acme/web",
+  "tag": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+}
+
+ ❯ test/integration/imageReferenceValidation.test.ts:144:596
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[13/13]⎯

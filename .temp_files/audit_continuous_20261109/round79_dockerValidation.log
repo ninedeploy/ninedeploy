@@ -1,0 +1,26 @@
+{"image":"ghcr.io/acme/app__one--two.v3:v1_2.3-4","exit":0,"observations":[{"image":"ghcr.io/acme/app__one--two.v3","tag":"v1_2.3-4","username":"fixture-ghcr","serveraddress":"ghcr.io"}]}
+{"image":"ghcr.io/acme/../../outside:v1","exit":1,"error":"invalid reference format","observations":[]}
+{"image":"ghcr.io/acme//app:v1","exit":1,"error":"invalid reference format","observations":[]}
+{"image":"ghcr.io/./app:v1","exit":1,"error":"invalid reference format","observations":[]}
+{"image":"ghcr.io/-app:v1","exit":1,"error":"invalid reference format","observations":[]}
+{"image":"ghcr.io/.app:v1","exit":1,"error":"invalid reference format","observations":[]}
+{"image":"ghcr.io/app_:v1","exit":1,"error":"invalid reference format","observations":[]}
+{"image":"ghcr.io/a___b:v1","exit":1,"error":"invalid reference format","observations":[]}
+{"image":"ghcr.io/a..b:v1","exit":1,"error":"invalid reference format","observations":[]}
+{"image":"ghcr.io/acme/:v1","exit":1,"error":"invalid reference format","observations":[]}
+{"image":"ghcr.io/app_v2:v1","exit":0,"observations":[{"image":"ghcr.io/app_v2","tag":"v1","username":"fixture-ghcr","serveraddress":"ghcr.io"}]}
+{"image":"ghcr.io/app__v2:v1","exit":0,"observations":[{"image":"ghcr.io/app__v2","tag":"v1","username":"fixture-ghcr","serveraddress":"ghcr.io"}]}
+{"image":"ghcr.io/app-v2:v1","exit":0,"observations":[{"image":"ghcr.io/app-v2","tag":"v1","username":"fixture-ghcr","serveraddress":"ghcr.io"}]}
+{"image":"ghcr.io/app--v2:v1","exit":0,"observations":[{"image":"ghcr.io/app--v2","tag":"v1","username":"fixture-ghcr","serveraddress":"ghcr.io"}]}
+{"image":"ghcr.io/app.v2:v1","exit":0,"observations":[{"image":"ghcr.io/app.v2","tag":"v1","username":"fixture-ghcr","serveraddress":"ghcr.io"}]}
+{"image":"ghcr.io/acme/deep/web:v1","exit":0,"observations":[{"image":"ghcr.io/acme/deep/web","tag":"v1","username":"fixture-ghcr","serveraddress":"ghcr.io"}]}
+{"image":"ghcr.io/acme/web:_valid","exit":0,"observations":[{"image":"ghcr.io/acme/web","tag":"_valid","username":"fixture-ghcr","serveraddress":"ghcr.io"}]}
+{"image":"ghcr.io/acme/web:_","exit":0,"observations":[{"image":"ghcr.io/acme/web","tag":"_","username":"fixture-ghcr","serveraddress":"ghcr.io"}]}
+{"image":"ghcr.io/acme/web:9","exit":0,"observations":[{"image":"ghcr.io/acme/web","tag":"9","username":"fixture-ghcr","serveraddress":"ghcr.io"}]}
+{"image":"ghcr.io/acme/web:a.b-c_d","exit":0,"observations":[{"image":"ghcr.io/acme/web","tag":"a.b-c_d","username":"fixture-ghcr","serveraddress":"ghcr.io"}]}
+{"image":"ghcr.io/acme/web:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","exit":0,"observations":[{"image":"ghcr.io/acme/web","tag":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","username":"fixture-ghcr","serveraddress":"ghcr.io"}]}
+{"image":"ghcr.io/acme/web:..","exit":1,"error":"invalid reference format","observations":[]}
+{"image":"ghcr.io/acme/web:-bad","exit":1,"error":"invalid reference format","observations":[]}
+{"image":"ghcr.io/acme/web:.bad","exit":1,"error":"invalid reference format","observations":[]}
+{"image":"ghcr.io/acme/web:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","exit":1,"error":"invalid reference format","observations":[]}
+{"image":"ghcr.io/acme/web:","exit":1,"error":"invalid reference format","observations":[]}

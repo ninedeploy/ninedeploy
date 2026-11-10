@@ -36,6 +36,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Watch parsing now rejects malformed image repository components before dispatching registry manifest probes, including empty and dot path segments (F1097).
+- Watch parsing now enforces Docker tag start syntax and the 128-character limit before dispatching a manifest probe (F1098).
 - Image registry classification now recognizes uppercase single-label hosts accepted by Docker CLI, preserving their bound credentials and watch parsing instead of treating them as Hub namespaces (F1096).
 - Explicit docker.io image credentials now use the default Hub login/logout operand so successful logout removes the canonical auth record instead of leaving it behind (F1095).
 - Registry sessions now serialize per host credential store across different registries, preventing Docker CLI snapshot saves from dropping another live login (F1094).

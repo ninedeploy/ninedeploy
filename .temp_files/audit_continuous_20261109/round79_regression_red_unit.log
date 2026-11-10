@@ -1,0 +1,284 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/lib/imageRefValidation.test.ts > native-verified accepted ghcr.io/acme/app__one--two.v3:v1_2.3-4 16ms
+ × test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/acme/../../outside:v1 3ms
+   → expected { registry: 'ghcr.io', …(2) } to be null
+ × test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/acme//app:v1 1ms
+   → expected { registry: 'ghcr.io', …(2) } to be null
+ × test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/./app:v1 0ms
+   → expected { registry: 'ghcr.io', …(2) } to be null
+ × test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/-app:v1 0ms
+   → expected { registry: 'ghcr.io', …(2) } to be null
+ × test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/.app:v1 0ms
+   → expected { registry: 'ghcr.io', …(2) } to be null
+ × test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/app_:v1 0ms
+   → expected { registry: 'ghcr.io', …(2) } to be null
+ × test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/a___b:v1 0ms
+   → expected { registry: 'ghcr.io', …(2) } to be null
+ × test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/a..b:v1 0ms
+   → expected { registry: 'ghcr.io', …(2) } to be null
+ × test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/acme/:v1 0ms
+   → expected { registry: 'ghcr.io', …(2) } to be null
+ ✓ test/lib/imageRefValidation.test.ts > native-verified accepted ghcr.io/app_v2:v1 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified accepted ghcr.io/app__v2:v1 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified accepted ghcr.io/app-v2:v1 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified accepted ghcr.io/app--v2:v1 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified accepted ghcr.io/app.v2:v1 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified accepted ghcr.io/acme/deep/web:v1 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified accepted ghcr.io/acme/web:_valid 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified accepted ghcr.io/acme/web:_ 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified accepted ghcr.io/acme/web:9 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified accepted ghcr.io/acme/web:a.b-c_d 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified accepted ghcr.io/acme/web:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0ms
+ × test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/acme/web:.. 0ms
+   → expected { registry: 'ghcr.io', …(2) } to be null
+ × test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/acme/web:-bad 0ms
+   → expected { registry: 'ghcr.io', …(2) } to be null
+ × test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/acme/web:.bad 0ms
+   → expected { registry: 'ghcr.io', …(2) } to be null
+ × test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/acme/web:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0ms
+   → expected { registry: 'ghcr.io', …(2) } to be null
+ ✓ test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/acme/web: 0ms
+
+ Test Files  1 failed (1)
+      Tests  13 failed | 13 passed (26)
+   Start at  11:29:07
+   Duration  338ms (import 54%, transform 33%, tests 12%, worker 1%)
+
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 13 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/acme/../../outside:v1
+AssertionError: expected { registry: 'ghcr.io', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "ghcr.io",
+  "repository": "acme/../../outside",
+  "tag": "v1",
+}
+
+ ❯ test/lib/imageRefValidation.test.ts:165:177
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/13]⎯
+
+ FAIL  test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/acme//app:v1
+AssertionError: expected { registry: 'ghcr.io', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "ghcr.io",
+  "repository": "acme//app",
+  "tag": "v1",
+}
+
+ ❯ test/lib/imageRefValidation.test.ts:165:177
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/13]⎯
+
+ FAIL  test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/./app:v1
+AssertionError: expected { registry: 'ghcr.io', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "ghcr.io",
+  "repository": "./app",
+  "tag": "v1",
+}
+
+ ❯ test/lib/imageRefValidation.test.ts:165:177
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/13]⎯
+
+ FAIL  test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/-app:v1
+AssertionError: expected { registry: 'ghcr.io', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "ghcr.io",
+  "repository": "-app",
+  "tag": "v1",
+}
+
+ ❯ test/lib/imageRefValidation.test.ts:165:177
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/13]⎯
+
+ FAIL  test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/.app:v1
+AssertionError: expected { registry: 'ghcr.io', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "ghcr.io",
+  "repository": ".app",
+  "tag": "v1",
+}
+
+ ❯ test/lib/imageRefValidation.test.ts:165:177
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/13]⎯
+
+ FAIL  test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/app_:v1
+AssertionError: expected { registry: 'ghcr.io', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "ghcr.io",
+  "repository": "app_",
+  "tag": "v1",
+}
+
+ ❯ test/lib/imageRefValidation.test.ts:165:177
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/13]⎯
+
+ FAIL  test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/a___b:v1
+AssertionError: expected { registry: 'ghcr.io', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "ghcr.io",
+  "repository": "a___b",
+  "tag": "v1",
+}
+
+ ❯ test/lib/imageRefValidation.test.ts:165:177
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/13]⎯
+
+ FAIL  test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/a..b:v1
+AssertionError: expected { registry: 'ghcr.io', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "ghcr.io",
+  "repository": "a..b",
+  "tag": "v1",
+}
+
+ ❯ test/lib/imageRefValidation.test.ts:165:177
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/13]⎯
+
+ FAIL  test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/acme/:v1
+AssertionError: expected { registry: 'ghcr.io', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "ghcr.io",
+  "repository": "acme/",
+  "tag": "v1",
+}
+
+ ❯ test/lib/imageRefValidation.test.ts:165:177
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/13]⎯
+
+ FAIL  test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/acme/web:..
+AssertionError: expected { registry: 'ghcr.io', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "ghcr.io",
+  "repository": "acme/web",
+  "tag": "..",
+}
+
+ ❯ test/lib/imageRefValidation.test.ts:165:177
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/13]⎯
+
+ FAIL  test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/acme/web:-bad
+AssertionError: expected { registry: 'ghcr.io', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "ghcr.io",
+  "repository": "acme/web",
+  "tag": "-bad",
+}
+
+ ❯ test/lib/imageRefValidation.test.ts:165:177
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[11/13]⎯
+
+ FAIL  test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/acme/web:.bad
+AssertionError: expected { registry: 'ghcr.io', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "ghcr.io",
+  "repository": "acme/web",
+  "tag": ".bad",
+}
+
+ ❯ test/lib/imageRefValidation.test.ts:165:177
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[12/13]⎯
+
+ FAIL  test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/acme/web:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+AssertionError: expected { registry: 'ghcr.io', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "ghcr.io",
+  "repository": "acme/web",
+  "tag": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+}
+
+ ❯ test/lib/imageRefValidation.test.ts:165:177
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[13/13]⎯

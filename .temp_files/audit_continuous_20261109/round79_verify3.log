@@ -1,0 +1,40 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/verify_F1097_imageValidation.test.ts
+FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1097_imageValidation.test.ts > native-verified accepted ghcr.io/acme/app__one--two.v3:v1_2.3-4 17ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1097_imageValidation.test.ts > native-verified refused ghcr.io/acme/../../outside:v1 0ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1097_imageValidation.test.ts > native-verified refused ghcr.io/acme//app:v1 0ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1097_imageValidation.test.ts > native-verified refused ghcr.io/./app:v1 0ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1097_imageValidation.test.ts > native-verified refused ghcr.io/-app:v1 0ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1097_imageValidation.test.ts > native-verified refused ghcr.io/.app:v1 0ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1097_imageValidation.test.ts > native-verified refused ghcr.io/app_:v1 0ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1097_imageValidation.test.ts > native-verified refused ghcr.io/a___b:v1 0ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1097_imageValidation.test.ts > native-verified refused ghcr.io/a..b:v1 0ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1097_imageValidation.test.ts > native-verified refused ghcr.io/acme/:v1 0ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1097_imageValidation.test.ts > native-verified accepted ghcr.io/app_v2:v1 0ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1097_imageValidation.test.ts > native-verified accepted ghcr.io/app__v2:v1 0ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1097_imageValidation.test.ts > native-verified accepted ghcr.io/app-v2:v1 0ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1097_imageValidation.test.ts > native-verified accepted ghcr.io/app--v2:v1 0ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1097_imageValidation.test.ts > native-verified accepted ghcr.io/app.v2:v1 0ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1097_imageValidation.test.ts > native-verified accepted ghcr.io/acme/deep/web:v1 0ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1098_imageValidation.test.ts
+FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1098_imageValidation.test.ts > native-verified accepted ghcr.io/acme/web:_valid 16ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1098_imageValidation.test.ts > native-verified accepted ghcr.io/acme/web:_ 1ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1098_imageValidation.test.ts > native-verified accepted ghcr.io/acme/web:9 0ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1098_imageValidation.test.ts > native-verified accepted ghcr.io/acme/web:a.b-c_d 0ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1098_imageValidation.test.ts > native-verified accepted ghcr.io/acme/web:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1098_imageValidation.test.ts > native-verified refused ghcr.io/acme/web:.. 0ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1098_imageValidation.test.ts > native-verified refused ghcr.io/acme/web:-bad 0ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1098_imageValidation.test.ts > native-verified refused ghcr.io/acme/web:.bad 0ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1098_imageValidation.test.ts > native-verified refused ghcr.io/acme/web:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1098_imageValidation.test.ts > native-verified refused ghcr.io/acme/web: 0ms
+
+ Test Files  2 passed (2)
+      Tests  26 passed (26)
+   Start at  11:25:09
+   Duration  728ms (import 67%, transform 19%, tests 12%, worker 2%)

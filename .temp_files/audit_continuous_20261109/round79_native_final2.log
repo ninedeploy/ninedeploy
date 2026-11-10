@@ -1,0 +1,34 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/integration/imageReferenceValidation.test.ts > watch parser matches native CLI acceptance for ghcr.io/acme/app__one--two.v3:v1_2.3-4 151ms
+ ✓ test/integration/imageReferenceValidation.test.ts > watch parser matches native CLI acceptance for ghcr.io/acme/../../outside:v1 385ms
+ ✓ test/integration/imageReferenceValidation.test.ts > watch parser matches native CLI acceptance for ghcr.io/acme//app:v1 128ms
+ ✓ test/integration/imageReferenceValidation.test.ts > watch parser matches native CLI acceptance for ghcr.io/./app:v1 386ms
+ ✓ test/integration/imageReferenceValidation.test.ts > watch parser matches native CLI acceptance for ghcr.io/-app:v1 141ms
+ ✓ test/integration/imageReferenceValidation.test.ts > watch parser matches native CLI acceptance for ghcr.io/.app:v1 125ms
+ ✓ test/integration/imageReferenceValidation.test.ts > watch parser matches native CLI acceptance for ghcr.io/app_:v1 422ms
+ ✓ test/integration/imageReferenceValidation.test.ts > watch parser matches native CLI acceptance for ghcr.io/a___b:v1 135ms
+ ✓ test/integration/imageReferenceValidation.test.ts > watch parser matches native CLI acceptance for ghcr.io/a..b:v1 132ms
+ ✓ test/integration/imageReferenceValidation.test.ts > watch parser matches native CLI acceptance for ghcr.io/acme/:v1 122ms
+ ✓ test/integration/imageReferenceValidation.test.ts > watch parser matches native CLI acceptance for ghcr.io/app_v2:v1 340ms
+ ✓ test/integration/imageReferenceValidation.test.ts > watch parser matches native CLI acceptance for ghcr.io/app__v2:v1 168ms
+ ✓ test/integration/imageReferenceValidation.test.ts > watch parser matches native CLI acceptance for ghcr.io/app-v2:v1 156ms
+ ✓ test/integration/imageReferenceValidation.test.ts > watch parser matches native CLI acceptance for ghcr.io/app--v2:v1 304ms
+ ✓ test/integration/imageReferenceValidation.test.ts > watch parser matches native CLI acceptance for ghcr.io/app.v2:v1 129ms
+ ✓ test/integration/imageReferenceValidation.test.ts > watch parser matches native CLI acceptance for ghcr.io/acme/deep/web:v1 442ms
+ ✓ test/integration/imageReferenceValidation.test.ts > watch parser matches native CLI acceptance for ghcr.io/acme/web:_valid 141ms
+ ✓ test/integration/imageReferenceValidation.test.ts > watch parser matches native CLI acceptance for ghcr.io/acme/web:_ 401ms
+ ✓ test/integration/imageReferenceValidation.test.ts > watch parser matches native CLI acceptance for ghcr.io/acme/web:9 429ms
+ ✓ test/integration/imageReferenceValidation.test.ts > watch parser matches native CLI acceptance for ghcr.io/acme/web:a.b-c_d 125ms
+ ✓ test/integration/imageReferenceValidation.test.ts > watch parser matches native CLI acceptance for ghcr.io/acme/web:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 356ms
+ ✓ test/integration/imageReferenceValidation.test.ts > watch parser matches native CLI acceptance for ghcr.io/acme/web:.. 136ms
+ ✓ test/integration/imageReferenceValidation.test.ts > watch parser matches native CLI acceptance for ghcr.io/acme/web:-bad 124ms
+ ✓ test/integration/imageReferenceValidation.test.ts > watch parser matches native CLI acceptance for ghcr.io/acme/web:.bad 402ms
+ ✓ test/integration/imageReferenceValidation.test.ts > watch parser matches native CLI acceptance for ghcr.io/acme/web:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 368ms
+ ✓ test/integration/imageReferenceValidation.test.ts > watch parser matches native CLI acceptance for ghcr.io/acme/web: 119ms
+
+ Test Files  1 passed (1)
+      Tests  26 passed (26)
+   Start at  11:31:07
+   Duration  6.55s (tests 97%, import 2%, transform 1%)

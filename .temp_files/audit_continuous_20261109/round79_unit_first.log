@@ -1,0 +1,44 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/lib/imageRefValidation.test.ts > native-verified accepted ghcr.io/acme/app__one--two.v3:v1_2.3-4 17ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/acme/../../outside:v1 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/acme//app:v1 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/./app:v1 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/-app:v1 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/.app:v1 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/app_:v1 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/a___b:v1 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/a..b:v1 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/acme/:v1 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified accepted ghcr.io/app_v2:v1 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified accepted ghcr.io/app__v2:v1 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified accepted ghcr.io/app-v2:v1 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified accepted ghcr.io/app--v2:v1 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified accepted ghcr.io/app.v2:v1 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified accepted ghcr.io/acme/deep/web:v1 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified accepted ghcr.io/acme/web:_valid 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified accepted ghcr.io/acme/web:_ 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified accepted ghcr.io/acme/web:9 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified accepted ghcr.io/acme/web:a.b-c_d 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified accepted ghcr.io/acme/web:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/acme/web:.. 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/acme/web:-bad 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/acme/web:.bad 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/acme/web:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/acme/web: 0ms
+ ✓ test/lib/imageRef.test.ts > parseImageRef > expands a bare official image to docker.io/library 1ms
+ ✓ test/lib/imageRef.test.ts > parseImageRef > parses user images with explicit tags 0ms
+ ✓ test/lib/imageRef.test.ts > parseImageRef > parses other-registry refs 0ms
+ ✓ test/lib/imageRef.test.ts > parseImageRef > keeps a registry port distinct from the tag 0ms
+ ✓ test/lib/imageRef.test.ts > parseImageRef > refuses digest-pinned refs — they never move 0ms
+ ✓ test/lib/imageRef.test.ts > parseImageRef > refuses malformed input 0ms
+ ✓ test/lib/imageRef.test.ts > parseImageRef > recognizes Docker Hub under its spellings 0ms
+
+ Test Files  2 passed (2)
+      Tests  33 passed (33)
+   Start at  11:27:17
+   Duration  931ms (import 55%, transform 34%, tests 9%, worker 2%)
+
+    Isolate  2 workers spawned · ~314ms startup each (spawn + environment, per file)
+             at least ~314ms faster with isolate: false — reuses workers across files instead of one per file

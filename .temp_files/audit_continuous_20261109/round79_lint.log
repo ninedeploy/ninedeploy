@@ -1,0 +1,23 @@
+apps\server\test\integration\imageReferenceValidation.test.ts:138:577 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+    136 │ import {createServer} from 'node:http';import {spawn} from 'node:child_process';import {mkdtempSync,writeFileSync,rmSync} from 'node:fs';import {tmpdir} from 'node:os';import path from 'node:path';
+    137 │ const root=path.resolve(mkdtempSync(path.join(tmpdir(),'nd-image-validation-native-')));const observ...
+  > 138 │ ...ication/json'});res.end(JSON.stringify({status:'Fixture pull complete'})+'\n');}else{res.writeHead(4...
+        │                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    139 │ const env={...Object.fromEntries(['SystemRoot','PATH','TEMP','TMP','USERPROFILE','HOME'].filter(k=>process.env[k]).map(k=>[k,process.env[k]])),DOCKER_API_VERSION:'1.52'};
+    140 │ function run(image:string):Promise<{image:string;exit:number|null;error?:string;observations:typeof·...
+
+  i Unsafe fix: Use a template literal.
+
+    136 136 │   import {createServer} from 'node:http';import {spawn} from 'node:child_process';import {mkdtempSync,writeFileSync,rmSync} from 'node:fs';import {tmpdir} from 'node:os';import path from 'node:path';
+    137 137 │   ...tring('base64')}},credsStore:'',credHelpers:{}}));
+    138     │ - ...(JSON.stringify({status:'Fixture·pull·complete'})+'\n');}else{res.writeHead(404,{'content-type':'app...
+        138 │ + ...00,{'content-type':'application/json'});res.end(`${JSON.stringify({status:'Fixture·pull·complete'})}...
+    139 139 │   const env={...Object.fromEntries(['SystemRoot','PATH','TEMP','TMP','USERPROFILE','HOME'].filter(k=>process.env[k]).map(k=>[k,process.env[k]])),DOCKER_API_VERSION:'1.52'};
+    140 140 │   ...ons:observed.splice(0)});});child.stdin.end();});}
+
+
+Checked 3 files in 19ms. No fixes applied.
+Found 1 info.

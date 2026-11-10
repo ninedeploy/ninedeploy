@@ -46,7 +46,8 @@ export function parseImageRef(image: string): ImageRef | null {
     rest = rest.slice(0, colon);
   }
   if (!rest || !tag) return null;
-  if (!/^[a-z0-9._/-]+$/.test(rest) || !/^[A-Za-z0-9_.-]+$/.test(tag)) return null;
+  const component = /^[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*$/;
+  if (rest.split('/').some((part) => !component.test(part)) || !/^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$/.test(tag)) return null;
   if (isDockerHub(registry) && !rest.includes('/')) rest = `library/${rest}`;
   return { registry, repository: rest, tag };
 }

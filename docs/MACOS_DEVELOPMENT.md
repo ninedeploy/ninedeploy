@@ -786,3 +786,23 @@ pnpm --dir apps/server exec vitest run --config vitest.integration.config.ts tes
 
 No native Mac result, live pull/update, credential-exfiltration verdict, full
 release or resolution of the round73 native worker crash is claimed.
+
+Round 79 (F1097/F1098, Low input handling) skips malformed repository components
+and invalid tags before watch probes. Native Docker CLI rejects the same inputs;
+previously dot segments could normalize a probe outside its expected v2 manifest
+path on the same registry. Repository separators and tag start/1..128 limits are
+validated; app input schema and egress policy stay unchanged.
+
+Twenty-six independent corpus cases passed three times; both permanent unit and
+native CLI suites were seen red13/26. Nearest scope106tests/9files and resource-
+bound server typecheck/build passed. This is component/tag validation, not a
+complete reference validator or live network/security/update acceptance.
+
+Mac check, using only private fixture configs and a loopback fake daemon:
+
+```bash
+pnpm --dir apps/server exec vitest run --config vitest.integration.config.ts test/integration/imageReferenceValidation.test.ts --coverage=false
+```
+
+The round73 native worker fault and full release/coverage acceptance remain
+unresolved; no native Mac or live pull result is implied.
