@@ -5,7 +5,7 @@
  * Every case goes through the seam that production mounts: the route, the
  * webhook receiver, the auto-update sweep, or the resolver the pipeline calls.
  */
-import { createHmac } from 'node:crypto';
+import { createHash, createHmac } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -495,10 +495,17 @@ describe('r513: the auto-update sweep applies the owner-privilege gate', () => {
     const base = { type: 'docker' as const, status: 'running' as const, autoUpdate: true, autoUpdateDigest: 'sha256:old' };
     await w.svc('op-lan', w.op.id, w.w1.id, { ...base, image: 'registry.lan:5000/team/app:1' });
     await w.svc('mem-lan', w.mem.id, w.w1.id, { ...base, image: 'registry.lan:5000/team/other:1' });
-    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => ({
-      ok: true,
+    const manifestConfig = JSON.stringify({ architecture: 'amd64', os: 'linux', rootfs: { type: 'layers', diff_ids: [] } });
+    const manifest = JSON.stringify({
+      schemaVersion: 2,
+      mediaType: 'application/vnd.oci.image.manifest.v1+json',
+      config: { mediaType: 'application/vnd.oci.image.config.v1+json', digest: `sha256:${createHash('sha256').update(manifestConfig).digest('hex')}`, size: Buffer.byteLength(manifestConfig) },
+      layers: [],
+    });
+    const digest = `sha256:${createHash('sha256').update(manifest).digest('hex')}`;
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => new Response(manifest, {
       status: 200,
-      headers: { get: (k: string) => (k === 'docker-content-digest' ? 'sha256:new' : null) },
+      headers: { 'content-type': 'application/vnd.oci.image.manifest.v1+json', 'docker-content-digest': digest },
     }));
     vi.stubGlobal('fetch', fetchMock);
     const logs: string[] = [];

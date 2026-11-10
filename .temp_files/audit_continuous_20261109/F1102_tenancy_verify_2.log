@@ -1,0 +1,54 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ↓ test/tenancyIsolation.test.ts > r510: vault references resolve only for allowed tenants > upgrade seed: grandfathers current non-operator usage once, audits and logs it
+ ↓ test/tenancyIsolation.test.ts > r510: vault references resolve only for allowed tenants > deploy-time: a member service outside the allowlist cannot read a vault secret; allowed ones can
+ ↓ test/tenancyIsolation.test.ts > r510: vault references resolve only for allowed tenants > write-time: member gets a clear 403 for a reference on a non-allowed service, project, import and PATCH
+ ↓ test/tenancyIsolation.test.ts > r510: vault references resolve only for allowed tenants > settings API: GET exposes the allowlist with names, PUT /vault/allowlist replaces it and audits
+ ↓ test/tenancyIsolation.test.ts > r601: the write-time vault gate also covers the template deploy env > a member cannot plant a reference through a template deploy outside the allowlist; nothing is created
+ ↓ test/tenancyIsolation.test.ts > r511: PR preview domains cannot claim another tenant's host > a stored pattern without {{pr}}/{{slug}} (the takeover shape) deploys but provisions no domain
+ ↓ test/tenancyIsolation.test.ts > r511: PR preview domains cannot claim another tenant's host > a token-bearing pattern that still renders onto another service's automatic host is refused
+ ↓ test/tenancyIsolation.test.ts > r511: PR preview domains cannot claim another tenant's host > the default pattern still provisions the preview host
+ ↓ test/tenancyIsolation.test.ts > r511: PR preview domains cannot claim another tenant's host > services PATCH/create refuse a changed pattern without the tokens (400), re-sending a stored one is allowed
+ ↓ test/tenancyIsolation.test.ts > r512: a registry credential is only sent to the host it is bound to > upgrade seed binds each registry source to the hosts its services use today, audited
+ ↓ test/tenancyIsolation.test.ts > r512: a registry credential is only sent to the host it is bound to > the shared resolver withholds the credential from an unbound host and audits it
+ ↓ test/tenancyIsolation.test.ts > r512: a registry credential is only sent to the host it is bound to > services PATCH: a member cannot retarget the image to another registry; an operator change binds the host
+ ↓ test/tenancyIsolation.test.ts > r512: a registry credential is only sent to the host it is bound to > sources API exposes, accepts and clears registryHosts
+ ✓ test/tenancyIsolation.test.ts > r513: the auto-update sweep applies the owner-privilege gate > skips (logs + audits, no deploy) a member service the owner could not deploy; operator-owned still deploys 447ms
+ ✓ test/tenancyIsolation.test.ts > r513: the auto-update sweep applies the owner-privilege gate > r514: an operator-owned image may probe a LAN registry; a member-owned one is skipped with the reason 397ms
+ ✓ test/tenancyIsolation.test.ts > r513: the auto-update sweep applies the owner-privilege gate > r512: the registry probe never receives a credential for an unbound host 373ms
+ ↓ test/tenancyIsolation.test.ts > storage > the allowlist and the bindings live in the existing settings table (no migration)
+
+ Test Files  1 passed (1)
+      Tests  3 passed | 14 skipped (17)
+   Start at  17:26:21
+   Duration  2.97s (tests 43%, import 40%, transform 17%)
+
+EXPECTED: LAN-registry fixture permits exactly one operator update and rejects the member; both nearby controls pass
+ACTUAL: {"exitCode":0,"controlA":true,"controlB":true,"lanFailed":false}
+PROBLEM NOT REPRODUCED
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/lib/imageWatchIntegrity.test.ts > verifies sha256 across binary chunk boundaries 16ms
+ ✓ test/lib/imageWatchIntegrity.test.ts > verifies sha512 across binary chunk boundaries 1ms
+ ✓ test/lib/imageWatchIntegrity.test.ts > rejects a validly encoded SHA256 for different bytes and releases its reader 1ms
+ ✓ test/lib/imageWatchIntegrity.test.ts > rejects a validly encoded SHA512 for different bytes 0ms
+ ✓ test/lib/imageWatchIntegrity.test.ts > accepts exactly the local byte cap without a content-length header 6ms
+ ✓ test/lib/imageWatchIntegrity.test.ts > bounds actual streamed bytes with declared length undefined 5ms
+ ✓ test/lib/imageWatchIntegrity.test.ts > bounds actual streamed bytes with declared length 1 5ms
+ ✓ test/lib/imageWatchIntegrity.test.ts > rejects oversized declared bodies before reading and cancels them 2ms
+ ✓ test/lib/imageWatchIntegrity.test.ts > cleanup errors cannot mask an overflow rejection 0ms
+ ✓ test/lib/imageWatchIntegrity.test.ts > propagates body read failure Error and releases the lock 0ms
+ ✓ test/lib/imageWatchIntegrity.test.ts > propagates body read failure TimeoutError and releases the lock 0ms
+ ✓ test/lib/imageWatchIntegrity.test.ts > preserves a fetch timeout signal for body consumption 1ms
+ ✓ test/lib/imageWatchIntegrity.test.ts > does not accept a null body even when the declared digest hashes empty bytes 0ms
+ ✓ test/lib/imageWatchIntegrity.test.ts > reports an opaque algorithm as unsupported and cancels its unread body 0ms
+ ✓ test/lib/imageWatchIntegrity.test.ts > native fetch aborts an incomplete manifest body when the probe deadline fires 19ms
+
+ Test Files  1 passed (1)
+      Tests  15 passed (15)
+   Start at  17:26:25
+   Duration  234ms (tests 59%, import 27%, transform 9%, worker 5%)
+
+FIX VERIFIED

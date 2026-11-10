@@ -1,0 +1,92 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/tenancyIsolation.test.ts > r510: vault references resolve only for allowed tenants > upgrade seed: grandfathers current non-operator usage once, audits and logs it 377ms
+ ✓ test/tenancyIsolation.test.ts > r510: vault references resolve only for allowed tenants > deploy-time: a member service outside the allowlist cannot read a vault secret; allowed ones can 351ms
+ ✓ test/tenancyIsolation.test.ts > r510: vault references resolve only for allowed tenants > write-time: member gets a clear 403 for a reference on a non-allowed service, project, import and PATCH 581ms
+ ✓ test/tenancyIsolation.test.ts > r510: vault references resolve only for allowed tenants > settings API: GET exposes the allowlist with names, PUT /vault/allowlist replaces it and audits 336ms
+ ✓ test/tenancyIsolation.test.ts > r601: the write-time vault gate also covers the template deploy env > a member cannot plant a reference through a template deploy outside the allowlist; nothing is created 505ms
+ ✓ test/tenancyIsolation.test.ts > r511: PR preview domains cannot claim another tenant's host > a stored pattern without {{pr}}/{{slug}} (the takeover shape) deploys but provisions no domain 427ms
+ ✓ test/tenancyIsolation.test.ts > r511: PR preview domains cannot claim another tenant's host > a token-bearing pattern that still renders onto another service's automatic host is refused 433ms
+ ✓ test/tenancyIsolation.test.ts > r511: PR preview domains cannot claim another tenant's host > the default pattern still provisions the preview host 384ms
+ ✓ test/tenancyIsolation.test.ts > r511: PR preview domains cannot claim another tenant's host > services PATCH/create refuse a changed pattern without the tokens (400), re-sending a stored one is allowed 443ms
+ ✓ test/tenancyIsolation.test.ts > r512: a registry credential is only sent to the host it is bound to > upgrade seed binds each registry source to the hosts its services use today, audited 401ms
+ ✓ test/tenancyIsolation.test.ts > r512: a registry credential is only sent to the host it is bound to > the shared resolver withholds the credential from an unbound host and audits it 367ms
+ ✓ test/tenancyIsolation.test.ts > r512: a registry credential is only sent to the host it is bound to > services PATCH: a member cannot retarget the image to another registry; an operator change binds the host 414ms
+ ✓ test/tenancyIsolation.test.ts > r512: a registry credential is only sent to the host it is bound to > sources API exposes, accepts and clears registryHosts 489ms
+ ✓ test/tenancyIsolation.test.ts > r513: the auto-update sweep applies the owner-privilege gate > skips (logs + audits, no deploy) a member service the owner could not deploy; operator-owned still deploys 403ms
+ ✓ test/tenancyIsolation.test.ts > r513: the auto-update sweep applies the owner-privilege gate > r514: an operator-owned image may probe a LAN registry; a member-owned one is skipped with the reason 397ms
+ ✓ test/tenancyIsolation.test.ts > r513: the auto-update sweep applies the owner-privilege gate > r512: the registry probe never receives a credential for an unbound host 411ms
+ ✓ test/tenancyIsolation.test.ts > storage > the allowlist and the bindings live in the existing settings table (no migration) 335ms
+ ✓ test/lib/imageWatchDigest.test.ts > accepts OCI syntax sha256:29cee9ce6d9eadb2b289937 11ms
+ ✓ test/lib/imageWatchDigest.test.ts > accepts OCI syntax sha512:dd39bdec42141e9f75aa6c5 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > skips syntactically valid unsupported algorithm blake3 1ms
+ ✓ test/lib/imageWatchDigest.test.ts > skips syntactically valid unsupported algorithm sha256+b64u 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > skips syntactically valid unsupported algorithm multihash+base58 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > skips syntactically valid unsupported algorithm future.v1-hash_2 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > skips syntactically valid unsupported algorithm constructor 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > rejects malformed metadata not-a-digest length12 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > rejects malformed metadata sha256: length7 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > rejects malformed metadata :abc length4 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > rejects malformed metadata sha256:abc:def length14 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > rejects malformed metadata SHA256:aaaaaaaaaaaaaaaaaaaaaaa length71 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > rejects malformed metadata sha256:AAAAAAAAAAAAAAAAAAAAAAA length71 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > rejects malformed metadata sha256:ggggggggggggggggggggggg length71 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > rejects malformed metadata sha256:aaaaaaaaaaaaaaaaaaaaaaa length70 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > rejects malformed metadata sha256:aaaaaaaaaaaaaaaaaaaaaaa length72 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > rejects malformed metadata sha512:aaaaaaaaaaaaaaaaaaaaaaa length134 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > rejects malformed metadata sha512:aaaaaaaaaaaaaaaaaaaaaaa length136 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > rejects malformed metadata blake3:aaaaaaaaaaaaaaaaaaaaaaa length70 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > rejects malformed metadata future__hash:ABC length16 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > rejects malformed metadata future-:ABC length11 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > rejects malformed metadata -future:ABC length11 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > rejects malformed metadata future:abc+def length14 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > rejects malformed metadata future:abc/def length14 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > rejects malformed metadata sha256 :aaaaaaaaaaaaaaaaaaaaaa length72 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > rejects malformed metadata sha256:29cee9ce6d9eadb2b289937 length144 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > validates the final manifest after the credentialed token retry and cancels both manifest bodies 2ms
+ ✓ test/lib/imageWatchDigest.test.ts > HTTP failure remains a status error rather than accepting a present digest 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > cleanup failure does not replace the safe malformed-header error or echo its input 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > two malformed headers cannot seed a baseline or schedule an unchanged image 183ms
+ ✓ test/lib/imageWatchDigest.test.ts > malformed metadata preserves an existing valid baseline and creates no deployment 188ms
+ ✓ test/lib/imageWatchDigest.test.ts > unchanged valid metadata remains idle and a valid move enqueues once 173ms
+ ✓ test/lib/imageWatchIntegrity.test.ts > verifies sha256 across binary chunk boundaries 22ms
+ ✓ test/lib/imageWatchIntegrity.test.ts > verifies sha512 across binary chunk boundaries 1ms
+ ✓ test/lib/imageWatchIntegrity.test.ts > rejects a validly encoded SHA256 for different bytes and releases its reader 1ms
+ ✓ test/lib/imageWatchIntegrity.test.ts > rejects a validly encoded SHA512 for different bytes 0ms
+ ✓ test/lib/imageWatchIntegrity.test.ts > accepts exactly the local byte cap without a content-length header 7ms
+ ✓ test/lib/imageWatchIntegrity.test.ts > bounds actual streamed bytes with declared length undefined 6ms
+ ✓ test/lib/imageWatchIntegrity.test.ts > bounds actual streamed bytes with declared length 1 6ms
+ ✓ test/lib/imageWatchIntegrity.test.ts > rejects oversized declared bodies before reading and cancels them 1ms
+ ✓ test/lib/imageWatchIntegrity.test.ts > cleanup errors cannot mask an overflow rejection 1ms
+ ✓ test/lib/imageWatchIntegrity.test.ts > propagates body read failure Error and releases the lock 1ms
+ ✓ test/lib/imageWatchIntegrity.test.ts > propagates body read failure TimeoutError and releases the lock 0ms
+ ✓ test/lib/imageWatchIntegrity.test.ts > preserves a fetch timeout signal for body consumption 2ms
+ ✓ test/lib/imageWatchIntegrity.test.ts > does not accept a null body even when the declared digest hashes empty bytes 2ms
+ ✓ test/lib/imageWatchIntegrity.test.ts > reports an opaque algorithm as unsupported and cancels its unread body 0ms
+ ✓ test/lib/imageWatchIntegrity.test.ts > native fetch aborts an incomplete manifest body when the probe deadline fires 21ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > reads the manifest digest from a direct anonymous response 19ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > performs the Docker Hub anonymous token dance on 401 1ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > performs the ghcr token dance with its own realm 1ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > refuses to chase realms of registries outside the known table 1ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > reports the registry status when the retry also fails 1ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > rejects a 200 that carries no digest header 0ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > maps network failures to a readable reason 1ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > names timeouts distinctly 0ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > reports a token endpoint failure instead of retrying blindly 0ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > probes private repos with Basic auth when credentials are given 1ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > runs the token dance WITH credentials for private Docker Hub repos 1ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > names rejected credentials when the token endpoint answers 401 0ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > still refuses unknown auth realms for credentialed probes 0ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > reports an unreachable token endpoint 0ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > r514: refuses a registry host that resolves to a private / metadata address, before any request 1ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > r514: never follows a registry redirect (and never with the credential header) 0ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > rejects a token response that carries no token 0ms
+
+ Test Files  4 passed (4)
+      Tests  81 passed (81)
+   Start at  17:26:32
+   Duration  10.47s (tests 81%, import 15%, transform 4%)
+
+    Isolate  4 workers spawned · ~220ms startup each (spawn + environment, per file)
+             at least ~660ms faster with isolate: false — reuses workers across files instead of one per file

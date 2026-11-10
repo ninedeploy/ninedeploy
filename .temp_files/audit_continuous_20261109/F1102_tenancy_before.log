@@ -1,0 +1,58 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ↓ test/tenancyIsolation.test.ts > r510: vault references resolve only for allowed tenants > upgrade seed: grandfathers current non-operator usage once, audits and logs it
+ ↓ test/tenancyIsolation.test.ts > r510: vault references resolve only for allowed tenants > deploy-time: a member service outside the allowlist cannot read a vault secret; allowed ones can
+ ↓ test/tenancyIsolation.test.ts > r510: vault references resolve only for allowed tenants > write-time: member gets a clear 403 for a reference on a non-allowed service, project, import and PATCH
+ ↓ test/tenancyIsolation.test.ts > r510: vault references resolve only for allowed tenants > settings API: GET exposes the allowlist with names, PUT /vault/allowlist replaces it and audits
+ ↓ test/tenancyIsolation.test.ts > r601: the write-time vault gate also covers the template deploy env > a member cannot plant a reference through a template deploy outside the allowlist; nothing is created
+ ↓ test/tenancyIsolation.test.ts > r511: PR preview domains cannot claim another tenant's host > a stored pattern without {{pr}}/{{slug}} (the takeover shape) deploys but provisions no domain
+ ↓ test/tenancyIsolation.test.ts > r511: PR preview domains cannot claim another tenant's host > a token-bearing pattern that still renders onto another service's automatic host is refused
+ ↓ test/tenancyIsolation.test.ts > r511: PR preview domains cannot claim another tenant's host > the default pattern still provisions the preview host
+ ↓ test/tenancyIsolation.test.ts > r511: PR preview domains cannot claim another tenant's host > services PATCH/create refuse a changed pattern without the tokens (400), re-sending a stored one is allowed
+ ↓ test/tenancyIsolation.test.ts > r512: a registry credential is only sent to the host it is bound to > upgrade seed binds each registry source to the hosts its services use today, audited
+ ↓ test/tenancyIsolation.test.ts > r512: a registry credential is only sent to the host it is bound to > the shared resolver withholds the credential from an unbound host and audits it
+ ↓ test/tenancyIsolation.test.ts > r512: a registry credential is only sent to the host it is bound to > services PATCH: a member cannot retarget the image to another registry; an operator change binds the host
+ ↓ test/tenancyIsolation.test.ts > r512: a registry credential is only sent to the host it is bound to > sources API exposes, accepts and clears registryHosts
+ ✓ test/tenancyIsolation.test.ts > r513: the auto-update sweep applies the owner-privilege gate > skips (logs + audits, no deploy) a member service the owner could not deploy; operator-owned still deploys 348ms
+ × test/tenancyIsolation.test.ts > r513: the auto-update sweep applies the owner-privilege gate > r514: an operator-owned image may probe a LAN registry; a member-owned one is skipped with the reason 352ms
+   → expected { Object (probed, enqueued, ...) } to match object { enqueued: 1, skipped: 1 }
+(1 matching property omitted from actual)
+ ✓ test/tenancyIsolation.test.ts > r513: the auto-update sweep applies the owner-privilege gate > r512: the registry probe never receives a credential for an unbound host 323ms
+ ↓ test/tenancyIsolation.test.ts > storage > the allowlist and the bindings live in the existing settings table (no migration)
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 2 passed | 14 skipped (17)
+   Start at  17:23:52
+   Duration  2.63s (import 42%, tests 41%, transform 16%)
+
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/tenancyIsolation.test.ts > r513: the auto-update sweep applies the owner-privilege gate > r514: an operator-owned image may probe a LAN registry; a member-owned one is skipped with the reason
+AssertionError: expected { Object (probed, enqueued, ...) } to match object { enqueued: 1, skipped: 1 }
+(1 matching property omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "enqueued": 1,
+-   "skipped": 1,
++   "enqueued": 0,
++   "skipped": 2,
+  }
+
+ ❯ test/tenancyIsolation.test.ts:512:20
+    510|     expect(String(fetchMock.mock.calls[0]![0])).toBe('https://registry…
+    511|     expect(fetchMock.mock.calls[0]![1]!.redirect).toBe('manual');
+    512|     expect(result).toMatchObject({ enqueued: 1, skipped: 1 });
+       |                    ^
+    513|     expect(logs.some((l) => l.includes('mem-lan skipped') && l.include…
+    514|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+EXPECTED: LAN-registry fixture permits exactly one operator update and rejects the member; both nearby controls pass
+ACTUAL: {"exitCode":1,"controlA":true,"controlB":true,"lanFailed":true}
+PROBLEM CONFIRMED
