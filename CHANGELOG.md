@@ -36,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Cross-process lock identities now publish only after complete private preparation, so rejected initialization cannot leave a fresh public lock or delete a newer holder (F1093).
 - Cross-process operation locks now complete short native identity writes before granting a holder, preserving recognition and cleanup by its release operation (F1092).
 - Database-import chunks now complete short native writes before advancing upload metadata and fail without acknowledging a zero-progress write (F1091).
 - Concurrent database-import chunk retries now preserve acknowledged bytes by serializing native writes and rechecking upload metadata before writing (F1090).

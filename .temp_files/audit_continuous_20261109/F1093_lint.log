@@ -1,0 +1,44 @@
+apps\server\test\lib\crossProcessLockInit.test.ts:8:152 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+     6 │  closeSync:(fd:number)=>{m.closed.add(fd);return actual.closeSync(fd);},
+     7 │  unlinkSync:((...args:Parameters<typeof actual.unlinkSync>)=>{if(m.unlinkOnce&&String(args[0]).endsWith('.pending')){m.unlinkOnce=false;throw Object.assign(new Error('transient private unlink'),{code:'EACCES'});}return actual.unlinkSync(...args);})as typeof actual.unlinkSync,
+   > 8 │  linkSync:((...args:Parameters<typeof actual.linkSync>)=>{m.beforeLink?.(String(args[0]),String(args[1]));if(m.linkError)throw Object.assign(new Error('injected publication '+m.linkError),{code:m.linkError});return actual.linkSync(...args);})as typeof actual.linkSync,
+       │                                                                                                                                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     9 │  writeSync:((...args:Parameters<typeof actual.writeSync>)=>{const [fd,data,offset,length,position]=a...
+    10 │ const {acquireCrossProcessLock,LockUnavailableError}=await import('../../src/lib/crossProcessLock.js');
+
+  i Unsafe fix: Use a template literal.
+
+     6  6 │    closeSync:(fd:number)=>{m.closed.add(fd);return actual.closeSync(fd);},
+     7  7 │    unlinkSync:((...args:Parameters<typeof actual.unlinkSync>)=>{if(m.unlinkOnce&&String(args[0]).endsWith('.pending')){m.unlinkOnce=false;throw Object.assign(new Error('transient private unlink'),{code:'EACCES'});}return actual.unlinkSync(...args);})as typeof actual.unlinkSync,
+     8    │ - ·linkSync:((...args:Parameters<typeof·actual.linkSync>)=>{m.beforeLink?.(String(args[0]),String(args[1]));if(m.linkError)throw·Object.assign(new·Error('injected·publication·'+m.linkError),{code:m.linkError});return·actual.linkSync(...args);})as·typeof·actual.linkSync,
+        8 │ + ·linkSync:((...args:Parameters<typeof·actual.linkSync>)=>{m.beforeLink?.(String(args[0]),String(args[1]));if(m.linkError)throw·Object.assign(new·Error(`injected·publication·${m.linkError}`),{code:m.linkError});return·actual.linkSync(...args);})as·typeof·actual.linkSync,
+     9  9 │   ...length,position);})as typeof actual.writeSync};});
+    10 10 │   const {acquireCrossProcessLock,LockUnavailableError}=await import('../../src/lib/crossProcessLock.js');
+
+
+apps\server\test\lib\crossProcessLockInit.test.ts:18:213 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+    16 │ for(const fault of ['fail','partial','zero'])it(`failed ${fault} preparation leaves no artifact and·...
+    17 │ it('public identity remains absent throughout preparation and is complete at publication',async()=>{...
+  > 18 │ ...ct(acquire(target)).rejects.toThrow('injected publication '+code);expect(entries(target)).toEqual([]...
+       │                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    19 │ it('a newer owner admitted at the publish barrier survives the loser cleanup',async()=>{const target...
+    20 │ it('an existing live owner remains untouched by a rejected contender',async()=>{const target=file();...
+
+  i Unsafe fix: Use a template literal.
+
+    16 16 │   ....release();expect(entries(target)).toEqual([]);});
+    17 17 │   ....release();expect(entries(target)).toEqual([]);});
+    18    │ - ...de;await·expect(acquire(target)).rejects.toThrow('injected·publication·'+code);expect(entries(target...
+       18 │ + ...e;await·expect(acquire(target)).rejects.toThrow(`injected·publication·${code}`);expect(entries(targe...
+    19 19 │   ...k']);expect(m.closed.has(m.lastFd)).toBe(true);});
+    20 20 │   ...t(entries(target)).toEqual(['operation.lock']);});
+
+
+Checked 2 files in 12ms. No fixes applied.
+Found 2 infos.

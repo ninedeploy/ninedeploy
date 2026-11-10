@@ -1,0 +1,144 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/lib/crossProcessLockInit.test.ts > failed fail preparation leaves no artifact and immediately retries 10ms
+ ✓ test/lib/crossProcessLockInit.test.ts > failed partial preparation leaves no artifact and immediately retries 5ms
+ ✓ test/lib/crossProcessLockInit.test.ts > failed zero preparation leaves no artifact and immediately retries 5ms
+ ✓ test/lib/crossProcessLockInit.test.ts > public identity remains absent throughout preparation and is complete at publication 4ms
+ ✓ test/lib/crossProcessLockInit.test.ts > publication EACCES propagates without unsafe fallback or leaked candidate 4ms
+ ✓ test/lib/crossProcessLockInit.test.ts > publication ENOTSUP propagates without unsafe fallback or leaked candidate 4ms
+ ✓ test/lib/crossProcessLockInit.test.ts > a newer owner admitted at the publish barrier survives the loser cleanup 5ms
+ ✓ test/lib/crossProcessLockInit.test.ts > an existing live owner remains untouched by a rejected contender 5ms
+ ✓ test/lib/crossProcessLockInit.test.ts > a failed initialization cannot clean a later public owner at the write barrier 3ms
+ ✓ test/lib/crossProcessLockInit.test.ts > stale takeover leaves only the new public inode and release removes it 22ms
+ ✓ test/lib/crossProcessLockInit.test.ts > private exclusive-create collision preserves the pre-existing candidate 3ms
+ ✓ test/lib/crossProcessLockInit.test.ts > release retries a transient private-unlink failure without dropping ownership 5ms
+ ✓ test/lib/crossProcessLockInit.test.ts > heartbeat updates the published inode after its private link is removed 7ms
+ ✓ test/lib/crossProcessLock.test.ts > acquireCrossProcessLock > acquires, releases, and allows immediate re-acquisition 26ms
+ ✓ test/lib/crossProcessLock.test.ts > acquireCrossProcessLock > writes the holder identity into the lock file 4ms
+ ✓ test/lib/crossProcessLock.test.ts > acquireCrossProcessLock > refuses a second acquisition while held and throws LockUnavailableError 365ms
+ ✓ test/lib/crossProcessLock.test.ts > acquireCrossProcessLock > steals a stale lock whose holder stopped heartbeating 262ms
+ ✓ test/lib/crossProcessLock.test.ts > acquireCrossProcessLock > does not steal a live lock just because the waiter is impatient 306ms
+ ✓ test/lib/crossProcessLock.test.ts > acquireCrossProcessLock > mutually excludes a REAL second process and steals the lock after a crash 564ms
+ ✓ test/lib/crossProcessLock-r314.test.ts > r314: cross-process lock ownership > a waiter that judged a lock stale does not delete the fresh lock another waiter just took 318ms
+ ✓ test/lib/crossProcessLock-r314.test.ts > r314: cross-process lock ownership > still steals a genuinely stale lock 61ms
+ ✓ test/lib/crossProcessLock-r314.test.ts > r314: cross-process lock ownership > release() does not delete a lock file that now belongs to another holder 5ms
+ ✓ test/database.test.ts > ENGINES metadata > maps each engine to image, port, volume and env 3ms
+ ✓ test/database.test.ts > ENGINES metadata > renders mariadb connection strings 0ms
+ ✓ test/database.test.ts > startDatabase > starts postgres with volume bind and env flags, reusing a retained volume 15ms
+ ✓ test/database.test.ts > startDatabase > mounts postgres 18+ volumes at /var/lib/postgresql (cluster layout, docker-library/postgres#1259) 2ms
+ ✓ test/database.test.ts > startDatabase > is a no-op when the container is already running (idempotent restart) 1ms
+ ✓ test/database.test.ts > startDatabase > stops before mutating container state when database image preparation fails 1ms
+ ✓ test/database.test.ts > startDatabase > removes a stale same-name container before starting (no name conflict) 2ms
+ ✓ test/database.test.ts > startDatabase > still starts when the state inspect fails (treats it as not running) 2ms
+ ✓ test/database.test.ts > startDatabase > adopts a container that is running after docker run reports code 125 2ms
+ ✓ test/database.test.ts > startDatabase > preserves a docker run failure when no container is running 2ms
+ ✓ test/database.test.ts > startDatabase > adds cpu/memory flags and defaults the mysql tag when no version is set 2ms
+ ✓ test/database.test.ts > startDatabase > starts redis with a --requirepass argument (no env vars) 0ms
+ ✓ test/database.test.ts > startDatabase > starts mongo with init root credentials 15ms
+ ✓ test/database.test.ts > startDatabase > throws for an unknown engine 1ms
+ ✓ test/database.test.ts > startDatabase > throws when the container or volume name is missing 0ms
+ ✓ test/database.test.ts > volumeExists > returns true when docker reports the volume 0ms
+ ✓ test/database.test.ts > volumeExists > returns false when docker says the volume does not exist 0ms
+ ✓ test/database.test.ts > volumeExists > returns false when the inspect command fails 0ms
+ ✓ test/database.test.ts > retained volume provenance + adoption > stamps provenance labels when startDatabase creates a fresh volume 13ms
+ ✓ test/database.test.ts > retained volume provenance + adoption > passes caller labels (e.g. the provisioning template) through to the volume 1ms
+ ✓ test/database.test.ts > retained volume provenance + adoption > adoptRetainedVolume is a no-op when the volume does not exist 0ms
+ ✓ test/database.test.ts > retained volume provenance + adoption > skips re-keying for engines that keep credentials outside the volume 0ms
+ ✓ test/database.test.ts > retained volume provenance + adoption > re-keys a retained postgres volume with the cluster's own image and verifies the new password 0ms
+ ✓ test/database.test.ts > retained volume provenance + adoption > re-keys a postgres 18+ labeled volume with the 18 cluster layout (single mount at /var/lib/postgresql) 0ms
+ ✓ test/database.test.ts > retained volume provenance + adoption > escapes single quotes in the generated password 0ms
+ ✓ test/database.test.ts > retained volume provenance + adoption > refuses a re-key that the sidecar did not verify 0ms
+ ✓ test/database.test.ts > retained volume provenance + adoption > refuses engines it cannot re-key, naming the volume and its origin 0ms
+ ✓ test/database.test.ts > retained volume provenance + adoption > refuses to mount another engine's labeled data directory 0ms
+ ✓ test/database.test.ts > retained volume provenance + adoption > treats an unlabeled retained volume as managed postgres data and still re-keys it 0ms
+ ✓ test/database.test.ts > createDockerVolume > applies labels at creation 0ms
+ ✓ test/database.test.ts > createDockerVolume > creates plain volumes when no labels are given 0ms
+ ✓ test/database.test.ts > stopDatabase > stops and removes the container but keeps the volume 0ms
+ ✓ test/database.test.ts > stopDatabase > does nothing when there is no container name 0ms
+ ✓ test/database.test.ts > stopDatabase > swallows remove errors 0ms
+ ✓ test/database.test.ts > removeVolume > deletes the named volume 0ms
+ ✓ test/database.test.ts > removeVolume > swallows errors 0ms
+ ✓ test/database.test.ts > connectionString > builds a postgres connection string with internal host/port 0ms
+ ✓ test/database.test.ts > connectionString > falls back to the container name and engine port 0ms
+ ✓ test/database.test.ts > connectionString > handles missing host/port and an empty user (redis) 0ms
+ ✓ test/database.test.ts > connectionString > builds a mongo connection string 0ms
+ ✓ test/database.test.ts > connectionString > throws for an unknown engine 0ms
+ ✓ test/database.test.ts > defaultPort > returns the engine port or 0 for unknown engines 0ms
+ ✓ test/database.test.ts > databaseSize > returns 0 for unknown engines or missing container names 0ms
+ ✓ test/database.test.ts > databaseSize > queries postgres size and falls back to 0 on garbage 0ms
+ ✓ test/database.test.ts > databaseSize > parses redis used_memory (authed) and returns 0 when absent 0ms
+ ✓ test/database.test.ts > databaseSize > queries mysql size with the decrypted password 0ms
+ ✓ test/database.test.ts > databaseSize > parses mongo dataSize 0ms
+ ✓ test/database.test.ts > databaseSize > returns 0 when the query fails 0ms
+ ✓ test/database.test.ts > databaseSize > returns 0 when the engine is not one of the four handled engines 0ms
+ ✓ test/database.test.ts > backupDatabase > isolates container staging for overlapping backups of one database 34ms
+ ✓ test/database.test.ts > backupDatabase > backs up postgres via a container-side dump file + docker cp (no in-memory dump) 5ms
+ ✓ test/database.test.ts > backupDatabase > S7: retries the postgres dump once when it failed while the server was still starting 8ms
+ ✓ test/database.test.ts > backupDatabase > S7: fails without a retry when postgres never accepts connections, and fails if the retry fails too 9ms
+ ✓ test/database.test.ts > backupDatabase > backs up mysql with the decrypted password via result-file + docker cp 27ms
+ ✓ test/database.test.ts > backupDatabase > backs up redis via authed redis-cli SAVE + docker cp, then encrypts 8ms
+ ✓ test/database.test.ts > backupDatabase > refuses a redis SAVE error instead of encrypting a stale RDB 3ms
+ ✓ test/database.test.ts > backupDatabase > refuses a valkey SAVE error instead of encrypting a stale RDB 3ms
+ ✓ test/database.test.ts > backupDatabase > backs up mongo via a static container temp file + docker cp, then encrypts 7ms
+ ✓ test/database.test.ts > backupDatabase > r276: a failed docker cp removes the container temp dump and the partial host file 3ms
+ ✓ test/database.test.ts > backupDatabase > r276: a failed dump still removes whatever it left in the container 2ms
+ ✓ test/database.test.ts > backupDatabase > r276: a failed encryption unlinks the plaintext dump instead of leaving it in backupsDir 8ms
+ ✓ test/database.test.ts > backupDatabase > throws for databases that are not runnable 4ms
+ ✓ test/database.test.ts > backupDatabase > hits the unsupported fallback for a non-owned engine key 2ms
+ ✓ test/database.test.ts > readBackupBytes > decrypts an envelope backup to the original bytes 2ms
+ ✓ test/database.test.ts > readBackupBytes > returns a legacy plaintext backup as-is (raw bytes, not base64) 1ms
+ ✓ test/database.test.ts > createBackupReadStream > streams the plaintext payload from the current backup envelope 4ms
+ ✓ test/database.test.ts > restoreDatabase > removes staged plaintext when the encrypted dump fails its final authentication check 807ms
+ ✓ test/database.test.ts > restoreDatabase > isolates local and container staging for overlapping restores of the same backup 11ms
+ ✓ test/database.test.ts > restoreDatabase > waits for a restore on the same database and continues after its failure 35ms
+ ✓ test/database.test.ts > restoreDatabase > restores postgres from an ENCRYPTED backup (decrypts to a temp sibling) 6ms
+ ✓ test/database.test.ts > restoreDatabase > restores from a LEGACY plaintext backup as-is (no envelope) 5ms
+ ✓ test/database.test.ts > restoreDatabase > restores mysql with the decrypted password via source (no shell interpolation) 5ms
+ ✓ test/database.test.ts > restoreDatabase > backs up mariadb via mariadb-dump 5ms
+ ✓ test/database.test.ts > restoreDatabase > restores mariadb via the mariadb client 5ms
+ ✓ test/database.test.ts > restoreDatabase > queries the mariadb size like mysql 0ms
+ ✓ test/database.test.ts > restoreDatabase > restores mongo via docker cp + mongorestore --archive=path 5ms
+ ✓ test/database.test.ts > restoreDatabase > restores redis via docker cp to /data/dump.rdb + docker restart 19ms
+ ✓ test/database.test.ts > restoreDatabase > r232: brings redis back up even when the dump copy fails 6ms
+ ✓ test/database.test.ts > restoreDatabase > removes the staged restore file and decrypted sibling afterwards 5ms
+ ✓ test/database.test.ts > restoreDatabase > swallows a failing cleanup after a successful restore 4ms
+ ✓ test/database.test.ts > restoreDatabase > rejects unsupported engines and non-runnable databases 4ms
+ ✓ test/database.test.ts > restoreDatabase > hits the unsupported fallback for a non-owned engine key 2ms
+ ✓ test/database.test.ts > restoreDatabase > restores a mariadb database using the mariadb CLI client 4ms
+ ✓ test/database.test.ts > restoreDatabase > restarts a running database container 0ms
+ ✓ test/database.test.ts > restoreDatabase > captures database logs and handles errors or missing container 0ms
+ ✓ test/database.test.ts > restoreDatabase > configures extended engines properly (valkey, clickhouse, meilisearch, rabbitmq, vector) 0ms
+ ✓ test/database.test.ts > restoreDatabase > reuses a running authenticated KV Studio only when its actual JSON configuration matches 0ms
+ ✓ test/database.test.ts > restoreDatabase > replaces a running KV helper whose configuration is unconfirmed: invalid-json 1ms
+ ✓ test/database.test.ts > restoreDatabase > replaces a running KV helper whose configuration is unconfirmed: ["REDIS_URL=ignored"] 0ms
+ ✓ test/database.test.ts > restoreDatabase > replaces a running KV helper whose configuration is unconfirmed: {} 0ms
+ ✓ test/database.test.ts > restoreDatabase > manages Web Studio containers (Adminer and Redis Commander) 0ms
+ ✓ test/database.test.ts > restoreDatabase > backs up and restores valkey database 8ms
+ ✓ test/lib/nodeDatabaseLifecycle.test.ts > node database lifecycle exclusion > refuses invalid resource 0 before any operation 3ms
+ ✓ test/lib/nodeDatabaseLifecycle.test.ts > node database lifecycle exclusion > refuses invalid resource -1 before any operation 1ms
+ ✓ test/lib/nodeDatabaseLifecycle.test.ts > node database lifecycle exclusion > refuses invalid resource 1.5 before any operation 1ms
+ ✓ test/lib/nodeDatabaseLifecycle.test.ts > node database lifecycle exclusion > refuses invalid resource NaN before any operation 1ms
+ ✓ test/lib/nodeDatabaseLifecycle.test.ts > node database lifecycle exclusion > refuses invalid resource 9007199254740992 before any operation 1ms
+ ✓ test/lib/nodeDatabaseLifecycle.test.ts > node database lifecycle exclusion > refuses a same-resource overlap without queueing and allows another database 11ms
+ ✓ test/lib/nodeDatabaseLifecycle.test.ts > node database lifecycle exclusion > releases both locks after the operation fails 7ms
+ ✓ test/lib/nodeDatabaseLifecycle.test.ts > node database lifecycle exclusion > honors an independently acquired on-disk lock, bounds waiting, and permits retry after release 20ms
+ ✓ test/lib/nodeDatabaseLifecycle.test.ts > node database lifecycle exclusion > preserves filesystem failures and releases in-process exclusion after failed acquisition 5ms
+ ✓ test/lib/crossProcessLockWrite.test.ts > completes native identity writes limited to 1 bytes 7ms
+ ✓ test/lib/crossProcessLockWrite.test.ts > completes native identity writes limited to 2 bytes 4ms
+ ✓ test/lib/crossProcessLockWrite.test.ts > completes native identity writes limited to 3 bytes 4ms
+ ✓ test/lib/crossProcessLockWrite.test.ts > completes native identity writes limited to 7 bytes 4ms
+ ✓ test/lib/crossProcessLockWrite.test.ts > completes native identity writes limited to 1024 bytes 3ms
+ ✓ test/lib/crossProcessLockWrite.test.ts > advances the buffer offset through uneven native writes 4ms
+ ✓ test/lib/crossProcessLockWrite.test.ts > late old release preserves a later holder after the replacement barrier 4ms
+ ✓ test/lib/crossProcessLockWrite.test.ts > double release cannot delete a newly acquired owner 7ms
+ ✓ test/lib/crossProcessLockWrite.test.ts > zero progress refuses ownership and closes the native descriptor 2ms
+ ✓ test/lib/crossProcessLockWrite.test.ts > failure after a native partial write propagates and closes the descriptor 2ms
+
+ Test Files  6 passed (6)
+      Tests  133 passed (133)
+   Start at  10:34:14
+   Duration  4.65s (tests 80%, import 14%, transform 5%, worker 1%)
+
+    Isolate  6 workers spawned · ~96ms startup each (spawn + environment, per file)
+             at least ~482ms faster with isolate: false — reuses workers across files instead of one per file

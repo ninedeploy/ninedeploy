@@ -706,3 +706,24 @@ file controls passed three times; resource-bound server typecheck/build and scop
 lint passed. Error-path cleanup after failed initialization and existing stale
 takeover windows are outside this change; no native Mac or distributed-lock
 completeness is claimed.
+
+Round75 (F1093) prepares a full lock identity in a private exclusively created
+file and atomically publishes it with an existing no-clobber hard link. ENOSPC,
+partial failure and zero progress no longer leave a fresh public lock behind;
+loser cleanup preserves a newer public owner. The regular acquire path now
+requires same-directory hard-link support; unsupported publication fails closed.
+Persistent unlink failure or a crash before publication can leave a private
+.pending artifact; abandoned-file reaping and existing stale-takeover windows
+are not certified here.
+
+Thirteen gated native-file cases passed three times; the permanent test was
+seen red (nine failures,four controls). Final neighboring scope passed133tests
+in6files, including a real second-process exclusion/crash-recovery control.
+Resource-bound server typecheck/build and scoped lint passed. On Mac, run:
+
+```bash
+pnpm --dir apps/server exec vitest run test/lib/crossProcessLockInit.test.ts test/lib/crossProcessLockWrite.test.ts test/lib/crossProcessLock.test.ts test/lib/crossProcessLock-r314.test.ts --coverage=false
+```
+
+No native Mac execution, live backup/restore or complete distributed-lock
+acceptance is implied. The round73 native worker fault remains unresolved.

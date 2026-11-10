@@ -1,0 +1,24 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/verify_F1093_lockInit.test.ts
+FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1093_lockInit.test.ts > failed fail preparation leaves no artifact and immediately retries 9ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1093_lockInit.test.ts > failed partial preparation leaves no artifact and immediately retries 6ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1093_lockInit.test.ts > failed zero preparation leaves no artifact and immediately retries 5ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1093_lockInit.test.ts > public identity remains absent throughout preparation and is complete at publication 5ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1093_lockInit.test.ts > publication EACCES propagates without unsafe fallback or leaked candidate 5ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1093_lockInit.test.ts > publication ENOTSUP propagates without unsafe fallback or leaked candidate 6ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1093_lockInit.test.ts > a newer owner admitted at the publish barrier survives the loser cleanup 5ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1093_lockInit.test.ts > an existing live owner remains untouched by a rejected contender 4ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1093_lockInit.test.ts > a failed initialization cannot clean a later public owner at the write barrier 4ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1093_lockInit.test.ts > stale takeover leaves only the new public inode and release removes it 12ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1093_lockInit.test.ts > private exclusive-create collision preserves the pre-existing candidate 3ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1093_lockInit.test.ts > release retries a transient private-unlink failure without dropping ownership 5ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1093_lockInit.test.ts > heartbeat updates the published inode after its private link is removed 8ms
+
+ Test Files  1 passed (1)
+      Tests  13 passed (13)
+   Start at  10:34:11
+   Duration  404ms (tests 77%, import 14%, transform 6%, worker 3%)

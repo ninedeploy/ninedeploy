@@ -42,7 +42,8 @@ export interface LockOptions {
 
 /**
  * Cross-process mutual exclusion for long backup/restore operations, built
- * on an O_EXCL lock file. The in-process keyed guard serializes operations
+ * on an exclusively prepared file and atomic hard-link publication. The
+ * in-process keyed guard serializes operations
  * within one panel; this lock additionally stops an overlapping process
  * (systemd restart overlap, a second instance against the same data
  * directory) from interleaving a backup with a restore on the same target.
@@ -64,8 +65,14 @@ export async function acquireCrossProcessLock(lockPath: string, opts: LockOption
   // one a later holder created at the same path.
   const token = `${process.pid} ${Date.now()} ${randomUUID()}\n`;
   for (;;) {
+    // Publish only a complete identity. A failed write must not leave a fresh
+    // public lock, and cleanup must never unlink a newer holder at lockPath.
+    const pendingPath = `${lockPath}.${randomUUID()}.pending`;
+    const fd = openSync(pendingPath, 'wx', 0o600);
+    const discardPending = () => {
+      try { unlinkSync(pendingPath); } catch { /* retry at release if still owned */ }
+    };
     try {
-      const fd = openSync(lockPath, 'wx', 0o600);
       try {
         const identity = Buffer.from(token);
         let offset = 0;
@@ -74,9 +81,12 @@ export async function acquireCrossProcessLock(lockPath: string, opts: LockOption
           if (written === 0) throw new Error('The operation lock identity write made no progress');
           offset += written;
         }
+        linkSync(pendingPath, lockPath);
       } catch (error) {
         closeSync(fd);
         throw error;
+      } finally {
+        discardPending();
       }
       const heartbeat = setInterval(() => {
         try {
@@ -104,13 +114,14 @@ export async function acquireCrossProcessLock(lockPath: string, opts: LockOption
           } catch {
             /* already gone — nothing to release */
           }
+          discardPending();
         },
       };
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
       // Held by someone. A heartbeat that stopped long ago means the holder
       // died without releasing: steal the stale file and retry — only one
-      // of the concurrent stealers can win the next O_EXCL create.
+      // of the concurrent stealers can win the next exclusive publication.
       try {
         const { mtimeMs } = statSync(lockPath);
         if (Date.now() - mtimeMs > staleMs) takeOverStaleLock(lockPath, staleMs);

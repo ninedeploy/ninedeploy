@@ -1,0 +1,135 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ × test/lib/crossProcessLockInit.test.ts > failed fail preparation leaves no artifact and immediately retries 13ms
+   → expected [ 'operation.lock' ] to deeply equal []
+ × test/lib/crossProcessLockInit.test.ts > failed partial preparation leaves no artifact and immediately retries 4ms
+   → expected [ 'operation.lock' ] to deeply equal []
+ × test/lib/crossProcessLockInit.test.ts > failed zero preparation leaves no artifact and immediately retries 3ms
+   → expected [ 'operation.lock' ] to deeply equal []
+ × test/lib/crossProcessLockInit.test.ts > public identity remains absent throughout preparation and is complete at publication 4ms
+   → expected true to be false // Object.is equality
+ × test/lib/crossProcessLockInit.test.ts > publication EACCES propagates without unsafe fallback or leaked candidate 5ms
+   → promise resolved "{ release: [Function release] }" instead of rejecting
+ × test/lib/crossProcessLockInit.test.ts > publication ENOTSUP propagates without unsafe fallback or leaked candidate 4ms
+   → promise resolved "{ release: [Function release] }" instead of rejecting
+ × test/lib/crossProcessLockInit.test.ts > a newer owner admitted at the publish barrier survives the loser cleanup 5ms
+   → promise resolved "{ release: [Function release] }" instead of rejecting
+ ✓ test/lib/crossProcessLockInit.test.ts > an existing live owner remains untouched by a rejected contender 4ms
+ ✓ test/lib/crossProcessLockInit.test.ts > a failed initialization cannot clean a later public owner at the write barrier 4ms
+ ✓ test/lib/crossProcessLockInit.test.ts > stale takeover leaves only the new public inode and release removes it 8ms
+ × test/lib/crossProcessLockInit.test.ts > private exclusive-create collision preserves the pre-existing candidate 3ms
+   → promise resolved "{ release: [Function release] }" instead of rejecting
+ × test/lib/crossProcessLockInit.test.ts > release retries a transient private-unlink failure without dropping ownership 3ms
+   → expected [ 'operation.lock' ] to have a length of 2 but got 1
+ ✓ test/lib/crossProcessLockInit.test.ts > heartbeat updates the published inode after its private link is removed 7ms
+
+ Test Files  1 failed (1)
+      Tests  9 failed | 4 passed (13)
+   Start at  10:34:12
+   Duration  276ms (tests 52%, transform 29%, import 16%, worker 3%)
+
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 9 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/lib/crossProcessLockInit.test.ts > failed fail preparation leaves no artifact and immediately retries
+ FAIL  test/lib/crossProcessLockInit.test.ts > failed partial preparation leaves no artifact and immediately retries
+ FAIL  test/lib/crossProcessLockInit.test.ts > failed zero preparation leaves no artifact and immediately retries
+AssertionError: expected [ 'operation.lock' ] to deeply equal []
+
+- Expected
++ Received
+
+- []
++ [
++   "operation.lock",
++ ]
+
+ ❯ test/lib/crossProcessLockInit.test.ts:16:289
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/9]⎯
+
+ FAIL  test/lib/crossProcessLockInit.test.ts > public identity remains absent throughout preparation and is complete at publication
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ Object.m.beforeWrite test/lib/crossProcessLockInit.test.ts:17:201
+
+ ❯ writeSync test/lib/crossProcessLockInit.test.ts:9:180
+ ❯ acquireCrossProcessLock src/lib/crossProcessLock.ts:73:27
+ ❯ acquire test/lib/crossProcessLockInit.test.ts:13:110
+ ❯ test/lib/crossProcessLockInit.test.ts:17:439
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/9]⎯
+
+ FAIL  test/lib/crossProcessLockInit.test.ts > publication EACCES propagates without unsafe fallback or leaked candidate
+ FAIL  test/lib/crossProcessLockInit.test.ts > publication ENOTSUP propagates without unsafe fallback or leaked candidate
+AssertionError: promise resolved "{ release: [Function release] }" instead of rejecting
+
+- Expected
++ Received
+
+- Error {
+-   "message": "rejected promise",
++ {
++   "release": [Function release],
+  }
+
+ ❯ test/lib/crossProcessLockInit.test.ts:18:196
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/9]⎯
+
+ FAIL  test/lib/crossProcessLockInit.test.ts > a newer owner admitted at the publish barrier survives the loser cleanup
+AssertionError: promise resolved "{ release: [Function release] }" instead of rejecting
+
+- Expected
++ Received
+
+- Error {
+-   "message": "rejected promise",
++ {
++   "release": [Function release],
+  }
+
+ ❯ test/lib/crossProcessLockInit.test.ts:19:320
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/9]⎯
+
+ FAIL  test/lib/crossProcessLockInit.test.ts > private exclusive-create collision preserves the pre-existing candidate
+AssertionError: promise resolved "{ release: [Function release] }" instead of rejecting
+
+- Expected
++ Received
+
+- Error {
+-   "message": "rejected promise",
++ {
++   "release": [Function release],
+  }
+
+ ❯ test/lib/crossProcessLockInit.test.ts:23:152
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/9]⎯
+
+ FAIL  test/lib/crossProcessLockInit.test.ts > release retries a transient private-unlink failure without dropping ownership
+AssertionError: expected [ 'operation.lock' ] to have a length of 2 but got 1
+
+- Expected
++ Received
+
+- 2
++ 1
+
+ ❯ test/lib/crossProcessLockInit.test.ts:24:191
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/9]⎯

@@ -1,0 +1,19 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1093_lockInit.test.ts > rejected fail initialization leaves no fresh public lock
+EXPECTED: no public lock after rejection ACTUAL: absent
+PROBLEM NOT REPRODUCED
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1093_lockInit.test.ts > rejected partial initialization leaves no fresh public lock
+EXPECTED: no public lock after rejection ACTUAL: absent
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1093_lockInit.test.ts > control: ordinary acquisition releases its native file 11ms
+ ✓ .temp_files/audit_continuous_20261109/prove_F1093_lockInit.test.ts > rejected fail initialization leaves no fresh public lock 5ms
+ ✓ .temp_files/audit_continuous_20261109/prove_F1093_lockInit.test.ts > rejected partial initialization leaves no fresh public lock 3ms
+
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
+   Start at  10:31:50
+   Duration  356ms (transform 37%, import 30%, tests 28%, worker 6%)

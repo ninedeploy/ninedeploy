@@ -1,0 +1,39 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1093_lockInit.test.ts > rejected fail initialization leaves no fresh public lock
+EXPECTED: no public lock after rejection ACTUAL: orphan blocks retry
+PROBLEM CONFIRMED
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1093_lockInit.test.ts > rejected partial initialization leaves no fresh public lock
+EXPECTED: no public lock after rejection ACTUAL: orphan blocks retry
+PROBLEM CONFIRMED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1093_lockInit.test.ts > control: ordinary acquisition releases its native file 11ms
+ × .temp_files/audit_continuous_20261109/prove_F1093_lockInit.test.ts > rejected fail initialization leaves no fresh public lock 10ms
+   → expected true to be false // Object.is equality
+ × .temp_files/audit_continuous_20261109/prove_F1093_lockInit.test.ts > rejected partial initialization leaves no fresh public lock 4ms
+   → expected true to be false // Object.is equality
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1093_lockInit.test.ts > rejected fail initialization leaves no fresh public lock
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1093_lockInit.test.ts > rejected partial initialization leaves no fresh public lock
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1093_lockInit.test.ts:8:444
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 1 passed (3)
+   Start at  10:30:41
+   Duration  242ms (transform 33%, tests 32%, import 29%, worker 6%)
