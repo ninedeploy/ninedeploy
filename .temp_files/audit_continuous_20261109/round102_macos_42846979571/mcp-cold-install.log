@@ -1,0 +1,12 @@
+
+[1m[30m[46m RUN [49m[39m[22m [36mv5.0.5 [39m[90m/Users/runner/work/ninedeploy/ninedeploy/packages/mcp[39m
+
+ [32m✓[39m test/workspaceBin.test.ts[2m > [22ma cold workspace links the tracked MCP launcher before dist exists, then runs after build[33m 2074[2mms[22m[39m
+ [32m✓[39m test/workspaceBin.test.ts[2m > [22mcontrol: prebuilt workspace command still reaches the missing-token guard[33m 1949[2mms[22m[39m
+ [32m✓[39m test/workspaceBin.test.ts[2m > [22ma frozen offline reinstall preserves the built launcher and lockfile[33m 3182[2mms[22m[39m
+ [32m✓[39m test/workspaceBin.test.ts[2m > [22mthe read-only smoke strips every token casing, including empty values, from both child entrypoints[33m 5135[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m4 passed[39m[22m[90m (4)[39m
+[2m   Start at [22m 15:42:33
+[2m   Duration [22m 12.52s[2m (tests 100%)[22m

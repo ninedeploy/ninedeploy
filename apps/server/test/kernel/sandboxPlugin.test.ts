@@ -4,7 +4,7 @@ import { SandboxPlugin } from '../../src/kernel/sandbox/sandboxPlugin.js';
 import { createFakeDb } from '../helpers.js';
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { writeFileSync, unlinkSync, existsSync } from 'node:fs';
+import { writeFileSync, unlinkSync, existsSync, realpathSync } from 'node:fs';
 import { Worker } from 'node:worker_threads';
 
 describe('SandboxPlugin (Worker Threads)', () => {
@@ -346,7 +346,7 @@ describe('SandboxPlugin (process transport, r468)', () => {
   function writeProcessScript(body: string): string {
     const p = join(tmpdir(), `test-sandbox-proc-${Date.now()}-${Math.random().toString(36).slice(2)}.mjs`);
     writeFileSync(p, body);
-    return p;
+    return realpathSync(p);
   }
 
   it('routes by runtime: compiled sibling → process transport, source checkout → worker fallback', async () => {
@@ -404,7 +404,9 @@ describe('SandboxPlugin (process transport, r468)', () => {
     `);
     const result = await new Promise<{ code: string }>((resolve, reject) => {
       const child = fork(probe, [], { execArgv: SB.sandboxExecArgv([probe]), silent: true, serialization: 'json' });
-      const timer = setTimeout(() => reject(new Error('probe timed out')), 15000);
+      let stderr = '';
+      child.stderr?.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
+      const timer = setTimeout(() => { child.kill(); reject(new Error(`probe timed out: ${stderr}`)); }, 15000);
       child.on('message', (m: { type: string; payload: { code: string } }) => {
         if (m.type === 'PROBE') {
           clearTimeout(timer);
@@ -414,7 +416,7 @@ describe('SandboxPlugin (process transport, r468)', () => {
       });
       child.on('exit', (code) => {
         clearTimeout(timer);
-        reject(new Error(`probe exited (${code}) before answering`));
+        reject(new Error(`probe exited (${code}) before answering: ${stderr}`));
       });
     });
     if (SB.networkDenied()) expect(result.code).toBe('ERR_ACCESS_DENIED');
@@ -439,7 +441,9 @@ describe('SandboxPlugin (process transport, r468)', () => {
         silent: true,
         serialization: 'json',
       });
-      const timer = setTimeout(() => reject(new Error('probe timed out')), 15000);
+      let stderr = '';
+      child.stderr?.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
+      const timer = setTimeout(() => { child.kill(); reject(new Error(`probe timed out: ${stderr}`)); }, 15000);
       child.on('message', (m: { type: string; payload: { code: string } }) => {
         if (m.type === 'PROBE') {
           clearTimeout(timer);
@@ -449,7 +453,7 @@ describe('SandboxPlugin (process transport, r468)', () => {
       });
       child.on('exit', (code) => {
         clearTimeout(timer);
-        reject(new Error(`probe exited (${code}) before answering`));
+        reject(new Error(`probe exited (${code}) before answering: ${stderr}`));
       });
     });
     expect(result.code).toBe('ERR_ACCESS_DENIED');
@@ -467,7 +471,9 @@ describe('SandboxPlugin (process transport, r468)', () => {
     `);
     const result = await new Promise<Record<string, string>>((resolve, reject) => {
       const child = fork(probe, [], { execArgv: SB.sandboxExecArgv([probe]), silent: true, serialization: 'json' });
-      const timer = setTimeout(() => reject(new Error('probe timed out')), 15000);
+      let stderr = '';
+      child.stderr?.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
+      const timer = setTimeout(() => { child.kill(); reject(new Error(`probe timed out: ${stderr}`)); }, 15000);
       child.on('message', (m: { type: string; payload: Record<string, string> }) => {
         if (m.type === 'PROBE') {
           clearTimeout(timer);
@@ -477,7 +483,7 @@ describe('SandboxPlugin (process transport, r468)', () => {
       });
       child.on('exit', (code) => {
         clearTimeout(timer);
-        reject(new Error(`probe exited (${code}) before answering`));
+        reject(new Error(`probe exited (${code}) before answering: ${stderr}`));
       });
     });
     expect(result.spawn).not.toBe('ALLOWED');

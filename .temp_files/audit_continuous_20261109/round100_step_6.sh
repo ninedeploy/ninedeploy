@@ -1,3 +1,4 @@
 set -euo pipefail
 pnpm --filter '@ninedeploy/server...' build 2>&1 | tee "$AUDIT_LOG_DIR/build.log"
+pnpm --filter '@ninedeploy/web...' build 2>&1 | tee -a "$AUDIT_LOG_DIR/build.log"
 pnpm --dir apps/server typecheck 2>&1 | tee "$AUDIT_LOG_DIR/typecheck.log"

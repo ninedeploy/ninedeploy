@@ -1,0 +1,44 @@
+apps\server\test\builders\docker.test.ts:631:20 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+    629 │     const ctx = makeCtx({
+    630 │       service: { slug: 'web', image: 'nginx:1.25', port: 3000, cpuShares: 0, memLimitMb: 0, volumeMount: null, healthPath: '/health' },
+  > 631 │       imageDigest: 'sha256:' + 'a'.repeat(64),
+        │                    ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    632 │     });
+    633 │
+
+  i Unsafe fix: Use a template literal.
+
+     629  629 │       const ctx = makeCtx({
+     630  630 │         service: { slug: 'web', image: 'nginx:1.25', port: 3000, cpuShares: 0, memLimitMb: 0, volumeMount: null, healthPath: '/health' },
+     631      │ - ······imageDigest:·'sha256:'·+·'a'.repeat(64),
+          631 │ + ······imageDigest:·`sha256:${'a'.repeat(64)}`,
+     632  632 │       });
+     633  633 │
+
+
+apps\server\test\builders\docker.test.ts:644:14 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+    642 │       const argv = args as string[];
+    643 │       if (argv[0] === 'image' && argv[1] === 'inspect') return 'nginx:1.25@sha256:repo456';
+  > 644 │       return 'sha256:' + 'b'.repeat(64);
+        │              ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    645 │     });
+    646 │     const ctx = makeCtx({
+
+  i Unsafe fix: Use a template literal.
+
+     642  642 │         const argv = args as string[];
+     643  643 │         if (argv[0] === 'image' && argv[1] === 'inspect') return 'nginx:1.25@sha256:repo456';
+     644      │ - ······return·'sha256:'·+·'b'.repeat(64);
+          644 │ + ······return·`sha256:${'b'.repeat(64)}`;
+     645  645 │       });
+     646  646 │       const ctx = makeCtx({
+
+
+Checked 3 files in 33ms. No fixes applied.
+Found 2 infos.

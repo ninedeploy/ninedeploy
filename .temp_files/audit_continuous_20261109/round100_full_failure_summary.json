@@ -1,0 +1,69 @@
+{
+  "runId": 42846986260,
+  "url": "https://github.com/ninedeploy/ninedeploy/actions/runs/42846986260",
+  "sourceSha": "e1de1ee8c75216b603477951faa3f8bab0620f3e",
+  "conclusion": "failure",
+  "files": {
+    "failed": 6,
+    "passed": 848,
+    "skipped": 1,
+    "total": 855
+  },
+  "tests": {
+    "failed": 9,
+    "passed": 14277,
+    "skipped": 1,
+    "total": 14287
+  },
+  "nativeCli": "NOT RUN after failed unit step",
+  "originalDownloadedDiagnosticSha256": {
+    "bootstrap.txt": "65985bc0ad6324fa3a09b6257ae95045929cb19c0d6fcd801ab7bb04040b0585",
+    "build.log": "4d4986e859d59189ab6f6c5bdf7cc79d6b55495f500ee9282ad52506d7cc1385",
+    "docker-cli.log": "78b5b478b19eeb8370a1655fca2bdfc303c39f1aede8ed50f5c4b9195f4ddbe5",
+    "environment.json": "bf5f29c69e6f7b5a70ada6c4076ca8511f672bf8f247fc0cae027a7fc4ee53c7",
+    "install.log": "b6a41fde732ffe4c520500de7cffc868c09911c1d77320e278e471aa513ed85c",
+    "mcp-bin.log": "af65553a8d9c14f5fefffe9adf1ac83e470450e8d04dbde00fc08101c0f8082b",
+    "mcp-cold-install.log": "d3a5568e374284b876a111558ce54c3a58f900540540ea6b15f30c5c820244d4",
+    "typecheck.log": "8366207267355d3e3d5bf3bf6e8c94c5f93f6078c34f08973fa2b38cdda6cc92",
+    "unit-manifest.json": "426562224ef477cc7dcd4a689a62a25a8c2384679d590fdcc70995d976b4674e",
+    "unit.log": "9e241fc18f7e75226895068d7beededd799b7421d6ae011567490fe267946725"
+  },
+  "failures": [
+    {
+      "name": "FAIL  test/app.test.ts > buildApp > never logs query strings (WebSocket ?token= must not reach the logs)",
+      "detail": "AssertionError: expected '{\"level\":30,\"time\":1794326370598,\"pid…' not to contain 'super-secret-token'\n\n- Expected\n+ Received\n\n- super-secret-token\n+ {\"level\":30,\"time\":1794326370598,\"pid\":32817,\"hostname\":\"sjc22-bt145-07228a69-2f64-48a3-aa28-768aa9f0ff9f-CA109A5752EB.local\",\"reqId\":\"req-1\",\"msg\":\"Route GET:/v1/health?token=super-secret-token not found\"}\n+\n\n ❯ test/app.test.ts:246:24\n    244|     expect(incoming[0]).toContain('\"url\":\"/v1/health\"');\n    245|     for (const line of written) {\n    246|       expect(line).not.toContain('super-secret-token');\n       |                        ^\n    247|       expect(line).not.toContain('?token');\n    248|     }\n\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/9]⎯\n\n FAIL  test/panelAccessWiring.test.ts > panel IP allow-list on the mounted app > refuses a session from an outside address over HTTP and on the event socket route\nAssertionError: expected 403 to be 404 // Object.is equality\n\n- Expected\n+ Received\n\n- 404"
+    },
+    {
+      "name": "FAIL  test/panelAccessWiring.test.ts > panel IP allow-list on the mounted app > refuses a session from an outside address over HTTP and on the event socket route",
+      "detail": "AssertionError: expected 403 to be 404 // Object.is equality\n\n- Expected\n+ Received\n\n- 404\n+ 403\n\n ❯ test/panelAccessWiring.test.ts:80:97\n     78|     }\n     79|     // A path no route matches answers 404 and serves nothing either w…\n     80|     expect((await req('GET', '/v1/no-such-route', OUTSIDE, { authoriza…\n       |                                                                                                 ^\n     81|     // The database Studio proxy's own cookie counts as a session.\n     82|     const studio = await req('GET', '/v1/databases/1/studio-proxy/', O…\n\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/9]⎯\n\n FAIL  test/builders/docker.test.ts > dockerBuilder.buildAndRun — static build pack > G4.4: builds paketo/heroku with the pinned builder, the host platform, per-service caches and an env FILE\nError: The paketo build pack needs an amd64 panel host (Paketo publishes its base builder for amd64 only). Use the heroku build pack, which also builds on arm64.\n ❯ buildWithBuildpacks src/engine/builders/docker.ts:854:26\n    852| ): Promise<void> {\n    853|   const unavailable = await packUnavailableReason(undefined, pack);\n    854|   if (unavailable) throw new Error(unavailable);\n       |                          ^\n    855|   const builder = BUILDPACK_BUILDERS[pack];"
+    },
+    {
+      "name": "FAIL  test/builders/docker.test.ts > dockerBuilder.buildAndRun — static build pack > G4.4: builds paketo/heroku with the pinned builder, the host platform, per-service caches and an env FILE",
+      "detail": "Error: The paketo build pack needs an amd64 panel host (Paketo publishes its base builder for amd64 only). Use the heroku build pack, which also builds on arm64.\n ❯ buildWithBuildpacks src/engine/builders/docker.ts:854:26\n    852| ): Promise<void> {\n    853|   const unavailable = await packUnavailableReason(undefined, pack);\n    854|   if (unavailable) throw new Error(unavailable);\n       |                          ^\n    855|   const builder = BUILDPACK_BUILDERS[pack];\n    856|   const envFile = writeSecretFile('nd-pack-env', 'build.env', packEnvF…\n ❯ buildSourceImage src/engine/builders/docker.ts:1103:5\n ❯ Object.buildAndRun src/engine/builders/docker.ts:1277:45\n ❯ test/builders/docker.test.ts:1378:7\n\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/9]⎯\n\n FAIL  test/kernel/sandboxPlugin.test.ts > SandboxPlugin (process transport, r468) > r534: network is denied exactly when this Node has a net permission scope\nError: probe exited (1) before answering\n ❯ ChildProcess.<anonymous> test/kernel/sandboxPlugin.test.ts:417:16\n    415|       child.on('exit', (code) => {\n    416|         clearTimeout(timer);\n    417|         reject(new Error(`probe exited (${code}) before answering`));\n       |                ^\n    418|       });\n    419|     });\n\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/9]⎯\n"
+    },
+    {
+      "name": "FAIL  test/kernel/sandboxPlugin.test.ts > SandboxPlugin (process transport, r468) > r534: network is denied exactly when this Node has a net permission scope",
+      "detail": "Error: probe exited (1) before answering\n ❯ ChildProcess.<anonymous> test/kernel/sandboxPlugin.test.ts:417:16\n    415|       child.on('exit', (code) => {\n    416|         clearTimeout(timer);\n    417|         reject(new Error(`probe exited (${code}) before answering`));\n       |                ^\n    418|       });\n    419|     });\n\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/9]⎯\n\n FAIL  test/kernel/sandboxPlugin.test.ts > SandboxPlugin (process transport, r468) > a sandboxed child CANNOT read the filesystem (the flags actually deny)\nError: probe exited (1) before answering\n ❯ ChildProcess.<anonymous> test/kernel/sandboxPlugin.test.ts:452:16\n    450|       child.on('exit', (code) => {\n    451|         clearTimeout(timer);\n    452|         reject(new Error(`probe exited (${code}) before answering`));\n       |                ^\n    453|       });\n    454|     });\n\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/9]⎯\n\n FAIL  test/kernel/sandboxPlugin.test.ts > SandboxPlugin (process transport, r468) > a sandboxed child cannot spawn processes or open worker threads\nError: probe exited (1) before answering\n ❯ ChildProcess.<anonymous> test/kernel/sandboxPlugin.test.ts:480:16"
+    },
+    {
+      "name": "FAIL  test/kernel/sandboxPlugin.test.ts > SandboxPlugin (process transport, r468) > a sandboxed child CANNOT read the filesystem (the flags actually deny)",
+      "detail": "Error: probe exited (1) before answering\n ❯ ChildProcess.<anonymous> test/kernel/sandboxPlugin.test.ts:452:16\n    450|       child.on('exit', (code) => {\n    451|         clearTimeout(timer);\n    452|         reject(new Error(`probe exited (${code}) before answering`));\n       |                ^\n    453|       });\n    454|     });\n\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/9]⎯\n\n FAIL  test/kernel/sandboxPlugin.test.ts > SandboxPlugin (process transport, r468) > a sandboxed child cannot spawn processes or open worker threads\nError: probe exited (1) before answering\n ❯ ChildProcess.<anonymous> test/kernel/sandboxPlugin.test.ts:480:16\n    478|       child.on('exit', (code) => {\n    479|         clearTimeout(timer);\n    480|         reject(new Error(`probe exited (${code}) before answering`));\n       |                ^\n    481|       });\n    482|     });\n\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/9]⎯\n\n FAIL  test/plugins/staticFiles.test.ts > resolveWebDistFolder > falls back to a layout candidate when the override is unusable\nAssertionError: expected null not to be null\n ❯ test/plugins/staticFiles.test.ts:55:26"
+    },
+    {
+      "name": "FAIL  test/kernel/sandboxPlugin.test.ts > SandboxPlugin (process transport, r468) > a sandboxed child cannot spawn processes or open worker threads",
+      "detail": "Error: probe exited (1) before answering\n ❯ ChildProcess.<anonymous> test/kernel/sandboxPlugin.test.ts:480:16\n    478|       child.on('exit', (code) => {\n    479|         clearTimeout(timer);\n    480|         reject(new Error(`probe exited (${code}) before answering`));\n       |                ^\n    481|       });\n    482|     });\n\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/9]⎯\n\n FAIL  test/plugins/staticFiles.test.ts > resolveWebDistFolder > falls back to a layout candidate when the override is unusable\nAssertionError: expected null not to be null\n ❯ test/plugins/staticFiles.test.ts:55:26\n     53|     vi.stubEnv('NINEDEPLOY_WEB_DIST', path.join(tmpRoot, 'does-not-exi…\n     54|     const resolved = resolveWebDistFolder();\n     55|     expect(resolved).not.toBeNull();\n       |                          ^\n     56|   });\n     57| });\n\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/9]⎯\n\n FAIL  test/lib/dockerPull.test.ts > pullDockerImage > bypasses both broken snapshotters with a checksum-verified registry export\nAssertionError: expected \"vi.fn()\" to be called with arguments: [ StringMatching /[\\\\/]crane$/, …(3) ]\n"
+    },
+    {
+      "name": "FAIL  test/plugins/staticFiles.test.ts > resolveWebDistFolder > falls back to a layout candidate when the override is unusable",
+      "detail": "AssertionError: expected null not to be null\n ❯ test/plugins/staticFiles.test.ts:55:26\n     53|     vi.stubEnv('NINEDEPLOY_WEB_DIST', path.join(tmpRoot, 'does-not-exi…\n     54|     const resolved = resolveWebDistFolder();\n     55|     expect(resolved).not.toBeNull();\n       |                          ^\n     56|   });\n     57| });\n\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/9]⎯\n\n FAIL  test/lib/dockerPull.test.ts > pullDockerImage > bypasses both broken snapshotters with a checksum-verified registry export\nAssertionError: expected \"vi.fn()\" to be called with arguments: [ StringMatching /[\\\\/]crane$/, …(3) ]\n\nReceived:\n\n  1st vi.fn() call:\n\n  [\n-   StringMatching /[\\\\/]crane$/,\n-   ArrayContaining [\n-     \"export\",\n+   \"docker\",\n+   [\n+     \"pull\",\n      \"mysql:8.4\","
+    },
+    {
+      "name": "FAIL  test/lib/dockerPull.test.ts > pullDockerImage > bypasses both broken snapshotters with a checksum-verified registry export",
+      "detail": "AssertionError: expected \"vi.fn()\" to be called with arguments: [ StringMatching /[\\\\/]crane$/, …(3) ]\n\nReceived:\n\n  1st vi.fn() call:\n\n  [\n-   StringMatching /[\\\\/]crane$/,\n-   ArrayContaining [\n-     \"export\",\n+   \"docker\",\n+   [\n+     \"pull\",\n      \"mysql:8.4\",\n-     \"--platform\",\n-     \"linux/amd64\",\n    ],\n-   Any<Object>,\n-   [Function Mock],\n+   {\n+     \"heartbeatLabel\": \"Pulling application image mysql:8.4\",\n+     \"heartbeatMs\": 20000,\n+   },\n+   [Function sink],\n  ]\n"
+    },
+    {
+      "name": "FAIL  test/lib/dockerPull.test.ts > pullDockerImage > recovers through ctr local mode when the transfer API loses the unpack platform",
+      "detail": "AssertionError: expected \"vi.fn()\" to be called with arguments: [ 'ctr', …(3) ]\n\nReceived:\n\n  1st vi.fn() call:\n\n  [\n-   \"ctr\",\n+   \"docker\",\n    [\n-     \"--namespace\",\n-     \"moby\",\n-     \"images\",\n      \"pull\",\n-     \"--snapshotter\",\n-     \"native\",\n-     \"--platform\",\n-     \"linux/amd64\",\n-     \"docker.io/gitea/gitea:latest\",\n+     \"gitea/gitea:latest\",\n    ],\n-   Any<Object>,\n-   Any<Function>,\n+   {\n+     \"heartbeatLabel\": \"Pulling application image gitea/gitea:latest\",\n+     \"heartbeatMs\": 20000,"
+    }
+  ]
+}

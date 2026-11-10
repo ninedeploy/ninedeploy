@@ -1,0 +1,31 @@
+2026-11-10T15:41:53.7990193Z  Tasks:    12 successful, 12 total
+2026-11-10T15:41:53.7990967Z Cached:    0 cached, 12 total
+2026-11-10T15:41:53.7991400Z   Time:    17.767s
+2026-11-10T15:42:02.1823169Z  Tasks:    8 successful, 8 total
+2026-11-10T15:42:02.1823466Z Cached:    0 cached, 8 total
+2026-11-10T15:42:02.1823744Z   Time:    7.817s
+2026-11-10T15:42:13.3836411Z  Tasks:    8 successful, 8 total
+2026-11-10T15:42:13.3837283Z Cached:    4 cached, 8 total
+2026-11-10T15:42:13.3837954Z   Time:    10.657s
+2026-11-10T15:42:17.1087316Z [2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+2026-11-10T15:42:17.1088596Z [2m      Tests [22m [1m[32m15 passed[39m[22m[90m (15)[39m
+2026-11-10T15:42:24.5456256Z [2m Test Files [22m [1m[32m40 passed[39m[22m[90m (40)[39m
+2026-11-10T15:42:24.5456799Z [2m      Tests [22m [1m[32m803 passed[39m[22m[90m (803)[39m
+2026-11-10T15:42:25.6245515Z [2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+2026-11-10T15:42:25.6246015Z [2m      Tests [22m [1m[32m7 passed[39m[22m[90m (7)[39m
+2026-11-10T15:42:41.0549148Z [2m Test Files [22m [1m[32m36 passed[39m[22m[90m (36)[39m
+2026-11-10T15:42:41.0549655Z [2m      Tests [22m [1m[32m85 passed[39m[22m[90m (85)[39m
+2026-11-10T15:42:49.6736166Z [2m Test Files [22m [1m[32m36 passed[39m[22m[90m (36)[39m
+2026-11-10T15:42:49.6736695Z [2m      Tests [22m [1m[32m390 passed[39m[22m[90m (390)[39m
+2026-11-10T15:43:04.4142515Z [2m Test Files [22m [1m[32m4 passed[39m[22m[90m (4)[39m
+2026-11-10T15:43:04.4143055Z [2m      Tests [22m [1m[32m53 passed[39m[22m[90m (53)[39m
+2026-11-10T15:47:44.2713201Z [2m Test Files [22m [1m[32m241 passed[39m[22m[90m (241)[39m
+2026-11-10T15:47:44.2713485Z [2m      Tests [22m [1m[32m2806 passed[39m[22m[90m (2806)[39m
+2026-11-10T15:47:57.1246959Z [2m Test Files [22m [1m[32m63 passed[39m[22m[90m (63)[39m
+2026-11-10T15:47:57.1248103Z [2m      Tests [22m [1m[32m1139 passed[39m[22m[90m (1139)[39m
+2026-11-10T16:21:29.5070899Z [2m Test Files [22m [1m[32m855 passed[39m[22m[90m (855)[39m
+2026-11-10T16:21:29.5071201Z [2m      Tests [22m [1m[32m14319 passed[39m[22m[90m (14319)[39m
+2026-11-10T16:21:29.5219526Z  Tasks:    12 successful, 12 total
+2026-11-10T16:21:29.5219648Z Cached:    4 cached, 12 total
+2026-11-10T16:21:29.5219754Z   Time:    39m11.636s
+2026-11-10T16:21:29.5268663Z [36;1m  echo "::error::Schema drift detected: drizzle-kit generate changed files under packages/db/src/migrations"[0m

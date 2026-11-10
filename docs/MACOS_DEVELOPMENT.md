@@ -96,7 +96,7 @@ gh workflow run macos-server-full-unit-audit.yml --ref main
 ```
 
 This separate workflow uses the selected commit, the repository's Node/pnpm
-versions, a frozen install, workspace dependency builds and server typecheck.
+versions, a frozen install, server/dashboard dependency builds and server typecheck.
 It runs the configured server unit suite with one worker and coverage disabled:
 
 ```bash
@@ -112,6 +112,13 @@ installed before the unit suite; no Docker daemon, GUI or deployment is started.
 Use the existing **macOS server audit** for the shorter focused regression lane.
 Neither workflow substitutes for coverage, the full root release gate, normal
 Keychain behavior, signing/notarization or acceptance on a physical Mac.
+
+The initial full native run at `e1de1ee8` failed 9 tests in 6 files
+([run 42846986260](https://github.com/ninedeploy/ninedeploy/actions/runs/42846986260)).
+It exposed a real API-only missing-route credential log, missing dashboard build
+prerequisites, host-architecture assumptions and aliased temporary probe paths.
+The follow-up keeps sandbox denials and Paketo's amd64 restriction intact.
+Full native acceptance remains pending a passing follow-up run.
 
 ## Open the same source revision
 
@@ -1200,4 +1207,7 @@ The focused Mac lane also checks OAuth error-response disposal, existing
 identity/JSON semantics and the corrected LAN registry fixture (39 server
 files). Inert credentials and loopback HTTP preserve provider diagnostics and
 GitHub's unverified-email fallback without external sign-in requests.
-Native OAuth and tenancy follow-up: pending the new Mac run.
+Native OAuth and tenancy follow-up: [run 42846979571](https://github.com/ninedeploy/ninedeploy/actions/runs/42846979571)
+passed at `e1de1ee8`: 609 server tests in 39 files, 20 controlled native CLI tests
+in 4 files and 4 workspace MCP tests in 1 file (633 tests, 44 files total).
+This focused result does not certify the separate full native suite.

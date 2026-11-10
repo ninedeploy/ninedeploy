@@ -10,6 +10,8 @@ import {
   recoverImageDirectlyFromRegistry,
 } from '../../src/lib/dockerPull.js';
 
+const hostPlatform = `linux/${process.arch === 'x64' ? 'amd64' : process.arch}`;
+
 const h = vi.hoisted(() => ({
   run: vi.fn(),
   capture: vi.fn(),
@@ -162,7 +164,7 @@ describe('pullDockerImage', () => {
     );
     expect(h.run).toHaveBeenCalledWith(
       expect.stringMatching(/[\\/]crane$/),
-      expect.arrayContaining(['export', 'mysql:8.4', '--platform', 'linux/amd64']),
+      expect.arrayContaining(['export', 'mysql:8.4', '--platform', hostPlatform]),
       expect.any(Object),
       log,
     );
@@ -170,7 +172,7 @@ describe('pullDockerImage', () => {
       'docker',
       expect.arrayContaining([
         'image', 'import',
-        '--platform=linux/amd64',
+        `--platform=${hostPlatform}`,
         '--change', 'ENTRYPOINT ["docker-entrypoint.sh"]',
         '--change', 'CMD ["mysqld"]',
         'mysql:8.4',
@@ -248,7 +250,7 @@ describe('pullDockerImage', () => {
       'ctr',
       [
         '--namespace', 'moby', 'images', 'pull', '--snapshotter', 'native',
-        '--platform', 'linux/amd64', 'docker.io/gitea/gitea:latest',
+        '--platform', hostPlatform, 'docker.io/gitea/gitea:latest',
       ],
       expect.any(Object),
       expect.any(Function),
@@ -257,7 +259,7 @@ describe('pullDockerImage', () => {
       'ctr',
       [
         '--namespace', 'moby', 'images', 'pull', '--local', '--snapshotter', 'native',
-        '--platform', 'linux/amd64', 'docker.io/gitea/gitea:latest',
+        '--platform', hostPlatform, 'docker.io/gitea/gitea:latest',
       ],
       expect.any(Object),
       log,
@@ -266,7 +268,7 @@ describe('pullDockerImage', () => {
       'docker',
       expect.arrayContaining([
         'image', 'import',
-        '--platform=linux/amd64',
+        `--platform=${hostPlatform}`,
         '--change', 'ENV USER="git"',
         '--change', 'ENTRYPOINT ["/usr/bin/entrypoint"]',
         '--change', 'EXPOSE 3000/tcp',

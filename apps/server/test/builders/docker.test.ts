@@ -1375,6 +1375,11 @@ describe('dockerBuilder.buildAndRun — static build pack', () => {
         buildConfig: { buildPack: pack, baseDir: '/' },
         env: { API_TOKEN: 'top-secret' },
       });
+      if (pack === 'paketo' && process.arch !== 'x64') {
+        await expect(dockerBuilder.buildAndRun(ctx as never)).rejects.toThrow(PAKETO_ARCH_REASON);
+        expect(h.run.mock.calls.some((c) => c[0] === 'pack')).toBe(false);
+        continue;
+      }
       await dockerBuilder.buildAndRun(ctx as never);
       const packCalls = h.run.mock.calls.filter((c) => c[0] === 'pack');
       expect(packCalls).toHaveLength(1);

@@ -1,0 +1,407 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+{"level":30,"time":1794328567215,"pid":65728,"hostname":"WHITE","folder":"D:\\Codebox\\PROJECTS\\NineDeploy\\packages\\db\\src\\migrations","msg":"database migrations applied"}
+ ✓ test/app.test.ts > buildApp > GET /health returns ok and pings the database 2070ms
+{"level":30,"time":1794328567431,"pid":65728,"hostname":"WHITE","folder":"D:\\Codebox\\PROJECTS\\NineDeploy\\packages\\db\\src\\migrations","msg":"database migrations applied"}
+ ✓ test/app.test.ts > buildApp > r153: mounts SCIM at the RFC path and its management API under /v1/scim 141ms
+{"level":30,"time":1794328567561,"pid":65728,"hostname":"WHITE","folder":"D:\\Codebox\\PROJECTS\\NineDeploy\\packages\\db\\src\\migrations","msg":"database migrations applied"}
+ ✓ test/app.test.ts > buildApp > r231: registers the log-drain shipper (drains had no sender) 129ms
+{"level":30,"time":1794328567690,"pid":65728,"hostname":"WHITE","folder":"D:\\Codebox\\PROJECTS\\NineDeploy\\packages\\db\\src\\migrations","msg":"database migrations applied"}
+ ✓ test/app.test.ts > buildApp > 0.15 D6: the WebSocket server caps frames at 1 MiB and prefers a non-credential subprotocol 130ms
+{"level":30,"time":1794328567809,"pid":65728,"hostname":"WHITE","folder":"D:\\Codebox\\PROJECTS\\NineDeploy\\packages\\db\\src\\migrations","msg":"database migrations applied"}
+ ✓ test/app.test.ts > buildApp > kernel/lib loggers write to the app pino logger while it runs, and to the console again after close 121ms
+{"level":30,"time":1794328567940,"pid":65728,"hostname":"WHITE","folder":"D:\\Codebox\\PROJECTS\\NineDeploy\\packages\\db\\src\\migrations","msg":"database migrations applied"}
+ ✓ test/app.test.ts > buildApp > 0.15: the route registry records the live route table from the first plugin on 138ms
+{"level":30,"time":1794328568079,"pid":65728,"hostname":"WHITE","folder":"D:\\Codebox\\PROJECTS\\NineDeploy\\packages\\db\\src\\migrations","msg":"database migrations applied"}
+ ✓ test/app.test.ts > buildApp > GET /v1/auth/status reports an uninitialized instance 147ms
+{"level":30,"time":1794328568251,"pid":65728,"hostname":"WHITE","folder":"D:\\Codebox\\PROJECTS\\NineDeploy\\packages\\db\\src\\migrations","msg":"database migrations applied"}
+ ✓ test/app.test.ts > buildApp > M-3: sends baseline security headers on every response 171ms
+{"level":30,"time":1794328568413,"pid":65728,"hostname":"WHITE","folder":"D:\\Codebox\\PROJECTS\\NineDeploy\\packages\\db\\src\\migrations","msg":"database migrations applied"}
+ ✓ test/app.test.ts > buildApp > M-3: sends a frame-blocking CSP on HTML documents only 161ms
+{"level":30,"time":1794328568574,"pid":65728,"hostname":"WHITE","folder":"D:\\Codebox\\PROJECTS\\NineDeploy\\packages\\db\\src\\migrations","msg":"database migrations applied"}
+ ✓ test/app.test.ts > buildApp > M-3: only sends HSTS for HTTPS requests in production 163ms
+{"level":30,"time":1794328568739,"pid":65728,"hostname":"WHITE","folder":"D:\\Codebox\\PROJECTS\\NineDeploy\\packages\\db\\src\\migrations","msg":"database migrations applied"}
+ ✓ test/app.test.ts > buildApp > does not trust local development origins in production 165ms
+{"level":30,"time":1794328568920,"pid":65728,"hostname":"WHITE","folder":"D:\\Codebox\\PROJECTS\\NineDeploy\\packages\\db\\src\\migrations","msg":"database migrations applied"}
+{"level":30,"time":1794328567323,"pid":65728,"hostname":"WHITE","msg":"housekeeping scheduler started"}
+{"level":30,"time":1794328567324,"pid":65728,"hostname":"WHITE","msg":"job scheduler armed (5-minute reload)"}
+{"level":30,"time":1794328567336,"pid":65728,"hostname":"WHITE","state":"READY","msg":"NineDeploy microkernel booted successfully"}
+{"level":30,"time":1794328567339,"pid":65728,"hostname":"WHITE","reqId":"req-1","req":{"method":"GET","url":"/health","hostname":"localhost"},"msg":"incoming request"}
+{"level":30,"time":1794328567342,"pid":65728,"hostname":"WHITE","reqId":"req-1","res":{"statusCode":200},"responseTime":2.799199999999928,"msg":"request completed"}
+{"level":30,"time":1794328567343,"pid":65728,"hostname":"WHITE","msg":"NineDeploy microkernel gracefully terminated"}
+{"level":30,"time":1794328567476,"pid":65728,"hostname":"WHITE","msg":"housekeeping scheduler started"}
+{"level":30,"time":1794328567477,"pid":65728,"hostname":"WHITE","msg":"job scheduler armed (5-minute reload)"}
+{"level":30,"time":1794328567482,"pid":65728,"hostname":"WHITE","state":"READY","msg":"NineDeploy microkernel booted successfully"}
+{"level":30,"time":1794328567484,"pid":65728,"hostname":"WHITE","msg":"NineDeploy microkernel gracefully terminated"}
+{"level":30,"time":1794328567607,"pid":65728,"hostname":"WHITE","msg":"housekeeping scheduler started"}
+{"level":30,"time":1794328567607,"pid":65728,"hostname":"WHITE","msg":"job scheduler armed (5-minute reload)"}
+{"level":30,"time":1794328567611,"pid":65728,"hostname":"WHITE","state":"READY","msg":"NineDeploy microkernel booted successfully"}
+{"level":30,"time":1794328567613,"pid":65728,"hostname":"WHITE","msg":"NineDeploy microkernel gracefully terminated"}
+{"level":30,"time":1794328567736,"pid":65728,"hostname":"WHITE","msg":"housekeeping scheduler started"}
+{"level":30,"time":1794328567737,"pid":65728,"hostname":"WHITE","msg":"job scheduler armed (5-minute reload)"}
+{"level":30,"time":1794328567741,"pid":65728,"hostname":"WHITE","state":"READY","msg":"NineDeploy microkernel booted successfully"}
+{"level":30,"time":1794328567743,"pid":65728,"hostname":"WHITE","msg":"NineDeploy microkernel gracefully terminated"}
+{"level":30,"time":1794328567856,"pid":65728,"hostname":"WHITE","msg":"housekeeping scheduler started"}
+{"level":30,"time":1794328567857,"pid":65728,"hostname":"WHITE","msg":"job scheduler armed (5-minute reload)"}
+{"level":30,"time":1794328567861,"pid":65728,"hostname":"WHITE","state":"READY","msg":"NineDeploy microkernel booted successfully"}
+{"level":30,"time":1794328567864,"pid":65728,"hostname":"WHITE","msg":"NineDeploy microkernel gracefully terminated"}
+{"level":30,"time":1794328567991,"pid":65728,"hostname":"WHITE","msg":"housekeeping scheduler started"}
+{"level":30,"time":1794328567992,"pid":65728,"hostname":"WHITE","msg":"job scheduler armed (5-minute reload)"}
+{"level":30,"time":1794328567995,"pid":65728,"hostname":"WHITE","state":"READY","msg":"NineDeploy microkernel booted successfully"}
+{"level":30,"time":1794328568002,"pid":65728,"hostname":"WHITE","msg":"NineDeploy microkernel gracefully terminated"}
+{"level":30,"time":1794328568139,"pid":65728,"hostname":"WHITE","msg":"housekeeping scheduler started"}
+{"level":30,"time":1794328568139,"pid":65728,"hostname":"WHITE","msg":"job scheduler armed (5-minute reload)"}
+{"level":30,"time":1794328568146,"pid":65728,"hostname":"WHITE","state":"READY","msg":"NineDeploy microkernel booted successfully"}
+{"level":30,"time":1794328568148,"pid":65728,"hostname":"WHITE","reqId":"req-1","req":{"method":"GET","url":"/v1/auth/status","hostname":"localhost"},"msg":"incoming request"}
+{"level":30,"time":1794328568150,"pid":65728,"hostname":"WHITE","reqId":"req-1","res":{"statusCode":200},"responseTime":1.9105999999997039,"msg":"request completed"}
+{"level":30,"time":1794328568150,"pid":65728,"hostname":"WHITE","msg":"NineDeploy microkernel gracefully terminated"}
+{"level":30,"time":1794328568312,"pid":65728,"hostname":"WHITE","msg":"housekeeping scheduler started"}
+{"level":30,"time":1794328568312,"pid":65728,"hostname":"WHITE","msg":"job scheduler armed (5-minute reload)"}
+{"level":30,"time":1794328568318,"pid":65728,"hostname":"WHITE","state":"READY","msg":"NineDeploy microkernel booted successfully"}
+{"level":30,"time":1794328568320,"pid":65728,"hostname":"WHITE","reqId":"req-1","req":{"method":"GET","url":"/health","hostname":"localhost"},"msg":"incoming request"}
+{"level":30,"time":1794328568321,"pid":65728,"hostname":"WHITE","reqId":"req-1","res":{"statusCode":200},"responseTime":0.8956999999995787,"msg":"request completed"}
+{"level":30,"time":1794328568322,"pid":65728,"hostname":"WHITE","msg":"NineDeploy microkernel gracefully terminated"}
+{"level":30,"time":1794328568472,"pid":65728,"hostname":"WHITE","msg":"housekeeping scheduler started"}
+{"level":30,"time":1794328568473,"pid":65728,"hostname":"WHITE","msg":"job scheduler armed (5-minute reload)"}
+{"level":30,"time":1794328568478,"pid":65728,"hostname":"WHITE","state":"READY","msg":"NineDeploy microkernel booted successfully"}
+{"level":30,"time":1794328568481,"pid":65728,"hostname":"WHITE","reqId":"req-1","req":{"method":"GET","url":"/health","hostname":"localhost"},"msg":"incoming request"}
+{"level":30,"time":1794328568481,"pid":65728,"hostname":"WHITE","reqId":"req-1","res":{"statusCode":200},"responseTime":0.680000000000291,"msg":"request completed"}
+{"level":30,"time":1794328568482,"pid":65728,"hostname":"WHITE","reqId":"req-2","req":{"method":"GET","url":"/__csp-probe","hostname":"localhost"},"msg":"incoming request"}
+{"level":30,"time":1794328568483,"pid":65728,"hostname":"WHITE","reqId":"req-2","res":{"statusCode":200},"responseTime":0.6790000000000873,"msg":"request completed"}
+{"level":30,"time":1794328568483,"pid":65728,"hostname":"WHITE","msg":"NineDeploy microkernel gracefully terminated"}
+{"level":30,"time":1794328568636,"pid":65728,"hostname":"WHITE","msg":"housekeeping scheduler started"}
+{"level":30,"time":1794328568636,"pid":65728,"hostname":"WHITE","msg":"job scheduler armed (5-minute reload)"}
+{"level":30,"time":1794328568642,"pid":65728,"hostname":"WHITE","state":"READY","msg":"NineDeploy microkernel booted successfully"}
+{"level":30,"time":1794328568644,"pid":65728,"hostname":"WHITE","reqId":"req-1","req":{"method":"GET","url":"/health","hostname":"localhost"},"msg":"incoming request"}
+{"level":30,"time":1794328568645,"pid":65728,"hostname":"WHITE","reqId":"req-1","res":{"statusCode":200},"responseTime":0.8771999999999025,"msg":"request completed"}
+{"level":30,"time":1794328568645,"pid":65728,"hostname":"WHITE","reqId":"req-2","req":{"method":"GET","url":"/health","hostname":"localhost"},"msg":"incoming request"}
+{"level":30,"time":1794328568646,"pid":65728,"hostname":"WHITE","reqId":"req-2","res":{"statusCode":200},"responseTime":0.6368999999999687,"msg":"request completed"}
+{"level":30,"time":1794328568646,"pid":65728,"hostname":"WHITE","msg":"NineDeploy microkernel gracefully terminated"}
+{"level":30,"time":1794328568799,"pid":65728,"hostname":"WHITE","msg":"housekeeping scheduler started"}
+{"level":30,"time":1794328568799,"pid":65728,"hostname":"WHITE","msg":"job scheduler armed (5-minute reload)"}
+{"level":30,"time":1794328568807,"pid":65728,"hostname":"WHITE","state":"READY","msg":"NineDeploy microkernel booted successfully"}
+{"level":30,"time":1794328568809,"pid":65728,"hostname":"WHITE","reqId":"req-1","req":{"method":"GET","url":"/health","hostname":"localhost"},"msg":"incoming request"}
+{"level":30,"time":1794328568810,"pid":65728,"hostname":"WHITE","reqId":"req-1","res":{"statusCode":200},"responseTime":0.9041999999999462,"msg":"request completed"}
+{"level":30,"time":1794328568810,"pid":65728,"hostname":"WHITE","reqId":"req-2","req":{"method":"GET","url":"/health","hostname":"localhost"},"msg":"incoming request"}
+{"level":30,"time":1794328568811,"pid":65728,"hostname":"WHITE","reqId":"req-2","res":{"statusCode":200},"responseTime":0.2893000000003667,"msg":"request completed"}
+{"level":30,"time":1794328568811,"pid":65728,"hostname":"WHITE","msg":"NineDeploy microkernel gracefully terminated"}
+{"level":30,"time":1794328568972,"pid":65728,"hostname":"WHITE","msg":"housekeeping scheduler started"}
+{"level":30,"time":1794328568973,"pid":65728,"hostname":"WHITE","msg":"job scheduler armed (5-minute reload)"}
+{"level":30,"time":1794328568982,"pid":65728,"hostname":"WHITE","state":"READY","msg":"NineDeploy microkernel booted successfully"}
+{"level":30,"time":1794328568994,"pid":65728,"hostname":"WHITE","msg":"NineDeploy microkernel gracefully terminated"}
+{"level":30,"time":1794328569087,"pid":65728,"hostname":"WHITE","folder":"D:\\Codebox\\PROJECTS\\NineDeploy\\packages\\db\\src\\migrations","msg":"database migrations applied"}
+ ✓ test/app.test.ts > buildApp > never logs query strings (WebSocket ?token= must not reach the logs) 183ms
+ ✓ test/app.test.ts > buildApp > turns ZodError into a 400 validation_error envelope 160ms
+{"level":30,"time":1794328569244,"pid":65728,"hostname":"WHITE","folder":"D:\\Codebox\\PROJECTS\\NineDeploy\\packages\\db\\src\\migrations","msg":"database migrations applied"}
+{"level":30,"time":1794328569143,"pid":65728,"hostname":"WHITE","msg":"housekeeping scheduler started"}
+{"level":30,"time":1794328569143,"pid":65728,"hostname":"WHITE","msg":"job scheduler armed (5-minute reload)"}
+{"level":30,"time":1794328569149,"pid":65728,"hostname":"WHITE","state":"READY","msg":"NineDeploy microkernel booted successfully"}
+{"level":30,"time":1794328569150,"pid":65728,"hostname":"WHITE","reqId":"req-1","req":{"method":"POST","url":"/v1/auth/login","hostname":"localhost"},"msg":"incoming request"}
+{"level":30,"time":1794328569154,"pid":65728,"hostname":"WHITE","reqId":"req-1","res":{"statusCode":400},"responseTime":3.6376000000000204,"msg":"request completed"}
+{"level":30,"time":1794328569155,"pid":65728,"hostname":"WHITE","msg":"NineDeploy microkernel gracefully terminated"}
+{"level":30,"time":1794328569297,"pid":65728,"hostname":"WHITE","msg":"housekeeping scheduler started"}
+{"level":30,"time":1794328569297,"pid":65728,"hostname":"WHITE","msg":"job scheduler armed (5-minute reload)"}
+{"level":30,"time":1794328569302,"pid":65728,"hostname":"WHITE","state":"READY","msg":"NineDeploy microkernel booted successfully"}
+{"level":30,"time":1794328569303,"pid":65728,"hostname":"WHITE","reqId":"req-1","req":{"method":"GET","url":"/v1/does-not-exist","hostname":"localhost"},"msg":"incoming request"}
+{"level":30,"time":1794328569309,"pid":65728,"hostname":"WHITE","reqId":"req-1","res":{"statusCode":404},"responseTime":5.631800000000112,"msg":"request completed"}
+{"level":30,"time":1794328569390,"pid":65728,"hostname":"WHITE","folder":"D:\\Codebox\\PROJECTS\\NineDeploy\\packages\\db\\src\\migrations","msg":"database migrations applied"}
+ ✓ test/app.test.ts > buildApp > returns the Fastify 404 envelope for unknown routes 155ms
+ ✓ test/app.test.ts > buildApp > masks messages on 500 errors in production 155ms
+{"level":30,"time":1794328569558,"pid":65728,"hostname":"WHITE","folder":"D:\\Codebox\\PROJECTS\\NineDeploy\\packages\\db\\src\\migrations","msg":"database migrations applied"}
+ ✓ test/app.test.ts > buildApp > exposes the real message on 500 errors outside production 159ms
+{"level":30,"time":1794328569716,"pid":65728,"hostname":"WHITE","folder":"D:\\Codebox\\PROJECTS\\NineDeploy\\packages\\db\\src\\migrations","msg":"database migrations applied"}
+ ✓ test/app.test.ts > buildApp > uses the HttpError statusCode and code for 4xx errors 157ms
+{"level":30,"time":1794328569864,"pid":65728,"hostname":"WHITE","folder":"D:\\Codebox\\PROJECTS\\NineDeploy\\packages\\db\\src\\migrations","msg":"database migrations applied"}
+ ✓ test/app.test.ts > buildApp > falls back to 500 when statusCode is outside the 400-599 range 146ms
+{"level":30,"time":1794328570011,"pid":65728,"hostname":"WHITE","folder":"D:\\Codebox\\PROJECTS\\NineDeploy\\packages\\db\\src\\migrations","msg":"database migrations applied"}
+ ✓ test/app.test.ts > buildApp > keeps 503 service-unavailable statuses 161ms
+{"level":30,"time":1794328569310,"pid":65728,"hostname":"WHITE","msg":"NineDeploy microkernel gracefully terminated"}
+{"level":30,"time":1794328569453,"pid":65728,"hostname":"WHITE","msg":"housekeeping scheduler started"}
+{"level":30,"time":1794328569454,"pid":65728,"hostname":"WHITE","msg":"job scheduler armed (5-minute reload)"}
+{"level":30,"time":1794328569459,"pid":65728,"hostname":"WHITE","state":"READY","msg":"NineDeploy microkernel booted successfully"}
+{"level":30,"time":1794328569461,"pid":65728,"hostname":"WHITE","reqId":"req-1","req":{"method":"GET","url":"/boom","hostname":"localhost"},"msg":"incoming request"}
+{"level":50,"time":1794328569462,"pid":65728,"hostname":"WHITE","err":{"type":"Error","message":"internal secret detail","stack":"Error: internal secret detail\n    at Object.<anonymous> (D:/Codebox/PROJECTS/NineDeploy/apps/server/test/app.test.ts:285:13)\n    at routeOptions.handler (D:\\Codebox\\PROJECTS\\NineDeploy\\node_modules\\.pnpm\\@fastify+websocket@11.3.1\\node_modules\\@fastify\\websocket\\index.js:212:24)\n    at preHandlerCallbackInner (D:\\Codebox\\PROJECTS\\NineDeploy\\node_modules\\.pnpm\\fastify@5.12.8\\node_modules\\fastify\\lib\\handle-request.js:190:24)\n    at preHandlerCallback (D:\\Codebox\\PROJECTS\\NineDeploy\\node_modules\\.pnpm\\fastify@5.12.8\\node_modules\\fastify\\lib\\handle-request.js:155:5)\n    at next (D:\\Codebox\\PROJECTS\\NineDeploy\\node_modules\\.pnpm\\fastify@5.12.8\\node_modules\\fastify\\lib\\hooks.js:236:9)\n    at handleResolve (D:\\Codebox\\PROJECTS\\NineDeploy\\node_modules\\.pnpm\\fastify@5.12.8\\node_modules\\fastify\\lib\\hooks.js:253:7)\n    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)"},"msg":"request error"}
+{"level":30,"time":1794328569464,"pid":65728,"hostname":"WHITE","reqId":"req-1","res":{"statusCode":500},"responseTime":2.4418000000005122,"msg":"request completed"}
+{"level":30,"time":1794328569465,"pid":65728,"hostname":"WHITE","msg":"NineDeploy microkernel gracefully terminated"}
+{"level":30,"time":1794328569612,"pid":65728,"hostname":"WHITE","msg":"housekeeping scheduler started"}
+{"level":30,"time":1794328569612,"pid":65728,"hostname":"WHITE","msg":"job scheduler armed (5-minute reload)"}
+{"level":30,"time":1794328569619,"pid":65728,"hostname":"WHITE","state":"READY","msg":"NineDeploy microkernel booted successfully"}
+{"level":30,"time":1794328569621,"pid":65728,"hostname":"WHITE","reqId":"req-1","req":{"method":"GET","url":"/boom","hostname":"localhost"},"msg":"incoming request"}
+{"level":50,"time":1794328569622,"pid":65728,"hostname":"WHITE","err":{"type":"Error","message":"visible detail","stack":"Error: visible detail\n    at Object.<anonymous> (D:/Codebox/PROJECTS/NineDeploy/apps/server/test/app.test.ts:299:13)\n    at routeOptions.handler (D:\\Codebox\\PROJECTS\\NineDeploy\\node_modules\\.pnpm\\@fastify+websocket@11.3.1\\node_modules\\@fastify\\websocket\\index.js:212:24)\n    at preHandlerCallbackInner (D:\\Codebox\\PROJECTS\\NineDeploy\\node_modules\\.pnpm\\fastify@5.12.8\\node_modules\\fastify\\lib\\handle-request.js:190:24)\n    at preHandlerCallback (D:\\Codebox\\PROJECTS\\NineDeploy\\node_modules\\.pnpm\\fastify@5.12.8\\node_modules\\fastify\\lib\\handle-request.js:155:5)\n    at next (D:\\Codebox\\PROJECTS\\NineDeploy\\node_modules\\.pnpm\\fastify@5.12.8\\node_modules\\fastify\\lib\\hooks.js:236:9)\n    at handleResolve (D:\\Codebox\\PROJECTS\\NineDeploy\\node_modules\\.pnpm\\fastify@5.12.8\\node_modules\\fastify\\lib\\hooks.js:253:7)\n    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)"},"msg":"request error"}
+{"level":30,"time":1794328569623,"pid":65728,"hostname":"WHITE","reqId":"req-1","res":{"statusCode":500},"responseTime":1.2046000000000276,"msg":"request completed"}
+{"level":30,"time":1794328569623,"pid":65728,"hostname":"WHITE","msg":"NineDeploy microkernel gracefully terminated"}
+{"level":30,"time":1794328569768,"pid":65728,"hostname":"WHITE","msg":"housekeeping scheduler started"}
+{"level":30,"time":1794328569768,"pid":65728,"hostname":"WHITE","msg":"job scheduler armed (5-minute reload)"}
+{"level":30,"time":1794328569778,"pid":65728,"hostname":"WHITE","state":"READY","msg":"NineDeploy microkernel booted successfully"}
+{"level":30,"time":1794328569780,"pid":65728,"hostname":"WHITE","reqId":"req-1","req":{"method":"GET","url":"/teapot","hostname":"localhost"},"msg":"incoming request"}
+{"level":30,"time":1794328569780,"pid":65728,"hostname":"WHITE","reqId":"req-1","res":{"statusCode":418},"responseTime":0.7825999999995474,"msg":"request completed"}
+{"level":30,"time":1794328569781,"pid":65728,"hostname":"WHITE","msg":"NineDeploy microkernel gracefully terminated"}
+{"level":30,"time":1794328569918,"pid":65728,"hostname":"WHITE","msg":"housekeeping scheduler started"}
+{"level":30,"time":1794328569918,"pid":65728,"hostname":"WHITE","msg":"job scheduler armed (5-minute reload)"}
+{"level":30,"time":1794328569924,"pid":65728,"hostname":"WHITE","state":"READY","msg":"NineDeploy microkernel booted successfully"}
+{"level":30,"time":1794328569925,"pid":65728,"hostname":"WHITE","reqId":"req-1","req":{"method":"GET","url":"/weird","hostname":"localhost"},"msg":"incoming request"}
+{"level":50,"time":1794328569926,"pid":65728,"hostname":"WHITE","err":{"type":"Error","message":"odd status","stack":"Error: odd status\n    at Object.<anonymous> (D:/Codebox/PROJECTS/NineDeploy/apps/server/test/app.test.ts:321:27)\n    at routeOptions.handler (D:\\Codebox\\PROJECTS\\NineDeploy\\node_modules\\.pnpm\\@fastify+websocket@11.3.1\\node_modules\\@fastify\\websocket\\index.js:212:24)\n    at preHandlerCallbackInner (D:\\Codebox\\PROJECTS\\NineDeploy\\node_modules\\.pnpm\\fastify@5.12.8\\node_modules\\fastify\\lib\\handle-request.js:190:24)\n    at preHandlerCallback (D:\\Codebox\\PROJECTS\\NineDeploy\\node_modules\\.pnpm\\fastify@5.12.8\\node_modules\\fastify\\lib\\handle-request.js:155:5)\n    at next (D:\\Codebox\\PROJECTS\\NineDeploy\\node_modules\\.pnpm\\fastify@5.12.8\\node_modules\\fastify\\lib\\hooks.js:236:9)\n    at handleResolve (D:\\Codebox\\PROJECTS\\NineDeploy\\node_modules\\.pnpm\\fastify@5.12.8\\node_modules\\fastify\\lib\\hooks.js:253:7)\n    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)","statusCode":299},"msg":"request error"}
+{"level":30,"time":1794328569926,"pid":65728,"hostname":"WHITE","reqId":"req-1","res":{"statusCode":500},"responseTime":0.8339999999998327,"msg":"request completed"}
+{"level":30,"time":1794328569927,"pid":65728,"hostname":"WHITE","msg":"NineDeploy microkernel gracefully terminated"}
+{"level":30,"time":1794328570078,"pid":65728,"hostname":"WHITE","msg":"housekeeping scheduler started"}
+{"level":30,"time":1794328570078,"pid":65728,"hostname":"WHITE","msg":"job scheduler armed (5-minute reload)"}
+{"level":30,"time":1794328570084,"pid":65728,"hostname":"WHITE","state":"READY","msg":"NineDeploy microkernel booted successfully"}
+{"level":30,"time":1794328570086,"pid":65728,"hostname":"WHITE","reqId":"req-1","req":{"method":"GET","url":"/unavailable","hostname":"localhost"},"msg":"incoming request"}
+{"level":50,"time":1794328570086,"pid":65728,"hostname":"WHITE","err":{"type":"HttpError","message":"try later","stack":"HttpError: try later\n    at Object.<anonymous> (D:/Codebox/PROJECTS/NineDeploy/apps/server/test/app.test.ts:331:13)\n    at routeOptions.handler (D:\\Codebox\\PROJECTS\\NineDeploy\\node_modules\\.pnpm\\@fastify+websocket@11.3.1\\node_modules\\@fastify\\websocket\\index.js:212:24)\n    at preHandlerCallbackInner (D:\\Codebox\\PROJECTS\\NineDeploy\\node_modules\\.pnpm\\fastify@5.12.8\\node_modules\\fastify\\lib\\handle-request.js:190:24)\n    at preHandlerCallback (D:\\Codebox\\PROJECTS\\NineDeploy\\node_modules\\.pnpm\\fastify@5.12.8\\node_modules\\fastify\\lib\\handle-request.js:155:5)\n    at next (D:\\Codebox\\PROJECTS\\NineDeploy\\node_modules\\.pnpm\\fastify@5.12.8\\node_modules\\fastify\\lib\\hooks.js:236:9)\n    at handleResolve (D:\\Codebox\\PROJECTS\\NineDeploy\\node_modules\\.pnpm\\fastify@5.12.8\\node_modules\\fastify\\lib\\hooks.js:253:7)\n    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)","statusCode":503,"code":"unavailable","name":"HttpError"},"msg":"request error"}
+{"level":30,"time":1794328570087,"pid":65728,"hostname":"WHITE","reqId":"req-1","res":{"statusCode":503},"responseTime":1.0637000000006083,"msg":"request completed"}
+{"level":30,"time":1794328570087,"pid":65728,"hostname":"WHITE","msg":"NineDeploy microkernel gracefully terminated"}
+ ✓ test/builders/docker.test.ts > dockerBuilder.buildAndRun > appends the template command after the image and mounts the docker socket when flagged 4ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.buildAndRun > runs the recorded image without build/pull and preserves pack conventions {"builtWithNixpacks":true,"builtStatic":false,"port":3000} 2ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.buildAndRun > runs the recorded image without build/pull and preserves pack conventions {"builtWithNixpacks":false,"builtStatic":true,"port":80} 1ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.buildAndRun > disables implicit image pulls for multiline runtime environment and replicas 5ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.buildAndRun > honors a configurable restart policy from the build config 1ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.buildAndRun > falls back to unless-stopped for an invalid restart policy 2ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.buildAndRun > starts replicas -r2..-rN after the primary when replicas > 1 3ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.buildAndRun > r593: labels the container with its deployment and service ids 1ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.buildAndRun > keeps launching a single container when replicas is unset or 1 2ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.buildAndRun > pulls a pre-built image and starts a container with resource/env-file flags 2ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.buildAndRun > r321: mounts the volume attachments next to the primary volume 2ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.buildAndRun > 0.16.3: adds the custom labels after the recovery labels, sorted; a reserved or malformed stored one is dropped 7ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.buildAndRun > 0.16.3: bind-mounts the file mounts read-only after the volumes 1ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.buildAndRun > logs a pull warning when the rejection is not an Error instance 2ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.buildAndRun > fails the deploy when the pull fails and no local image exists 1ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.buildAndRun > writes env vars to a temp env-file (0600) and deletes it after start 2ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.buildAndRun > passes secrets via env-file, never as -e argv 1ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.buildAndRun > builds from source with default baseDir and dockerfile when buildConfig is absent 1ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.buildAndRun > uses the custom baseDir/dockerfile and falls back to latest tag for an empty sha 1ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.buildAndRun > L-13: refuses a build path that climbs out of the checkout 0ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.buildAndRun > omits port/cpu/memory/volume/env flags when unset 0ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.buildAndRun > encodes physical newlines so they cannot inject extra env-file keys 2ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.buildAndRun > writes the env file into a private per-call directory, not a guessable path 2ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.buildAndRun > redacts quoted structured secrets including spaces 0ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.buildAndRun > defaults Dockerfile-less Nixpacks source apps to port 3000 and passes PORT through the env file 2ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.buildAndRun > adopts the single TCP port declared by a Docker image 0ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.buildAndRun > passes -p hostPort:containerPort when publishedPort is configured 0ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.buildAndRun > maps publishedPort to itself when service.port is null 0ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.buildAndRun > stops (never removes) the previous runtime BEFORE start when a host port is published 0ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.buildAndRun > does NOT retire the previous runtime for non-host-port (Traefik-routed) services 0ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.buildAndRun > defaults the returned healthPath to / when the service has none 0ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.buildAndRun > does NOT stop the previous container (blue-green: old keeps serving until healthy) 1ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.buildAndRun > publishes no host port during blue-green (containers are probed on the network) 1ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.buildAndRun > deletes the env-file even when docker run fails 1ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.buildAndRun > tolerates a failing digest inspect (imageDigest left undefined) 1ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.buildAndRun > leaves imageDigest undefined when inspect returns an empty value 1ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.buildAndRun > uses the imageDigest override (rollback pin) instead of the mutable tag 1ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.buildAndRun > r397: resolves an OLD-form local-id rollback pin to its pullable repo digest 1ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.buildAndRun > r397: records the pullable repo digest, not the local image id, on image deploys 1ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.buildAndRun > auto falls back to nixpacks when the repo has no Dockerfile 2ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.buildAndRun > injects panel env into the nixpacks build so NEXT_PUBLIC_* is inlined at build time 1ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.buildAndRun > adds no --env args to nixpacks when the service has no environment 2ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.buildAndRun > nixpacksEnvArgs escapes newlines like the runtime env-file and survives values containing = 0ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.buildAndRun > explicit nixpacks buildPack wins even when a Dockerfile exists 2ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.buildAndRun > passes custom install/build/start commands and baseDir to nixpacks 1ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.buildAndRun > fails with an actionable installer instruction when the Nixpacks CLI is missing 0ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.buildAndRun > never removes the already-finalized runtime when replaying its deployment id 1ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.isHealthy > returns true when there is no port but the container is running 1ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.isHealthy > returns false when the container is not running (regardless of port) 20ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.isHealthy > fails an exited container early and includes redacted runtime logs 0ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.isHealthy > returns false when the container has no network IP (not on the network yet) 21ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.isHealthy > returns false when the container cannot be inspected (already removed) 23ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.isHealthy > falls back to a sibling-container probe when direct IP probing fails (Docker Desktop) 100ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.isHealthy > joins the probe container to the runtime bridge before sibling probing (Model B isolation) 0ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.isHealthy > skips joining networks the probe container is already on 0ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.isHealthy > logs the probe topology once when the sibling probe keeps failing 1508ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.isHealthy > repairs an incorrect configured port from image exposed-port metadata 1ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.isHealthy > logs the sibling probe failure reason and formats non-Error rejections 1537ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.isHealthy > stays unhealthy when both direct and sibling probes fail 1500ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.isHealthy > returns true when the healthcheck responds below 500 1ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.isHealthy > uses "/" as the default health path 0ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.isHealthy > returns false when the service never becomes healthy 20ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.isHealthy > does not sleep with a negative duration if the deadline expires between checks 1ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.isHealthy > returns false when the fetch throws 19ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.isHealthy > treats a container that vanishes mid-probe as unhealthy 20ms
+ ✓ test/builders/docker.test.ts > containerExposedTcpPorts > parses, deduplicates and sorts valid TCP ports 0ms
+ ✓ test/builders/docker.test.ts > containerExposedTcpPorts > returns an empty list for absent or malformed metadata 0ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.stop > stops and removes the container (batched over the replica generation) 1ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.stop > uses the configured stop grace period 0ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.stop > clamps and rejects bogus grace values 0ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.stop > swallows errors from both commands 0ms
+ ✓ test/builders/docker.test.ts > dockerBuilder registry auth > logs in and out around a private-registry pull (password via stdin) 3ms
+ ✓ test/builders/docker.test.ts > dockerBuilder registry auth > fails the build when docker login exits non-zero 0ms
+ ✓ test/builders/docker.test.ts > dockerBuilder registry auth > propagates spawn errors from docker login 0ms
+ ✓ test/builders/docker.test.ts > dockerBuilder registry auth > tolerates an EPIPE on the login stdin 12ms
+ ✓ test/builders/docker.test.ts > dockerBuilder registry auth > skips login entirely without registryAuth 3ms
+ ✓ test/builders/docker.test.ts > dockerBuilder registry auth > kills a stalled docker login after 120s instead of hanging the pipeline forever 159ms
+stdout | test/builders/docker.test.ts > dockerBuilder.buildAndRun — static build pack > runs the host build commands and ships the output via nginx:alpine
+DEBUG RUN-CMDS [
+  [ 'sh', '-c' ],
+  [ 'sh', '-c' ],
+  [ 'docker', 'build' ],
+  [ 'docker', 'rm' ],
+  [ 'docker', 'run' ]
+]
+
+ ✓ test/builders/docker.test.ts > dockerBuilder.buildAndRun — static build pack > runs the host build commands and ships the output via nginx:alpine 11ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.buildAndRun — static build pack > refuses an output dir that escapes the build context 1ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.buildAndRun — static build pack > fails with a clear hint when the static build command is missing 1ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.buildAndRun — static build pack > runs railpack build with the image name and env for railpack buildPack 2ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.buildAndRun — static build pack > r520: a railpack build is the ONLY build — no docker build or nixpacks follows it 2ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.buildAndRun — static build pack > G4.4: builds paketo/heroku with the pinned builder, the host platform, per-service caches and an env FILE 11ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.buildAndRun — static build pack > G4.4: names the containerd image-store fix when pack fails fetching base layers 4ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.buildAndRun — static build pack > G4.4: refuses before building when pack is missing, and paketo on arm64 1ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.buildAndRun — static build pack > r582: without BUILDKIT_HOST the builder refuses before running railpack build 0ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.buildAndRun — static build pack > r520/r582: railpack is refused where it cannot build, with the fix named 0ms
+ ✓ test/builders/docker.test.ts > dockerBuilder.buildAndRun — static build pack > r582: both checks read the panel environment by default 0ms
+ ✓ test/builders/docker.test.ts > r465: compose bridge for multi-line env > hasMultiLineEnv detects newline-carrying values only 0ms
+ ✓ test/builders/docker.test.ts > r465: compose bridge for multi-line env > writeComposeEnvFile quotes values so compose decodes REAL newlines 3ms
+ ✓ test/builders/docker.test.ts > r465: compose bridge for multi-line env > renderRuntimeCompose reproduces the run line: name, bridge, external volumes, limits 0ms
+ ✓ test/builders/docker.test.ts > r465: compose bridge for multi-line env > r593: renderRuntimeCompose carries the deployment labels of the docker run line 0ms
+ ✓ test/builders/docker.test.ts > r465: compose bridge for multi-line env > r470: escapes a literal $ in compose scalars — compose would otherwise interpolate it 0ms
+ ✓ test/builders/docker.test.ts > r465: compose bridge for multi-line env > a multi-line env service starts via compose up, never docker run 4ms
+ ✓ test/builders/docker.test.ts > r465: compose bridge for multi-line env > the compose spec is cleaned up and names the blue-green candidate identically 3ms
+ ✓ test/builders/docker.test.ts > r465: compose bridge for multi-line env > replicas of a multi-line service each get their own compose project, without ports 7ms
+ ✓ test/builders/docker.test.ts > r465: compose bridge for multi-line env > a single-line env service keeps the docker run path untouched 2ms
+ ✓ test/builders/docker.test.ts > r666: which Dockerfile a local build uses with a base directory > baseDir + a Dockerfile only under it: builds that file (used to fail on the missing root one) 3ms
+ ✓ test/builders/docker.test.ts > r666: which Dockerfile a local build uses with a base directory > baseDir + root Dockerfile (pack dockerfile): unchanged — still the root file 2ms
+ ✓ test/builders/docker.test.ts > r666: which Dockerfile a local build uses with a base directory > baseDir + both files: unchanged — the root file, with a note on how to switch 2ms
+ ✓ test/builders/docker.test.ts > r666: which Dockerfile a local build uses with a base directory > baseDir + a root-relative dockerfilePath (pack dockerfile): unchanged 2ms
+ ✓ test/builders/docker.test.ts > r666: which Dockerfile a local build uses with a base directory > baseDir + a baseDir-relative custom name: builds it (the existence check already looked there) 2ms
+ ✓ test/builders/docker.test.ts > r666: which Dockerfile a local build uses with a base directory > no baseDir: both readings agree, nothing changes 2ms
+ ✓ test/builders/docker.test.ts > ordinary HTTP readiness never degrades to an open port > rejects a TCP-open candidate with response "HTTP/1.1 503 Service Unavailable" after the direct grace 2ms
+ ✓ test/builders/docker.test.ts > ordinary HTTP readiness never degrades to an open port > rejects a TCP-open candidate with response "HTTP/1.1 502 Bad Gateway" after the direct grace 1ms
+ ✓ test/builders/docker.test.ts > ordinary HTTP readiness never degrades to an open port > rejects a TCP-open candidate with response "" after the direct grace 1ms
+ ✓ test/builders/docker.test.ts > ordinary HTTP readiness never degrades to an open port > rejects a TCP-open candidate with response "not HTTP" after the direct grace 0ms
+ ✓ test/builders/docker.test.ts > ordinary HTTP readiness never degrades to an open port > waits for the HTTP response to recover before accepting the candidate 1ms
+ ✓ test/builders/docker.test.ts > ordinary HTTP readiness never degrades to an open port > does not repair the runtime port to an HTTP-unhealthy exposed port 1ms
+ ✓ test/builders/docker.test.ts > ordinary HTTP readiness never degrades to an open port > does not follow a redirect to another server as proof of this candidate 0ms
+ ✓ test/kernel/sandboxPlugin.test.ts > SandboxPlugin (Worker Threads) > initializes sandbox worker, handles events, hooks and config RPC 106ms
+ ✓ test/kernel/sandboxPlugin.test.ts > SandboxPlugin (Worker Threads) > r234: relays kernel events to the worker under their real names 77ms
+ ✓ test/kernel/sandboxPlugin.test.ts > SandboxPlugin (Worker Threads) > r474: a malformed READY payload still completes the handshake instead of timing out 76ms
+ ✓ test/kernel/sandboxPlugin.test.ts > SandboxPlugin (Worker Threads) > F140: messages the sandbox posts after destroy() began change nothing in the kernel 77ms
+ ✓ test/kernel/sandboxPlugin.test.ts > SandboxPlugin (Worker Threads) > F143: CONFIG_SET options cannot pick the row owner, category or updating user 76ms
+stderr | test/kernel/sandboxPlugin.test.ts > SandboxPlugin (process transport, r468) > r534: network is denied exactly when this Node has a net permission scope
+[Sandbox:crash-sandbox] Sandbox exited with code 1
+
+ ✓ test/kernel/sandboxPlugin.test.ts > SandboxPlugin (Worker Threads) > handles worker error events gracefully without crashing kernel 76ms
+ ✓ test/kernel/sandboxPlugin.test.ts > SandboxPlugin (process transport, r468) > routes by runtime: compiled sibling → process transport, source checkout → worker fallback 1ms
+ ✓ test/kernel/sandboxPlugin.test.ts > SandboxPlugin (process transport, r468) > sandboxExecArgv builds the permission flags tests can fork with 0ms
+ ✓ test/kernel/sandboxPlugin.test.ts > SandboxPlugin (process transport, r468) > r534: network is denied exactly when this Node has a net permission scope 42ms
+ ✓ test/kernel/sandboxPlugin.test.ts > SandboxPlugin (process transport, r468) > a sandboxed child CANNOT read the filesystem (the flags actually deny) 321ms
+ ✓ test/kernel/sandboxPlugin.test.ts > SandboxPlugin (process transport, r468) > a sandboxed child cannot spawn processes or open worker threads 44ms
+ ✓ test/kernel/sandboxPlugin.test.ts > sandbox bootstraps — compiled handshakes, for real (r470) > boots under the real --permission flags and round-trips INIT→READY→HOOK 56ms
+ ✓ test/kernel/sandboxPlugin.test.ts > sandbox bootstraps — compiled handshakes, for real (r470) > shuts down cleanly on SHUTDOWN (exit 0, not a kill) 51ms
+ ✓ test/kernel/sandboxPlugin.test.ts > sandbox bootstraps — compiled handshakes, for real (r470) > reports ignored destroy failures at debug level before both runtimes exit cleanly 61ms
+ ✓ test/kernel/sandboxPlugin.test.ts > sandbox bootstraps — compiled handshakes, for real (r470) > plugin code CANNOT read the filesystem from inside the real bootstrap 55ms
+{"level":30,"time":1794328579243,"pid":91180,"hostname":"WHITE","folder":"D:\\Codebox\\PROJECTS\\NineDeploy\\packages\\db\\src\\migrations","msg":"database migrations applied"}
+{"level":30,"time":1794328579364,"pid":91180,"hostname":"WHITE","msg":"housekeeping scheduler started"}
+{"level":30,"time":1794328579365,"pid":91180,"hostname":"WHITE","msg":"job scheduler armed (5-minute reload)"}
+{"level":30,"time":1794328579372,"pid":91180,"hostname":"WHITE","state":"READY","msg":"NineDeploy microkernel booted successfully"}
+{"level":30,"time":1794328579387,"pid":91180,"hostname":"WHITE","reqId":"req-1","req":{"method":"POST","url":"/v1/auth/login","hostname":"localhost"},"msg":"incoming request"}
+{"level":30,"time":1794328579391,"pid":91180,"hostname":"WHITE","reqId":"req-1","res":{"statusCode":403},"responseTime":3.0120999999999185,"msg":"request completed"}
+{"level":30,"time":1794328579391,"pid":91180,"hostname":"WHITE","reqId":"req-2","req":{"method":"POST","url":"/v1/%61uth/login","hostname":"localhost"},"msg":"incoming request"}
+{"level":30,"time":1794328579392,"pid":91180,"hostname":"WHITE","reqId":"req-2","res":{"statusCode":403},"responseTime":0.3546999999998661,"msg":"request completed"}
+{"level":30,"time":1794328579392,"pid":91180,"hostname":"WHITE","reqId":"req-3","req":{"method":"POST","url":"/v1/auth/login","hostname":"localhost"},"msg":"incoming request"}
+{"level":30,"time":1794328579392,"pid":91180,"hostname":"WHITE","reqId":"req-3","res":{"statusCode":403},"responseTime":0.1959999999999127,"msg":"request completed"}
+{"level":30,"time":1794328579392,"pid":91180,"hostname":"WHITE","reqId":"req-4","req":{"method":"POST","url":"/v1/auth/login","hostname":"localhost"},"msg":"incoming request"}
+{"level":30,"time":1794328579418,"pid":91180,"hostname":"WHITE","reqId":"req-4","res":{"statusCode":401},"responseTime":25.550199999999904,"msg":"request completed"}
+{"level":30,"time":1794328579419,"pid":91180,"hostname":"WHITE","reqId":"req-5","req":{"method":"GET","url":"/v1/services","hostname":"localhost"},"msg":"incoming request"}
+{"level":30,"time":1794328579420,"pid":91180,"hostname":"WHITE","reqId":"req-5","res":{"statusCode":403},"responseTime":0.3162999999999556,"msg":"request completed"}
+{"level":30,"time":1794328579420,"pid":91180,"hostname":"WHITE","reqId":"req-6","req":{"method":"GET","url":"/v1/%73ervices","hostname":"localhost"},"msg":"incoming request"}
+{"level":30,"time":1794328579420,"pid":91180,"hostname":"WHITE","reqId":"req-6","res":{"statusCode":403},"responseTime":0.14809999999988577,"msg":"request completed"}
+{"level":30,"time":1794328579420,"pid":91180,"hostname":"WHITE","reqId":"req-7","req":{"method":"GET","url":"/v1/events","hostname":"localhost"},"msg":"incoming request"}
+{"level":30,"time":1794328579420,"pid":91180,"hostname":"WHITE","reqId":"req-7","res":{"statusCode":403},"responseTime":0.12090000000011969,"msg":"request completed"}
+{"level":30,"time":1794328579421,"pid":91180,"hostname":"WHITE","reqId":"req-8","req":{"method":"GET","url":"/v1/no-such-route","hostname":"localhost"},"msg":"incoming request"}
+{"level":30,"time":1794328579423,"pid":91180,"hostname":"WHITE","reqId":"req-8","res":{"statusCode":404},"responseTime":1.9692999999999756,"msg":"request completed"}
+{"level":30,"time":1794328579423,"pid":91180,"hostname":"WHITE","reqId":"req-9","req":{"method":"GET","url":"/v1/databases/1/studio-proxy/","hostname":"localhost"},"msg":"incoming request"}
+{"level":30,"time":1794328579423,"pid":91180,"hostname":"WHITE","reqId":"req-9","res":{"statusCode":403},"responseTime":0.14419999999995525,"msg":"request completed"}
+{"level":30,"time":1794328579423,"pid":91180,"hostname":"WHITE","reqId":"req-a","req":{"method":"GET","url":"/v1/events","hostname":"localhost"},"msg":"incoming request"}
+{"level":30,"time":1794328579423,"pid":91180,"hostname":"WHITE","reqId":"req-a","res":{"statusCode":403},"responseTime":0.13149999999995998,"msg":"request completed"}
+{"level":30,"time":1794328579424,"pid":91180,"hostname":"WHITE","reqId":"req-b","req":{"method":"GET","url":"/v1/services","hostname":"localhost"},"msg":"incoming request"}
+{"level":30,"time":1794328579427,"pid":91180,"hostname":"WHITE","reqId":"req-b","res":{"statusCode":401},"responseTime":3.365000000000009,"msg":"request completed"}
+{"level":30,"time":1794328579427,"pid":91180,"hostname":"WHITE","reqId":"req-c","req":{"method":"GET","url":"/v1/services","hostname":"localhost"},"msg":"incoming request"}
+{"level":30,"time":1794328579427,"pid":91180,"hostname":"WHITE","reqId":"req-c","res":{"statusCode":401},"responseTime":0.34400000000005093,"msg":"request completed"}
+{"level":30,"time":1794328579428,"pid":91180,"hostname":"WHITE","reqId":"req-d","req":{"method":"GET","url":"/v1/services","hostname":"localhost"},"msg":"incoming request"}
+ ✓ test/panelAccessWiring.test.ts > panel IP allow-list on the mounted app > refuses sign-in from an outside address, however the path is spelled 38ms
+ ✓ test/panelAccessWiring.test.ts > panel IP allow-list on the mounted app > refuses a session from an outside address over HTTP and on the event socket route 4ms
+ ✓ test/panelAccessWiring.test.ts > panel IP allow-list on the mounted app > lets a session from a listed address or loopback reach authentication 5ms
+ ✓ test/panelAccessWiring.test.ts > panel IP allow-list on the mounted app > leaves API tokens and integrations alone 9ms
+ ✓ test/panelAccessWiring.test.ts > panel IP allow-list on the mounted app > the kill switch reaches the Docker container and the config 6ms
+ ✓ test/panelAccessWiring.test.ts > panel IP allow-list on the mounted app > the settings route refuses a list without the caller’s address 3ms
+{"level":30,"time":1794328579428,"pid":91180,"hostname":"WHITE","reqId":"req-d","res":{"statusCode":401},"responseTime":0.2726999999999862,"msg":"request completed"}
+{"level":30,"time":1794328579428,"pid":91180,"hostname":"WHITE","reqId":"req-e","req":{"method":"GET","url":"/v1/services","hostname":"localhost"},"msg":"incoming request"}
+{"level":30,"time":1794328579429,"pid":91180,"hostname":"WHITE","reqId":"req-e","res":{"statusCode":401},"responseTime":0.6938000000000102,"msg":"request completed"}
+{"level":30,"time":1794328579429,"pid":91180,"hostname":"WHITE","reqId":"req-f","req":{"method":"GET","url":"/health","hostname":"localhost"},"msg":"incoming request"}
+{"level":30,"time":1794328579429,"pid":91180,"hostname":"WHITE","reqId":"req-f","res":{"statusCode":200},"responseTime":0.37179999999989377,"msg":"request completed"}
+{"level":30,"time":1794328579429,"pid":91180,"hostname":"WHITE","reqId":"req-g","req":{"method":"POST","url":"/v1/hooks/github","hostname":"localhost"},"msg":"incoming request"}
+{"level":30,"time":1794328579430,"pid":91180,"hostname":"WHITE","reqId":"req-g","res":{"statusCode":404},"responseTime":0.290000000000191,"msg":"request completed"}
+{"level":30,"time":1794328579430,"pid":91180,"hostname":"WHITE","reqId":"req-h","req":{"method":"POST","url":"/v1/registry-hooks/1/token","hostname":"localhost"},"msg":"incoming request"}
+{"level":30,"time":1794328579431,"pid":91180,"hostname":"WHITE","reqId":"req-h","res":{"statusCode":404},"responseTime":0.6955000000000382,"msg":"request completed"}
+{"level":30,"time":1794328579431,"pid":91180,"hostname":"WHITE","reqId":"req-i","req":{"method":"POST","url":"/v1/deploy-hooks/token","hostname":"localhost"},"msg":"incoming request"}
+{"level":30,"time":1794328579431,"pid":91180,"hostname":"WHITE","reqId":"req-i","res":{"statusCode":404},"responseTime":0.24840000000017426,"msg":"request completed"}
+{"level":30,"time":1794328579431,"pid":91180,"hostname":"WHITE","reqId":"req-j","req":{"method":"GET","url":"/v1/status/acme","hostname":"localhost"},"msg":"incoming request"}
+{"level":30,"time":1794328579432,"pid":91180,"hostname":"WHITE","reqId":"req-j","res":{"statusCode":404},"responseTime":0.7886999999998352,"msg":"request completed"}
+{"level":30,"time":1794328579432,"pid":91180,"hostname":"WHITE","reqId":"req-k","req":{"method":"POST","url":"/v1/ci/runner/claim","hostname":"localhost"},"msg":"incoming request"}
+{"level":30,"time":1794328579432,"pid":91180,"hostname":"WHITE","reqId":"req-k","res":{"statusCode":401},"responseTime":0.22050000000012915,"msg":"request completed"}
+{"level":30,"time":1794328579433,"pid":91180,"hostname":"WHITE","reqId":"req-l","req":{"method":"GET","url":"/scim/v2/Users","hostname":"localhost"},"msg":"incoming request"}
+{"level":30,"time":1794328579433,"pid":91180,"hostname":"WHITE","reqId":"req-l","res":{"statusCode":401},"responseTime":0.6579999999999018,"msg":"request completed"}
+{"level":30,"time":1794328579433,"pid":91180,"hostname":"WHITE","reqId":"req-m","req":{"method":"POST","url":"/api/1/envelope/","hostname":"localhost"},"msg":"incoming request"}
+{"level":30,"time":1794328579434,"pid":91180,"hostname":"WHITE","reqId":"req-m","res":{"statusCode":400},"responseTime":0.39030000000002474,"msg":"request completed"}
+{"level":30,"time":1794328579434,"pid":91180,"hostname":"WHITE","reqId":"req-n","req":{"method":"POST","url":"/v1/oauth/token","hostname":"localhost"},"msg":"incoming request"}
+{"level":30,"time":1794328579435,"pid":91180,"hostname":"WHITE","reqId":"req-n","res":{"statusCode":404},"responseTime":0.8492000000001099,"msg":"request completed"}
+{"level":30,"time":1794328579435,"pid":91180,"hostname":"WHITE","reqId":"req-o","req":{"method":"GET","url":"/v1/auth/saml/1/metadata","hostname":"localhost"},"msg":"incoming request"}
+{"level":30,"time":1794328579437,"pid":91180,"hostname":"WHITE","reqId":"req-o","res":{"statusCode":404},"responseTime":1.8902000000000498,"msg":"request completed"}
+{"level":30,"time":1794328579448,"pid":91180,"hostname":"WHITE","msg":"NineDeploy microkernel gracefully terminated"}
+stdout | test/plugins/staticFilesLogging.test.ts > F1125 API-only GET does not log query credentials
+EXPECTED: no logged query credential; ACTUAL: leaked=false; dashboard=false; method=GET
+PROBLEM NOT REPRODUCED
+
+stdout | test/plugins/staticFilesLogging.test.ts > F1125 API-only POST does not log query credentials
+EXPECTED: no logged query credential; ACTUAL: leaked=false; dashboard=false; method=POST
+PROBLEM NOT REPRODUCED
+
+stdout | test/plugins/staticFilesLogging.test.ts > F1125 API-only HEAD does not log query credentials
+EXPECTED: no logged query credential; ACTUAL: leaked=false; dashboard=false; method=HEAD
+PROBLEM NOT REPRODUCED
+
+ ✓ test/plugins/staticFilesLogging.test.ts > F1125 API-only GET does not log query credentials 87ms
+ ✓ test/plugins/staticFilesLogging.test.ts > F1125 API-only POST does not log query credentials 3ms
+ ✓ test/plugins/staticFilesLogging.test.ts > F1125 API-only HEAD does not log query credentials 3ms
+stdout | test/plugins/staticFilesLogging.test.ts > F1125 dashboard control GET does not log query credentials
+EXPECTED: no logged query credential; ACTUAL: leaked=false; dashboard=true; method=GET
+PROBLEM NOT REPRODUCED
+
+stdout | test/plugins/staticFilesLogging.test.ts > F1125 dashboard control POST does not log query credentials
+EXPECTED: no logged query credential; ACTUAL: leaked=false; dashboard=true; method=POST
+PROBLEM NOT REPRODUCED
+
+stdout | test/plugins/staticFilesLogging.test.ts > F1125 dashboard control HEAD does not log query credentials
+EXPECTED: no logged query credential; ACTUAL: leaked=false; dashboard=true; method=HEAD
+PROBLEM NOT REPRODUCED
+
+ ✓ test/plugins/staticFilesLogging.test.ts > F1125 dashboard control GET does not log query credentials 9ms
+ ✓ test/plugins/staticFilesLogging.test.ts > F1125 dashboard control POST does not log query credentials 3ms
+ ✓ test/plugins/staticFilesLogging.test.ts > F1125 dashboard control HEAD does not log query credentials 3ms
+ ✓ test/plugins/staticFiles.test.ts > pickWebDist > returns the first candidate that contains index.html 5ms
+ ✓ test/plugins/staticFiles.test.ts > pickWebDist > skips undefined and index-less candidates 3ms
+ ✓ test/plugins/staticFiles.test.ts > resolveWebDistFolder > honours the NINEDEPLOY_WEB_DIST override 2ms
+ ✓ test/plugins/staticFiles.test.ts > resolveWebDistFolder > falls back to a layout candidate when the override is unusable 0ms
+ ✓ test/plugins/staticFiles.test.ts > registerStaticFiles > is a no-op when no dist root is resolved 50ms
+ ✓ test/plugins/staticFiles.test.ts > registerStaticFiles > serves the dashboard with an SPA fallback and JSON 404s for API paths 25ms
+ ✓ test/plugins/staticFiles.test.ts > staticFilesPlugin (default export) > registers the dashboard from the env override 9ms
+ ✓ test/lib/dockerPull.test.ts > pullDockerImage > recognizes containerd snapshot extraction races 1ms
+ ✓ test/lib/dockerPull.test.ts > pullDockerImage > normalizes Docker Hub references without corrupting private registry ports 0ms
+ ✓ test/lib/dockerPull.test.ts > pullDockerImage > does not pull a helper image that already exists locally 1ms
+ ✓ test/lib/dockerPull.test.ts > pullDockerImage > routes a missing helper image through the recoverable pull path 0ms
+ ✓ test/lib/dockerPull.test.ts > pullDockerImage > targets Docker managed containerd when its socket is present 0ms
+ ✓ test/lib/dockerPull.test.ts > pullDockerImage > retries a transient snapshot failure and preserves streamed logs 0ms
+ ✓ test/lib/dockerPull.test.ts > pullDockerImage > does not retry unrelated pull failures 1ms
+ ✓ test/lib/dockerPull.test.ts > pullDockerImage > stops after the bounded attempt count 4ms
+ ✓ test/lib/dockerPull.test.ts > pullDockerImage > bypasses both broken snapshotters with a checksum-verified registry export 6ms
+ ✓ test/lib/dockerPull.test.ts > pullDockerImage > repairs an unused committed overlayfs snapshot before falling back to flattening 1ms
+ ✓ test/lib/dockerPull.test.ts > pullDockerImage > recovers through ctr local mode when the transfer API loses the unpack platform 2ms
+ ✓ test/lib/dockerPull.test.ts > pullDockerImage > fails a disk-full extraction snapshot error immediately instead of retrying and recovering (F104) 0ms
+ ✓ test/lib/dockerPull.test.ts > pullDockerImage > re-downloads crane when the cached binary was reaped from the temp dir (F105) 4ms
+
+ Test Files  7 passed (7)
+      Tests  176 passed (176)
+   Start at  18:36:04
+   Duration  15.87s (tests 88%, import 10%, transform 1%)
+
+    Isolate  7 workers spawned · ~134ms startup each (spawn + environment, per file)
+             at least ~807ms faster with isolate: false — reuses workers across files instead of one per file

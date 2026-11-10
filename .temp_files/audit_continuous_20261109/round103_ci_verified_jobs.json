@@ -1,0 +1,32 @@
+{
+  "sourceSha": "e1de1ee8c75216b603477951faa3f8bab0620f3e",
+  "runId": 42846915863,
+  "checkedAt": "2026-11-10T16:34:09.665Z",
+  "jobs": [
+    {
+      "id": 129936753169,
+      "name": "Docker image build and node autoscaling",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 129936753591,
+      "name": "Integration tests (real Docker + PostgreSQL)",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 129936753686,
+      "name": "Typecheck · Lint · Build · Test",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 129962324174,
+      "name": "Publish Docker image to GHCR",
+      "status": "in_progress",
+      "conclusion": null
+    }
+  ],
+  "note": "GHCR publication still in progress; no completed publication claim"
+}
