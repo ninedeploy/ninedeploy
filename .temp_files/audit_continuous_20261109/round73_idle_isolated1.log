@@ -1,0 +1,43 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/lib/nodeIdleScheduler.test.ts > samples within the lease and proves five continuous idle minutes through overlapping windows 190ms
+ ✓ test/lib/nodeIdleScheduler.test.ts > does not confuse unrelated proxy requests with serving traffic 184ms
+ ✓ test/lib/nodeIdleScheduler.test.ts > discards completed idle history and both windows when one serving request arrives 163ms
+ ✓ test/lib/nodeIdleScheduler.test.ts > never keeps usable idle evidence after a lapsed lease 187ms
+ ✓ test/lib/nodeIdleScheduler.test.ts > resets coverage on proxy source loss and refuses unavailable coverage as zero 172ms
+ ✓ test/lib/nodeIdleScheduler.test.ts > restarts the watch for a changed generation/configuration: {"runtimeReplicas":2} 150ms
+ ✓ test/lib/nodeIdleScheduler.test.ts > restarts the watch for a changed generation/configuration: {"sleepAfterMinutes":10} 151ms
+ ✓ test/lib/nodeIdleScheduler.test.ts > restarts the watch for a changed generation/configuration: {"port":4000} 164ms
+ ✓ test/lib/nodeIdleScheduler.test.ts > closes windows when the service leaves the eligible set: {"status":"stopped"} 193ms
+ ✓ test/lib/nodeIdleScheduler.test.ts > closes windows when the service leaves the eligible set: {"asleepAt":"2026-11-10T01:19:48.542Z"} 155ms
+ ✓ test/lib/nodeIdleScheduler.test.ts > closes windows when the service leaves the eligible set: {"serverId":null} 150ms
+ ✓ test/lib/nodeIdleScheduler.test.ts > closes windows when the service leaves the eligible set: {"orchestrator":"swarm"} 172ms
+ ✓ test/lib/nodeIdleScheduler.test.ts > closes windows when the service leaves the eligible set: {"sleepAfterMinutes":null} 173ms
+ ✓ test/lib/nodeIdleScheduler.test.ts > discards all watches when loading current state fails 232ms
+⎯⎯⎯⎯⎯⎯ Unhandled Errors ⎯⎯⎯⎯⎯⎯
+
+Vitest caught 1 unhandled error during the test run.
+This might cause false positive tests. Resolve unhandled errors to make sure your tests are not affected.
+
+⎯⎯⎯⎯⎯⎯ Unhandled Error ⎯⎯⎯⎯⎯⎯⎯
+Error: [vitest-pool]: Worker forks emitted error.
+ ❯ EventEmitter.onTaskError ../../node_modules/.pnpm/vitest@5.0.5_@types+node@26_52342ce20624a14f589ad0628f982827/node_modules/vitest/dist/chunks/index.1TqnEahn.js:5915:21
+ ❯ EventEmitter.emit node:events:514:20
+ ❯ ChildProcess.emitUnexpectedExit ../../node_modules/.pnpm/vitest@5.0.5_@types+node@26_52342ce20624a14f589ad0628f982827/node_modules/vitest/dist/chunks/index.1TqnEahn.js:5390:22
+ ❯ ChildProcess.emit node:events:514:20
+ ❯ ChildProcess._handle.onexit node:internal/child_process:323:12
+
+Caused by: Error: Worker exited unexpectedly with exit code 3221225477 during started state while running test file D:/Codebox/PROJECTS/NineDeploy/apps/server/test/lib/nodeIdleScheduler.test.ts
+ ❯ ChildProcess.emitUnexpectedExit ../../node_modules/.pnpm/vitest@5.0.5_@types+node@26_52342ce20624a14f589ad0628f982827/node_modules/vitest/dist/chunks/index.1TqnEahn.js:5388:33
+ ❯ ChildProcess.emit node:events:514:20
+ ❯ ChildProcess._handle.onexit node:internal/child_process:323:12
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+
+
+ Test Files   (1)
+      Tests  14 passed (24)
+     Errors  1 error
+   Start at  03:19:47
+   Duration  3.54s (import 71%, transform 29%)

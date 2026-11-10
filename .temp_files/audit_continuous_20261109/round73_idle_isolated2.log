@@ -1,0 +1,32 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/lib/nodeIdleScheduler.test.ts > samples within the lease and proves five continuous idle minutes through overlapping windows 206ms
+ ✓ test/lib/nodeIdleScheduler.test.ts > does not confuse unrelated proxy requests with serving traffic 184ms
+ ✓ test/lib/nodeIdleScheduler.test.ts > discards completed idle history and both windows when one serving request arrives 211ms
+ ✓ test/lib/nodeIdleScheduler.test.ts > never keeps usable idle evidence after a lapsed lease 157ms
+ ✓ test/lib/nodeIdleScheduler.test.ts > resets coverage on proxy source loss and refuses unavailable coverage as zero 186ms
+ ✓ test/lib/nodeIdleScheduler.test.ts > restarts the watch for a changed generation/configuration: {"runtimeReplicas":2} 166ms
+ ✓ test/lib/nodeIdleScheduler.test.ts > restarts the watch for a changed generation/configuration: {"sleepAfterMinutes":10} 203ms
+ ✓ test/lib/nodeIdleScheduler.test.ts > restarts the watch for a changed generation/configuration: {"port":4000} 175ms
+ ✓ test/lib/nodeIdleScheduler.test.ts > closes windows when the service leaves the eligible set: {"status":"stopped"} 161ms
+ ✓ test/lib/nodeIdleScheduler.test.ts > closes windows when the service leaves the eligible set: {"asleepAt":"2026-11-10T01:20:30.041Z"} 261ms
+ ✓ test/lib/nodeIdleScheduler.test.ts > closes windows when the service leaves the eligible set: {"serverId":null} 178ms
+ ✓ test/lib/nodeIdleScheduler.test.ts > closes windows when the service leaves the eligible set: {"orchestrator":"swarm"} 165ms
+ ✓ test/lib/nodeIdleScheduler.test.ts > closes windows when the service leaves the eligible set: {"sleepAfterMinutes":null} 228ms
+ ✓ test/lib/nodeIdleScheduler.test.ts > discards all watches when loading current state fails 242ms
+ ✓ test/lib/nodeIdleScheduler.test.ts > does not resurrect a late opening reply after shutdown 299ms
+ ✓ test/lib/nodeIdleScheduler.test.ts > does not let an in-flight slow service block another service lease tick 339ms
+ ✓ test/lib/nodeIdleScheduler.test.ts > reserves successor capacity so full agents can still complete and chain windows 232ms
+ ✓ test/lib/nodeIdleScheduler.test.ts > retains a precise held reason and backs off unavailable agents rather than polling every lease tick 237ms
+ ✓ test/lib/nodeIdleScheduler.test.ts > does not let failed services reserve empty slots and starve a healthy service on the same node 249ms
+ ✓ test/lib/nodeIdleScheduler.test.ts > keeps the newer observation when an earlier state read settles late (failed=false) 231ms
+ ✓ test/lib/nodeIdleScheduler.test.ts > keeps the newer observation when an earlier state read settles late (failed=true) 273ms
+ ✓ test/lib/nodeIdleScheduler.test.ts > applies sequential state reads and closes the prior configuration watch 214ms
+ ✓ test/lib/nodeIdleScheduler.test.ts > keeps an earlier successful state read usable while a newer read is still pending 251ms
+ ✓ test/lib/nodeIdleScheduler.test.ts > discards observations when the newest state read fails 223ms
+
+ Test Files  1 passed (1)
+      Tests  24 passed (24)
+   Start at  03:20:29
+   Duration  6.02s (tests 89%, import 8%, transform 3%)

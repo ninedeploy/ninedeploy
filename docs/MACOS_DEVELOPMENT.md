@@ -675,3 +675,25 @@ seen red (seven failures, one full-write control); eight independent cases passe
 three times. Partial bytes were really written to disposable native files through
 an injected write seam. This does not establish short-write frequency, live
 restore behavior or native Mac acceptance.
+
+Round 73 ran the full configured server unit suite on Windows at1129f4c5.
+It FAILED:832/833 files passed,13934 tests passed and2 skipped; one native
+worker exited0xC0000005 part-way through nodeIdleScheduler.test.ts. The first
+focused repeat also crashed, then six whole-file repeats each passed24/24.
+Two plain-Node controls each completed50 native DB open/migrate/read/close
+cycles, including one forced-GC run. No local native root cause or fix was
+established. A full retry was invalidated after an observed6h42m tool/session
+pause and worker-termination timeouts, then only its verified owned processes
+were stopped. It is not a passing full-suite result.
+
+For a native Mac comparison after setup, retain stdout/stderr and exit status:
+
+```bash
+pnpm --dir apps/server exec vitest run test/lib/nodeIdleScheduler.test.ts --coverage=false --maxWorkers=1 --reporter=verbose
+pnpm --dir apps/server exec vitest run --coverage=false --maxWorkers=1 --reporter=verbose
+```
+
+These commands do not enable coverage or integration/diag tests. Upstream
+[libsql issue231](https://github.com/tursodatabase/libsql-js/issues/231) reports
+similar Windows native faults; it is context, not proof of this local cause.
+No Mac result, native crash fix, coverage or release certification is claimed.
