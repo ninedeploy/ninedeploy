@@ -1,0 +1,78 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/engine/logShipper.test.ts > durable log-drain shipper > prunes retired empty cursors while preserving recent sources and cursors with pending logs 160ms
+ ✓ test/engine/logShipper.test.ts > durable log-drain shipper > starts without backfill and delivers only newer timestamps 174ms
+ ✓ test/engine/logShipper.test.ts > durable log-drain shipper > captures a failed delivery in ciphertext and retries without re-reading its stopped source 164ms
+ ✓ test/engine/logShipper.test.ts > durable log-drain shipper > does not resend a successful destination when another destination retries 164ms
+ ✓ test/engine/logShipper.test.ts > durable log-drain shipper > binds queued payloads to the destination and credentials under which they were captured 155ms
+ ✓ test/engine/logShipper.test.ts > durable log-drain shipper > keeps queues while disabled and resumes after being enabled 154ms
+ ✓ test/engine/logShipper.test.ts > durable log-drain shipper > keeps distinct host cursors for identically named containers 177ms
+ ✓ test/engine/logShipper.test.ts > durable log-drain shipper > respects per-service drain selection 152ms
+ ✓ test/engine/logShipper.test.ts > durable log-drain shipper > preserves lines that share a timestamp across bounded batches 158ms
+ ✓ test/engine/logShipper.test.ts > durable log-drain shipper > rolls a failed capture back without advancing the durable cursor 161ms
+ ✓ test/engine/logShipper.test.ts > durable log-drain shipper > pauses at the encrypted payload limit and retains the unprocessed cursor 154ms
+ ✓ test/engine/logShipper.test.ts > durable log-drain shipper > reports oversized lines without dropping or advancing them 160ms
+ ✓ test/engine/logShipper.test.ts > durable log-drain shipper > leaves a stopped or deleted source independent of delivery and cleans foreign keys on deletion 179ms
+ ✓ test/engine/logShipper.test.ts > durable log-drain shipper > rotates queued payloads through the normal master-key registry 254ms
+ ✓ test/engine/logShipper.test.ts > durable log-drain shipper > stops work on cancellation without acknowledging queued entries 187ms
+ ✓ test/engine/logShipper.test.ts > durable log-drain shipper > retries a failed log read without advancing its cursor 194ms
+ ✓ test/engine/logShipper.test.ts > durable log-drain shipper > parses timestamps and rejects malformed timestamps 0ms
+ ✓ test/engine/logShipper.test.ts > durable log-drain shipper > labels Loki streams the way log search queries them 1ms
+ ✓ test/engine/logShipper.test.ts > R2: a Swarm service ships the lines of every task, wherever it runs > one cursor per task; never `docker logs` against the Swarm service name, which no container has 245ms
+ ✓ test/engine/logShipper.test.ts > R2: a Swarm service ships the lines of every task, wherever it runs > no destination takes the service: the manager is not asked for its tasks 200ms
+ ✓ test/engine/logShipper.test.ts > R2: a Swarm service ships the lines of every task, wherever it runs > a manager that cannot list the tasks skips the service this round, without a cursor 234ms
+ ✓ test/engine/logShipper.test.ts > R2: a Swarm service ships the lines of every task, wherever it runs > a compose service whose runtime id looks like a Swarm service is read as containers (review L1) 213ms
+stdout | test/engine/elasticsearchAcknowledgement.test.ts > retains captured logs after a native truncated HTTP 200 bulk response
+EXPECTED: truncated ack preserves one pending batch, shipped0; ACTUAL: {
+  receivedHeaders: true,
+  pending: 1,
+  result: { shipped: 0, failed: 1, queued: 0, paused: 0 }
+}
+PROBLEM NOT REPRODUCED
+
+ ✓ test/engine/elasticsearchAcknowledgement.test.ts > retains captured logs after a native truncated HTTP 200 bulk response 181ms
+stdout | test/engine/elasticsearchAcknowledgement.test.ts > retains filtered bulk failures without a top-level errors flag
+EXPECTED: filtered item error keeps one queued batch, shipped0; ACTUAL: { pending: 1, result: { shipped: 0, failed: 1, queued: 0, paused: 0 } }
+PROBLEM NOT REPRODUCED
+
+ ✓ test/engine/elasticsearchAcknowledgement.test.ts > control: a complete successful bulk acknowledgement deletes the delivered batch 148ms
+ ✓ test/engine/elasticsearchAcknowledgement.test.ts > retains filtered bulk failures without a top-level errors flag 173ms
+ ✓ test/engine/elasticsearchAcknowledgement.test.ts > control: explicit errors true is already refused 190ms
+ ✓ test/engine/elasticsearchAcknowledgement.test.ts > retains exact encrypted payload after invalid acknowledgement: truncated JSON 167ms
+ ✓ test/engine/elasticsearchAcknowledgement.test.ts > retains exact encrypted payload after invalid acknowledgement: HTML 159ms
+ ✓ test/engine/elasticsearchAcknowledgement.test.ts > retains exact encrypted payload after invalid acknowledgement: empty 175ms
+ ✓ test/engine/elasticsearchAcknowledgement.test.ts > retains exact encrypted payload after invalid acknowledgement: null 156ms
+ ✓ test/engine/elasticsearchAcknowledgement.test.ts > retains exact encrypted payload after invalid acknowledgement: string 155ms
+ ✓ test/engine/elasticsearchAcknowledgement.test.ts > retains exact encrypted payload after invalid acknowledgement: array 199ms
+ ✓ test/engine/elasticsearchAcknowledgement.test.ts > retains exact encrypted payload after invalid acknowledgement: wrong items type 154ms
+ ✓ test/engine/elasticsearchAcknowledgement.test.ts > retains exact encrypted payload after invalid acknowledgement: numeric flag 164ms
+ ✓ test/engine/elasticsearchAcknowledgement.test.ts > retains exact encrypted payload after invalid acknowledgement: null flag 152ms
+ ✓ test/engine/elasticsearchAcknowledgement.test.ts > refuses a filtered item error without a reason string 181ms
+ ✓ test/engine/elasticsearchAcknowledgement.test.ts > preserves valid filtered acknowledgement {} 148ms
+ ✓ test/engine/elasticsearchAcknowledgement.test.ts > preserves valid filtered acknowledgement {"items":[{}]} 205ms
+ ✓ test/engine/elasticsearchAcknowledgement.test.ts > accepts a flag-only successful filter 247ms
+ ✓ test/engine/elasticsearchAcknowledgement.test.ts > refuses a flag-only failed filter 196ms
+ ✓ test/engine/logDrainTargets.test.ts > formats > writes an Elasticsearch bulk body into the index from the URL 9ms
+ ✓ test/engine/logDrainTargets.test.ts > formats > writes Splunk HEC events, New Relic, Axiom and Better Stack bodies 1ms
+ ✓ test/engine/logDrainTargets.test.ts > formats > sorts CloudWatch events by time and reads the group and stream from the URL 1ms
+ ✓ test/engine/logDrainTargets.test.ts > auth and URLs > presents each key the way its service expects 1ms
+ ✓ test/engine/logDrainTargets.test.ts > auth and URLs > refuses URLs that do not name what the target needs 0ms
+ ✓ test/engine/logDrainTargets.test.ts > delivery > reports the failed items of an Elasticsearch bulk request that answered 200 24ms
+ ✓ test/engine/logDrainTargets.test.ts > delivery > signs CloudWatch calls, and creates a missing stream once before retrying 5ms
+ ✓ test/engine/logDrainTargets.test.ts > delivery > refuses a CloudWatch drain without key pair 1ms
+ ✓ test/engine/logDrainManager.test.ts > logDrainManager engine > preserves timestamp 0 in single and batch payloads 3ms
+ ✓ test/engine/logDrainManager.test.ts > logDrainManager engine > preserves timestamp 1 in single and batch payloads 0ms
+ ✓ test/engine/logDrainManager.test.ts > logDrainManager engine > preserves timestamp -1 in single and batch payloads 0ms
+ ✓ test/engine/logDrainManager.test.ts > logDrainManager engine > formats loki payloads correctly 0ms
+ ✓ test/engine/logDrainManager.test.ts > logDrainManager engine > formats datadog payloads correctly 0ms
+ ✓ test/engine/logDrainManager.test.ts > logDrainManager engine > formats raw and rfc5424 text payloads 0ms
+ ✓ test/engine/logDrainManager.test.ts > logDrainManager engine > formats default json payloads 0ms
+ ✓ test/engine/logDrainManager.test.ts > logDrainManager engine > dispatches logs to drain with API key and custom headers 2ms
+ ✓ test/engine/logDrainManager.test.ts > logDrainManager engine > handles network errors during dispatch gracefully 0ms
+ ✓ test/engine/logDrainManager.test.ts > logDrainManager engine > tests connection probe successfully and reports errors 1ms
+
+ Test Files  4 passed (4)
+      Tests  58 passed (58)
+   Start at  18:39:48
+   Duration  8.30s (tests 88%, import 11%, transform 1%)

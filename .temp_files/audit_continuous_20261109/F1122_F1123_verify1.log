@@ -1,0 +1,38 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+stdout | test/engine/elasticsearchAcknowledgement.test.ts > retains captured logs after a native truncated HTTP 200 bulk response
+EXPECTED: truncated ack preserves one pending batch, shipped0; ACTUAL: {
+  receivedHeaders: true,
+  pending: 1,
+  result: { shipped: 0, failed: 1, queued: 0, paused: 0 }
+}
+PROBLEM NOT REPRODUCED
+
+ ✓ test/engine/elasticsearchAcknowledgement.test.ts > retains captured logs after a native truncated HTTP 200 bulk response 178ms
+stdout | test/engine/elasticsearchAcknowledgement.test.ts > retains filtered bulk failures without a top-level errors flag
+EXPECTED: filtered item error keeps one queued batch, shipped0; ACTUAL: { pending: 1, result: { shipped: 0, failed: 1, queued: 0, paused: 0 } }
+PROBLEM NOT REPRODUCED
+
+ ✓ test/engine/elasticsearchAcknowledgement.test.ts > control: a complete successful bulk acknowledgement deletes the delivered batch 155ms
+ ✓ test/engine/elasticsearchAcknowledgement.test.ts > retains filtered bulk failures without a top-level errors flag 154ms
+ ✓ test/engine/elasticsearchAcknowledgement.test.ts > control: explicit errors true is already refused 153ms
+ ✓ test/engine/elasticsearchAcknowledgement.test.ts > retains exact encrypted payload after invalid acknowledgement: truncated JSON 145ms
+ ✓ test/engine/elasticsearchAcknowledgement.test.ts > retains exact encrypted payload after invalid acknowledgement: HTML 142ms
+ ✓ test/engine/elasticsearchAcknowledgement.test.ts > retains exact encrypted payload after invalid acknowledgement: empty 146ms
+ ✓ test/engine/elasticsearchAcknowledgement.test.ts > retains exact encrypted payload after invalid acknowledgement: null 152ms
+ ✓ test/engine/elasticsearchAcknowledgement.test.ts > retains exact encrypted payload after invalid acknowledgement: string 141ms
+ ✓ test/engine/elasticsearchAcknowledgement.test.ts > retains exact encrypted payload after invalid acknowledgement: array 147ms
+ ✓ test/engine/elasticsearchAcknowledgement.test.ts > retains exact encrypted payload after invalid acknowledgement: wrong items type 142ms
+ ✓ test/engine/elasticsearchAcknowledgement.test.ts > retains exact encrypted payload after invalid acknowledgement: numeric flag 154ms
+ ✓ test/engine/elasticsearchAcknowledgement.test.ts > retains exact encrypted payload after invalid acknowledgement: null flag 140ms
+ ✓ test/engine/elasticsearchAcknowledgement.test.ts > refuses a filtered item error without a reason string 150ms
+ ✓ test/engine/elasticsearchAcknowledgement.test.ts > preserves valid filtered acknowledgement {} 147ms
+ ✓ test/engine/elasticsearchAcknowledgement.test.ts > preserves valid filtered acknowledgement {"items":[{}]} 153ms
+ ✓ test/engine/elasticsearchAcknowledgement.test.ts > accepts a flag-only successful filter 204ms
+ ✓ test/engine/elasticsearchAcknowledgement.test.ts > refuses a flag-only failed filter 205ms
+
+ Test Files  1 passed (1)
+      Tests  18 passed (18)
+   Start at  18:40:24
+   Duration  3.46s (tests 85%, import 12%, transform 4%)

@@ -177,14 +177,19 @@ export async function postCloudWatch(
   }
 }
 
-/** Elasticsearch answers 200 for a bulk request whose items failed: read the `errors` flag. */
+/** A 200 bulk response can still reject items, including in filtered responses. */
 export async function elasticsearchBulkFailed(res: Response): Promise<string | null> {
   try {
     const json = (await res.json()) as { errors?: boolean; items?: Array<Record<string, { error?: { reason?: string } }>> };
-    if (!json.errors) return null;
-    const first = json.items?.map((i) => Object.values(i)[0]?.error?.reason).find(Boolean);
+    if (!json || typeof json !== 'object' || Array.isArray(json) ||
+      (json.errors !== undefined && typeof json.errors !== 'boolean') ||
+      (json.items !== undefined && !Array.isArray(json.items))) return 'invalid bulk acknowledgement';
+    // filter_path=items.*.error legitimately removes the top-level errors flag.
+    const errors = json.items?.flatMap((item) => Object.values(item).map((result) => result?.error)).filter(Boolean);
+    if (!json.errors && !errors?.length) return null;
+    const first = errors?.find((error) => typeof error?.reason === 'string')?.reason;
     return `bulk request had failed items${first ? `: ${first}` : ''}`;
   } catch {
-    return null;
+    return 'unreadable bulk acknowledgement';
   }
 }

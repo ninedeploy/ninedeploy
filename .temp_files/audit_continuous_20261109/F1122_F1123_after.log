@@ -1,0 +1,24 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1122_elasticAck.test.ts > retains captured logs after a native truncated HTTP 200 bulk response
+EXPECTED: truncated ack preserves one pending batch, shipped0; ACTUAL: {
+  receivedHeaders: true,
+  pending: 1,
+  result: { shipped: 0, failed: 1, queued: 0, paused: 0 }
+}
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1122_elasticAck.test.ts > retains captured logs after a native truncated HTTP 200 bulk response 192ms
+ ✓ .temp_files/audit_continuous_20261109/prove_F1122_elasticAck.test.ts > control: a complete successful bulk acknowledgement deletes the delivered batch 156ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1123_elasticFiltered.test.ts > retains filtered bulk failures without a top-level errors flag
+EXPECTED: filtered item error keeps one queued batch, shipped0; ACTUAL: { pending: 1, result: { shipped: 0, failed: 1, queued: 0, paused: 0 } }
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1123_elasticFiltered.test.ts > retains filtered bulk failures without a top-level errors flag 160ms
+ ✓ .temp_files/audit_continuous_20261109/prove_F1123_elasticFiltered.test.ts > control: explicit errors true is already refused 162ms
+
+ Test Files  2 passed (2)
+      Tests  4 passed (4)
+   Start at  18:39:18
+   Duration  1.78s (import 49%, tests 43%, transform 8%, worker 1%)

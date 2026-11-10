@@ -1,0 +1,57 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1122_elasticAck.test.ts > retains captured logs after a native truncated HTTP 200 bulk response
+EXPECTED: truncated ack preserves one pending batch, shipped0; ACTUAL: {
+  receivedHeaders: true,
+  pending: 0,
+  result: { shipped: 1, failed: 0, queued: 0, paused: 0 }
+}
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/prove_F1122_elasticAck.test.ts > retains captured logs after a native truncated HTTP 200 bulk response 192ms
+   → expected [] to have a length of 1 but got +0
+ ✓ .temp_files/audit_continuous_20261109/prove_F1122_elasticAck.test.ts > control: a complete successful bulk acknowledgement deletes the delivered batch 156ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1123_elasticFiltered.test.ts > retains filtered bulk failures without a top-level errors flag
+EXPECTED: filtered item error keeps one queued batch, shipped0; ACTUAL: { pending: 0, result: { shipped: 1, failed: 0, queued: 0, paused: 0 } }
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/prove_F1123_elasticFiltered.test.ts > retains filtered bulk failures without a top-level errors flag 184ms
+   → expected [] to have a length of 1 but got +0
+ ✓ .temp_files/audit_continuous_20261109/prove_F1123_elasticFiltered.test.ts > control: explicit errors true is already refused 151ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1122_elasticAck.test.ts > retains captured logs after a native truncated HTTP 200 bulk response
+AssertionError: expected [] to have a length of 1 but got +0
+
+- Expected
++ Received
+
+- 1
++ 0
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1122_elasticAck.test.ts:14:977
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1123_elasticFiltered.test.ts > retains filtered bulk failures without a top-level errors flag
+AssertionError: expected [] to have a length of 1 but got +0
+
+- Expected
++ Received
+
+- 1
++ 0
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1123_elasticFiltered.test.ts:14:686
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  2 failed (2)
+      Tests  2 failed | 2 passed (4)
+   Start at  18:38:21
+   Duration  1.82s (import 44%, tests 42%, transform 14%)

@@ -38,6 +38,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Elasticsearch drains retain queued logs when a bulk acknowledgement is unreadable or malformed instead of recording delivery success (F1122).
+- Elasticsearch drains recognize filtered per-item bulk errors even when the top-level error flag is omitted (F1123).
 - API-only servers now keep query credentials out of missing-route logs when the dashboard has not been built (F1125).
 - Failed OIDC discovery requests now release unused response bodies before returning the existing provider error (F1120).
 - GitHub OAuth token, profile and email refusals now release unused HTTP bodies while preserving diagnostics and unverified-email fallback behavior (F1121).
