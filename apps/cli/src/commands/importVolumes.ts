@@ -19,6 +19,7 @@ import path from 'node:path';
 import type { VolumeImport } from '@ninedeploy/schemas';
 import type { NineDeployClient } from '../client.js';
 import type { ImportPlan, PlanService } from '../lib/importers/plan.js';
+import { fileBase, flagArg, shellQuote, sourceTarget } from '../lib/importers/shell.js';
 import type { ImportReceipt } from './importApply.js';
 
 /** The panel calls the volume half makes; NineDeployClient satisfies it. */
@@ -33,8 +34,6 @@ export interface VolumeClient {
 /** The helper image the panel itself tars volumes with (server lib/inventory.ts HELPER_IMAGE). */
 const TAR_IMAGE = 'alpine:3.21';
 
-const shellQuote = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
-
 /**
  * The source-host command that archives a service's data volume, or why it
  * cannot be printed. Null when the service has no data volume.
@@ -45,18 +44,11 @@ export function volumeCommand(s: PlanService): { command: string; file: string; 
   const v = s.volumes.find((x) => x.mountPath === mount);
   if (v?.source === 'file') return { manual: `${mount} is a file mount on the source; recreate it under Service → File mounts` };
   const notes: string[] = [];
-  let target: string;
-  if (!s.runtime) {
-    target = '<container>';
-    notes.push(`Replace <container> with ${s.name}'s container on the source host (docker ps -a).`);
-  } else if (s.runtime.kind === 'swarm-service') {
-    target = `$(docker ps -aq --filter label=com.docker.swarm.service.name=${s.runtime.name} | head -n 1)`;
-  } else {
-    target = s.runtime.name;
-  }
+  const { target, note } = sourceTarget(s.runtime, `${s.name}'s container`, true);
+  if (note) notes.push(note);
   const others = s.volumes.filter((x) => x.mountPath !== mount && x.source !== 'file');
   if (others.length) notes.push(`Only ${mount} moves; copy ${others.map((x) => x.mountPath).join(', ')} by hand.`);
-  const file = `${s.name}.volume.tar.gz`;
+  const file = `${fileBase(s.name)}.volume.tar.gz`;
   return {
     command: `docker run --rm --volumes-from ${target}:ro ${TAR_IMAGE} tar -czf - --numeric-owner -C ${shellQuote(mount)} . > ${file}`,
     file,
@@ -80,7 +72,7 @@ export function renderVolumePreview(plan: ImportPlan, receipt: ImportReceipt | n
       out.push(`  + ${s.name} (${s.create.volumeMount}, NineDeploy service #${created.id}):`);
       out.push(`      ${cmd.command}`);
       for (const n of cmd.notes) out.push(`      ${n}`);
-      out.push(`      then: --volume ${s.name}=${cmd.file}`);
+      out.push(`      then: --volume ${flagArg(s.name, cmd.file)}`);
     }
   }
   return out;

@@ -23,6 +23,7 @@ import { getClient, type NineDeployClient } from '../client.js';
 import { loadConfig } from '../config.js';
 import { c, error, header, info, success } from '../lib/format.js';
 import type { ImportPlan, PlanDatabase, PlanEngine, SourceKind } from '../lib/importers/plan.js';
+import { fileBase, flagArg, sourceTarget } from '../lib/importers/shell.js';
 import { type ImportReceipt, renderReceipt, validatePlan, writeReceipt } from './importApply.js';
 import { importVolumes, renderVolumePreview, type VolumeClient } from './importVolumes.js';
 
@@ -62,15 +63,10 @@ const DUMP_FILE: Record<PlanEngine, (n: string) => string> = {
  */
 export function dumpCommand(db: PlanDatabase): { command: string; file: string; notes: string[] } | null {
   if (!db.engine || !IMPORTABLE[db.engine]) return null;
-  const file = DUMP_FILE[db.engine](db.name);
+  const file = DUMP_FILE[db.engine](fileBase(db.name));
   const notes: string[] = [];
-  let target: string;
-  if (db.runtime?.kind === 'container') target = db.runtime.name;
-  else if (db.runtime?.kind === 'swarm-service') target = `$(docker ps -q --filter label=com.docker.swarm.service.name=${db.runtime.name} | head -n 1)`;
-  else {
-    target = '<container>';
-    notes.push('Replace <container> with the name of the database container on the source host (docker ps).');
-  }
+  const { target, note } = sourceTarget(db.runtime, 'the name of the database container');
+  if (note) notes.push(note);
   let inner: string;
   let auth = '';
   switch (db.engine) {
@@ -137,7 +133,7 @@ export function renderDataPreview(plan: ImportPlan, receipt: ImportReceipt | nul
     out.push(`  + ${db.name} (${db.engine}, NineDeploy database #${created.id}):`);
     out.push(`      ${cmd.command}`);
     for (const n of cmd.notes) out.push(`      ${n}`);
-    out.push(`      then: --dump ${db.name}=${cmd.file}`);
+    out.push(`      then: --dump ${flagArg(db.name, cmd.file)}`);
   }
   if (!SOURCE_CHECKED_LIVE[plan.source.kind]) out.push('', `The ${plan.source.kind} commands follow its source code and have not been run against a live instance yet.`);
   out.push(...renderVolumePreview(plan, receipt));
