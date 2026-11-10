@@ -1169,3 +1169,9 @@ Native custom notification response checkpoint: [run 42835290267](https://github
 
 ### Full Windows server unit checkpoint — November 10, round 99
 At source e656bbd6e2e322d07aec825c629d81c93a6ad165, all 854 configured server unit files completed: 14,268 tests passed, two skipped and one failed. The failing LAN-registry test used a stale invalid digest and omitted the manifest body; its fixture follow-up is tracked separately. No native worker crash occurred in this run, which does not identify or fix the intermittent round-73 fault. Coverage and the root release gate were not certified. Evidence: [.temp_files/ledger_serverUnit99_20261110.md](../.temp_files/ledger_serverUnit99_20261110.md). The same source also passed 99 real Docker/PostgreSQL integration tests in hosted Linux CI; the other CI jobs were still pending at the captured checkpoint.
+
+The focused Mac lane also checks OAuth error-response disposal, existing
+identity/JSON semantics and the corrected LAN registry fixture (39 server
+files). Inert credentials and loopback HTTP preserve provider diagnostics and
+GitHub's unverified-email fallback without external sign-in requests.
+Native OAuth and tenancy follow-up: pending the new Mac run.

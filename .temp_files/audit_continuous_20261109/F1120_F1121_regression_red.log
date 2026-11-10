@@ -1,0 +1,75 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+stdout | test/lib/oauthResponse.test.ts > releases an unused native OIDC discovery refusal
+EXPECTED: unused discovery refusal cancelled before throw; ACTUAL: { cancelled: 0, bodyUsed: false }
+PROBLEM CONFIRMED
+
+stdout | test/lib/oauthResponse.test.ts > releases native GitHub token refusal
+EXPECTED: unused GitHub refusal cancelled; ACTUAL: { stage: 'token', cancelled: 0, bodyUsed: false }
+PROBLEM CONFIRMED
+
+stdout | test/lib/oauthResponse.test.ts > releases native GitHub profile refusal
+EXPECTED: unused GitHub refusal cancelled; ACTUAL: { stage: 'profile', cancelled: 0, bodyUsed: false }
+PROBLEM CONFIRMED
+
+stdout | test/lib/oauthResponse.test.ts > releases native GitHub emails refusal
+EXPECTED: unused GitHub refusal cancelled; ACTUAL: { stage: 'emails', cancelled: 0, bodyUsed: false }
+PROBLEM CONFIRMED
+
+ × test/lib/oauthResponse.test.ts > releases an unused native OIDC discovery refusal 35ms
+   → expected +0 to be 1 // Object.is equality
+ ✓ test/lib/oauthResponse.test.ts > control: valid discovery JSON is consumed and returned 2ms
+ × test/lib/oauthResponse.test.ts > releases native GitHub token refusal 7ms
+   → expected +0 to be 1 // Object.is equality
+ × test/lib/oauthResponse.test.ts > releases native GitHub profile refusal 3ms
+   → expected +0 to be 1 // Object.is equality
+ × test/lib/oauthResponse.test.ts > releases native GitHub emails refusal 15ms
+   → expected +0 to be 1 // Object.is equality
+ ✓ test/lib/oauthResponse.test.ts > control: verified primary-email JSON remains consumed 1ms
+ ✓ test/lib/oauthResponse.test.ts > preserves oidc bodyless refusal outcome 0ms
+ ✓ test/lib/oauthResponse.test.ts > preserves oidc outcome if cancellation rejects 0ms
+ ✓ test/lib/oauthResponse.test.ts > preserves token bodyless refusal outcome 0ms
+ ✓ test/lib/oauthResponse.test.ts > preserves token outcome if cancellation rejects 0ms
+ ✓ test/lib/oauthResponse.test.ts > preserves profile bodyless refusal outcome 0ms
+ ✓ test/lib/oauthResponse.test.ts > preserves profile outcome if cancellation rejects 2ms
+ ✓ test/lib/oauthResponse.test.ts > preserves emails bodyless refusal outcome 0ms
+ ✓ test/lib/oauthResponse.test.ts > preserves emails outcome if cancellation rejects 0ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/lib/oauthResponse.test.ts > releases an unused native OIDC discovery refusal
+AssertionError: expected +0 to be 1 // Object.is equality
+
+- Expected
++ Received
+
+- 1
++ 0
+
+ ❯ test/lib/oauthResponse.test.ts:11:1169
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  test/lib/oauthResponse.test.ts > releases native GitHub token refusal
+ FAIL  test/lib/oauthResponse.test.ts > releases native GitHub profile refusal
+ FAIL  test/lib/oauthResponse.test.ts > releases native GitHub emails refusal
+AssertionError: expected +0 to be 1 // Object.is equality
+
+- Expected
++ Received
+
+- 1
++ 0
+
+ ❯ test/lib/oauthResponse.test.ts:14:1653
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  4 failed | 10 passed (14)
+   Start at  17:30:33
+   Duration  240ms (tests 55%, transform 21%, import 21%, worker 3%)

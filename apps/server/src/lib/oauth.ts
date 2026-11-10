@@ -78,6 +78,7 @@ export async function fetchOidcConfiguration(issuerUrl: string): Promise<{ autho
   const cleanIssuer = issuerUrl.replace(/\/+$/, '');
   const res = await guardedFetch(`${cleanIssuer}/.well-known/openid-configuration`);
   if (!res.ok) {
+    await res.body?.cancel().catch(() => undefined);
     throw new Error(`Failed to fetch OIDC discovery configuration from ${cleanIssuer}: ${res.statusText}`);
   }
   const doc = (await res.json()) as { authorization_endpoint: string; token_endpoint: string; userinfo_endpoint?: string } | null;
@@ -196,6 +197,7 @@ export async function exchangeGitHubCode(
   });
 
   if (!tokenRes.ok) {
+    await tokenRes.body?.cancel().catch(() => undefined);
     throw new Error(`GitHub token exchange failed: ${tokenRes.statusText}`);
   }
 
@@ -213,6 +215,7 @@ export async function exchangeGitHubCode(
   });
 
   if (!userRes.ok) {
+    await userRes.body?.cancel().catch(() => undefined);
     throw new Error(`Failed to fetch GitHub profile: ${userRes.statusText}`);
   }
 
@@ -236,6 +239,8 @@ export async function exchangeGitHubCode(
         email = primary.email;
         emailVerified = primary.verified === true;
       }
+    } else {
+      await emailsRes.body?.cancel().catch(() => undefined);
     }
   }
 

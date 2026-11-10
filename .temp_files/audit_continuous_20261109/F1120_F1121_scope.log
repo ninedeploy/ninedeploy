@@ -1,0 +1,81 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+stdout | test/lib/oauthResponse.test.ts > releases an unused native OIDC discovery refusal
+EXPECTED: unused discovery refusal cancelled before throw; ACTUAL: { cancelled: 1, bodyUsed: true }
+PROBLEM NOT REPRODUCED
+
+stdout | test/lib/oauthResponse.test.ts > releases native GitHub token refusal
+EXPECTED: unused GitHub refusal cancelled; ACTUAL: { stage: 'token', cancelled: 1, bodyUsed: true }
+PROBLEM NOT REPRODUCED
+
+stdout | test/lib/oauthResponse.test.ts > releases native GitHub profile refusal
+EXPECTED: unused GitHub refusal cancelled; ACTUAL: { stage: 'profile', cancelled: 1, bodyUsed: true }
+PROBLEM NOT REPRODUCED
+
+stdout | test/lib/oauthResponse.test.ts > releases native GitHub emails refusal
+EXPECTED: unused GitHub refusal cancelled; ACTUAL: { stage: 'emails', cancelled: 1, bodyUsed: true }
+PROBLEM NOT REPRODUCED
+
+ ✓ test/lib/oauthResponse.test.ts > releases an unused native OIDC discovery refusal 31ms
+ ✓ test/lib/oauthResponse.test.ts > control: valid discovery JSON is consumed and returned 1ms
+ ✓ test/lib/oauthResponse.test.ts > releases native GitHub token refusal 5ms
+ ✓ test/lib/oauthResponse.test.ts > releases native GitHub profile refusal 3ms
+ ✓ test/lib/oauthResponse.test.ts > releases native GitHub emails refusal 4ms
+ ✓ test/lib/oauthResponse.test.ts > control: verified primary-email JSON remains consumed 1ms
+ ✓ test/lib/oauthResponse.test.ts > preserves oidc bodyless refusal outcome 0ms
+ ✓ test/lib/oauthResponse.test.ts > preserves oidc outcome if cancellation rejects 0ms
+ ✓ test/lib/oauthResponse.test.ts > preserves token bodyless refusal outcome 0ms
+ ✓ test/lib/oauthResponse.test.ts > preserves token outcome if cancellation rejects 0ms
+ ✓ test/lib/oauthResponse.test.ts > preserves profile bodyless refusal outcome 0ms
+ ✓ test/lib/oauthResponse.test.ts > preserves profile outcome if cancellation rejects 0ms
+ ✓ test/lib/oauthResponse.test.ts > preserves emails bodyless refusal outcome 0ms
+ ✓ test/lib/oauthResponse.test.ts > preserves emails outcome if cancellation rejects 0ms
+ ✓ test/lib/oauth.test.ts > oauth library > OAuth state generation and verification > authenticates the initiating local session binding in link state 3ms
+ ✓ test/lib/oauth.test.ts > oauth library > OAuth state generation and verification > generates and verifies valid state 0ms
+ ✓ test/lib/oauth.test.ts > oauth library > OAuth state generation and verification > defaults returnTo to / when not provided 0ms
+ ✓ test/lib/oauth.test.ts > oauth library > OAuth state generation and verification > rejects malformed or tampered state 0ms
+ ✓ test/lib/oauth.test.ts > oauth library > OAuth state generation and verification > rejects expired state (>15 min) 1ms
+ ✓ test/lib/oauth.test.ts > oauth library > OIDC helpers > requires a stable subject rather than using the email as an identity 1ms
+ ✓ test/lib/oauth.test.ts > oauth library > OIDC helpers > fetches OIDC configuration successfully 0ms
+ ✓ test/lib/oauth.test.ts > oauth library > OIDC helpers > throws error when OIDC configuration request fails 0ms
+ ✓ test/lib/oauth.test.ts > oauth library > OIDC helpers > refuses discovery documents without http(s) authorization/token endpoints 0ms
+ ✓ test/lib/oauth.test.ts > oauth library > OIDC helpers > exchanges OIDC authorization code for tokens 0ms
+ ✓ test/lib/oauth.test.ts > oauth library > OIDC helpers > throws when OIDC code exchange fails 0ms
+ ✓ test/lib/oauth.test.ts > oauth library > OIDC helpers > fetches OIDC userinfo with email and name 0ms
+ ✓ test/lib/oauth.test.ts > oauth library > OIDC helpers > rejects when OIDC email is explicitly unverified 0ms
+ ✓ test/lib/oauth.test.ts > oauth library > OIDC helpers > throws when userinfo fetch fails or lacks email 0ms
+ ✓ test/lib/oauth.test.ts > oauth library > GitHub OAuth2 helpers > exchanges GitHub code and extracts direct profile email 0ms
+ ✓ test/lib/oauth.test.ts > oauth library > GitHub OAuth2 helpers > fetches verified primary email when profile email is private 0ms
+ ✓ test/lib/oauth.test.ts > oauth library > GitHub OAuth2 helpers > falls back to octocat@github.user when no email can be retrieved 0ms
+ ✓ test/lib/oauth.test.ts > oauth library > GitHub OAuth2 helpers > refuses userinfo without a stable subject instead of falling back to email 0ms
+ ✓ test/lib/oauth.test.ts > oauth library > GitHub OAuth2 helpers > falls back to verified or first email when primary email not marked 0ms
+ ✓ test/lib/oauth.test.ts > oauth library > GitHub OAuth2 helpers > throws when GitHub token exchange fails 0ms
+ ✓ test/lib/oauth.test.ts > oauth library > GitHub OAuth2 helpers > throws when GitHub profile fetch fails 0ms
+ ✓ test/edgeCasesGitAndOAuth.test.ts > Edge Cases — OAuth & OIDC CSRF State Protection > generates tamper-proof signed state parameters and verifies them 4ms
+ ✓ test/edgeCasesGitAndOAuth.test.ts > Edge Cases — OAuth & OIDC CSRF State Protection > rejects tampered, malformed, and expired OAuth states 0ms
+ ✓ test/edgeCasesGitAndOAuth.test.ts > Edge Cases — Session Token Issuance & Refresh Rotation > issues session tokens and handles database insert errors gracefully 6ms
+ ✓ test/edgeCasesGitAndOAuth.test.ts > Edge Cases — Session Token Issuance & Refresh Rotation > rotates refresh tokens atomically and blocks already-revoked sessions 2ms
+ ✓ test/edgeCasesGitAndOAuth.test.ts > Edge Cases — Session Token Issuance & Refresh Rotation > validates live session lifecycle including expiration and revocation checks 0ms
+ ✓ test/edgeCasesGitAndOAuth.test.ts > Edge Cases — Session Token Issuance & Refresh Rotation > revokes all active sessions for a user upon security events 0ms
+ ✓ test/lib/oauthIdentity.test.ts > external identity account boundaries > never links a pre-registered local account based on email alone 2ms
+ ✓ test/lib/oauthIdentity.test.ts > external identity account boundaries > uses the durable subject link on later sign-ins 0ms
+ ✓ test/lib/oauthIdentity.test.ts > external identity account boundaries > invalidates a prior identity namespace after provider configuration changes 0ms
+ ✓ test/lib/oauthIdentity.test.ts > external identity account boundaries > links only after proving the initiating live local session 1ms
+ ✓ test/lib/oauthIdentity.test.ts > external identity account boundaries > refreshes the fingerprint when re-linking the same account’s stale identity row 0ms
+ ✓ test/lib/oauthIdentity.test.ts > external identity account boundaries > refuses a stale or mismatched session binding 0 0ms
+ ✓ test/lib/oauthIdentity.test.ts > external identity account boundaries > refuses a stale or mismatched session binding 1 0ms
+ ✓ test/lib/oauthIdentity.test.ts > external identity account boundaries > refuses a stale or mismatched session binding 2 0ms
+ ✓ test/lib/oauthIdentity.test.ts > external identity account boundaries > refuses a stale or mismatched session binding 3 0ms
+ ✓ test/lib/oauthIdentity.test.ts > external identity account boundaries > refuses a stale or mismatched session binding 4 0ms
+ ✓ test/lib/oauthIdentity.test.ts > external identity account boundaries > cannot relink another account’s subject 0ms
+ ✓ test/lib/oauthIdentity.test.ts > external identity account boundaries > requires matching verified emails even in an authenticated link flow 0ms
+ ✓ test/lib/oauthIdentity.test.ts > external identity account boundaries > creates the new account and subject link in one transaction 0ms
+
+ Test Files  4 passed (4)
+      Tests  54 passed (54)
+   Start at  17:30:45
+   Duration  1.36s (import 83%, transform 8%, tests 8%, worker 1%)
+
+    Isolate  4 workers spawned · ~87ms startup each (spawn + environment, per file)
+             at least ~261ms faster with isolate: false — reuses workers across files instead of one per file

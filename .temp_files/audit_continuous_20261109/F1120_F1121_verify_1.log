@@ -1,0 +1,71 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1120_oidcResponse.test.ts > releases an unused native OIDC discovery refusal
+EXPECTED: unused discovery refusal cancelled before throw; ACTUAL: { cancelled: 1, bodyUsed: true }
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1120_oidcResponse.test.ts > releases an unused native OIDC discovery refusal 35ms
+ ✓ .temp_files/audit_continuous_20261109/prove_F1120_oidcResponse.test.ts > control: valid discovery JSON is consumed and returned 1ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1121_githubOauthResponse.test.ts > releases native GitHub token refusal
+EXPECTED: unused GitHub refusal cancelled; ACTUAL: { stage: 'token', cancelled: 1, bodyUsed: true }
+PROBLEM NOT REPRODUCED
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1121_githubOauthResponse.test.ts > releases native GitHub profile refusal
+EXPECTED: unused GitHub refusal cancelled; ACTUAL: { stage: 'profile', cancelled: 1, bodyUsed: true }
+PROBLEM NOT REPRODUCED
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1121_githubOauthResponse.test.ts > releases native GitHub emails refusal
+EXPECTED: unused GitHub refusal cancelled; ACTUAL: { stage: 'emails', cancelled: 1, bodyUsed: true }
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1121_githubOauthResponse.test.ts > releases native GitHub token refusal 35ms
+ ✓ .temp_files/audit_continuous_20261109/prove_F1121_githubOauthResponse.test.ts > releases native GitHub profile refusal 5ms
+ ✓ .temp_files/audit_continuous_20261109/prove_F1121_githubOauthResponse.test.ts > releases native GitHub emails refusal 5ms
+ ✓ .temp_files/audit_continuous_20261109/prove_F1121_githubOauthResponse.test.ts > control: verified primary-email JSON remains consumed 1ms
+
+ Test Files  2 passed (2)
+      Tests  6 passed (6)
+   Start at  17:30:35
+   Duration  559ms (tests 51%, import 30%, transform 15%, worker 4%)
+
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+stdout | test/lib/oauthResponse.test.ts > releases an unused native OIDC discovery refusal
+EXPECTED: unused discovery refusal cancelled before throw; ACTUAL: { cancelled: 1, bodyUsed: true }
+PROBLEM NOT REPRODUCED
+
+stdout | test/lib/oauthResponse.test.ts > releases native GitHub token refusal
+EXPECTED: unused GitHub refusal cancelled; ACTUAL: { stage: 'token', cancelled: 1, bodyUsed: true }
+PROBLEM NOT REPRODUCED
+
+stdout | test/lib/oauthResponse.test.ts > releases native GitHub profile refusal
+EXPECTED: unused GitHub refusal cancelled; ACTUAL: { stage: 'profile', cancelled: 1, bodyUsed: true }
+PROBLEM NOT REPRODUCED
+
+stdout | test/lib/oauthResponse.test.ts > releases native GitHub emails refusal
+EXPECTED: unused GitHub refusal cancelled; ACTUAL: { stage: 'emails', cancelled: 1, bodyUsed: true }
+PROBLEM NOT REPRODUCED
+
+ ✓ test/lib/oauthResponse.test.ts > releases an unused native OIDC discovery refusal 31ms
+ ✓ test/lib/oauthResponse.test.ts > control: valid discovery JSON is consumed and returned 1ms
+ ✓ test/lib/oauthResponse.test.ts > releases native GitHub token refusal 6ms
+ ✓ test/lib/oauthResponse.test.ts > releases native GitHub profile refusal 4ms
+ ✓ test/lib/oauthResponse.test.ts > releases native GitHub emails refusal 4ms
+ ✓ test/lib/oauthResponse.test.ts > control: verified primary-email JSON remains consumed 1ms
+ ✓ test/lib/oauthResponse.test.ts > preserves oidc bodyless refusal outcome 0ms
+ ✓ test/lib/oauthResponse.test.ts > preserves oidc outcome if cancellation rejects 0ms
+ ✓ test/lib/oauthResponse.test.ts > preserves token bodyless refusal outcome 0ms
+ ✓ test/lib/oauthResponse.test.ts > preserves token outcome if cancellation rejects 0ms
+ ✓ test/lib/oauthResponse.test.ts > preserves profile bodyless refusal outcome 0ms
+ ✓ test/lib/oauthResponse.test.ts > preserves profile outcome if cancellation rejects 0ms
+ ✓ test/lib/oauthResponse.test.ts > preserves emails bodyless refusal outcome 0ms
+ ✓ test/lib/oauthResponse.test.ts > preserves emails outcome if cancellation rejects 0ms
+
+ Test Files  1 passed (1)
+      Tests  14 passed (14)
+   Start at  17:30:37
+   Duration  198ms (tests 51%, import 25%, transform 21%, worker 3%)
+
+FIX VERIFIED

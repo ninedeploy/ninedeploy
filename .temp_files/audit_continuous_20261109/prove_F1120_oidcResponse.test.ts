@@ -1,0 +1,12 @@
+import {createServer} from 'node:http';
+import {once} from 'node:events';
+import {afterEach,expect,it,vi} from 'vitest';
+const h=vi.hoisted(()=>({fetch:vi.fn()}));
+vi.mock('../../apps/server/src/config.js',()=>({config:{jwt:{secret:'inert-fixture-secret'}}}));
+vi.mock('../../apps/server/src/lib/egressGuard.js',()=>({guardedFetch:h.fetch}));
+const {fetchOidcConfiguration,exchangeGitHubCode}=await import('../../apps/server/src/lib/oauth.js');
+const nativeFetch=globalThis.fetch;
+afterEach(()=>{h.fetch.mockReset();vi.unstubAllGlobals();});
+const doc={authorization_endpoint:'https://issuer.example.test/authorize',token_endpoint:'https://issuer.example.test/token'};
+it('releases an unused native OIDC discovery refusal',async()=>{let resolveClosed!:()=>void;const bodyClosed=new Promise<void>(resolve=>{resolveClosed=resolve;});const server=createServer((_req,res)=>{res.on('close',resolveClosed);res.writeHead(503,{'content-type':'application/json'});res.write('{');});let response:Response|undefined,cancelled=0;await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));const address=server.address();if(!address||typeof address==='string')throw Error('Missing owned listener');h.fetch.mockImplementation(async()=>{response=await nativeFetch(`http://127.0.0.1:${address.port}/discovery`,{redirect:'manual'});const cancel=response.body!.cancel.bind(response.body);response.body!.cancel=async reason=>{cancelled++;await cancel(reason);await bodyClosed;};return response;});try{await expect(fetchOidcConfiguration('https://issuer.example.test')).rejects.toThrow('Failed to fetch OIDC discovery configuration');console.log('EXPECTED: unused discovery refusal cancelled before throw; ACTUAL:',{cancelled,bodyUsed:response?.bodyUsed});console.log(cancelled===1?'PROBLEM NOT REPRODUCED':'PROBLEM CONFIRMED');expect(cancelled).toBe(1);}finally{await response?.body?.cancel().catch(()=>{});const closed=once(server,'close');server.close();server.closeAllConnections();await closed;}});
+it('control: valid discovery JSON is consumed and returned',async()=>{const response=new Response(JSON.stringify(doc));h.fetch.mockResolvedValue(response);expect(await fetchOidcConfiguration('https://issuer.example.test/')).toEqual(doc);expect(response.bodyUsed).toBe(true);});

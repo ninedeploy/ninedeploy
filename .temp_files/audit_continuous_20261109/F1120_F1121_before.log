@@ -1,0 +1,67 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1121_githubOauthResponse.test.ts > releases native GitHub token refusal
+EXPECTED: unused GitHub refusal cancelled; ACTUAL: { stage: 'token', cancelled: 0, bodyUsed: false }
+PROBLEM CONFIRMED
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1121_githubOauthResponse.test.ts > releases native GitHub profile refusal
+EXPECTED: unused GitHub refusal cancelled; ACTUAL: { stage: 'profile', cancelled: 0, bodyUsed: false }
+PROBLEM CONFIRMED
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1121_githubOauthResponse.test.ts > releases native GitHub emails refusal
+EXPECTED: unused GitHub refusal cancelled; ACTUAL: { stage: 'emails', cancelled: 0, bodyUsed: false }
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/prove_F1121_githubOauthResponse.test.ts > releases native GitHub token refusal 36ms
+   → expected +0 to be 1 // Object.is equality
+ × .temp_files/audit_continuous_20261109/prove_F1121_githubOauthResponse.test.ts > releases native GitHub profile refusal 6ms
+   → expected +0 to be 1 // Object.is equality
+ × .temp_files/audit_continuous_20261109/prove_F1121_githubOauthResponse.test.ts > releases native GitHub emails refusal 4ms
+   → expected +0 to be 1 // Object.is equality
+ ✓ .temp_files/audit_continuous_20261109/prove_F1121_githubOauthResponse.test.ts > control: verified primary-email JSON remains consumed 1ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1120_oidcResponse.test.ts > releases an unused native OIDC discovery refusal
+EXPECTED: unused discovery refusal cancelled before throw; ACTUAL: { cancelled: 0, bodyUsed: false }
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/prove_F1120_oidcResponse.test.ts > releases an unused native OIDC discovery refusal 45ms
+   → expected +0 to be 1 // Object.is equality
+ ✓ .temp_files/audit_continuous_20261109/prove_F1120_oidcResponse.test.ts > control: valid discovery JSON is consumed and returned 2ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1120_oidcResponse.test.ts > releases an unused native OIDC discovery refusal
+AssertionError: expected +0 to be 1 // Object.is equality
+
+- Expected
++ Received
+
+- 1
++ 0
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1120_oidcResponse.test.ts:11:1169
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1121_githubOauthResponse.test.ts > releases native GitHub token refusal
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1121_githubOauthResponse.test.ts > releases native GitHub profile refusal
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1121_githubOauthResponse.test.ts > releases native GitHub emails refusal
+AssertionError: expected +0 to be 1 // Object.is equality
+
+- Expected
++ Received
+
+- 1
++ 0
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1121_githubOauthResponse.test.ts:12:1653
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+
+ Test Files  2 failed (2)
+      Tests  4 failed | 2 passed (6)
+   Start at  17:28:43
+   Duration  495ms (tests 50%, import 26%, transform 20%, worker 3%)
