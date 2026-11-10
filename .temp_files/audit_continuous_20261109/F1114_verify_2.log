@@ -1,0 +1,43 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1114_lfsSizes.test.ts > rejects conflicting duplicate sizes before hydration
+EXPECTED: conflicting declarations rejected, pointers unchanged; ACTUAL: {
+  error: 'Error: Git LFS: conflicting pointer sizes for object 4ac1ece12f66',
+  first: 'version https://git-lfs.github.com/spec/v1\n' +
+    'oid sha256:4ac1ece12f66cb634be7f482379e2f35a8d019d67909b7111239d56f0a96943d\n' +
+    'size 22\n',
+  requests: 0
+}
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1114_lfsSizes.test.ts > rejects conflicting duplicate sizes before hydration 1417ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1114_lfsSizes.test.ts > control: matching duplicate sizes hydrate once
+CONTROL PASSED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1114_lfsSizes.test.ts > control: matching duplicate sizes hydrate once 3191ms
+
+ Test Files  1 passed (1)
+      Tests  2 passed (2)
+   Start at  15:58:53
+   Duration  4.77s (tests 99%)
+
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/lib/gitLfsObjectSizes.test.ts > rejects conflicting shared-object metadata before network: wrong first 460ms
+ ✓ test/lib/gitLfsObjectSizes.test.ts > rejects conflicting shared-object metadata before network: wrong last 536ms
+ ✓ test/lib/gitLfsObjectSizes.test.ts > rejects conflicting shared-object metadata before network: zero first 254ms
+ ✓ test/lib/gitLfsObjectSizes.test.ts > rejects conflicting shared-object metadata before network: zero last 513ms
+ ✓ test/lib/gitLfsObjectSizes.test.ts > rejects conflicting shared-object metadata before network: three declarations 248ms
+ ✓ test/lib/gitLfsObjectSizes.test.ts > rejects conflicting shared-object metadata before network: over limit first 480ms
+ ✓ test/lib/gitLfsObjectSizes.test.ts > hydrates 1 consistent references with one download 259ms
+ ✓ test/lib/gitLfsObjectSizes.test.ts > hydrates 2 consistent references with one download 556ms
+ ✓ test/lib/gitLfsObjectSizes.test.ts > hydrates 3 consistent references with one download 225ms
+
+ Test Files  1 passed (1)
+      Tests  9 passed (9)
+   Start at  15:59:02
+   Duration  3.75s (tests 99%)
+
+FIX VERIFIED

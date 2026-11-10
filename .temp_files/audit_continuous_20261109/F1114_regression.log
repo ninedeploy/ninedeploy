@@ -1,0 +1,17 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/lib/gitLfsObjectSizes.test.ts > rejects conflicting shared-object metadata before network: wrong first 820ms
+ ✓ test/lib/gitLfsObjectSizes.test.ts > rejects conflicting shared-object metadata before network: wrong last 650ms
+ ✓ test/lib/gitLfsObjectSizes.test.ts > rejects conflicting shared-object metadata before network: zero first 560ms
+ ✓ test/lib/gitLfsObjectSizes.test.ts > rejects conflicting shared-object metadata before network: zero last 579ms
+ ✓ test/lib/gitLfsObjectSizes.test.ts > rejects conflicting shared-object metadata before network: three declarations 492ms
+ ✓ test/lib/gitLfsObjectSizes.test.ts > rejects conflicting shared-object metadata before network: over limit first 488ms
+ ✓ test/lib/gitLfsObjectSizes.test.ts > hydrates 1 consistent references with one download 492ms
+ ✓ test/lib/gitLfsObjectSizes.test.ts > hydrates 2 consistent references with one download 494ms
+ ✓ test/lib/gitLfsObjectSizes.test.ts > hydrates 3 consistent references with one download 510ms
+
+ Test Files  1 passed (1)
+      Tests  9 passed (9)
+   Start at  15:58:08
+   Duration  5.68s (tests 99%, transform 1%)

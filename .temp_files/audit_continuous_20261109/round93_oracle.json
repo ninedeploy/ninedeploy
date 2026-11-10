@@ -1,0 +1,39 @@
+{
+  "version": "git-lfs/3.8.1 (GitHub; windows amd64; go 1.27.3; git a662a6db)",
+  "report": [
+    {
+      "name": "canonical",
+      "check": 0,
+      "strict": 0,
+      "smudgeExit": 0,
+      "smudgedToBody": true,
+      "preservedInput": false
+    },
+    {
+      "name": "wrong_smaller",
+      "check": 0,
+      "strict": 0,
+      "smudgeExit": 2,
+      "smudgedToBody": false,
+      "preservedInput": true,
+      "error": "Downloading <unknown file> (1 B)\nError downloading object: <unknown file> (516792e): Smudge error: Error downloading <unknown file> (516792ebe583becbe582a9018d151034419bdd0e2d0d62869ee22a19a42f96c3): batch response: Post \"http://127.0.0.1:9/lfs/objects/batch\": dial tcp 127.0.0.1:9: connectex: No connection could be made because the target machine actively refused it.\n\nErrors logged to 'C:\\Users\\ersin\\AppData\\Local\\Temp\\nd-lfs-pointer-oracle-QTEMKO\\.git\\lfs\\logs\\20261110T155658.5070629.log'.\nUse `git lfs logs last` to view the log."
+    },
+    {
+      "name": "wrong_larger",
+      "check": 0,
+      "strict": 0,
+      "smudgeExit": 2,
+      "smudgedToBody": false,
+      "preservedInput": true,
+      "error": "Downloading <unknown file> (99 B)\nError downloading object: <unknown file> (516792e): Smudge error: Error downloading <unknown file> (516792ebe583becbe582a9018d151034419bdd0e2d0d62869ee22a19a42f96c3): batch response: Post \"http://127.0.0.1:9/lfs/objects/batch\": dial tcp 127.0.0.1:9: connectex: No connection could be made because the target machine actively refused it.\n\nErrors logged to 'C:\\Users\\ersin\\AppData\\Local\\Temp\\nd-lfs-pointer-oracle-QTEMKO\\.git\\lfs\\logs\\20261110T155701.5159525.log'.\nUse `git lfs logs last` to view the log."
+    },
+    {
+      "name": "empty_pointer",
+      "check": 0,
+      "strict": 2,
+      "smudgeExit": 0,
+      "smudgedToBody": false,
+      "preservedInput": false
+    }
+  ]
+}

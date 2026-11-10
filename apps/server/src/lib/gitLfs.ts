@@ -133,7 +133,13 @@ export async function fetchLfsObjects(
     return { files: 0, bytes: 0 };
   }
   const objects = new Map<string, number>();
-  for (const p of pointers) objects.set(p.oid, p.size);
+  for (const p of pointers) {
+    const existingSize = objects.get(p.oid);
+    if (existingSize !== undefined && existingSize !== p.size) {
+      throw new Error(`Git LFS: conflicting pointer sizes for object ${p.oid.slice(0, 12)}`);
+    }
+    objects.set(p.oid, p.size);
+  }
   if (objects.size > LFS_MAX_OBJECTS) throw new Error(`Git LFS: ${objects.size} objects, more than the ${LFS_MAX_OBJECTS} a deploy fetches`);
   let total = 0;
   for (const size of objects.values()) {

@@ -1132,3 +1132,8 @@ extensions are not newly implemented; no full native-format equivalence or live
 deployment certification is claimed. The Mac lane now includes the pointer
 suite (25 server files). Native LFS pointer checkpoint: [run 42828009923](https://github.com/ninedeploy/ninedeploy/actions/runs/42828009923) passed at source `16daeba30c9ce7ad5963a573096b43cc473963c7` on macOS 26.7.2 arm64: 324 server, 20 native CLI and four workspace MCP tests, 348 tests in 30 files. See the [receipt](../.temp_files/audit_continuous_20261109/round92_receipt.json). This focused run does not certify the full release suite.
 Full root release/coverage and round73's Windows native fault remain unresolved.
+
+The focused Mac lane also checks shared LFS object size consistency in
+`test/lib/gitLfsObjectSizes.test.ts` (26 server files). Contradictory pointer
+sizes must be rejected before network requests or checkout changes.
+Native LFS shared-size follow-up: pending the new Mac run.

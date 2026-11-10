@@ -1,0 +1,55 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: canonical 370ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: trailing prose 333ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: trailing unknown field 558ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: trailing blank 273ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: trailing spaces 585ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: missing final LF 672ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: CRLF 637ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: duplicate size 888ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: NUL suffix 1276ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: leading whitespace 724ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: NBSP suffix 1037ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: NEL suffix 656ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: BOM suffix 1385ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: 1023 byte wrapper 1073ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: 1024 byte wrapper 1448ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: unknown version 4036ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: over local pointer cap 3536ms
+ ✓ test/lib/gitLfsObjectSizes.test.ts > rejects conflicting shared-object metadata before network: wrong first 908ms
+ ✓ test/lib/gitLfsObjectSizes.test.ts > rejects conflicting shared-object metadata before network: wrong last 822ms
+ ✓ test/lib/gitLfsObjectSizes.test.ts > rejects conflicting shared-object metadata before network: zero first 382ms
+ ✓ test/lib/gitLfsObjectSizes.test.ts > rejects conflicting shared-object metadata before network: zero last 943ms
+ ✓ test/lib/gitLfsObjectSizes.test.ts > rejects conflicting shared-object metadata before network: three declarations 1025ms
+ ✓ test/lib/gitLfsObjectSizes.test.ts > rejects conflicting shared-object metadata before network: over limit first 1703ms
+ ✓ test/lib/gitLfsObjectSizes.test.ts > hydrates 1 consistent references with one download 1002ms
+ ✓ test/lib/gitLfsObjectSizes.test.ts > hydrates 2 consistent references with one download 1065ms
+ ✓ test/lib/gitLfsObjectSizes.test.ts > hydrates 3 consistent references with one download 1078ms
+ ✓ test/lib/gitLfsCleanup.test.ts > control: complete verified content replaces its pointer and removes the temporary store 2075ms
+stdout | test/lib/gitLfsCleanup.test.ts > F1109: disconnect after native file drain removes partial private objects and preserves pointer
+EXPECTED retained cachebytes:0 ACTUAL: []
+PROBLEM NOT REPRODUCED
+
+ ✓ test/lib/gitLfsCleanup.test.ts > F1109: disconnect after native file drain removes partial private objects and preserves pointer 1971ms
+ ✓ test/lib/gitLfsCleanup.test.ts > cleans object store after short rejection 566ms
+ ✓ test/lib/gitLfsCleanup.test.ts > cleans object store after oversized rejection 1218ms
+ ✓ test/lib/gitLfsCleanup.test.ts > cleans object store after hash-mismatch rejection 697ms
+ ✓ test/lib/gitLfsCleanup.test.ts > cleans an already verified first object when a later object returns404 532ms
+ ✓ test/lib/gitLfsCleanup.test.ts > handles a failed http batch without leaving a store 493ms
+ ✓ test/lib/gitLfsCleanup.test.ts > handles a failed json batch without leaving a store 483ms
+ ✓ test/lib/gitLfsCleanup.test.ts > retry on the same checkout succeeds after failed content and starts with no cached objects 928ms
+ ✓ test/lib/gitLfsCleanup.test.ts > native checkout write-open failure still removes all verified cached objects 666ms
+ ✓ test/gitLfs.test.ts > lfsEndpoint > is the repository's own .git/info/lfs, without credentials; SSH has none 654ms
+ ✓ test/gitLfs.test.ts > Git LFS fetch > finds only the tracked pointer files 1438ms
+ ✓ test/gitLfs.test.ts > Git LFS fetch > replaces each pointer with its verified content; the credential goes to the repository host only 924ms
+ ✓ test/gitLfs.test.ts > Git LFS fetch > refuses content that does not match its pointer, and leaves the pointer in place 3568ms
+ ✓ test/gitLfs.test.ts > Git LFS fetch > explains a refused API call, an object error, a missing object and an SSH repository 6312ms
+ ✓ test/gitLfs.test.ts > Git LFS fetch > a commit without LFS files asks nothing of the network 1019ms
+ ✓ test/gitLfs.test.ts > Git LFS fetch > stops a redirect loop 623ms
+
+ Test Files  4 passed (4)
+      Tests  43 passed (43)
+   Start at  15:59:25
+   Duration  53.69s (tests 100%)

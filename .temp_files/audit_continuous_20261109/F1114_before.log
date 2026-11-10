@@ -1,0 +1,28 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1114_lfsSizes.test.ts > rejects conflicting duplicate sizes before hydration
+EXPECTED: conflicting declarations rejected, pointers unchanged; ACTUAL: { error: 'undefined', first: 'verified shared content', requests: 2 }
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/prove_F1114_lfsSizes.test.ts > rejects conflicting duplicate sizes before hydration 805ms
+   → expected undefined to be an instance of Error
+stdout | .temp_files/audit_continuous_20261109/prove_F1114_lfsSizes.test.ts > control: matching duplicate sizes hydrate once
+CONTROL PASSED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1114_lfsSizes.test.ts > control: matching duplicate sizes hydrate once 514ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1114_lfsSizes.test.ts > rejects conflicting duplicate sizes before hydration
+AssertionError: expected undefined to be an instance of Error
+ ❯ .temp_files/audit_continuous_20261109/prove_F1114_lfsSizes.test.ts:15:501
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 1 passed (2)
+   Start at  15:57:38
+   Duration  1.48s (tests 97%, transform 2%, import 1%)
