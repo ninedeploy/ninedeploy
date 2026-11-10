@@ -12,3 +12,6 @@ Native originalmatrix21cases nowpassed/PROBLEM NOT REPRODUCED. Permanent41-case 
 
 ## Publication preflight
 29ownedpaths staged; exactnormalizedexpectedblobs/indexdiff/limitedcredentialpatternscanpassed. No unrelatedstagedwork.
+
+## Native Mac follow-up
+Run42833847554 exact73fecd8a1a8d8b12ba8afbd31f85ce3195521bba successfulonmacOS26.7.2arm64. Server525/33files,CLI20/4files,MCP4/1file=549passed/38files. Frozeninstall/build/typecheckpassed. Ten diagnosticssource/eventSHAchecked, original+normalized SHA256 recorded in round97_receipt.json. ZIPdigestmetadata notindependentlyverified. Backendidentityunchanged for evidencepublication; fullrootrelease/R73notcertified.

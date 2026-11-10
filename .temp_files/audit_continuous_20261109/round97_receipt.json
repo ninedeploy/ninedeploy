@@ -1,0 +1,104 @@
+{
+  "runId": 42833847554,
+  "url": "https://github.com/ninedeploy/ninedeploy/actions/runs/42833847554",
+  "sourceSha": "73fecd8a1a8d8b12ba8afbd31f85ce3195521bba",
+  "environment": {
+    "sha": "73fecd8a1a8d8b12ba8afbd31f85ce3195521bba",
+    "eventSha": "73fecd8a1a8d8b12ba8afbd31f85ce3195521bba",
+    "runId": "42833847554",
+    "timestamp": "2026-11-10T14:25:39.311Z",
+    "platform": "darwin",
+    "architecture": "arm64",
+    "macOS": "26.7.2",
+    "node": "26.12.1",
+    "pnpm": "11.23.0",
+    "git": "git version 2.56.0"
+  },
+  "mcpReadiness": {
+    "platform": "darwin",
+    "architecture": "arm64",
+    "builtEntryExists": true,
+    "workspaceBinExists": true,
+    "directEntryMissingTokenRefusal": true,
+    "workspaceMissingTokenRefusal": true,
+    "directExit": 1,
+    "workspaceExit": 1
+  },
+  "tests": {
+    "unit": {
+      "files": 33,
+      "passed": 525
+    },
+    "nativeCli": {
+      "files": 4,
+      "passed": 20
+    },
+    "mcpColdInstall": {
+      "files": 1,
+      "passed": 4
+    },
+    "totalPassed": 549
+  },
+  "installMcpBinWarning": false,
+  "artifact": {
+    "id": 13773190777,
+    "node_id": "MDg6QXJ0aWZhY3QxMzc3MzE5MDc3Nw==",
+    "name": "macos-server-audit-73fecd8a1a8d8b12ba8afbd31f85ce3195521bba-1",
+    "size_in_bytes": 17014,
+    "url": "https://api.github.com/repos/ninedeploy/ninedeploy/actions/artifacts/13773190777",
+    "archive_download_url": "https://api.github.com/repos/ninedeploy/ninedeploy/actions/artifacts/13773190777/zip",
+    "expired": false,
+    "digest": "sha256:58af9615f9e054abcdf9deac9560f680d23334bd59acfa2ef726ce270ba86585",
+    "created_at": "2026-11-10T14:27:37Z",
+    "updated_at": "2026-11-10T14:27:37Z",
+    "expires_at": "2026-11-24T14:27:36Z",
+    "workflow_run": {
+      "id": 42833847554,
+      "repository_id": 1333331078,
+      "head_repository_id": 1333331078,
+      "head_branch": "main",
+      "head_sha": "73fecd8a1a8d8b12ba8afbd31f85ce3195521bba"
+    }
+  },
+  "downloadedFiles": [
+    "bootstrap.txt",
+    "build.log",
+    "docker-cli.log",
+    "environment.json",
+    "install.log",
+    "mcp-bin.log",
+    "mcp-cold-install.log",
+    "native-cli.log",
+    "typecheck.log",
+    "unit.log"
+  ],
+  "originalDownloadedFileSha256": {
+    "bootstrap.txt": "ea171a1236d91f438177f00a13e1dc2041b12e03ae0f601a0f2243f68c9c0697",
+    "build.log": "4d4986e859d59189ab6f6c5bdf7cc79d6b55495f500ee9282ad52506d7cc1385",
+    "docker-cli.log": "78b5b478b19eeb8370a1655fca2bdfc303c39f1aede8ed50f5c4b9195f4ddbe5",
+    "environment.json": "11c3abcc88017d88e29dfc4db39e2ae3d38d6521119e64a4ffb8ce1c1f25e554",
+    "install.log": "d198f8adcd4ec408851fcdbe771e538ea9f2ebe7cb05f4b7715fe8f79cda105d",
+    "mcp-bin.log": "af65553a8d9c14f5fefffe9adf1ac83e470450e8d04dbde00fc08101c0f8082b",
+    "mcp-cold-install.log": "98f46b34ba6ac423fced1437c8d9066fdff5ff8ee7c99ddcb9a9edd162309397",
+    "native-cli.log": "7de3d0e61d49bb2117c9b0bb7a5467eb290f7adf643b81579e60d60a884fb906",
+    "typecheck.log": "8366207267355d3e3d5bf3bf6e8c94c5f93f6078c34f08973fa2b38cdda6cc92",
+    "unit.log": "a08509a80a80f6e39a60dbca4fcfda243d4d9641d27bc6906bdf97eecfb6df92"
+  },
+  "repositoryDiagnosticSha256": {
+    "bootstrap.txt": "ea171a1236d91f438177f00a13e1dc2041b12e03ae0f601a0f2243f68c9c0697",
+    "build.log": "4d4986e859d59189ab6f6c5bdf7cc79d6b55495f500ee9282ad52506d7cc1385",
+    "docker-cli.log": "78b5b478b19eeb8370a1655fca2bdfc303c39f1aede8ed50f5c4b9195f4ddbe5",
+    "environment.json": "11c3abcc88017d88e29dfc4db39e2ae3d38d6521119e64a4ffb8ce1c1f25e554",
+    "install.log": "d198f8adcd4ec408851fcdbe771e538ea9f2ebe7cb05f4b7715fe8f79cda105d",
+    "mcp-bin.log": "af65553a8d9c14f5fefffe9adf1ac83e470450e8d04dbde00fc08101c0f8082b",
+    "mcp-cold-install.log": "780d78e8c4db256e011054bf37a39a65b0d319be1769910a01723ead746736f9",
+    "native-cli.log": "5b437f450508c836a6b41add215c1f7b2e049261851674a2c1e30bd4536023a1",
+    "typecheck.log": "8366207267355d3e3d5bf3bf6e8c94c5f93f6078c34f08973fa2b38cdda6cc92",
+    "unit.log": "fdb19858ebcba122845747308268a47ab85f4eeb10016fad7a92a77c2f2ded91"
+  },
+  "diagnosticTextNormalization": "LF, trailing whitespace and terminal blanks normalized; original hashes retained",
+  "zipDigestIndependentlyVerified": false,
+  "publishedToNpm": false,
+  "fullReleaseCertified": false,
+  "ssh2NativeAccelerationCertified": false
+}
