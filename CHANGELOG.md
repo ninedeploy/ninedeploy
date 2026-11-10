@@ -37,6 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Workspace MCP readiness checks now remove token environment names case-insensitively before child startup, including Windows lowercase and mixed-case aliases (F1111).
 - MCP workspace installs now link a tracked launcher before build output exists, and macOS setup verifies the command after build (F1110).
 - Git LFS fetches now remove temporary objects on batch, stream, verification or checkout-copy failure before returning (F1109).
 - Autoscaler regression fixtures now await SQLite readiness and release owned native clients after each test, with permanent ownership guards (F1108).

@@ -56,7 +56,9 @@ The Mac setup helper verifies the workspace command after its root build.
 node scripts/check-workspace-mcp.mjs
 ```
 
-This read-only smoke removes the API token from child environments. The child
+This read-only smoke removes every casing of the API token name from child
+environments, including Windows lowercase/mixed-case aliases. The parent
+environment is unchanged. The child
 entrypoints deliberately refuse startup with the required-token message; those
 exit-1 refusals mean the launcher resolved, and the checker itself exits zero.
 No panel or credential is contacted. Cold/prebuilt/offline-reinstall fixtures,
@@ -72,6 +74,9 @@ creation warning. See the [receipt](../.temp_files/audit_continuous_20261109/rou
 for exact identity and original/normalized diagnostic hashes. This is native
 workspace-launcher evidence, not npm publication, full release, physical Mac or
 SSH native-acceleration acceptance.
+
+Diagnostic environment follow-up: pending the new native Mac run. Local
+uppercase/lowercase/mixed-case and empty-value controls passed without API use.
 
 ## Open the same source revision
 

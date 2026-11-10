@@ -1,0 +1,40 @@
+CONTROL uppercase token stripped: {
+  platform: 'win32',
+  architecture: 'x64',
+  builtEntryExists: true,
+  workspaceBinExists: true,
+  directEntryMissingTokenRefusal: true,
+  workspaceMissingTokenRefusal: true,
+  directExit: 1,
+  workspaceExit: 1
+}
+EXPECTED no credential in child ACTUAL: {
+  prebuilt: true,
+  exit: 0,
+  report: {
+    platform: 'win32',
+    architecture: 'x64',
+    builtEntryExists: true,
+    workspaceBinExists: true,
+    directEntryMissingTokenRefusal: true,
+    workspaceMissingTokenRefusal: true,
+    directExit: 1,
+    workspaceExit: 1
+  },
+  installerWarned: false
+}
+PROBLEM NOT REPRODUCED
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/packages/mcp
+
+ ✓ test/workspaceBin.test.ts > a cold workspace links the tracked MCP launcher before dist exists, then runs after build 3096ms
+ ✓ test/workspaceBin.test.ts > control: prebuilt workspace command still reaches the missing-token guard 3185ms
+ ✓ test/workspaceBin.test.ts > a frozen offline reinstall preserves the built launcher and lockfile 6370ms
+ ✓ test/workspaceBin.test.ts > the read-only smoke strips every token casing, including empty values, from both child entrypoints 11844ms
+
+ Test Files  1 passed (1)
+      Tests  4 passed (4)
+   Start at  15:08:01
+   Duration  24.64s (tests 100%)
+
+FIX VERIFIED

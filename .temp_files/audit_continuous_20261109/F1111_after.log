@@ -1,0 +1,26 @@
+CONTROL uppercase token stripped: {
+  platform: 'win32',
+  architecture: 'x64',
+  builtEntryExists: true,
+  workspaceBinExists: true,
+  directEntryMissingTokenRefusal: true,
+  workspaceMissingTokenRefusal: true,
+  directExit: 1,
+  workspaceExit: 1
+}
+EXPECTED no credential in child ACTUAL: {
+  prebuilt: true,
+  exit: 0,
+  report: {
+    platform: 'win32',
+    architecture: 'x64',
+    builtEntryExists: true,
+    workspaceBinExists: true,
+    directEntryMissingTokenRefusal: true,
+    workspaceMissingTokenRefusal: true,
+    directExit: 1,
+    workspaceExit: 1
+  },
+  installerWarned: false
+}
+PROBLEM NOT REPRODUCED

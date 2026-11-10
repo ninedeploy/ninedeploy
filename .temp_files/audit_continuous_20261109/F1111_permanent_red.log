@@ -1,0 +1,58 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/packages/mcp
+
+ ✓ test/workspaceBin.test.ts > a cold workspace links the tracked MCP launcher before dist exists, then runs after build 3786ms
+ ✓ test/workspaceBin.test.ts > control: prebuilt workspace command still reaches the missing-token guard 3646ms
+ ✓ test/workspaceBin.test.ts > a frozen offline reinstall preserves the built launcher and lockfile 6611ms
+ × test/workspaceBin.test.ts > the read-only smoke strips every token casing, including empty values, from both child entrypoints 8179ms
+   → {
+  "platform": "win32",
+  "architecture": "x64",
+  "builtEntryExists": true,
+  "workspaceBinExists": true,
+  "directEntryMissingTokenRefusal": false,
+  "workspaceMissingTokenRefusal": false,
+  "directExit": 2,
+  "workspaceExit": 2
+}
+
+Workspace MCP launcher is unavailable after build. See docs/MACOS_DEVELOPMENT.md.
+: expected 1 to be +0 // Object.is equality
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 3 passed (4)
+   Start at  15:07:25
+   Duration  23.05s (tests 100%)
+
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/workspaceBin.test.ts > the read-only smoke strips every token casing, including empty values, from both child entrypoints
+AssertionError: {
+  "platform": "win32",
+  "architecture": "x64",
+  "builtEntryExists": true,
+  "workspaceBinExists": true,
+  "directEntryMissingTokenRefusal": false,
+  "workspaceMissingTokenRefusal": false,
+  "directExit": 2,
+  "workspaceExit": 2
+}
+
+Workspace MCP launcher is unavailable after build. See docs/MACOS_DEVELOPMENT.md.
+: expected 1 to be +0 // Object.is equality
+
+- Expected
++ Received
+
+- 0
++ 1
+
+ ❯ Object.smoke test/workspaceBin.test.ts:19:501
+
+ ❯ test/workspaceBin.test.ts:24:303
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+EXIT 1

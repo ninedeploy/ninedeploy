@@ -5,8 +5,10 @@ import { existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const env = { ...process.env, NINEDEPLOY_URL: 'http://127.0.0.1:9' };
-delete env.NINEDEPLOY_TOKEN;
+const env = {
+  ...Object.fromEntries(Object.entries(process.env).filter(([key]) => key.toUpperCase() !== 'NINEDEPLOY_TOKEN')),
+  NINEDEPLOY_URL: 'http://127.0.0.1:9',
+};
 const options = { cwd: root, env, encoding: 'utf8', windowsHide: true, timeout: 15_000 };
 const direct = spawnSync(process.execPath, [join(root, 'packages/mcp/dist/index.js')], options);
 const launcher = process.platform === 'win32'
