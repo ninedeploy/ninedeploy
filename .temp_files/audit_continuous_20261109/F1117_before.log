@@ -1,0 +1,39 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1117_incidentResponse.test.ts > releases native streaming success for pagerduty
+EXPECTED: native body cancelled before send returns; ACTUAL: { provider: 'pagerduty', cancelled: 0, bodyUsed: false }
+PROBLEM CONFIRMED
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1117_incidentResponse.test.ts > releases native streaming success for opsgenie
+EXPECTED: native body cancelled before send returns; ACTUAL: { provider: 'opsgenie', cancelled: 0, bodyUsed: false }
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/prove_F1117_incidentResponse.test.ts > releases native streaming success for pagerduty 55ms
+   → expected +0 to be 1 // Object.is equality
+ × .temp_files/audit_continuous_20261109/prove_F1117_incidentResponse.test.ts > releases native streaming success for opsgenie 5ms
+   → expected +0 to be 1 // Object.is equality
+ ✓ .temp_files/audit_continuous_20261109/prove_F1117_incidentResponse.test.ts > control: refusal body is consumed for the provider diagnostic 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1117_incidentResponse.test.ts > releases native streaming success for pagerduty
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1117_incidentResponse.test.ts > releases native streaming success for opsgenie
+AssertionError: expected +0 to be 1 // Object.is equality
+
+- Expected
++ Received
+
+- 1
++ 0
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1117_incidentResponse.test.ts:10:1115
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 1 passed (3)
+   Start at  16:15:01
+   Duration  299ms (tests 40%, import 39%, transform 19%, worker 2%)

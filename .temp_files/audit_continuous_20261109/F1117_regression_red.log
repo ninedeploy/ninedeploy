@@ -1,0 +1,88 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/round96_regression_red.test.ts > releases native streaming success for pagerduty
+EXPECTED: native body cancelled before send returns; ACTUAL: { provider: 'pagerduty', cancelled: 0, bodyUsed: false }
+PROBLEM CONFIRMED
+
+stdout | .temp_files/audit_continuous_20261109/round96_regression_red.test.ts > releases native streaming success for opsgenie
+EXPECTED: native body cancelled before send returns; ACTUAL: { provider: 'opsgenie', cancelled: 0, bodyUsed: false }
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/round96_regression_red.test.ts > releases native streaming success for pagerduty 41ms
+   → expected +0 to be 1 // Object.is equality
+ × .temp_files/audit_continuous_20261109/round96_regression_red.test.ts > releases native streaming success for opsgenie 5ms
+   → expected +0 to be 1 // Object.is equality
+ ✓ .temp_files/audit_continuous_20261109/round96_regression_red.test.ts > control: refusal body is consumed for the provider diagnostic 2ms
+ × .temp_files/audit_continuous_20261109/round96_regression_red.test.ts > cancels pagerduty trigger response content 1ms
+   → expected +0 to be 1 // Object.is equality
+ × .temp_files/audit_continuous_20261109/round96_regression_red.test.ts > cancels pagerduty resolve response content 0ms
+   → expected +0 to be 1 // Object.is equality
+ ✓ .temp_files/audit_continuous_20261109/round96_regression_red.test.ts > preserves pagerduty bodyless success 0ms
+ ✓ .temp_files/audit_continuous_20261109/round96_regression_red.test.ts > ignores pagerduty success cancellation rejection 0ms
+ × .temp_files/audit_continuous_20261109/round96_regression_red.test.ts > disposes both pagerduty test incident responses 1ms
+   → expected +0 to be 2 // Object.is equality
+ × .temp_files/audit_continuous_20261109/round96_regression_red.test.ts > cancels opsgenie trigger response content 0ms
+   → expected +0 to be 1 // Object.is equality
+ × .temp_files/audit_continuous_20261109/round96_regression_red.test.ts > cancels opsgenie resolve response content 0ms
+   → expected +0 to be 1 // Object.is equality
+ ✓ .temp_files/audit_continuous_20261109/round96_regression_red.test.ts > preserves opsgenie bodyless success 0ms
+ ✓ .temp_files/audit_continuous_20261109/round96_regression_red.test.ts > ignores opsgenie success cancellation rejection 0ms
+ × .temp_files/audit_continuous_20261109/round96_regression_red.test.ts > disposes both opsgenie test incident responses 0ms
+   → expected +0 to be 2 // Object.is equality
+ ✓ .temp_files/audit_continuous_20261109/round96_regression_red.test.ts > preserves Opsgenie refusal details and consumes body 0ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 8 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/round96_regression_red.test.ts > releases native streaming success for pagerduty
+ FAIL  .temp_files/audit_continuous_20261109/round96_regression_red.test.ts > releases native streaming success for opsgenie
+AssertionError: expected +0 to be 1 // Object.is equality
+
+- Expected
++ Received
+
+- 1
++ 0
+
+ ❯ .temp_files/audit_continuous_20261109/round96_regression_red.test.ts:10:1115
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/8]⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/round96_regression_red.test.ts > cancels pagerduty trigger response content
+ FAIL  .temp_files/audit_continuous_20261109/round96_regression_red.test.ts > cancels pagerduty resolve response content
+ FAIL  .temp_files/audit_continuous_20261109/round96_regression_red.test.ts > cancels opsgenie trigger response content
+ FAIL  .temp_files/audit_continuous_20261109/round96_regression_red.test.ts > cancels opsgenie resolve response content
+AssertionError: expected +0 to be 1 // Object.is equality
+
+- Expected
++ Received
+
+- 1
++ 0
+
+ ❯ .temp_files/audit_continuous_20261109/round96_regression_red.test.ts:14:325
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/8]⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/round96_regression_red.test.ts > disposes both pagerduty test incident responses
+ FAIL  .temp_files/audit_continuous_20261109/round96_regression_red.test.ts > disposes both opsgenie test incident responses
+AssertionError: expected +0 to be 2 // Object.is equality
+
+- Expected
++ Received
+
+- 2
++ 0
+
+ ❯ .temp_files/audit_continuous_20261109/round96_regression_red.test.ts:17:379
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/8]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  8 failed | 6 passed (14)
+   Start at  16:15:41
+   Duration  249ms (tests 46%, transform 27%, import 23%, worker 3%)

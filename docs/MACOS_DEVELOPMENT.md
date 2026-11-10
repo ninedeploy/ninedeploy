@@ -1148,3 +1148,9 @@ cleanup in `test/lib/gitCommitStatus.test.ts` and
 `test/lib/gitCommitStatusResponse.test.ts` (29 server files). Local HTTP
 fixtures wait for explicit connection-close events and use inert credentials.
 Native commit-status response checkpoint: [run 42832031978](https://github.com/ninedeploy/ninedeploy/actions/runs/42832031978) passed at source `c0be1bd032abd6139f8a97e1707837e12d9190f7` on macOS 26.7.2 arm64: 359 server, 20 native CLI and four workspace MCP tests, 383 tests in 34 files. See the [receipt](../.temp_files/audit_continuous_20261109/round95_receipt.json). Full release certification remains outside this focused run.
+
+The focused Mac lane checks incident delivery and response disposal in
+`test/lib/notifierG37.test.ts` and `test/lib/incidentResponse.test.ts`
+(31 server files). PagerDuty/Opsgenie fixtures use loopback HTTP and inert keys;
+no real incidents are opened or resolved.
+Native incident response follow-up: pending the new Mac run.

@@ -136,6 +136,7 @@ export async function sendPagerDuty(target: PagerDutyTarget, action: IncidentAct
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
   if (!res.ok) throw new Error(`PagerDuty ${res.status}${await errorDetail(res)}`);
+  await res.body?.cancel().catch(() => undefined);
 }
 
 const OPSGENIE_PRIORITY: Record<IncidentSeverity, string> = { critical: 'P1', error: 'P2', warning: 'P3', info: 'P5' };
@@ -165,6 +166,7 @@ export async function sendOpsgenie(target: OpsgenieTarget, action: IncidentActio
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
   if (!res.ok) throw new Error(`Opsgenie ${res.status}${await errorDetail(res)}`);
+  await res.body?.cancel().catch(() => undefined);
 }
 
 /** The provider's explanation of a refusal (its body never holds the key). */

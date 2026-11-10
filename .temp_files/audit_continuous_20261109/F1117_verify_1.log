@@ -1,0 +1,52 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1117_incidentResponse.test.ts > releases native streaming success for pagerduty
+EXPECTED: native body cancelled before send returns; ACTUAL: { provider: 'pagerduty', cancelled: 1, bodyUsed: true }
+PROBLEM NOT REPRODUCED
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1117_incidentResponse.test.ts > releases native streaming success for opsgenie
+EXPECTED: native body cancelled before send returns; ACTUAL: { provider: 'opsgenie', cancelled: 1, bodyUsed: true }
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1117_incidentResponse.test.ts > releases native streaming success for pagerduty 35ms
+ ✓ .temp_files/audit_continuous_20261109/prove_F1117_incidentResponse.test.ts > releases native streaming success for opsgenie 7ms
+ ✓ .temp_files/audit_continuous_20261109/prove_F1117_incidentResponse.test.ts > control: refusal body is consumed for the provider diagnostic 1ms
+
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
+   Start at  16:18:08
+   Duration  244ms (tests 46%, import 28%, transform 23%, worker 3%)
+
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+stdout | test/lib/incidentResponse.test.ts > releases native streaming success for pagerduty
+EXPECTED: native body cancelled before send returns; ACTUAL: { provider: 'pagerduty', cancelled: 1, bodyUsed: true }
+PROBLEM NOT REPRODUCED
+
+stdout | test/lib/incidentResponse.test.ts > releases native streaming success for opsgenie
+EXPECTED: native body cancelled before send returns; ACTUAL: { provider: 'opsgenie', cancelled: 1, bodyUsed: true }
+PROBLEM NOT REPRODUCED
+
+ ✓ test/lib/incidentResponse.test.ts > releases native streaming success for pagerduty 36ms
+ ✓ test/lib/incidentResponse.test.ts > releases native streaming success for opsgenie 4ms
+ ✓ test/lib/incidentResponse.test.ts > control: refusal body is consumed for the provider diagnostic 1ms
+ ✓ test/lib/incidentResponse.test.ts > cancels pagerduty trigger response content 0ms
+ ✓ test/lib/incidentResponse.test.ts > cancels pagerduty resolve response content 0ms
+ ✓ test/lib/incidentResponse.test.ts > preserves pagerduty bodyless success 0ms
+ ✓ test/lib/incidentResponse.test.ts > ignores pagerduty success cancellation rejection 0ms
+ ✓ test/lib/incidentResponse.test.ts > disposes both pagerduty test incident responses 0ms
+ ✓ test/lib/incidentResponse.test.ts > cancels opsgenie trigger response content 0ms
+ ✓ test/lib/incidentResponse.test.ts > cancels opsgenie resolve response content 0ms
+ ✓ test/lib/incidentResponse.test.ts > preserves opsgenie bodyless success 0ms
+ ✓ test/lib/incidentResponse.test.ts > ignores opsgenie success cancellation rejection 0ms
+ ✓ test/lib/incidentResponse.test.ts > disposes both opsgenie test incident responses 0ms
+ ✓ test/lib/incidentResponse.test.ts > preserves Opsgenie refusal details and consumes body 0ms
+
+ Test Files  1 passed (1)
+      Tests  14 passed (14)
+   Start at  16:18:10
+   Duration  507ms (tests 41%, transform 32%, import 24%, worker 3%)
+
+FIX VERIFIED

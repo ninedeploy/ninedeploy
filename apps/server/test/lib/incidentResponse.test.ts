@@ -1,0 +1,19 @@
+import {createServer} from 'node:http';
+import {once} from 'node:events';
+import {afterEach,expect,it,vi} from 'vitest';
+const h=vi.hoisted(()=>({fetch:vi.fn()}));
+vi.mock('../../src/lib/egressGuard.js',()=>({guardedFetch:h.fetch}));
+const {sendPagerDuty,sendOpsgenie,dispatchIncident}=await import('../../src/lib/incidentChannels.js');
+const event={action:'alert.fired',ts:'2026-11-10T00:00:00Z',entity:'fixture',meta:{ruleId:1}},action={kind:'trigger',key:'fixture',severity:'error'} as const;
+const send=(provider:string,kind:'trigger'|'resolve'='trigger',region:'us'|'eu'='us')=>provider==='pagerduty'?sendPagerDuty({routingKey:'inert-key',region},{...action,kind},'fixture',event as never):sendOpsgenie({apiKey:'inert-key',region},{...action,kind},'fixture',event as never);
+afterEach(()=>h.fetch.mockReset());
+for(const provider of ['pagerduty','opsgenie'])it(`releases native streaming success for ${provider}`,async()=>{let resolveClosed!:()=>void;const bodyClosed=new Promise<void>(resolve=>{resolveClosed=resolve;});const server=createServer((_req,res)=>{res.on('close',resolveClosed);res.writeHead(202,{'content-type':'application/json'});res.write('{');});let response:Response|undefined,cancelled=0;await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));const address=server.address();if(!address||typeof address==='string')throw Error('Missing owned listener');h.fetch.mockImplementation(async(_url:string,init:RequestInit)=>{response=await fetch(`http://127.0.0.1:${address.port}/incident`,init);const cancel=response.body!.cancel.bind(response.body);response.body!.cancel=async reason=>{cancelled++;await cancel(reason);await bodyClosed;};return response;});try{await send(provider);console.log('EXPECTED: native body cancelled before send returns; ACTUAL:',{provider,cancelled,bodyUsed:response?.bodyUsed});console.log(cancelled===1?'PROBLEM NOT REPRODUCED':'PROBLEM CONFIRMED');expect(cancelled).toBe(1);}finally{await response?.body?.cancel().catch(()=>{});const closed=once(server,'close');server.close();server.closeAllConnections();await closed;}});
+it('control: refusal body is consumed for the provider diagnostic',async()=>{const response=new Response('fixture denied',{status:403});h.fetch.mockResolvedValue(response);await expect(send('pagerduty')).rejects.toThrow('PagerDuty 403: fixture denied');expect(response.bodyUsed).toBe(true);});
+
+for(const provider of ['pagerduty','opsgenie']){
+ for(const kind of ['trigger','resolve'] as const)it(`cancels ${provider} ${kind} response content`,async()=>{let cancelled=0;const response=new Response(new ReadableStream({cancel(){cancelled++;}}),{status:202});h.fetch.mockResolvedValue(response);try{await send(provider,kind,kind==='resolve'?'eu':'us');expect(cancelled).toBe(1);}finally{await response.body?.cancel().catch(()=>{});}});
+ it(`preserves ${provider} bodyless success`,async()=>{h.fetch.mockResolvedValue(new Response(null,{status:204}));await expect(send(provider)).resolves.toBeUndefined();});
+ it(`ignores ${provider} success cancellation rejection`,async()=>{const response=new Response('unused',{status:202});response.body!.cancel=async()=>{throw Error('fixture cancel rejection');};h.fetch.mockResolvedValue(response);await expect(send(provider)).resolves.toBeUndefined();});
+ it(`disposes both ${provider} test incident responses`,async()=>{let cancelled=0;h.fetch.mockImplementation(async()=>new Response(new ReadableStream({cancel(){cancelled++;}}),{status:202}));await dispatchIncident(provider as 'pagerduty'|'opsgenie','inert-key',{...event,action:'notification.test'} as never,'fixture');expect(h.fetch).toHaveBeenCalledTimes(2);expect(cancelled).toBe(2);});
+}
+it('preserves Opsgenie refusal details and consumes body',async()=>{const response=new Response('fixture denied',{status:403});h.fetch.mockResolvedValue(response);await expect(send('opsgenie')).rejects.toThrow('Opsgenie 403: fixture denied');expect(response.bodyUsed).toBe(true);});

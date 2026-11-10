@@ -1,0 +1,42 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+stdout | test/lib/incidentResponse.test.ts > releases native streaming success for pagerduty
+EXPECTED: native body cancelled before send returns; ACTUAL: { provider: 'pagerduty', cancelled: 1, bodyUsed: true }
+PROBLEM NOT REPRODUCED
+
+stdout | test/lib/incidentResponse.test.ts > releases native streaming success for opsgenie
+EXPECTED: native body cancelled before send returns; ACTUAL: { provider: 'opsgenie', cancelled: 1, bodyUsed: true }
+PROBLEM NOT REPRODUCED
+
+ ✓ test/lib/incidentResponse.test.ts > releases native streaming success for pagerduty 39ms
+ ✓ test/lib/incidentResponse.test.ts > releases native streaming success for opsgenie 4ms
+ ✓ test/lib/incidentResponse.test.ts > control: refusal body is consumed for the provider diagnostic 2ms
+ ✓ test/lib/incidentResponse.test.ts > cancels pagerduty trigger response content 1ms
+ ✓ test/lib/incidentResponse.test.ts > cancels pagerduty resolve response content 0ms
+ ✓ test/lib/incidentResponse.test.ts > preserves pagerduty bodyless success 0ms
+ ✓ test/lib/incidentResponse.test.ts > ignores pagerduty success cancellation rejection 0ms
+ ✓ test/lib/incidentResponse.test.ts > disposes both pagerduty test incident responses 0ms
+ ✓ test/lib/incidentResponse.test.ts > cancels opsgenie trigger response content 0ms
+ ✓ test/lib/incidentResponse.test.ts > cancels opsgenie resolve response content 0ms
+ ✓ test/lib/incidentResponse.test.ts > preserves opsgenie bodyless success 0ms
+ ✓ test/lib/incidentResponse.test.ts > ignores opsgenie success cancellation rejection 0ms
+ ✓ test/lib/incidentResponse.test.ts > disposes both opsgenie test incident responses 0ms
+ ✓ test/lib/incidentResponse.test.ts > preserves Opsgenie refusal details and consumes body 0ms
+ ✓ test/lib/notifierG37.test.ts > Mattermost and Google Chat > posts a Slack-style text payload to a Mattermost webhook 4ms
+ ✓ test/lib/notifierG37.test.ts > Mattermost and Google Chat > posts to a Google Chat space webhook and refuses any other host 1ms
+ ✓ test/lib/notifierG37.test.ts > Matrix > PUTs an m.text message with a transaction id derived from the event 1ms
+ ✓ test/lib/notifierG37.test.ts > Matrix > validates the target 0ms
+ ✓ test/lib/notifierG37.test.ts > incident classification > opens on problems and closes on their fix with the same key 1ms
+ ✓ test/lib/notifierG37.test.ts > incident classification > falls back to a hash of the entity, and ignores fixes it cannot match and everything else 0ms
+ ✓ test/lib/notifierG37.test.ts > incident classification > parses a bare key or JSON with a region 0ms
+ ✓ test/lib/notifierG37.test.ts > PagerDuty > triggers with a dedup key and resolves with the same key 0ms
+ ✓ test/lib/notifierG37.test.ts > PagerDuty > sends nothing for an event that is no problem, and reports a refusal 1ms
+ ✓ test/lib/notifierG37.test.ts > PagerDuty > opens and closes a test incident 0ms
+ ✓ test/lib/notifierG37.test.ts > Opsgenie > creates an alert with an alias and closes it by that alias 1ms
+ ✓ test/lib/notifierG37.test.ts > notifyEvent with an incident channel > skips events that neither report nor fix a problem, without a log row 3ms
+
+ Test Files  2 passed (2)
+      Tests  26 passed (26)
+   Start at  16:18:20
+   Duration  944ms (import 74%, transform 16%, tests 9%, worker 1%)
