@@ -219,6 +219,7 @@ export async function listBackupDrills(
 ): Promise<
   Array<{
     id: number;
+    databaseId: number;
     backupId: number;
     status: DrillStatus;
     engine: string;
@@ -237,6 +238,7 @@ export async function listBackupDrills(
     .limit(limit);
   return rows.map((r) => ({
     id: r.id,
+    databaseId: r.databaseId,
     backupId: r.backupId,
     status: r.status,
     engine: r.engine,

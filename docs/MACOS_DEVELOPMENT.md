@@ -904,3 +904,24 @@ CLI cleanup requests and modeled ownership, not actual Engine storage deletion
 or a restored database. The structural checker retains best-effort cleanup: a
 persistent daemon failure or a panel crash can still leave a helper. No native
 Mac run, full release or resolution of the round73 worker fault is implied.
+
+Round 84 (F1105) restores the SDK's required database identity on drill history
+rows. Actual Fastify routes with real SQLite returned databaseId on a single
+entry but omitted it from the history list. The list now includes databaseId;
+this is an additive payload correction with no migration or permission change.
+
+Beforeproof: one failure/two controls. The same-second ordering candidate passed
+on current SQLite and was dropped without a query change. Eight permanent
+HTTP/SQLite cases were seen red (four failures/four controls), then passed with
+the original proof in three consecutive verifier runs. They cover identity,
+detail/list agreement, database filtering, empty history, the 25-row cap and
+missing databases. Final scope passed 230 tests in seven files; bounded server
+typecheck/build, two-file lint and diff checks passed.
+
+```bash
+pnpm --dir apps/server exec vitest run test/lib/backupDrillHistory.test.ts test/lib/backupDrill.test.ts test/modules/backups.test.ts --coverage=false
+```
+
+The test uses the repository's auth adapter, actual route/serialization code
+and isolated native SQLite. It makes no live authentication, native Mac or full
+release claim; round73's native worker fault remains unresolved.

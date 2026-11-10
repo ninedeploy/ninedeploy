@@ -1,0 +1,44 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1105_drillHistory.test.ts > control: single entry exposes its required database identity 302ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1105_drillHistory.test.ts > F1105: history exposes the same required database identity as detail
+EXPECTED databaseId:5 ACTUAL: 5
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1105_drillHistory.test.ts > F1105: history exposes the same required database identity as detail 203ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1105_drillHistory.test.ts > ordering candidate: equal-second rows retain newest id first in current SQLite
+ORDER EXPECTED [13,12] ACTUAL [ 13, 12 ]
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1105_drillHistory.test.ts > ordering candidate: equal-second rows retain newest id first in current SQLite 225ms
+
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
+   Start at  13:08:29
+   Duration  1.90s (tests 45%, import 41%, transform 14%)
+
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/lib/backupDrillHistory.test.ts > control: single entry exposes its required database identity 313ms
+stdout | test/lib/backupDrillHistory.test.ts > F1105: history exposes the same required database identity as detail
+EXPECTED databaseId:5 ACTUAL: 5
+PROBLEM NOT REPRODUCED
+
+ ✓ test/lib/backupDrillHistory.test.ts > F1105: history exposes the same required database identity as detail 195ms
+stdout | test/lib/backupDrillHistory.test.ts > ordering candidate: equal-second rows retain newest id first in current SQLite
+ORDER EXPECTED [13,12] ACTUAL [ 13, 12 ]
+
+ ✓ test/lib/backupDrillHistory.test.ts > ordering candidate: equal-second rows retain newest id first in current SQLite 166ms
+ ✓ test/lib/backupDrillHistory.test.ts > history and detail agree on all advertised identity and timing fields 193ms
+ ✓ test/lib/backupDrillHistory.test.ts > database filtering preserves every returned database identity 229ms
+ ✓ test/lib/backupDrillHistory.test.ts > existing database with no drills returns an empty history 221ms
+ ✓ test/lib/backupDrillHistory.test.ts > retains the HTTP history cap with identity on every row 192ms
+ ✓ test/lib/backupDrillHistory.test.ts > retains not-found behavior for missing database history 192ms
+
+ Test Files  1 passed (1)
+      Tests  8 passed (8)
+   Start at  13:08:32
+   Duration  2.69s (tests 67%, import 25%, transform 8%)
+
+FIX VERIFIED

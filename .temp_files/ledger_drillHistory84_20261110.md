@@ -1,0 +1,14 @@
+## Round84 — backup drill history contract
+### Setup and scope
+Clean main4ca0f203 recorded round84_status_before.txt. RootCONTRIBUTING/sameconfiguredtoolchain reviewed during preceding scope; no scopeAGENTS, no installs. Scope confirmed: apps/server/src/lib/backupDrill.ts, new test/lib/backupDrillHistory.test.ts. Read actual modules/backups.ts routes, SDK BackupDrillEntry, helper fixtures, source/nearest tests. SDK and routes read-only unless proven need expansion.
+### Invariants
+History and single-entry responses must agree on required SDKidentityfields, including databaseId. History remains database-filtered/newest-first/bounded. NativeSQLite explicit equal timestamps will probe ordering separately; no SQL-ordering patch without reproduced failure. Keep epochunits and publiccontracts except correcting advertised missingidentity.
+### Candidates
+F1105 input/output contract (pending): list mapper omits databaseId while SDKrequiresit and detailmapper includesit. Possible same-second order candidate unproven. ActualFastifyroute with testauth adapter and realSQLite; no live auth/security orDocker claims.
+### Confirmed root before patch — F1105 Low
+ActualFastifyGET/databases/5/drills returns200 but row.databaseId is undefined; GETdetail control returns5. Original1failed/2controls. SDK BackupDrillEntry requiresdatabaseId, while listBackupDrills explicitreturntype and rowmapper omitit. Publicwire correction adds existing database identity to historyrows; no schema/migration/permission changes. Low: advertised SDKcontract broken, no demonstrated data loss or authorization issue.
+Same-second ordering candidate NOT REPRODUCED: actualSQLite equal timestamps returned[13,12] forlimit2. Dropped; no ordering patch. Existing index reverse scan happens to provide this order, not a cross-engine guarantee.
+### Verification
+Original actualHTTP/nativeSQLite proof after3passed including detailcontrol and equal-second orderingcontrol, PROBLEM NOT REPRODUCED. Permanent test/lib/backupDrillHistory.test.ts8cases seenred4failed/4controls, source restored after exactbyte no-drift verification. verify_F1105_drillHistory.mjs combines original3and permanent8, all11passed3consecutive runs/FIX VERIFIED. Actualroute/read/serialization unchanged beyond additivefield; auth uses existing test adapter, no liveauth claims.
+Finalscope sevenfiles230tests passed. GOMAXPROCS4pnpm --dir apps/server typecheck/build exit0. ConfiguredtwofileBiomeformatterdisabled passed; gitdiffcheck passed (CRLFwarning). APIshape correction explicitlyin-scope; no schema/index/order/epochunit/dependency change. NativeMac/fullrelease/rootcoverage NOT RUN, R73workerfault unresolved. Docs has Mac command.
+### Publication preflight:21ownedstagedpaths; expectedblobs/indexdiff/limitedscanpassed, no unrelatedinitialchanges.

@@ -1,0 +1,110 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/lib/backupDrillHistory.test.ts > control: single entry exposes its required database identity 309ms
+stdout | test/lib/backupDrillHistory.test.ts > F1105: history exposes the same required database identity as detail
+EXPECTED databaseId:5 ACTUAL: undefined
+PROBLEM CONFIRMED
+
+ × test/lib/backupDrillHistory.test.ts > F1105: history exposes the same required database identity as detail 298ms
+   → expected { id: 11, backupId: 7, …(7) } to match object { id: 11, databaseId: 5, backupId: 7 }
+(7 matching properties omitted from actual)
+stdout | test/lib/backupDrillHistory.test.ts > ordering candidate: equal-second rows retain newest id first in current SQLite
+ORDER EXPECTED [13,12] ACTUAL [ 13, 12 ]
+
+ ✓ test/lib/backupDrillHistory.test.ts > ordering candidate: equal-second rows retain newest id first in current SQLite 262ms
+ × test/lib/backupDrillHistory.test.ts > history and detail agree on all advertised identity and timing fields 204ms
+   → expected [ { id: 11, backupId: 7, …(7) } ] to deeply equal [ { id: 11, databaseId: 5, …(8) } ]
+ × test/lib/backupDrillHistory.test.ts > database filtering preserves every returned database identity 204ms
+   → expected [ { id: 12, backupId: 8, …(7) } ] to match object [ { id: 12, databaseId: 6, …(1) } ]
+(7 matching properties omitted from actual)
+ ✓ test/lib/backupDrillHistory.test.ts > existing database with no drills returns an empty history 248ms
+ × test/lib/backupDrillHistory.test.ts > retains the HTTP history cap with identity on every row 224ms
+   → expected false to be true // Object.is equality
+ ✓ test/lib/backupDrillHistory.test.ts > retains not-found behavior for missing database history 209ms
+
+ Test Files  1 failed (1)
+      Tests  4 failed | 4 passed (8)
+   Start at  13:08:01
+   Duration  3.16s (tests 65%, import 26%, transform 9%)
+
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/lib/backupDrillHistory.test.ts > F1105: history exposes the same required database identity as detail
+AssertionError: expected { id: 11, backupId: 7, …(7) } to match object { id: 11, databaseId: 5, backupId: 7 }
+(7 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+    "backupId": 7,
+-   "databaseId": 5,
+    "id": 11,
+  }
+
+ ❯ test/lib/backupDrillHistory.test.ts:6:385
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  test/lib/backupDrillHistory.test.ts > history and detail agree on all advertised identity and timing fields
+AssertionError: expected [ { id: 11, backupId: 7, …(7) } ] to deeply equal [ { id: 11, databaseId: 5, …(8) } ]
+
+- Expected
++ Received
+
+@@ -1,10 +1,9 @@
+  [
+    {
+      "backupId": 7,
+      "completedAt": null,
+-     "databaseId": 5,
+      "details": null,
+      "durationMs": 0,
+      "engine": "postgres",
+      "error": null,
+      "id": 11,
+
+ ❯ test/lib/backupDrillHistory.test.ts:8:328
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+ FAIL  test/lib/backupDrillHistory.test.ts > database filtering preserves every returned database identity
+AssertionError: expected [ { id: 12, backupId: 8, …(7) } ] to match object [ { id: 12, databaseId: 6, …(1) } ]
+(7 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  [
+    {
+      "backupId": 8,
+-     "databaseId": 6,
+      "id": 12,
+    },
+  ]
+
+ ❯ test/lib/backupDrillHistory.test.ts:9:566
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+
+ FAIL  test/lib/backupDrillHistory.test.ts > retains the HTTP history cap with identity on every row
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ test/lib/backupDrillHistory.test.ts:11:512
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/4]⎯
+
+
+EXIT 1
