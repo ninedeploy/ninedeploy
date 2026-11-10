@@ -62,6 +62,18 @@ function basicAuth(auth: RegistryAuth): string {
   return ['Basic', Buffer.from(`${auth.username}:${auth.password}`).toString('base64')].join(' ');
 }
 
+/** Syntax only: unknown algorithms remain opaque OCI identifiers. */
+function isContentDigest(value: string): boolean {
+  const parts = value.split(':');
+  if (parts.length !== 2) return false;
+  const [algorithm, encoded] = parts;
+  if (!algorithm || !encoded ||
+      !algorithm.split(/[+._-]/).every((part) => /^[a-z0-9]+$/.test(part)) ||
+      !/^[A-Za-z0-9=_-]+$/.test(encoded)) return false;
+  const hexLength = algorithm === 'sha512' ? 128 : algorithm === 'sha256' || algorithm === 'blake3' ? 64 : null;
+  return hexLength === null || encoded.length === hexLength && /^[a-f0-9]+$/.test(encoded);
+}
+
 /**
  * Read the current manifest digest of `repository:tag` on `registry`.
  *
@@ -95,6 +107,7 @@ export async function fetchImageDigest(
   if (!res.ok || !digest) {
     throw new Error(`registry answered HTTP ${res.status} without a digest`);
   }
+  if (!isContentDigest(digest)) throw new Error('registry returned an invalid manifest digest');
   return digest;
 }
 

@@ -36,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Manifest probes now reject malformed OCI content-digest metadata before it can seed an auto-update baseline or queue a deployment, preserving valid registered and opaque digest syntax (F1101).
 - Watch parsing now rejects malformed registry host text before it can alter manifest probe URI path, query, or fragment semantics (F1099).
 - Watch parsing now enforces the native 255-character repository-path limit with official Hub namespace normalization, while preserving registry and tag compatibility (F1100).
 - Watch parsing now rejects malformed image repository components before dispatching registry manifest probes, including empty and dot path segments (F1097).

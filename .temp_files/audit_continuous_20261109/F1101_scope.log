@@ -1,0 +1,193 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/lib/imageWatchDigest.test.ts > accepts OCI syntax sha256:29cee9ce6d9eadb2b289937 10ms
+ ✓ test/lib/imageWatchDigest.test.ts > accepts OCI syntax sha512:dd39bdec42141e9f75aa6c5 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > accepts OCI syntax blake3:00000000000000000000000 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > accepts OCI syntax sha256+b64u:Kc7pzm2erbKyiZN2nl 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > accepts OCI syntax multihash+base58:FixtureOpaque 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > accepts OCI syntax future.v1-hash_2:ABC=_-123 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > accepts OCI syntax constructor:abc 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > rejects malformed metadata not-a-digest length12 1ms
+ ✓ test/lib/imageWatchDigest.test.ts > rejects malformed metadata sha256: length7 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > rejects malformed metadata :abc length4 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > rejects malformed metadata sha256:abc:def length14 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > rejects malformed metadata SHA256:aaaaaaaaaaaaaaaaaaaaaaa length71 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > rejects malformed metadata sha256:AAAAAAAAAAAAAAAAAAAAAAA length71 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > rejects malformed metadata sha256:ggggggggggggggggggggggg length71 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > rejects malformed metadata sha256:aaaaaaaaaaaaaaaaaaaaaaa length70 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > rejects malformed metadata sha256:aaaaaaaaaaaaaaaaaaaaaaa length72 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > rejects malformed metadata sha512:aaaaaaaaaaaaaaaaaaaaaaa length134 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > rejects malformed metadata sha512:aaaaaaaaaaaaaaaaaaaaaaa length136 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > rejects malformed metadata blake3:aaaaaaaaaaaaaaaaaaaaaaa length70 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > rejects malformed metadata future__hash:ABC length16 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > rejects malformed metadata future-:ABC length11 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > rejects malformed metadata -future:ABC length11 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > rejects malformed metadata future:abc+def length14 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > rejects malformed metadata future:abc/def length14 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > rejects malformed metadata sha256 :aaaaaaaaaaaaaaaaaaaaaa length72 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > rejects malformed metadata sha256:29cee9ce6d9eadb2b289937 length144 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > validates the final manifest after the credentialed token retry and cancels both manifest bodies 2ms
+ ✓ test/lib/imageWatchDigest.test.ts > HTTP failure remains a status error rather than accepting a present digest 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > cleanup failure does not replace the safe malformed-header error or echo its input 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > two malformed headers cannot seed a baseline or schedule an unchanged image 197ms
+ ✓ test/lib/imageWatchDigest.test.ts > malformed metadata preserves an existing valid baseline and creates no deployment 176ms
+ ✓ test/lib/imageWatchDigest.test.ts > unchanged valid metadata remains idle and a valid move enqueues once 162ms
+ ✓ test/lib/autoUpdateEnqueueRace.test.ts > control: eligible unchanged service enqueues scheduled work 218ms
+stdout | test/lib/autoUpdateEnqueueRace.test.ts > disable after probe check but before final enqueue discards stale result
+EXPECTED: 0 enqueued, operator state unchanged; ACTUAL: 0 0 null
+PROBLEM NOT REPRODUCED
+
+ ✓ test/lib/autoUpdateEnqueueRace.test.ts > disable after probe check but before final enqueue discards stale result 191ms
+stdout | test/lib/autoUpdateEnqueueRace.test.ts > stop after probe check but before final enqueue discards stale result
+EXPECTED: 0 enqueued, operator state unchanged; ACTUAL: 0 0 sha256:old
+PROBLEM NOT REPRODUCED
+
+ ✓ test/lib/autoUpdateEnqueueRace.test.ts > stop after probe check but before final enqueue discards stale result 175ms
+stdout | test/lib/autoUpdateEnqueueRace.test.ts > image after probe check but before final enqueue discards stale result
+EXPECTED: 0 enqueued, operator state unchanged; ACTUAL: 0 0 null
+PROBLEM NOT REPRODUCED
+
+ ✓ test/lib/autoUpdateEnqueueRace.test.ts > image after probe check but before final enqueue discards stale result 161ms
+ ✓ test/lib/autoUpdateEnqueueRace.test.ts > manual queued work wins immediately before INSERT 159ms
+ ✓ test/lib/autoUpdateEnqueueRace.test.ts > manual building work wins immediately before INSERT 176ms
+ ✓ test/lib/autoUpdateEnqueueRace.test.ts > manual deploying work wins immediately before INSERT 163ms
+ ✓ test/lib/autoUpdateEnqueueRace.test.ts > overlapping independent sweeps admit one deployment after both saw no in-flight job 168ms
+ ✓ test/lib/autoUpdateDigestRace.test.ts > control: unchanged baseline and accepted update publish their digest 220ms
+stdout | test/lib/autoUpdateDigestRace.test.ts > baseline: opt-out committed before digest write remains cleared
+EXPECTED: opt-out digest null; ACTUAL: false null
+PROBLEM NOT REPRODUCED
+
+ ✓ test/lib/autoUpdateDigestRace.test.ts > baseline: opt-out committed before digest write remains cleared 174ms
+stdout | test/lib/autoUpdateDigestRace.test.ts > refused: opt-out committed before digest write remains cleared
+EXPECTED: opt-out digest null; ACTUAL: false null
+PROBLEM NOT REPRODUCED
+
+ ✓ test/lib/autoUpdateDigestRace.test.ts > refused: opt-out committed before digest write remains cleared 168ms
+stdout | test/lib/autoUpdateDigestRace.test.ts > enqueued: opt-out committed before digest write remains cleared
+EXPECTED: opt-out digest null; ACTUAL: false null
+PROBLEM NOT REPRODUCED
+
+ ✓ test/lib/autoUpdateDigestRace.test.ts > enqueued: opt-out committed before digest write remains cleared 152ms
+ ✓ test/lib/autoUpdateDigestRace.test.ts > a stale first-observation writer preserves a newer independent baseline 169ms
+ ✓ test/plugins/autoUpdateSchedulerRace.test.ts > control: sequential changed-image sweep enqueues once across later ticks 290ms
+stdout | test/plugins/autoUpdateSchedulerRace.test.ts > a pending interval sweep excludes the next interval and queues only one deployment
+EXPECTED: 1 admitted interval sweep / 1 deployment; ACTUAL: 1 1
+PROBLEM NOT REPRODUCED
+
+ ✓ test/plugins/autoUpdateSchedulerRace.test.ts > a pending interval sweep excludes the next interval and queues only one deployment 176ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified accepted ghcr.io/web:v1 4ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified accepted REGISTRY/web:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified accepted localhost:5000/web:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified accepted REGISTRY:5000/web:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified accepted [2001:4860:4860::8888]:5000/web:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified accepted registry.example.test:99999/web:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified refused ghcr.io?fixture=1/web:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified refused ghcr.io#fixture/web:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified refused ghcr.io\extra/web:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified refused ghcr..io/web:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified refused -registry.example/web:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified refused registry_.example/web:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified refused ghcr.io:bad/web:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified refused [::1/web:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified refused bad%host.example/web:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified accepted ghcr.io/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified refused ghcr.io/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified accepted docker.io/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified refused docker.io/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified accepted index.docker.io/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified refused index.docker.io/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified accepted registry-1.docker.io/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified refused registry-1.docker.io/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified accepted REGISTRY/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified refused REGISTRY/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified accepted [2001:4860:4860::8888]:5000/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified refused [2001:4860:4860::8888]:5000/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified accepted aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified refused aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified accepted reg--istry.example:0005000/web:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified refused [::ffff:192.0.2.1]:5000/web:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified refused example.test./web:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified accepted foo_bar.example/web:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified accepted [:::]:5000/web:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified refused [::1%25eth0]:5000/web:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified accepted REGISTRY.EXAMPLE/web:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified accepted docker.io/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified refused docker.io/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified accepted index.docker.io/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified refused index.docker.io/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified accepted registry-1.docker.io/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified refused registry-1.docker.io/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > valid ordinary host still probes the exact v2 manifest path 13ms
+ ✓ test/lib/imageRefHostValidation.test.ts > valid repository255 remains probeable even though the full name is longer 1ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified accepted ghcr.io/acme/app__one--two.v3:v1_2.3-4 17ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/acme/../../outside:v1 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/acme//app:v1 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/./app:v1 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/-app:v1 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/.app:v1 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/app_:v1 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/a___b:v1 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/a..b:v1 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/acme/:v1 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified accepted ghcr.io/app_v2:v1 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified accepted ghcr.io/app__v2:v1 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified accepted ghcr.io/app-v2:v1 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified accepted ghcr.io/app--v2:v1 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified accepted ghcr.io/app.v2:v1 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified accepted ghcr.io/acme/deep/web:v1 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified accepted ghcr.io/acme/web:_valid 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified accepted ghcr.io/acme/web:_ 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified accepted ghcr.io/acme/web:9 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified accepted ghcr.io/acme/web:a.b-c_d 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified accepted ghcr.io/acme/web:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/acme/web:.. 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/acme/web:-bad 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/acme/web:.bad 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/acme/web:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0ms
+ ✓ test/lib/imageRefValidation.test.ts > native-verified refused ghcr.io/acme/web: 0ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > reads the manifest digest from a direct anonymous response 12ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > performs the Docker Hub anonymous token dance on 401 2ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > performs the ghcr token dance with its own realm 0ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > refuses to chase realms of registries outside the known table 1ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > reports the registry status when the retry also fails 1ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > rejects a 200 that carries no digest header 0ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > maps network failures to a readable reason 0ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > names timeouts distinctly 0ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > reports a token endpoint failure instead of retrying blindly 0ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > probes private repos with Basic auth when credentials are given 0ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > runs the token dance WITH credentials for private Docker Hub repos 0ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > names rejected credentials when the token endpoint answers 401 0ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > still refuses unknown auth realms for credentialed probes 0ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > reports an unreachable token endpoint 0ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > r514: refuses a registry host that resolves to a private / metadata address, before any request 1ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > r514: never follows a registry redirect (and never with the credential header) 0ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > rejects a token response that carries no token 0ms
+ ✓ test/lib/autoUpdate.test.ts > sweepAutoUpdates > enqueues a deploy when the digest moved and records the new baseline 3ms
+ ✓ test/lib/autoUpdate.test.ts > sweepAutoUpdates > treats the first observation as a baseline only 1ms
+ ✓ test/lib/autoUpdate.test.ts > sweepAutoUpdates > does nothing when the digest is unchanged 0ms
+ ✓ test/lib/autoUpdate.test.ts > sweepAutoUpdates > skips without storing while a deployment is queued or in flight 0ms
+ ✓ test/lib/autoUpdate.test.ts > sweepAutoUpdates > skips a service whose registry cannot be probed 0ms
+ ✓ test/lib/autoUpdate.test.ts > sweepAutoUpdates > skips digest-pinned images — they can never move 0ms
+ ✓ test/lib/autoUpdate.test.ts > sweepAutoUpdates > also watches remote-node image services — the probe reads the registry, not the node 0ms
+ ✓ test/lib/autoUpdate.test.ts > sweepAutoUpdates > passes the attached registry credential to the probe for private repos 3ms
+ ✓ test/lib/autoUpdate.test.ts > sweepAutoUpdates > only watches running, image-based, opt-in services 0ms
+ ✓ test/plugins/autoUpdateScheduler.test.ts > autoUpdateScheduler plugin > runs the first sweep shortly after boot and logs enqueued re-deploys 3ms
+ ✓ test/plugins/autoUpdateScheduler.test.ts > autoUpdateScheduler plugin > keeps the panel alive when the sweep throws 1ms
+ ✓ test/plugins/autoUpdateScheduler.test.ts > autoUpdateScheduler plugin > stops the loop on close 1ms
+ ✓ test/lib/autoUpdateLifecycle.test.ts > F77: probe completing after disable publishes nothing 2ms
+ ✓ test/lib/autoUpdateLifecycle.test.ts > F77: probe completing after image publishes nothing 0ms
+ ✓ test/lib/autoUpdateLifecycle.test.ts > F77: probe completing after stop publishes nothing 0ms
+ ✓ test/lib/autoUpdateLifecycle.test.ts > F77: probe completing after delete publishes nothing 0ms
+ ✓ test/lib/autoUpdateLifecycle.test.ts > F77: probe completing after digest publishes nothing 0ms
+ ✓ test/lib/autoUpdateLifecycle.test.ts > F77: a disabled first observation cannot restore the cleared baseline 0ms
+ ✓ test/lib/autoUpdateLifecycle.test.ts > F77: an unchanged service still records a baseline and queues a changed image 1ms
+
+ Test Files  10 passed (10)
+      Tests  153 passed (153)
+   Start at  12:26:44
+   Duration  10.14s (import 49%, tests 46%, transform 4%)
+
+     Import  119 modules were evaluated 190 times · 3.62s total, 49% of tracked time
+             ~1.35s faster with isolate: false — shared modules are evaluated once per worker instead of once per file
+             learn more: https://vitest.dev/guide/improving-performance#test-isolation

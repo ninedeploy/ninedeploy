@@ -1,0 +1,43 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1101_manifestDigest.test.ts > accepts OCI syntax sha256:29cee9ce6d9eadb2b289937 18ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1101_manifestDigest.test.ts > accepts OCI syntax sha512:dd39bdec42141e9f75aa6c5 1ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1101_manifestDigest.test.ts > accepts OCI syntax blake3:00000000000000000000000 0ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1101_manifestDigest.test.ts > accepts OCI syntax sha256+b64u:Kc7pzm2erbKyiZN2nl 0ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1101_manifestDigest.test.ts > accepts OCI syntax multihash+base58:FixtureOpaque 0ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1101_manifestDigest.test.ts > accepts OCI syntax future.v1-hash_2:ABC=_-123 0ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1101_manifestDigest.test.ts > accepts OCI syntax constructor:abc 0ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1101_manifestDigest.test.ts > rejects malformed metadata not-a-digest length12 1ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1101_manifestDigest.test.ts > rejects malformed metadata sha256: length7 0ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1101_manifestDigest.test.ts > rejects malformed metadata :abc length4 1ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1101_manifestDigest.test.ts > rejects malformed metadata sha256:abc:def length14 0ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1101_manifestDigest.test.ts > rejects malformed metadata SHA256:aaaaaaaaaaaaaaaaaaaaaaa length71 0ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1101_manifestDigest.test.ts > rejects malformed metadata sha256:AAAAAAAAAAAAAAAAAAAAAAA length71 0ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1101_manifestDigest.test.ts > rejects malformed metadata sha256:ggggggggggggggggggggggg length71 0ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1101_manifestDigest.test.ts > rejects malformed metadata sha256:aaaaaaaaaaaaaaaaaaaaaaa length70 0ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1101_manifestDigest.test.ts > rejects malformed metadata sha256:aaaaaaaaaaaaaaaaaaaaaaa length72 0ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1101_manifestDigest.test.ts > rejects malformed metadata sha512:aaaaaaaaaaaaaaaaaaaaaaa length134 0ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1101_manifestDigest.test.ts > rejects malformed metadata sha512:aaaaaaaaaaaaaaaaaaaaaaa length136 0ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1101_manifestDigest.test.ts > rejects malformed metadata blake3:aaaaaaaaaaaaaaaaaaaaaaa length70 0ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1101_manifestDigest.test.ts > rejects malformed metadata future__hash:ABC length16 0ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1101_manifestDigest.test.ts > rejects malformed metadata future-:ABC length11 0ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1101_manifestDigest.test.ts > rejects malformed metadata -future:ABC length11 0ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1101_manifestDigest.test.ts > rejects malformed metadata future:abc+def length14 0ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1101_manifestDigest.test.ts > rejects malformed metadata future:abc/def length14 0ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1101_manifestDigest.test.ts > rejects malformed metadata sha256 :aaaaaaaaaaaaaaaaaaaaaa length72 0ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1101_manifestDigest.test.ts > rejects malformed metadata sha256:29cee9ce6d9eadb2b289937 length144 0ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1101_manifestDigest.test.ts > validates the final manifest after the credentialed token retry and cancels both manifest bodies 4ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1101_manifestDigest.test.ts > HTTP failure remains a status error rather than accepting a present digest 1ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1101_manifestDigest.test.ts > cleanup failure does not replace the safe malformed-header error or echo its input 1ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1101_manifestDigest.test.ts > two malformed headers cannot seed a baseline or schedule an unchanged image 570ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1101_manifestDigest.test.ts > malformed metadata preserves an existing valid baseline and creates no deployment 654ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1101_manifestDigest.test.ts
+FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1101_manifestDigest.test.ts > unchanged valid metadata remains idle and a valid move enqueues once 731ms
+
+ Test Files  1 passed (1)
+      Tests  32 passed (32)
+   Start at  12:22:16
+   Duration  2.91s (tests 72%, import 22%, transform 6%)

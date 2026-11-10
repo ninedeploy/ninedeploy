@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fetchImageDigest } from '../../src/lib/imageWatch.js';
 
@@ -15,6 +16,8 @@ vi.mock('node:dns/promises', () => ({ ...dns, default: dns }));
  * (direct success, Hub token dance, ghcr token dance, unsupported auth,
  * unreachable, missing digest).
  */
+
+const fixtureDigest = (label: string) => `sha256:${createHash('sha256').update(label).digest('hex')}`;
 
 type FakeRes = { status: number; headers?: Record<string, string>; body?: unknown };
 
@@ -54,10 +57,10 @@ afterEach(() => {
 describe('fetchImageDigest', () => {
   it('reads the manifest digest from a direct anonymous response', async () => {
     const { calls } = makeFetch([
-      res(200, { 'docker-content-digest': 'sha256:direct' }),
+      res(200, { 'docker-content-digest': fixtureDigest('direct') }),
     ]);
     const digest = await fetchImageDigest('index.docker.io', 'library/nginx', '1.27');
-    expect(digest).toBe('sha256:direct');
+    expect(digest).toBe(fixtureDigest('direct'));
     expect(calls[0]!.url).toBe('https://index.docker.io/v2/library/nginx/manifests/1.27');
     expect(calls[0]!.headers.Accept).toContain('application/vnd.oci.image.index.v1+json');
     expect(calls).toHaveLength(1);
@@ -67,10 +70,10 @@ describe('fetchImageDigest', () => {
     const { calls } = makeFetch([
       res(401, HUB_401_HEADERS),
       res(200, {}, { token: 'hub-token' }),
-      res(200, { 'docker-content-digest': 'sha256:hub' }),
+      res(200, { 'docker-content-digest': fixtureDigest('hub') }),
     ]);
     const digest = await fetchImageDigest('docker.io', 'acme/web', 'latest');
-    expect(digest).toBe('sha256:hub');
+    expect(digest).toBe(fixtureDigest('hub'));
     expect(calls[1]!.url).toBe(
       'https://auth.docker.io/token?scope=repository%3Aacme%2Fweb%3Apull&service=registry.docker.io',
     );
@@ -81,10 +84,10 @@ describe('fetchImageDigest', () => {
     const { calls } = makeFetch([
       res(401, { 'www-authenticate': 'Bearer realm="https://ghcr.io/token",service="ghcr.io"' }),
       res(200, {}, { token: 'ghcr-token' }),
-      res(200, { 'docker-content-digest': 'sha256:ghcr' }),
+      res(200, { 'docker-content-digest': fixtureDigest('ghcr') }),
     ]);
     const digest = await fetchImageDigest('ghcr.io', 'acme/web', 'main');
-    expect(digest).toBe('sha256:ghcr');
+    expect(digest).toBe(fixtureDigest('ghcr'));
     expect(calls[1]!.url).toBe('https://ghcr.io/token?scope=repository%3Aacme%2Fweb%3Apull&service=ghcr.io');
   });
 
@@ -145,12 +148,12 @@ describe('fetchImageDigest', () => {
   });
 
   it('probes private repos with Basic auth when credentials are given', async () => {
-    const { calls } = makeFetch([res(200, { 'docker-content-digest': 'sha256:private' })]);
+    const { calls } = makeFetch([res(200, { 'docker-content-digest': fixtureDigest('private') })]);
     const digest = await fetchImageDigest('registry.acme.io', 'team/app', 'latest', {
       username: 'robot',
       password: 'secret',
     });
-    expect(digest).toBe('sha256:private');
+    expect(digest).toBe(fixtureDigest('private'));
     expect(calls[0]!.url).toBe('https://registry.acme.io/v2/team/app/manifests/latest');
     expect(calls[0]!.headers.authorization).toBe(`Basic ${Buffer.from('robot:secret').toString('base64')}`);
   });
@@ -159,13 +162,13 @@ describe('fetchImageDigest', () => {
     const { calls } = makeFetch([
       res(401, HUB_401_HEADERS),
       res(200, {}, { token: 'cred-token' }),
-      res(200, { 'docker-content-digest': 'sha256:private-hub' }),
+      res(200, { 'docker-content-digest': fixtureDigest('private-hub') }),
     ]);
     const digest = await fetchImageDigest('index.docker.io', 'acme/web', 'latest', {
       username: 'robot',
       password: 'secret',
     });
-    expect(digest).toBe('sha256:private-hub');
+    expect(digest).toBe(fixtureDigest('private-hub'));
     // The token request itself carries the Basic credential.
     expect(calls[1]!.headers.authorization).toBe(`Basic ${Buffer.from('robot:secret').toString('base64')}`);
     expect(calls[2]!.headers.authorization).toBe('Bearer cred-token');
@@ -204,7 +207,7 @@ describe('fetchImageDigest', () => {
   });
 
   it('r514: refuses a registry host that resolves to a private / metadata address, before any request', async () => {
-    const { fetchMock } = makeFetch([res(200, { 'docker-content-digest': 'sha256:x' })]);
+    const { fetchMock } = makeFetch([res(200, { 'docker-content-digest': fixtureDigest('x') })]);
     dns.lookup.mockResolvedValueOnce([{ address: '169.254.169.254', family: 4 }]);
     await expect(fetchImageDigest('metadata.attacker.example', 'a/b', 'latest')).rejects.toThrow(/registry probe refused/);
     await expect(fetchImageDigest('10.0.0.5:5000', 'a/b', 'latest')).rejects.toThrow(/private or link-local/);

@@ -1,0 +1,426 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/lib/imageWatchDigest.test.ts > accepts OCI syntax sha256:29cee9ce6d9eadb2b289937 10ms
+ ✓ test/lib/imageWatchDigest.test.ts > accepts OCI syntax sha512:dd39bdec42141e9f75aa6c5 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > accepts OCI syntax blake3:00000000000000000000000 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > accepts OCI syntax sha256+b64u:Kc7pzm2erbKyiZN2nl 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > accepts OCI syntax multihash+base58:FixtureOpaque 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > accepts OCI syntax future.v1-hash_2:ABC=_-123 0ms
+ ✓ test/lib/imageWatchDigest.test.ts > accepts OCI syntax constructor:abc 0ms
+ × test/lib/imageWatchDigest.test.ts > rejects malformed metadata not-a-digest length12 3ms
+   → promise resolved "'not-a-digest'" instead of rejecting
+ × test/lib/imageWatchDigest.test.ts > rejects malformed metadata sha256: length7 1ms
+   → promise resolved "'sha256:'" instead of rejecting
+ × test/lib/imageWatchDigest.test.ts > rejects malformed metadata :abc length4 1ms
+   → promise resolved "':abc'" instead of rejecting
+ × test/lib/imageWatchDigest.test.ts > rejects malformed metadata sha256:abc:def length14 0ms
+   → promise resolved "'sha256:abc:def'" instead of rejecting
+ × test/lib/imageWatchDigest.test.ts > rejects malformed metadata SHA256:aaaaaaaaaaaaaaaaaaaaaaa length71 0ms
+   → promise resolved "'SHA256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa…'" instead of rejecting
+ × test/lib/imageWatchDigest.test.ts > rejects malformed metadata sha256:AAAAAAAAAAAAAAAAAAAAAAA length71 0ms
+   → promise resolved "'sha256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA…'" instead of rejecting
+ × test/lib/imageWatchDigest.test.ts > rejects malformed metadata sha256:ggggggggggggggggggggggg length71 0ms
+   → promise resolved "'sha256:gggggggggggggggggggggggggggggg…'" instead of rejecting
+ × test/lib/imageWatchDigest.test.ts > rejects malformed metadata sha256:aaaaaaaaaaaaaaaaaaaaaaa length70 0ms
+   → promise resolved "'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa…'" instead of rejecting
+ × test/lib/imageWatchDigest.test.ts > rejects malformed metadata sha256:aaaaaaaaaaaaaaaaaaaaaaa length72 0ms
+   → promise resolved "'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa…'" instead of rejecting
+ × test/lib/imageWatchDigest.test.ts > rejects malformed metadata sha512:aaaaaaaaaaaaaaaaaaaaaaa length134 0ms
+   → promise resolved "'sha512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa…'" instead of rejecting
+ × test/lib/imageWatchDigest.test.ts > rejects malformed metadata sha512:aaaaaaaaaaaaaaaaaaaaaaa length136 0ms
+   → promise resolved "'sha512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa…'" instead of rejecting
+ × test/lib/imageWatchDigest.test.ts > rejects malformed metadata blake3:aaaaaaaaaaaaaaaaaaaaaaa length70 0ms
+   → promise resolved "'blake3:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa…'" instead of rejecting
+ × test/lib/imageWatchDigest.test.ts > rejects malformed metadata future__hash:ABC length16 0ms
+   → promise resolved "'future__hash:ABC'" instead of rejecting
+ × test/lib/imageWatchDigest.test.ts > rejects malformed metadata future-:ABC length11 0ms
+   → promise resolved "'future-:ABC'" instead of rejecting
+ × test/lib/imageWatchDigest.test.ts > rejects malformed metadata -future:ABC length11 0ms
+   → promise resolved "'-future:ABC'" instead of rejecting
+ × test/lib/imageWatchDigest.test.ts > rejects malformed metadata future:abc+def length14 0ms
+   → promise resolved "'future:abc+def'" instead of rejecting
+ × test/lib/imageWatchDigest.test.ts > rejects malformed metadata future:abc/def length14 0ms
+   → promise resolved "'future:abc/def'" instead of rejecting
+ × test/lib/imageWatchDigest.test.ts > rejects malformed metadata sha256 :aaaaaaaaaaaaaaaaaaaaaa length72 0ms
+   → promise resolved "'sha256 :aaaaaaaaaaaaaaaaaaaaaaaaaaaaa…'" instead of rejecting
+ × test/lib/imageWatchDigest.test.ts > rejects malformed metadata sha256:29cee9ce6d9eadb2b289937 length144 0ms
+   → promise resolved "'sha256:29cee9ce6d9eadb2b28993769e55a8…'" instead of rejecting
+ × test/lib/imageWatchDigest.test.ts > validates the final manifest after the credentialed token retry and cancels both manifest bodies 2ms
+   → promise resolved "'sha256:proxy-error'" instead of rejecting
+ ✓ test/lib/imageWatchDigest.test.ts > HTTP failure remains a status error rather than accepting a present digest 1ms
+ × test/lib/imageWatchDigest.test.ts > cleanup failure does not replace the safe malformed-header error or echo its input 0ms
+   → expected 'sha256:fixture-secret-text' to be an instance of Error
+ × test/lib/imageWatchDigest.test.ts > two malformed headers cannot seed a baseline or schedule an unchanged image 182ms
+   → expected { Object (probed, enqueued, ...) } to deeply equal { Object (probed, enqueued, ...) }
+ × test/lib/imageWatchDigest.test.ts > malformed metadata preserves an existing valid baseline and creates no deployment 521ms
+   → expected +0 to be 1 // Object.is equality
+ ✓ test/lib/imageWatchDigest.test.ts > unchanged valid metadata remains idle and a valid move enqueues once 546ms
+
+ Test Files  1 failed (1)
+      Tests  23 failed | 9 passed (32)
+   Start at  12:26:40
+   Duration  2.48s (tests 54%, import 42%, transform 4%)
+
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 23 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/lib/imageWatchDigest.test.ts > rejects malformed metadata not-a-digest length12
+AssertionError: promise resolved "'not-a-digest'" instead of rejecting
+
+- Expected:
+Error {
+  "message": "rejected promise",
+}
+
++ Received:
+"not-a-digest"
+
+ ❯ test/lib/imageWatchDigest.test.ts:12:193
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/23]⎯
+
+ FAIL  test/lib/imageWatchDigest.test.ts > rejects malformed metadata sha256: length7
+AssertionError: promise resolved "'sha256:'" instead of rejecting
+
+- Expected:
+Error {
+  "message": "rejected promise",
+}
+
++ Received:
+"sha256:"
+
+ ❯ test/lib/imageWatchDigest.test.ts:12:193
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/23]⎯
+
+ FAIL  test/lib/imageWatchDigest.test.ts > rejects malformed metadata :abc length4
+AssertionError: promise resolved "':abc'" instead of rejecting
+
+- Expected:
+Error {
+  "message": "rejected promise",
+}
+
++ Received:
+":abc"
+
+ ❯ test/lib/imageWatchDigest.test.ts:12:193
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/23]⎯
+
+ FAIL  test/lib/imageWatchDigest.test.ts > rejects malformed metadata sha256:abc:def length14
+AssertionError: promise resolved "'sha256:abc:def'" instead of rejecting
+
+- Expected:
+Error {
+  "message": "rejected promise",
+}
+
++ Received:
+"sha256:abc:def"
+
+ ❯ test/lib/imageWatchDigest.test.ts:12:193
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/23]⎯
+
+ FAIL  test/lib/imageWatchDigest.test.ts > rejects malformed metadata SHA256:aaaaaaaaaaaaaaaaaaaaaaa length71
+AssertionError: promise resolved "'SHA256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa…'" instead of rejecting
+
+- Expected:
+Error {
+  "message": "rejected promise",
+}
+
++ Received:
+"SHA256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+ ❯ test/lib/imageWatchDigest.test.ts:12:193
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/23]⎯
+
+ FAIL  test/lib/imageWatchDigest.test.ts > rejects malformed metadata sha256:AAAAAAAAAAAAAAAAAAAAAAA length71
+AssertionError: promise resolved "'sha256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA…'" instead of rejecting
+
+- Expected:
+Error {
+  "message": "rejected promise",
+}
+
++ Received:
+"sha256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+
+ ❯ test/lib/imageWatchDigest.test.ts:12:193
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/23]⎯
+
+ FAIL  test/lib/imageWatchDigest.test.ts > rejects malformed metadata sha256:ggggggggggggggggggggggg length71
+AssertionError: promise resolved "'sha256:gggggggggggggggggggggggggggggg…'" instead of rejecting
+
+- Expected:
+Error {
+  "message": "rejected promise",
+}
+
++ Received:
+"sha256:gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg"
+
+ ❯ test/lib/imageWatchDigest.test.ts:12:193
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/23]⎯
+
+ FAIL  test/lib/imageWatchDigest.test.ts > rejects malformed metadata sha256:aaaaaaaaaaaaaaaaaaaaaaa length70
+AssertionError: promise resolved "'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa…'" instead of rejecting
+
+- Expected:
+Error {
+  "message": "rejected promise",
+}
+
++ Received:
+"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+ ❯ test/lib/imageWatchDigest.test.ts:12:193
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/23]⎯
+
+ FAIL  test/lib/imageWatchDigest.test.ts > rejects malformed metadata sha256:aaaaaaaaaaaaaaaaaaaaaaa length72
+AssertionError: promise resolved "'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa…'" instead of rejecting
+
+- Expected:
+Error {
+  "message": "rejected promise",
+}
+
++ Received:
+"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+ ❯ test/lib/imageWatchDigest.test.ts:12:193
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/23]⎯
+
+ FAIL  test/lib/imageWatchDigest.test.ts > rejects malformed metadata sha512:aaaaaaaaaaaaaaaaaaaaaaa length134
+AssertionError: promise resolved "'sha512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa…'" instead of rejecting
+
+- Expected:
+Error {
+  "message": "rejected promise",
+}
+
++ Received:
+"sha512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+ ❯ test/lib/imageWatchDigest.test.ts:12:193
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/23]⎯
+
+ FAIL  test/lib/imageWatchDigest.test.ts > rejects malformed metadata sha512:aaaaaaaaaaaaaaaaaaaaaaa length136
+AssertionError: promise resolved "'sha512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa…'" instead of rejecting
+
+- Expected:
+Error {
+  "message": "rejected promise",
+}
+
++ Received:
+"sha512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+ ❯ test/lib/imageWatchDigest.test.ts:12:193
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[11/23]⎯
+
+ FAIL  test/lib/imageWatchDigest.test.ts > rejects malformed metadata blake3:aaaaaaaaaaaaaaaaaaaaaaa length70
+AssertionError: promise resolved "'blake3:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa…'" instead of rejecting
+
+- Expected:
+Error {
+  "message": "rejected promise",
+}
+
++ Received:
+"blake3:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+ ❯ test/lib/imageWatchDigest.test.ts:12:193
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[12/23]⎯
+
+ FAIL  test/lib/imageWatchDigest.test.ts > rejects malformed metadata future__hash:ABC length16
+AssertionError: promise resolved "'future__hash:ABC'" instead of rejecting
+
+- Expected:
+Error {
+  "message": "rejected promise",
+}
+
++ Received:
+"future__hash:ABC"
+
+ ❯ test/lib/imageWatchDigest.test.ts:12:193
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[13/23]⎯
+
+ FAIL  test/lib/imageWatchDigest.test.ts > rejects malformed metadata future-:ABC length11
+AssertionError: promise resolved "'future-:ABC'" instead of rejecting
+
+- Expected:
+Error {
+  "message": "rejected promise",
+}
+
++ Received:
+"future-:ABC"
+
+ ❯ test/lib/imageWatchDigest.test.ts:12:193
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[14/23]⎯
+
+ FAIL  test/lib/imageWatchDigest.test.ts > rejects malformed metadata -future:ABC length11
+AssertionError: promise resolved "'-future:ABC'" instead of rejecting
+
+- Expected:
+Error {
+  "message": "rejected promise",
+}
+
++ Received:
+"-future:ABC"
+
+ ❯ test/lib/imageWatchDigest.test.ts:12:193
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[15/23]⎯
+
+ FAIL  test/lib/imageWatchDigest.test.ts > rejects malformed metadata future:abc+def length14
+AssertionError: promise resolved "'future:abc+def'" instead of rejecting
+
+- Expected:
+Error {
+  "message": "rejected promise",
+}
+
++ Received:
+"future:abc+def"
+
+ ❯ test/lib/imageWatchDigest.test.ts:12:193
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[16/23]⎯
+
+ FAIL  test/lib/imageWatchDigest.test.ts > rejects malformed metadata future:abc/def length14
+AssertionError: promise resolved "'future:abc/def'" instead of rejecting
+
+- Expected:
+Error {
+  "message": "rejected promise",
+}
+
++ Received:
+"future:abc/def"
+
+ ❯ test/lib/imageWatchDigest.test.ts:12:193
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[17/23]⎯
+
+ FAIL  test/lib/imageWatchDigest.test.ts > rejects malformed metadata sha256 :aaaaaaaaaaaaaaaaaaaaaa length72
+AssertionError: promise resolved "'sha256 :aaaaaaaaaaaaaaaaaaaaaaaaaaaaa…'" instead of rejecting
+
+- Expected:
+Error {
+  "message": "rejected promise",
+}
+
++ Received:
+"sha256 :aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+ ❯ test/lib/imageWatchDigest.test.ts:12:193
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[18/23]⎯
+
+ FAIL  test/lib/imageWatchDigest.test.ts > rejects malformed metadata sha256:29cee9ce6d9eadb2b289937 length144
+AssertionError: promise resolved "'sha256:29cee9ce6d9eadb2b28993769e55a8…'" instead of rejecting
+
+- Expected:
+Error {
+  "message": "rejected promise",
+}
+
++ Received:
+"sha256:29cee9ce6d9eadb2b28993769e55a87b3cad0fa93d5d0cf4189bc9029e1a2ab9, sha256:29cee9ce6d9eadb2b28993769e55a87b3cad0fa93d5d0cf4189bc9029e1a2ab9"
+
+ ❯ test/lib/imageWatchDigest.test.ts:12:193
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[19/23]⎯
+
+ FAIL  test/lib/imageWatchDigest.test.ts > validates the final manifest after the credentialed token retry and cancels both manifest bodies
+AssertionError: promise resolved "'sha256:proxy-error'" instead of rejecting
+
+- Expected:
+Error {
+  "message": "rejected promise",
+}
+
++ Received:
+"sha256:proxy-error"
+
+ ❯ test/lib/imageWatchDigest.test.ts:13:531
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[20/23]⎯
+
+ FAIL  test/lib/imageWatchDigest.test.ts > cleanup failure does not replace the safe malformed-header error or echo its input
+AssertionError: expected 'sha256:fixture-secret-text' to be an instance of Error
+ ❯ test/lib/imageWatchDigest.test.ts:15:275
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[21/23]⎯
+
+ FAIL  test/lib/imageWatchDigest.test.ts > two malformed headers cannot seed a baseline or schedule an unchanged image
+AssertionError: expected { Object (probed, enqueued, ...) } to deeply equal { Object (probed, enqueued, ...) }
+
+- Expected
++ Received
+
+  {
+    "enqueued": 0,
+-   "probed": 0,
+-   "skipped": 1,
++   "probed": 1,
++   "skipped": 0,
+  }
+
+ ❯ test/lib/imageWatchDigest.test.ts:17:339
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[22/23]⎯
+
+ FAIL  test/lib/imageWatchDigest.test.ts > malformed metadata preserves an existing valid baseline and creates no deployment
+AssertionError: expected +0 to be 1 // Object.is equality
+
+- Expected
++ Received
+
+- 1
++ 0
+
+ ❯ test/lib/imageWatchDigest.test.ts:18:243
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[23/23]⎯

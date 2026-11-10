@@ -831,3 +831,22 @@ pnpm --dir apps/server exec vitest run --config vitest.integration.config.ts tes
 This is syntax and input-bound evidence, not live pull/update, DNS/IP validation,
 network escape or native Mac certification. Round73's native worker fault and
 full release/coverage acceptance remain unresolved.
+
+Round 81 (F1101) rejects malformed OCI content-digest metadata before the default
+auto-update probe can store it or schedule work. Beforeproof used real SQLite
+and an operator-owned service: two malformed headers over unchanged body bytes
+stored an invalid baseline and queued a deployment. The unchanged valid control
+did not enqueue. Syntax validation preserves registered SHA-256/SHA-512/BLAKE3
+encodings and grammar-valid opaque algorithms; it does not verify body hashes.
+
+Thirty-two independent cases passed three times; permanent unit was seen red
+(23 failures,nine controls). Final neighboring scope153tests/10files, resource-
+bound server typecheck/build and scoped lint passed. Mac offline check:
+
+```bash
+pnpm --dir apps/server exec vitest run test/lib/imageWatchDigest.test.ts test/lib/imageWatch.test.ts --coverage=false
+```
+
+This needs no registry or Docker daemon. No native Mac execution, real rollout,
+manifest content-integrity proof, full release or resolution of the round73
+native worker fault is implied.

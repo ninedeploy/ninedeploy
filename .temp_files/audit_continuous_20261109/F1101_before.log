@@ -1,0 +1,48 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1101_manifestDigest.test.ts > control: unchanged valid digest seeds once without enqueue 198ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1101_manifestDigest.test.ts > malformed digest headers cannot seed or enqueue an unchanged manifest
+EXPECTED baseline:null jobs:0 skipped:2 ACTUAL: {
+  digest: 'sha256:proxy-error-b',
+  jobs: [
+    {
+      status: 'queued',
+      trigger: 'schedule',
+      message: 'Auto-update: ghcr.io/acme/web:latest → sha256:proxy-error-'
+    }
+  ],
+  skipped: 0
+}
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/prove_F1101_manifestDigest.test.ts > malformed digest headers cannot seed or enqueue an unchanged manifest 167ms
+   → expected { Object (digest, jobs, ...) } to deeply equal { digest: null, jobs: +0, skipped: 2 }
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1101_manifestDigest.test.ts > malformed digest headers cannot seed or enqueue an unchanged manifest
+AssertionError: expected { Object (digest, jobs, ...) } to deeply equal { digest: null, jobs: +0, skipped: 2 }
+
+- Expected
++ Received
+
+  {
+-   "digest": null,
+-   "jobs": 0,
+-   "skipped": 2,
++   "digest": "sha256:proxy-error-b",
++   "jobs": 1,
++   "skipped": 0,
+  }
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1101_manifestDigest.test.ts:9:828
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 1 passed (2)
+   Start at  12:17:10
+   Duration  975ms (import 46%, tests 43%, transform 10%)
