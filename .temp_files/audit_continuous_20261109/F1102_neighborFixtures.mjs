@@ -1,0 +1,2 @@
+import fs from 'node:fs';
+for(const file of ['apps/server/test/lib/imageRefValidation.test.ts','apps/server/test/lib/imageRefHostValidation.test.ts']){let s=fs.readFileSync(file,'utf8').replaceAll('\r\n','\n');const before="`sha256:${'1'.repeat(64)}`";if(!s.includes(before))throw Error('missing fixture');s=s.replace(before,"'sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'");fs.writeFileSync(file,s);}

@@ -1,0 +1,14 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1102_manifestBody.test.ts > control: unchanged valid digest seeds once without enqueue 176ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1102_manifestBody.test.ts > validly encoded but mismatched body hashes cannot seed or enqueue an unchanged manifest
+EXPECTED baseline:null jobs:0 skipped:2 ACTUAL: { digest: null, jobs: [], skipped: 2 }
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1102_manifestBody.test.ts > validly encoded but mismatched body hashes cannot seed or enqueue an unchanged manifest 154ms
+
+ Test Files  1 passed (1)
+      Tests  2 passed (2)
+   Start at  12:52:34
+   Duration  829ms (tests 45%, import 45%, transform 9%)

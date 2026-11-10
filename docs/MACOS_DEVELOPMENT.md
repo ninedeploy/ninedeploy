@@ -850,3 +850,29 @@ pnpm --dir apps/server exec vitest run test/lib/imageWatchDigest.test.ts test/li
 This needs no registry or Docker daemon. No native Mac execution, real rollout,
 manifest content-integrity proof, full release or resolution of the round73
 native worker fault is implied.
+
+Round 82 (F1102) verifies SHA-256/SHA-512 manifest digests against streamed
+response bytes before accepting an auto-update observation. Well-formed hashes
+for different bytes previously seeded a false baseline and scheduled unchanged
+content. The local watch cap is 4 MiB; declared and actual oversize bodies are
+rejected, incomplete streams are cancelled and reader locks are released.
+Syntactically valid algorithms other than SHA-256/SHA-512 are now skipped as
+unsupported, including BLAKE3; they are not described as malformed. No new crypto
+dependency or OCI JSON/schema validator was introduced.
+
+Original beforeproof: one mismatch failure/one valid control. Original after:
+two passes. Permanent integrity regression was seen red (12 failures/two
+controls); final verifier adds a native Node HTTP/fetch abort case and passed
+three times (17 cases including the caller proof). Final neighboring scope:
+168 tests/11 files. GOMAXPROCS=4 server typecheck/build, scoped six-file lint and
+diff checks passed. Two neighboring parser fixtures now use the actual hash of
+their empty response bytes; their URL assertions are unchanged.
+
+```bash
+pnpm --dir apps/server exec vitest run test/lib/imageWatchIntegrity.test.ts test/lib/imageWatchDigest.test.ts test/lib/imageWatch.test.ts test/lib/imageRefValidation.test.ts test/lib/imageRefHostValidation.test.ts --coverage=false
+```
+
+The native fetch case uses only a loopback fixture and an explicitly triggered
+abort signal, without sleeps or a registry. Native Mac execution, live registry
+rollout and full release/coverage certification remain unverified. Round73's
+native worker fault remains unresolved.

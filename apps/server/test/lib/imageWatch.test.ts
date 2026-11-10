@@ -17,7 +17,12 @@ vi.mock('node:dns/promises', () => ({ ...dns, default: dns }));
  * unreachable, missing digest).
  */
 
-const fixtureDigest = (label: string) => `sha256:${createHash('sha256').update(label).digest('hex')}`;
+const fixtureBodies = new Map<string, string>();
+const fixtureDigest = (label: string) => {
+  const digest = `sha256:${createHash('sha256').update(label).digest('hex')}`;
+  fixtureBodies.set(digest, label);
+  return digest;
+};
 
 type FakeRes = { status: number; headers?: Record<string, string>; body?: unknown };
 
@@ -36,14 +41,12 @@ function makeFetch(responses: FakeRes[]) {
     const headers = (init?.headers ?? {}) as Record<string, string>;
     calls.push({ url: String(url), headers });
     const next = queue.shift() ?? res(500, {}, 'no scripted response');
-    const bodyStr = next.body === undefined ? '' : JSON.stringify(next.body);
-    return {
-      ok: next.status >= 200 && next.status < 300,
-      status: next.status,
-      headers: { get: (k: string) => next.headers?.[k.toLowerCase()] ?? null },
-      json: async () => (bodyStr === '' ? undefined : JSON.parse(bodyStr)),
-      text: async () => bodyStr,
-    } as unknown as Response;
+    const bodyStr = next.body === undefined
+      ? fixtureBodies.get(next.headers?.['docker-content-digest'] ?? '') ?? ''
+      : JSON.stringify(next.body);
+    return new Response([204, 205, 304].includes(next.status) ? null : bodyStr, {
+      status: next.status, headers: next.headers,
+    });
   });
   vi.stubGlobal('fetch', fetchMock);
   return { calls, fetchMock };

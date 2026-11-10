@@ -1,0 +1,24 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/lib/imageWatchIntegrity.test.ts > verifies sha256 across binary chunk boundaries 15ms
+ ✓ test/lib/imageWatchIntegrity.test.ts > verifies sha512 across binary chunk boundaries 0ms
+ ✓ test/lib/imageWatchIntegrity.test.ts > rejects a validly encoded SHA256 for different bytes and releases its reader 1ms
+ ✓ test/lib/imageWatchIntegrity.test.ts > rejects a validly encoded SHA512 for different bytes 0ms
+ ✓ test/lib/imageWatchIntegrity.test.ts > accepts exactly the local byte cap without a content-length header 6ms
+ ✓ test/lib/imageWatchIntegrity.test.ts > bounds actual streamed bytes with declared length undefined 5ms
+ ✓ test/lib/imageWatchIntegrity.test.ts > bounds actual streamed bytes with declared length 1 5ms
+ ✓ test/lib/imageWatchIntegrity.test.ts > rejects oversized declared bodies before reading and cancels them 1ms
+ ✓ test/lib/imageWatchIntegrity.test.ts > cleanup errors cannot mask an overflow rejection 0ms
+ ✓ test/lib/imageWatchIntegrity.test.ts > propagates body read failure Error and releases the lock 1ms
+ ✓ test/lib/imageWatchIntegrity.test.ts > propagates body read failure TimeoutError and releases the lock 0ms
+ ✓ test/lib/imageWatchIntegrity.test.ts > preserves a fetch timeout signal for body consumption 1ms
+ ✓ test/lib/imageWatchIntegrity.test.ts > does not accept a null body even when the declared digest hashes empty bytes 0ms
+ ✓ test/lib/imageWatchIntegrity.test.ts > reports an opaque algorithm as unsupported and cancels its unread body 0ms
+
+ Test Files  1 passed (1)
+      Tests  14 passed (14)
+   Start at  12:53:43
+   Duration  194ms (tests 46%, import 37%, transform 14%, worker 3%)
+
+FIX VERIFIED

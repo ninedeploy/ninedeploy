@@ -1,0 +1,48 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1102_manifestBody.test.ts > control: unchanged valid digest seeds once without enqueue 241ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1102_manifestBody.test.ts > validly encoded but mismatched body hashes cannot seed or enqueue an unchanged manifest
+EXPECTED baseline:null jobs:0 skipped:2 ACTUAL: {
+  digest: 'sha256:1365d10e74cf1ae0c43c7ff4a6699cceb54280b2b8be493361c9a01c3844446e',
+  jobs: [
+    {
+      status: 'queued',
+      trigger: 'schedule',
+      message: 'Auto-update: ghcr.io/acme/web:latest → sha256:1365d10e74cf'
+    }
+  ],
+  skipped: 0
+}
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/prove_F1102_manifestBody.test.ts > validly encoded but mismatched body hashes cannot seed or enqueue an unchanged manifest 165ms
+   → expected { …(3) } to deeply equal { digest: null, jobs: +0, skipped: 2 }
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1102_manifestBody.test.ts > validly encoded but mismatched body hashes cannot seed or enqueue an unchanged manifest
+AssertionError: expected { …(3) } to deeply equal { digest: null, jobs: +0, skipped: 2 }
+
+- Expected
++ Received
+
+  {
+-   "digest": null,
+-   "jobs": 0,
+-   "skipped": 2,
++   "digest": "sha256:1365d10e74cf1ae0c43c7ff4a6699cceb54280b2b8be493361c9a01c3844446e",
++   "jobs": 1,
++   "skipped": 0,
+  }
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1102_manifestBody.test.ts:9:956
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 1 passed (2)
+   Start at  12:48:37
+   Duration  1.28s (import 52%, tests 39%, transform 8%)

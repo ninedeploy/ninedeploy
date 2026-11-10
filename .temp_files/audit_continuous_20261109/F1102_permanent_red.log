@@ -1,0 +1,230 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ × test/lib/imageWatchIntegrity.test.ts > verifies sha256 across binary chunk boundaries 16ms
+   → expected 1 to be +0 // Object.is equality
+ × test/lib/imageWatchIntegrity.test.ts > verifies sha512 across binary chunk boundaries 2ms
+   → expected 1 to be +0 // Object.is equality
+ × test/lib/imageWatchIntegrity.test.ts > rejects a validly encoded SHA256 for different bytes and releases its reader 1ms
+   → promise resolved "'sha256:d9298a10d1b0735837dc4bd85dac64…'" instead of rejecting
+ × test/lib/imageWatchIntegrity.test.ts > rejects a validly encoded SHA512 for different bytes 0ms
+   → promise resolved "'sha512:e25ac3845f8cbe12801a2dfa5a89d4…'" instead of rejecting
+ ✓ test/lib/imageWatchIntegrity.test.ts > accepts exactly the local byte cap without a content-length header 4ms
+ × test/lib/imageWatchIntegrity.test.ts > bounds actual streamed bytes with declared length undefined 3ms
+   → promise resolved "'sha256:bb9f8df61474d25e71fa00722318cd…'" instead of rejecting
+ × test/lib/imageWatchIntegrity.test.ts > bounds actual streamed bytes with declared length 1 3ms
+   → promise resolved "'sha256:bb9f8df61474d25e71fa00722318cd…'" instead of rejecting
+ × test/lib/imageWatchIntegrity.test.ts > rejects oversized declared bodies before reading and cancels them 1ms
+   → promise resolved "'sha256:e3b0c44298fc1c149afbf4c8996fb9…'" instead of rejecting
+ × test/lib/imageWatchIntegrity.test.ts > cleanup errors cannot mask an overflow rejection 1ms
+   → promise resolved "'sha256:e3b0c44298fc1c149afbf4c8996fb9…'" instead of rejecting
+ × test/lib/imageWatchIntegrity.test.ts > propagates body read failure Error and releases the lock 0ms
+   → promise resolved "'sha256:e3b0c44298fc1c149afbf4c8996fb9…'" instead of rejecting
+ × test/lib/imageWatchIntegrity.test.ts > propagates body read failure TimeoutError and releases the lock 0ms
+   → promise resolved "'sha256:e3b0c44298fc1c149afbf4c8996fb9…'" instead of rejecting
+ ✓ test/lib/imageWatchIntegrity.test.ts > preserves a fetch timeout signal for body consumption 1ms
+ × test/lib/imageWatchIntegrity.test.ts > does not accept a null body even when the declared digest hashes empty bytes 2ms
+   → promise resolved "'sha256:e3b0c44298fc1c149afbf4c8996fb9…'" instead of rejecting
+ × test/lib/imageWatchIntegrity.test.ts > reports an opaque algorithm as unsupported and cancels its unread body 0ms
+   → promise resolved "'future.hash:ABC123'" instead of rejecting
+
+ Test Files  1 failed (1)
+      Tests  12 failed | 2 passed (14)
+   Start at  12:53:41
+   Duration  240ms (tests 48%, import 36%, transform 11%, worker 5%)
+
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 12 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/lib/imageWatchIntegrity.test.ts > verifies sha256 across binary chunk boundaries
+ FAIL  test/lib/imageWatchIntegrity.test.ts > verifies sha512 across binary chunk boundaries
+AssertionError: expected 1 to be +0 // Object.is equality
+
+- Expected
++ Received
+
+- 0
++ 1
+
+ ❯ test/lib/imageWatchIntegrity.test.ts:28:66
+     26|   const f = fixture([bytes.slice(0, 3), bytes.slice(3)], digest(bytes,…
+     27|   expect(await probe()).toBe(digest(bytes, algorithm));
+     28|   expect(f.stream.locked).toBe(false); expect(f.cancellations()).toBe(…
+       |                                                                  ^
+     29| });
+     30| it('rejects a validly encoded SHA256 for different bytes and releases …
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/12]⎯
+
+ FAIL  test/lib/imageWatchIntegrity.test.ts > rejects a validly encoded SHA256 for different bytes and releases its reader
+AssertionError: promise resolved "'sha256:d9298a10d1b0735837dc4bd85dac64…'" instead of rejecting
+
+- Expected:
+Error {
+  "message": "rejected promise",
+}
+
++ Received:
+"sha256:d9298a10d1b0735837dc4bd85dac641b0f3cef27a47e5d53a54f2f3f5b2fcffa"
+
+ ❯ test/lib/imageWatchIntegrity.test.ts:32:24
+     30| it('rejects a validly encoded SHA256 for different bytes and releases …
+     31|   const f = fixture([new TextEncoder().encode('actual')], digest('othe…
+     32|   await expect(probe()).rejects.toThrow('body does not match'); expect…
+       |                        ^
+     33| });
+     34| it('rejects a validly encoded SHA512 for different bytes', async () =>…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/12]⎯
+
+ FAIL  test/lib/imageWatchIntegrity.test.ts > rejects a validly encoded SHA512 for different bytes
+AssertionError: promise resolved "'sha512:e25ac3845f8cbe12801a2dfa5a89d4…'" instead of rejecting
+
+- Expected:
+Error {
+  "message": "rejected promise",
+}
+
++ Received:
+"sha512:e25ac3845f8cbe12801a2dfa5a89d4c55dc47900f3b6edc9a9ee590f3c2b9312f665d0039c93828b7b58f33950bc817a0955a9c5000a8d3e280569f08745ca68"
+
+ ❯ test/lib/imageWatchIntegrity.test.ts:36:24
+     34| it('rejects a validly encoded SHA512 for different bytes', async () =>…
+     35|   fixture([new TextEncoder().encode('actual')], digest('other', 'sha51…
+     36|   await expect(probe()).rejects.toThrow('body does not match');
+       |                        ^
+     37| });
+     38| it('accepts exactly the local byte cap without a content-length header…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/12]⎯
+
+ FAIL  test/lib/imageWatchIntegrity.test.ts > bounds actual streamed bytes with declared length undefined
+ FAIL  test/lib/imageWatchIntegrity.test.ts > bounds actual streamed bytes with declared length 1
+AssertionError: promise resolved "'sha256:bb9f8df61474d25e71fa00722318cd…'" instead of rejecting
+
+- Expected:
+Error {
+  "message": "rejected promise",
+}
+
++ Received:
+"sha256:bb9f8df61474d25e71fa00722318cd387396ca1736605e1248821cc0de3d3af8"
+
+ ❯ test/lib/imageWatchIntegrity.test.ts:44:24
+     42|   const bytes = new Uint8Array(limit);
+     43|   const f = fixture([bytes, new Uint8Array([0]), new Uint8Array([1])],…
+     44|   await expect(probe()).rejects.toThrow('size limit'); expect(f.cancel…
+       |                        ^
+     45| });
+     46| it('rejects oversized declared bodies before reading and cancels them'…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/12]⎯
+
+ FAIL  test/lib/imageWatchIntegrity.test.ts > rejects oversized declared bodies before reading and cancels them
+AssertionError: promise resolved "'sha256:e3b0c44298fc1c149afbf4c8996fb9…'" instead of rejecting
+
+- Expected:
+Error {
+  "message": "rejected promise",
+}
+
++ Received:
+"sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+ ❯ test/lib/imageWatchIntegrity.test.ts:48:24
+     46| it('rejects oversized declared bodies before reading and cancels them'…
+     47|   const f = fixture([], digest(''), { 'content-length': String(limit +…
+     48|   await expect(probe()).rejects.toThrow('size limit'); expect(f.cancel…
+       |                        ^
+     49| });
+     50| it('cleanup errors cannot mask an overflow rejection', async () => {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/12]⎯
+
+ FAIL  test/lib/imageWatchIntegrity.test.ts > cleanup errors cannot mask an overflow rejection
+AssertionError: promise resolved "'sha256:e3b0c44298fc1c149afbf4c8996fb9…'" instead of rejecting
+
+- Expected:
+Error {
+  "message": "rejected promise",
+}
+
++ Received:
+"sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+ ❯ test/lib/imageWatchIntegrity.test.ts:52:24
+     50| it('cleanup errors cannot mask an overflow rejection', async () => {
+     51|   const f = fixture([new Uint8Array(limit + 1)], digest(''), {}, undef…
+     52|   await expect(probe()).rejects.toThrow('size limit'); expect(f.cancel…
+       |                        ^
+     53| });
+     54| for (const fault of [new Error('fixture read failure'), new DOMExcepti…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/12]⎯
+
+ FAIL  test/lib/imageWatchIntegrity.test.ts > propagates body read failure Error and releases the lock
+ FAIL  test/lib/imageWatchIntegrity.test.ts > propagates body read failure TimeoutError and releases the lock
+AssertionError: promise resolved "'sha256:e3b0c44298fc1c149afbf4c8996fb9…'" instead of rejecting
+
+- Expected:
+Error {
+  "message": "rejected promise",
+}
+
++ Received:
+"sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+ ❯ test/lib/imageWatchIntegrity.test.ts:56:24
+     54| for (const fault of [new Error('fixture read failure'), new DOMExcepti…
+     55|   const f = fixture([new Uint8Array([1])], digest(''), {}, fault);
+     56|   await expect(probe()).rejects.toThrow(fault.message); expect(f.strea…
+       |                        ^
+     57| });
+     58| it('preserves a fetch timeout signal for body consumption', async () =…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/12]⎯
+
+ FAIL  test/lib/imageWatchIntegrity.test.ts > does not accept a null body even when the declared digest hashes empty bytes
+AssertionError: promise resolved "'sha256:e3b0c44298fc1c149afbf4c8996fb9…'" instead of rejecting
+
+- Expected:
+Error {
+  "message": "rejected promise",
+}
+
++ Received:
+"sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+ ❯ test/lib/imageWatchIntegrity.test.ts:68:24
+     66| it('does not accept a null body even when the declared digest hashes e…
+     67|   vi.stubGlobal('fetch', vi.fn(async () => new Response(null, { header…
+     68|   await expect(probe()).rejects.toThrow('no manifest body');
+       |                        ^
+     69| });
+     70| it('reports an opaque algorithm as unsupported and cancels its unread …
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/12]⎯
+
+ FAIL  test/lib/imageWatchIntegrity.test.ts > reports an opaque algorithm as unsupported and cancels its unread body
+AssertionError: promise resolved "'future.hash:ABC123'" instead of rejecting
+
+- Expected:
+Error {
+  "message": "rejected promise",
+}
+
++ Received:
+"future.hash:ABC123"
+
+ ❯ test/lib/imageWatchIntegrity.test.ts:72:24
+     70| it('reports an opaque algorithm as unsupported and cancels its unread …
+     71|   const f = fixture([new Uint8Array([1])], 'future.hash:ABC123');
+     72|   await expect(probe()).rejects.toThrow('algorithm is unsupported'); e…
+       |                        ^
+     73| });
+     74|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/12]⎯
+
+
+EXIT 1

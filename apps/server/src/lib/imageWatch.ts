@@ -7,6 +7,7 @@
  * credentials into the probe is a deliberate non-goal for v1.
  */
 
+import { createHash } from 'node:crypto';
 import { EgressBlockedError, guardedFetch } from './egressGuard.js';
 import { isDockerHub } from './imageRef.js';
 
@@ -19,6 +20,8 @@ const MANIFEST_ACCEPTS = [
 ].join(', ');
 
 const PROBE_TIMEOUT_MS = 10_000;
+// Local watch resource limit, matching Distribution's manifest upload cap.
+const MAX_MANIFEST_BYTES = 4 * 1024 * 1024;
 
 /**
  * Anonymous pull-token endpoints for registries that 401 anonymous manifest
@@ -102,13 +105,53 @@ export async function fetchImageDigest(
     const token = await pullToken(host, repository, auth);
     res = await probe(manifestUrl, { authorization: ['Bearer', token].join(' ') }, opts);
   }
-  const digest = res.headers.get('docker-content-digest');
-  await res.body?.cancel().catch(() => undefined);
-  if (!res.ok || !digest) {
-    throw new Error(`registry answered HTTP ${res.status} without a digest`);
+  try {
+    const digest = res.headers.get('docker-content-digest');
+    if (!res.ok || !digest) {
+      throw new Error(`registry answered HTTP ${res.status} without a digest`);
+    }
+    if (!isContentDigest(digest)) throw new Error('registry returned an invalid manifest digest');
+    await verifyManifestBody(res, digest);
+    return digest;
+  } finally {
+    await res.body?.cancel().catch(() => undefined);
   }
-  if (!isContentDigest(digest)) throw new Error('registry returned an invalid manifest digest');
-  return digest;
+}
+
+/** Hash response bytes before allowing registry metadata to trigger a deployment. */
+async function verifyManifestBody(res: Response, digest: string): Promise<void> {
+  const [algorithm, expected] = digest.split(':');
+  if (algorithm !== 'sha256' && algorithm !== 'sha512') {
+    throw new Error('registry manifest digest algorithm is unsupported');
+  }
+  const length = res.headers.get('content-length');
+  if (length !== null && Number(length) > MAX_MANIFEST_BYTES) {
+    throw new Error('registry manifest exceeds the watch size limit');
+  }
+  if (!res.body) throw new Error('registry returned no manifest body');
+  const reader = res.body.getReader();
+  const hash = createHash(algorithm);
+  let bytes = 0;
+  let complete = false;
+  try {
+    for (;;) {
+      const chunk = await reader.read();
+      if (chunk.done) {
+        complete = true;
+        break;
+      }
+      bytes += chunk.value.byteLength;
+      if (bytes > MAX_MANIFEST_BYTES) throw new Error('registry manifest exceeds the watch size limit');
+      hash.update(chunk.value);
+    }
+    if (hash.digest('hex') !== expected) throw new Error('registry manifest body does not match its digest');
+  } finally {
+    try {
+      if (!complete) await reader.cancel().catch(() => undefined);
+    } finally {
+      reader.releaseLock();
+    }
+  }
 }
 
 /**
