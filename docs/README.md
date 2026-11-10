@@ -7,7 +7,7 @@ The guides are grouped by what you are doing. The last group holds the project's
 - [Quickstart](QUICKSTART.md): install, first sign-in, first deploy, upgrades.
 - [Support matrix](SUPPORT_MATRIX.md): which service features work on the panel host, on nodes, on Swarm, and for Compose and PM2.
 - [Troubleshooting](TROUBLESHOOTING.md): common failures and how to recover.
-- [Moving from Coolify, Dokploy or CapRover](IMPORTING.md): a read-only import plan (`ninedeploy import plan`), then `ninedeploy import apply` to create the services and databases, and `ninedeploy import data` to move database contents.
+- [Moving from Coolify, Dokploy or CapRover](IMPORTING.md): a read-only import plan (`ninedeploy import plan`), then `ninedeploy import apply` to create the services and databases, `ninedeploy import data` to move database contents, and `ninedeploy import cutover` to add the domains once DNS points here.
 
 ## Guides
 

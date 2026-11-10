@@ -6,7 +6,7 @@
 |---|---|---|
 | 1. Plan | Read the source and list each service, domain, environment variable name, volume and database, with every unsupported option | Available (CLI) |
 | 2. Apply | Create the planned services and databases in NineDeploy, resumably, with a receipt per item, and leave the source untouched | Available (CLI) |
-| 3. Data | Move database contents, checksummed; then deploy, switch DNS and add the domains as the last step | Databases available (CLI); volumes and the domain cutover by hand for now |
+| 3. Data | Move database contents, checksummed; then deploy, switch DNS and add the domains as the last step | Databases and the domain cutover available (CLI); volumes by hand for now |
 
 ## Run a plan
 
@@ -64,7 +64,7 @@ Without `--yes`, `import data` prints the order that loses no writes, and the du
 3. Take the final dumps.
 4. Import them with `--dump <database>=<file> --yes`.
 5. Deploy each service and check it is healthy. Connection strings copied from the source may still name its database hosts: attach the new database to the service (it sets `DATABASE_URL` or the engine's own variable at deploy), or edit them.
-6. Switch DNS, then add each domain in the service's Domains tab.
+6. Switch DNS, then add the domains with `import cutover` (below).
 
 **The dump commands**
 - The commands produce what the panel's import accepts: `pg_dump -Fc`, `mysqldump` or `mariadb-dump` of the app's database, a gzipped `mongodump --archive`, or an RDB snapshot.
@@ -79,6 +79,25 @@ Without `--yes`, `import data` prints the order that loses no writes, and the du
 - A different dump is refused while a prior import id is recorded. Inspect it with `ninedeploy databases imports <database-id>`; use `ninedeploy databases import <database-id> --file <file>` for a deliberate new import.
 - A database whose data is already in is not imported again. The same file is skipped, and a different file is refused; use `ninedeploy databases import` directly if you mean it.
 - ClickHouse has no dump import, so move its data by hand.
+
+## Cut over the domains
+
+```bash
+ninedeploy import cutover plan.json                    # what is ready, host by host
+ninedeploy import cutover plan.json --yes              # adds the domains that pass
+```
+
+`import cutover` adds each planned domain to its service, but only when two checks pass:
+
+- **The service is ready.** It is `running` and its latest deployment succeeded. This is not an HTTP check of your app, so open it yourself before you switch DNS. The command never deploys.
+- **DNS already points here.** The host is resolved with a direct DNS query (not the OS cache or hosts file), and at least one A or AAAA address must be one this panel expects. The expected address is `--expect <address>` if given, otherwise Settings → DNS records (an admin can read it). A hostname there is resolved first. `--resolver <ip>` picks the DNS server; the output names the one used.
+
+The DNS check is strict on purpose. Adding a domain makes Traefik ask Let's Encrypt for a certificate, and Let's Encrypt limits failed attempts per hostname. A host that fails waits; switch its DNS and run the same command again.
+
+- The source's own generated hosts (sslip.io, nip.io, traefik.me) are never added. Wildcard hosts need a DNS-01 certificate, so they are listed for you to add by hand.
+- **Proxied records.** A record behind Cloudflare's proxy resolves to Cloudflare, not to this panel. `--skip-dns-check <host>` adds it anyway, and the receipt notes the skipped check. It is refused while the panel's own Cloudflare integration is on, or when you can't tell (only an admin can). That integration creates a new A record for every domain added, and next to a record that still points at the old host it would split traffic between the two.
+- **The panel is the truth.** Each run lists the service's domains first. A domain that is already there, added by hand or by an earlier run, counts as done and is not added again.
+- **Ownership proof.** If you are not an operator and the host is outside this instance's zone, the panel adds it as `pending`. The command prints the TXT record to publish; the next run verifies it. The value is printed, never written to the receipt.
 
 **Volumes** are not moved yet. Copy their files from the source host, then upload them in the service's Volumes & Storage tab.
 

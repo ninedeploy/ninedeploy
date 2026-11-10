@@ -102,7 +102,7 @@ export const CUTOVER_ORDER = [
   'Take the final dump of each database with the commands below, on the source host.',
   'Import them: ninedeploy import data plan.json --dump <database>=<file> --yes',
   'Deploy each service in NineDeploy and check it is healthy. Connection strings in its environment may still name the source\'s database hosts: attach the new database instead (Databases → attach), or edit them.',
-  'Switch DNS to this panel, then add each domain in the service\'s Domains tab.',
+  'Switch DNS to this panel, then add the domains: ninedeploy import cutover plan.json --yes (it adds only hosts whose DNS already points here).',
 ];
 
 const SOURCE_CHECKED_LIVE: Record<SourceKind, boolean> = { caprover: true, coolify: false, dokploy: false };
@@ -267,7 +267,7 @@ export async function importDataAction(planPath: string, opts: ImportDataOpts, d
     console.log(renderReceipt({ ...receipt, items: Object.fromEntries(items.map((i) => [`data:${i.ref}`, i])) }));
     const failed = items.filter((i) => i.state === 'failed').length;
     if (failed) error(`${failed} import(s) failed. Fix the cause and run the same command again. Receipt: ${receiptPath}`);
-    else success(`Done. Receipt: ${receiptPath}. Next: deploy, check health, switch DNS, then add the domains.`);
+    else success(`Done. Receipt: ${receiptPath}. Next: deploy and check each service, switch DNS, then run import cutover.`);
   } catch (err) {
     error(err instanceof Error ? err.message : String(err));
   }

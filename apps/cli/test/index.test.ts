@@ -453,7 +453,7 @@ describe('program registration', () => {
     expect(findCommand('build-cache').children).toHaveLength(1);
     expect(findCommand('branding').children).toHaveLength(2);
     expect(findCommand('egress').children).toHaveLength(3);
-    expect(findCommand('import').children.map((c) => c.cmdName)).toEqual(['plan <source>', 'apply <plan>', 'data <plan>']);
+    expect(findCommand('import').children.map((c) => c.cmdName)).toEqual(['plan <source>', 'apply <plan>', 'data <plan>', 'cutover <plan>']);
     expect(findCommand('sso').children).toHaveLength(3);
     // 0.12 panel backup: `system panel-backup` + 5 subcommands.
     // 0.13: + `services github` and `github-app` with 6 subcommands.
@@ -476,7 +476,7 @@ describe('program registration', () => {
     // R5: `ci` with `runners` (3) and 7 more.
     // R3: `databases pitr` with status, enable, disable, base-backup, recover and recoveries.
     // A1: `import` with `plan <source>`.
-    expect(h.FakeCommand.instances).toHaveLength(352);
+    expect(h.FakeCommand.instances).toHaveLength(353);
     expect(findCommand('ci').children.map((c) => c.cmdName)).toEqual([
       'runners', 'pipeline <service>', 'set <service> <file>', 'jobs <service>', 'run <service>', 'log <service> <job>', 'approve <service> <job>', 'cancel <service> <job>',
     ]);

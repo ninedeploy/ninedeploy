@@ -35,6 +35,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - The receipt keeps the import id, hash and size. A stopped upload resumes the same import, and a database is never imported twice.
   - Checked live: a CapRover v1.16.0 PostgreSQL 16 app with 500 rows, dumped with the printed command, arrived with the same row count and checksum.
   - Plans now record where each database runs on the source (`runtime`). The live run showed that CapRover 1.16 names an app's Swarm service after the app; only legacy apps keep the `srv-captain--` prefix.
+- **`ninedeploy import cutover`: add the imported domains once DNS points at NineDeploy.** Without `--yes` it reports, host by host, what is ready; with `--yes` it adds the domains that pass two checks.
+  - The service is running and its latest deploy succeeded. The command never deploys.
+  - The hostname already resolves to this panel: a direct DNS query (`--resolver` picks the server, the output names it), compared with `--expect` or Settings → DNS records. A host that fails waits, so no certificate is requested while DNS still points at the old platform.
+  - The source's own generated hosts are never added; wildcard hosts are listed for a person. A domain already on the panel counts as done, and a pending ownership proof is verified once DNS passes (its TXT value is printed, never stored).
+  - `--skip-dns-check <host>` covers proxied records, and is refused while the Cloudflare integration is on or unknown, because that integration adds a second A record next to the old one.
+  - Checked live on a disposable panel: refused without an expected address, waited while the service was idle, added a host resolving to the panel (Traefik served it), held back one resolving elsewhere, and added nothing on a rerun.
 
 ### Fixed
 

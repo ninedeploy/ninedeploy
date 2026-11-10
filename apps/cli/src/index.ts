@@ -131,6 +131,7 @@ import {
 import { importPlanAction } from './commands/importPlan.js';
 import { importApplyAction } from './commands/importApply.js';
 import { importDataAction } from './commands/importData.js';
+import { type ImportCutoverOpts, importCutoverAction } from './commands/importCutover.js';
 import { ipsForgetAction, ipsListAction, ipsSetAction } from './commands/hostIps.js';
 import {
   ssoAddAction, ssoListAction, ssoRemoveAction,
@@ -699,7 +700,7 @@ egressCmd
   .action((projectId: string, opts: { driver?: string }) => egressClearAction(getClient(), projectId, opts));
 
 // ── Import from another platform (A1 step 1: read-only plan) ─────────────
-const importCmd = program.command('import').description('Move from Coolify, Dokploy or CapRover: plan (read-only), then apply');
+const importCmd = program.command('import').description('Move from Coolify, Dokploy or CapRover: plan (read-only), apply, data, cutover');
 importCmd
   .command('plan <source>')
   .description('Read a coolify | dokploy | caprover panel and print what NineDeploy would create. Nothing is created or changed. The credential comes from NINEDEPLOY_IMPORT_TOKEN (Coolify, Dokploy) or NINEDEPLOY_IMPORT_PASSWORD (CapRover, plus NINEDEPLOY_IMPORT_OTP), or a hidden prompt.')
@@ -722,6 +723,15 @@ importCmd
   .option('--yes', 'Import the dumps')
   .option('--receipt <file>', 'Receipt file (default: <plan>.receipt.json)')
   .action((plan: string, opts: { dump?: string[]; yes?: boolean; receipt?: string }) => importDataAction(plan, opts));
+importCmd
+  .command('cutover <plan>')
+  .description('Add the planned domains once each service runs a successful deploy and the hostname\'s DNS already points at this panel. Without --yes it only reports what is ready.')
+  .option('--yes', 'Add (or verify) the domains that pass')
+  .option('--expect <address>', 'The address DNS must point at (repeatable; default: Settings → DNS records)', (v: string, prev: string[]) => [...prev, v], [] as string[])
+  .option('--resolver <ip>', 'DNS server to query (default: the system\'s)')
+  .option('--skip-dns-check <host>', 'Skip the DNS check for a proxied host (repeatable; refused while the Cloudflare integration is on)', (v: string, prev: string[]) => [...prev, v], [] as string[])
+  .option('--receipt <file>', 'Receipt file (default: <plan>.receipt.json)')
+  .action((plan: string, opts: ImportCutoverOpts) => importCutoverAction(plan, opts));
 
 // ── SSO (G-22) ───────────────────────────────────────────────────────────
 const ssoCmd = program.command('sso').description('Manage OIDC / SAML SSO providers (G-22)');

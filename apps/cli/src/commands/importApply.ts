@@ -43,11 +43,11 @@ export interface ApplyClient {
 
 export type ReceiptState = 'pending' | 'done' | 'skipped' | 'failed';
 export interface ReceiptItem {
-  kind: 'service' | 'database' | 'env' | 'data';
+  kind: 'service' | 'database' | 'env' | 'data' | 'domain';
   ref: string;
   name: string;
   state: ReceiptState;
-  /** The NineDeploy id (the service's for an env item, the database's for a data item). */
+  /** The NineDeploy id (the service's for an env item, the database's for a data item, the domain's for a domain item). */
   id?: number;
   /** Data items (`import data`): the panel's import id, and the dump's sha256 and size. */
   importId?: number;
