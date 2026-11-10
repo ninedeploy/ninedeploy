@@ -37,6 +37,12 @@ function fakePanel() {
       list: vi.fn(async (serviceId) => attached.filter((a) => a.serviceId === serviceId)),
       create: vi.fn(async (serviceId, input) => {
         calls.push({ op: 'attach', input: { serviceId, ...input } });
+        // As the panel: one attachment per (service, database); reuseExisting hands it back whatever its alias.
+        const existing = attached.find((a) => a.serviceId === serviceId && a.databaseId === input.databaseId);
+        if (existing) {
+          if (input.reuseExisting) return existing;
+          throw new Error('Already attached');
+        }
         const a = { id: 500 + attached.length, serviceId, databaseId: input.databaseId, envAlias: input.envAlias ?? 'DATABASE_URL' };
         attached.push(a);
         return a;
@@ -351,6 +357,23 @@ describe('import apply: connection strings that name the source', () => {
     const healed = await applyPlan(plan, { envFiles: { blog: env } }, { client, panel: PANEL, receipt: lost, save: () => undefined });
     expect(calls.filter((c) => c.op === 'attach')).toHaveLength(1);
     expect(healed.items['attach:blog:DATABASE_URL']).toMatchObject({ state: 'done', id: 500 });
+  });
+
+  it('attaches a database under one variable only, and leaves a second one naming it to a person', async () => {
+    const plan = await livePlan();
+    const prisma = `DATABASE_URL=postgres://u:${SECRET}@pg:5432/x\nDIRECT_URL=postgres://u:${SECRET}@srv-captain--pg:5432/x\n`;
+    let { client, calls } = fakePanel();
+    let r = await applyPlan(plan, { envFiles: { blog: prisma } }, { client, panel: PANEL, receipt: null, save: () => undefined });
+    expect(calls.filter((c) => c.op === 'attach')).toHaveLength(1);
+    expect(r.items['attach:blog:DATABASE_URL']).toMatchObject({ state: 'done' });
+    expect(r.items['attach:blog:DIRECT_URL']).toMatchObject({ state: 'skipped', notes: [expect.stringMatching(/pg is already attached as DATABASE_URL, and the panel gives a database one variable per service\. Set DIRECT_URL by hand/)] });
+    // The panel answers a create with the attachment it already had (a list that missed it): never recorded as attached.
+    ({ client, calls } = fakePanel());
+    const first = await applyPlan(plan, {}, { client, panel: PANEL, receipt: null, save: () => undefined });
+    await client.attachments.create(first.items['service:blog']!.id!, { databaseId: first.items['database:pg']!.id!, envAlias: 'PG' });
+    client.attachments.list = vi.fn(async () => []);
+    r = await applyPlan(plan, { envFiles: { blog: prisma } }, { client, panel: PANEL, receipt: structuredClone(first), save: () => undefined });
+    expect(r.items['attach:blog:DATABASE_URL']).toMatchObject({ state: 'skipped', notes: [expect.stringMatching(/already attached as PG/)] });
   });
 
   it('refuses a variable another database already sets, waits for a database not created, and records panel errors', async () => {

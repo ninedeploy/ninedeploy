@@ -41,7 +41,7 @@ ninedeploy import apply plan.json --yes --project 3 --dotenv blog=./blog.env   #
 - **Attachments for copied connection strings.** A value in a `--dotenv` file can still name the source's database, for example `DATABASE_URL=postgres://…@srv-captain--pg:5432/…`. In that case apply attaches the new database to the service under that variable's name. At every deploy the attachment sets the variable to the new database's connection string; the service's own copy still shows the old value. The file is read on your machine, and only variable, database and host names reach the output and the receipt.
   - Apply attaches only when the panel's connection string can stand in exactly: `postgres://`, `mysql://` or `mariadb://` with no `?options`, or `redis://` on database 0.
   - Anything else is listed for you to change by hand, with the reason: `postgresql://` and other scheme spellings your driver may need, `?sslmode=` and other options, a Redis database index, Mongo (the panel's string names no database), and a variable that holds only the host.
-  - A value that names the old platform's own host, such as `captain.old.example` or its IP, is listed too. NineDeploy can still reach that host, so the app would quietly keep using the old database.
+  - A value that names the old platform's own host, such as `captain.old.example` (as written in the plan's source URL), is listed too. NineDeploy can still reach that host, so the app would quietly keep using the old database.
   - The source hosts are the CapRover app name (with and without `srv-captain--`), the Coolify container name and the Dokploy app name. Only CapRover's were checked against a live instance.
 
 **What it does not do**

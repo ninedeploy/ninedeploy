@@ -46,7 +46,7 @@ export interface ApplyClient {
   env: { import: (serviceId: number, content: string) => Promise<{ imported: number; skipped: number; errors: Array<{ line: number; message: string }> }> };
   attachments: {
     list: (serviceId: number) => Promise<Array<{ id: number; databaseId: number; envAlias: string }>>;
-    create: (serviceId: number, input: { databaseId: number; envAlias?: string; reuseExisting?: boolean }) => Promise<{ id: number }>;
+    create: (serviceId: number, input: { databaseId: number; envAlias?: string; reuseExisting?: boolean }) => Promise<{ id: number; databaseId: number; envAlias: string }>;
   };
 }
 
@@ -287,16 +287,34 @@ export async function applyPlan(plan: ImportPlan, opts: ApplyOptions, deps: Appl
         put(key, { ...base, state: 'failed', notes: [`${h.key} is already set by another attached database (#${same.databaseId}); detach it, or edit the variable by hand.`] });
         continue;
       }
+      // The panel attaches a database to a service once, under one variable
+      // (reuseExisting hands back that one whatever its alias), so a second
+      // variable naming the same database (DATABASE_URL and DIRECT_URL) is
+      // left to a person rather than recorded as attached.
+      const onlyOne = (alias: string) =>
+        put(key, { ...base, state: 'skipped', notes: [`${h.key} names the source's database ${db.name} (${h.host}), but ${db.name} is already attached as ${alias}, and the panel gives a database one variable per service. Set ${h.key} by hand (Databases → ${db.name} → Connection).`] });
+      const other = same ? undefined : current.find((a) => a.databaseId === made.id);
+      if (other) {
+        onlyOne(other.envAlias);
+        continue;
+      }
       let id: number;
       if (same) id = same.id;
       else {
         put(key, { ...base, state: 'pending', notes: [] });
+        let got: { id: number; databaseId: number; envAlias: string };
         try {
-          id = (await deps.client.attachments.create(svc.id, { databaseId: made.id, envAlias: h.key, reuseExisting: true })).id;
+          got = await deps.client.attachments.create(svc.id, { databaseId: made.id, envAlias: h.key, reuseExisting: true });
         } catch (err) {
           put(key, { ...base, state: 'failed', notes: [message(err)] });
           continue;
         }
+        if (got.envAlias !== h.key) {
+          onlyOne(got.envAlias);
+          continue;
+        }
+        current.push(got);
+        id = got.id;
       }
       put(key, {
         ...base, state: 'done', id,
