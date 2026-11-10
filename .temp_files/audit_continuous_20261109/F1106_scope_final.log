@@ -1,0 +1,84 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/backupPolicyRoutes.test.ts > GET /:id/backup-policy > reports the built-in schedule for a database without a policy (upgrade default) 289ms
+ ✓ test/backupPolicyRoutes.test.ts > GET /:id/backup-policy > hides another tenant’s database (404) 219ms
+ ✓ test/backupPolicyRoutes.test.ts > PUT /:id/backup-policy > creates, then replaces, the policy — audited and re-armed 248ms
+ ✓ test/backupPolicyRoutes.test.ts > PUT /:id/backup-policy > needs admin on the database, like taking a backup 189ms
+ ✓ test/backupPolicyRoutes.test.ts > PUT /:id/backup-policy > refuses invalid input {"cron":"* * * * * *","retainCount":14} with a 400 206ms
+ ✓ test/backupPolicyRoutes.test.ts > PUT /:id/backup-policy > refuses invalid input {"cron":"daily","retainCount":14} with a 400 225ms
+ ✓ test/backupPolicyRoutes.test.ts > PUT /:id/backup-policy > refuses invalid input {"cron":"0 */6 * * *","retainCount":0} with a 400 192ms
+ ✓ test/backupPolicyRoutes.test.ts > PUT /:id/backup-policy > refuses invalid input {"cron":"0 */6 * * *","retainCount":366} with a 400 194ms
+ ✓ test/backupPolicyRoutes.test.ts > PUT /:id/backup-policy > refuses invalid input {"cron":"0 */6 * * *","retainCount":14,"retainRemoteCount":0} with a 400 193ms
+ ✓ test/backupPolicyRoutes.test.ts > PUT /:id/backup-policy > refuses invalid input {"cron":"0 */6 * * *","retainCount":14,"localOnly":true,"destinationId":1} with a 400 237ms
+ ✓ test/backupPolicyRoutes.test.ts > PUT /:id/backup-policy > refuses invalid input {"retainCount":7} with a 400 277ms
+ ✓ test/backupPolicyRoutes.test.ts > PUT /:id/backup-policy > a specific destination is an operator choice; the operator may set it and an admin may keep it 286ms
+ ✓ test/backupPolicyRoutes.test.ts > PUT /:id/backup-policy > deleting the destination drops the policy back to the active one; deleting the database removes the policy 233ms
+ ✓ test/backupPolicyUpgrade.test.ts > migration 0067 upgrade compatibility > is purely additive: one new table, every 0.11 row untouched 466ms
+ ✓ test/backupPolicyUpgrade.test.ts > migration 0067 upgrade compatibility > an old database with no policy row stays on the built-in daily/7 schedule 574ms
+ ✓ test/plugins/backupSchedulerPolicyRace.test.ts > control: unchanged ten-minute policy does not run at minute two 265ms
+stdout | test/plugins/backupSchedulerPolicyRace.test.ts > F1106: an older gated policy snapshot cannot override the newer cron
+EXPECTED backups:[] ACTUAL: []
+PROBLEM NOT REPRODUCED
+
+ ✓ test/plugins/backupSchedulerPolicyRace.test.ts > F1106: an older gated policy snapshot cannot override the newer cron 203ms
+ ✓ test/plugins/backupSchedulerPolicyRace.test.ts > independent database changes do not cancel each other 195ms
+ ✓ test/plugins/backupSchedulerPolicyRace.test.ts > a stale enabled snapshot cannot rearm a disabled policy 205ms
+ ✓ test/plugins/backupSchedulerPolicyRace.test.ts > an old periodic refresh cannot replace a newer saved cron 182ms
+ ✓ test/plugins/backupSchedulerPolicyRace.test.ts > a pending changed-event read cannot publish after close 181ms
+ ✓ test/plugins/backupSchedulerPolicyRace.test.ts > a failed save read leaves the existing cron armed until a successful refresh 188ms
+ ✓ test/plugins/backupSchedulerPolicyRace.test.ts > a boot snapshot cannot overwrite a save published while startup is waiting 229ms
+ ✓ test/plugins/backupSchedulerPolicyRace.test.ts > a newer completed periodic refresh fences an older changed-event read 234ms
+ ✓ test/plugins/backupSchedulerPolicyRace.test.ts > removing a policy during a full refresh still fences its older pending read 214ms
+ ✓ test/plugins/backupSchedulerPolicy.test.ts > backup scheduler — per-database policy > runs a policy database on its own cron and leaves it out of the built-in daily run 94ms
+ ✓ test/plugins/backupSchedulerPolicy.test.ts > backup scheduler — per-database policy > applies the policy retention count instead of the built-in 7 9ms
+ ✓ test/plugins/backupSchedulerPolicy.test.ts > backup scheduler — per-database policy > uploads to the destination the policy names, and not at all when local-only 12ms
+ ✓ test/plugins/backupSchedulerPolicy.test.ts > backup scheduler — per-database policy > a disabled policy takes no scheduled backups and is exempt from the missed-backup watchdog 2ms
+ ✓ test/plugins/backupSchedulerPolicy.test.ts > backup scheduler — per-database policy > judges a weekly policy against its own cadence in the missed-backup watchdog 2ms
+ ✓ test/plugins/backupSchedulerPolicy.test.ts > backup scheduler — per-database policy > re-arms when a policy is saved, and disarms when it is disabled 2ms
+ ✓ test/plugins/backupSchedulerPolicy.test.ts > backup scheduler — per-database policy > trims remote copies past retainRemoteCount without dropping the local dumps 7ms
+ ✓ test/plugins/backupSchedulerPolicy.test.ts > backup scheduler — per-database policy > a policy read error skips the built-in run instead of pruning a policy database to 7 2ms
+ ✓ test/plugins/backupScheduler.test.ts > r170: firstTickDelay > runs a day after the newest scheduled backup, not a day after boot 1ms
+ ✓ test/plugins/backupScheduler.test.ts > r170: firstTickDelay > catches up (after a short grace) when a backup is overdue 0ms
+ ✓ test/plugins/backupScheduler.test.ts > r170: firstTickDelay > anchors on the oldest running database when nothing was ever backed up 0ms
+ ✓ test/plugins/backupScheduler.test.ts > keeps metadata for remote recovery points after local retention 59ms
+ ✓ test/plugins/backupScheduler.test.ts > backup scheduler plugin > gives overlapping scheduler runs different paths in the same millisecond 4ms
+ ✓ test/plugins/backupScheduler.test.ts > backup scheduler plugin > preserves successful recovery points when newer scheduled attempts failed 4ms
+ ✓ test/plugins/backupScheduler.test.ts > backup scheduler plugin > backs up running databases, records size, and prunes stale backups 8ms
+ ✓ test/plugins/backupScheduler.test.ts > backup scheduler plugin > logs per-database failures but keeps going 2ms
+ ✓ test/plugins/backupScheduler.test.ts > backup scheduler plugin > F96: a retention error for one database does not skip the backups of the next 2ms
+ ✓ test/plugins/backupScheduler.test.ts > backup scheduler plugin > F97: an upload failure after a committed dump is not recorded as a failed backup 5ms
+ ✓ test/plugins/backupScheduler.test.ts > backup scheduler plugin > r528: audits each successful scheduled backup like the manual route does 3ms
+ ✓ test/plugins/backupScheduler.test.ts > backup scheduler plugin > logs when the whole tick fails 2ms
+ ✓ test/plugins/backupScheduler.test.ts > backup scheduler plugin > does nothing when no database is running 2ms
+ ✓ test/plugins/backupScheduler.test.ts > backup scheduler plugin > reschedules the daily tick while running 2ms
+ ✓ test/plugins/backupScheduler.test.ts > backup scheduler plugin > stops rescheduling after close 1ms
+ ✓ test/plugins/backupScheduler.test.ts > backup scheduler plugin > skips the remote upload when the insert returns no row 1ms
+ ✓ test/plugins/backupScheduler.test.ts > T6: scheduled backups of a node database > dump on the node (not the panel engine), rows record the node; an unreachable node is a failed row, no fallback 3ms
+ ✓ test/plugins/backupSchedulerRemotePrune.test.ts > r542: scheduled backup retention covers remote-backed rows > deletes the remote object, then the row, for every remote row past KEEP_PER_DB 80ms
+ ✓ test/plugins/backupSchedulerRemotePrune.test.ts > r542: scheduled backup retention covers remote-backed rows > keeps the row when the remote delete fails, and when the destination is unknown 6ms
+ ✓ test/plugins/backupSchedulerRemotePrune.test.ts > r542: scheduled backup retention covers remote-backed rows > caps the remote deletes per tick so an upgrade backlog is worked down over several ticks 14ms
+ ✓ test/lib/backupPolicy.test.ts > assertBackupCron (same rule as scheduled jobs) > accepts 5-field expressions 2ms
+ ✓ test/lib/backupPolicy.test.ts > assertBackupCron (same rule as scheduled jobs) > refuses 6-field (seconds) patterns and garbage with a 400 1ms
+ ✓ test/lib/backupPolicy.test.ts > nextCronRun / cronPeriodMs > computes the next run and the cadence 1ms
+ ✓ test/lib/backupPolicy.test.ts > nextCronRun / cronPeriodMs > is null for an invalid expression 0ms
+ ✓ test/lib/backupPolicy.test.ts > planRetention > built-in rule: completed rows past N are dropped with their remote copy (pre-0.12 behaviour) 1ms
+ ✓ test/lib/backupPolicy.test.ts > planRetention > F97/F288: failed attempts never evict a completed dump, and have their own bound 1ms
+ ✓ test/lib/backupPolicy.test.ts > planRetention > never touches the newest completed dump, even with a nonsensical count 0ms
+ ✓ test/lib/backupPolicy.test.ts > planRetention > ignores manual and running rows 0ms
+ ✓ test/lib/backupPolicy.test.ts > planRetention > separate remote count: more remote copies than local dumps 0ms
+ ✓ test/lib/backupPolicy.test.ts > planRetention > separate remote count: fewer remote copies than local dumps 0ms
+ ✓ test/lib/backupPolicy.test.ts > planRetention > remote copies are counted over rows that have one — an upload outage does not cost the last remote copy 0ms
+ ✓ test/lib/backupPolicy.test.ts > loadBackupPolicies > is empty when the table is not there (mocked DB, pre-0067 schema) 0ms
+ ✓ test/lib/backupPolicy.test.ts > loadBackupPolicies > rethrows any other read error — a policy database must never fall back to the built-in 7 0ms
+ ✓ test/lib/backupPolicy.test.ts > loadBackupPolicies > keys rows by database id 0ms
+ ✓ test/lib/backupPolicy.test.ts > serializeBackupPolicy > reports the built-in default for a database without a row 0ms
+ ✓ test/lib/backupPolicy.test.ts > serializeBackupPolicy > includes the next run only for an enabled policy 1ms
+
+ Test Files  7 passed (7)
+      Tests  69 passed (69)
+   Start at  13:18:58
+   Duration  12.75s (tests 63%, import 35%, transform 2%)
+
+    Isolate  7 workers spawned · ~316ms startup each (spawn + environment, per file)
+             at least ~1.90s faster with isolate: false — reuses workers across files instead of one per file

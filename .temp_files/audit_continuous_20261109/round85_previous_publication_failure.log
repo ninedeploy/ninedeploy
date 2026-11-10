@@ -1,0 +1,76 @@
+warning: in the working copy of '.temp_files/audit_continuous_20261109/F1105_backupDrill_before.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of '.temp_files/audit_continuous_20261109/F1105_before.log', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of '.temp_files/audit_continuous_20261109/F1105_build.log', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of '.temp_files/audit_continuous_20261109/F1105_commitSetup.mjs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of '.temp_files/audit_continuous_20261109/F1105_lint.log', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of '.temp_files/audit_continuous_20261109/F1105_patch.mjs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of '.temp_files/audit_continuous_20261109/F1105_permanent_red.log', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of '.temp_files/audit_continuous_20261109/F1105_red.mjs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of '.temp_files/audit_continuous_20261109/F1105_scope.log', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of '.temp_files/audit_continuous_20261109/F1105_typecheck.log', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of '.temp_files/audit_continuous_20261109/F1105_verify_1.log', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of '.temp_files/audit_continuous_20261109/F1105_verify_2.log', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of '.temp_files/audit_continuous_20261109/F1105_verify_3.log', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of '.temp_files/audit_continuous_20261109/prove_F1105_drillHistory.test.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of '.temp_files/audit_continuous_20261109/round84_status_before.txt', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of '.temp_files/audit_continuous_20261109/verify_F1105_drillHistory.mjs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of '.temp_files/ledger_drillHistory84_20261110.md', LF will be replaced by CRLF the next time Git touches it
+{
+  "stagedFiles": 21,
+  "commonCredentialPatterns": "no matches",
+  "runtimeFilesAndIndexLineEndings": "passed",
+  "findings": []
+}
+PEM header-only test/UI placeholders inspected separately; no private key body present. This is a limited staged-content check, not a security audit.
+Verified owned staged paths: 21
+[main cbd1d9a0] fix: include database identity in backup drill history
+ 21 files changed, 1430 insertions(+)
+ create mode 100644 .temp_files/audit_continuous_20261109/F1105_backupDrill_before.ts
+ create mode 100644 .temp_files/audit_continuous_20261109/F1105_before.log
+ create mode 100644 .temp_files/audit_continuous_20261109/F1105_build.log
+ create mode 100644 .temp_files/audit_continuous_20261109/F1105_commitSetup.mjs
+ create mode 100644 .temp_files/audit_continuous_20261109/F1105_lint.log
+ create mode 100644 .temp_files/audit_continuous_20261109/F1105_patch.mjs
+ create mode 100644 .temp_files/audit_continuous_20261109/F1105_permanent_red.log
+ create mode 100644 .temp_files/audit_continuous_20261109/F1105_red.mjs
+ create mode 100644 .temp_files/audit_continuous_20261109/F1105_scope.log
+ create mode 100644 .temp_files/audit_continuous_20261109/F1105_typecheck.log
+ create mode 100644 .temp_files/audit_continuous_20261109/F1105_verify_1.log
+ create mode 100644 .temp_files/audit_continuous_20261109/F1105_verify_2.log
+ create mode 100644 .temp_files/audit_continuous_20261109/F1105_verify_3.log
+ create mode 100644 .temp_files/audit_continuous_20261109/prove_F1105_drillHistory.test.ts
+ create mode 100644 .temp_files/audit_continuous_20261109/round84_status_before.txt
+ create mode 100644 .temp_files/audit_continuous_20261109/verify_F1105_drillHistory.mjs
+ create mode 100644 .temp_files/ledger_drillHistory84_20261110.md
+ create mode 100644 apps/server/test/lib/backupDrillHistory.test.ts
+All selected HEAD blobs verified: cbd1d9a0953136f4ba82bf13224357dd16d9e136
+fatal: unable to access 'https://github.com/ninedeploy/ninedeploy.git/': Could not resolve host: github.com
+node:internal/errors:999
+  const err = new Error(message);
+              ^
+
+Error: Command failed: git push origin main
+fatal: unable to access 'https://github.com/ninedeploy/ninedeploy.git/': Could not resolve host: github.com
+
+    at genericNodeError (node:internal/errors:999:15)
+    at wrappedFn (node:internal/errors:544:14)
+    at checkExecSyncError (node:child_process:990:11)
+    at execFileSync (node:child_process:1026:15)
+    at git (file:///D:/Codebox/PROJECTS/NineDeploy/.temp_files/audit_continuous_20261109/commit-F1105-owned.mjs:4:26)
+    at file:///D:/Codebox/PROJECTS/NineDeploy/.temp_files/audit_continuous_20261109/commit-F1105-owned.mjs:37:13
+    at ModuleJob.run (node:internal/modules/esm/module_job:569:25)
+    at async node:internal/modules/esm/loader:650:26
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:105:5) {
+  status: 128,
+  signal: null,
+  output: [
+    null,
+    '',
+    "fatal: unable to access 'https://github.com/ninedeploy/ninedeploy.git/': Could not resolve host: github.com\n"
+  ],
+  pid: 178544,
+  stdout: '',
+  stderr: "fatal: unable to access 'https://github.com/ninedeploy/ninedeploy.git/': Could not resolve host: github.com\n"
+}
+
+Node.js v26.13.0

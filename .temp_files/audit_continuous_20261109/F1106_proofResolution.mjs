@@ -1,0 +1,1 @@
+import fs from 'node:fs';const p='.temp_files/audit_continuous_20261109/prove_F1106_backupPolicyRace.test.ts';let s=fs.readFileSync(p,'utf8');s=s.replace("from 'drizzle-orm'","from '../../apps/server/node_modules/drizzle-orm/index.js'");s=s.replace('await Promise.resolve();await Promise.resolve();','await new Promise<void>(done=>setImmediate(done));');fs.writeFileSync(p,s);

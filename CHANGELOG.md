@@ -36,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Backup policy cron publication now ignores superseded reads from saves, periodic refreshes and startup while preserving independent database changes (F1106).
 - Backup drill history rows now include the database identity required by the SDK and already present on single-entry responses (F1105).
 - Structural backup checkers now retain a UUID helper identity and attempt cleanup when Docker commits a create but its CLI reply is lost (F1103).
 - Structural backup checker cleanup now also requests removal of helper-owned anonymous volumes (F1104).

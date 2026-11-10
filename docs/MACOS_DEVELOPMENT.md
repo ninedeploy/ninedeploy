@@ -925,3 +925,28 @@ pnpm --dir apps/server exec vitest run test/lib/backupDrillHistory.test.ts test/
 The test uses the repository's auth adapter, actual route/serialization code
 and isolated native SQLite. It makes no live authentication, native Mac or full
 release claim; round73's native worker fault remains unresolved.
+
+Round 85 (F1106) prevents an older policy read from rearming a cron after a newer
+save or completed refresh. Beforeproof used real SQLite, actual Cron with a fake
+clock and a gated snapshot: a persisted ten-minute policy still backed up at
+minute two. Publication now carries read versions per database, with completed
+full-refresh fencing. Different databases remain independent; deleted policy
+versions are reclaimed on successful refresh and all versions clear on close.
+
+Original before: one failure/one control; after: two passes. Ten permanent cases
+were seen red (six failures/four controls). Final verifier combined those ten
+with the original two and passed three times. Explicit gates cover save/save,
+save/resync in both completion orders, boot/save, deletion, close and independent
+databases; no wall-clock sleeps. Final scope passed 69 tests in seven files.
+GOMAXPROCS=4 server typecheck/build, two-file lint and diff checks passed after the
+last source/test edits.
+
+```bash
+pnpm --dir apps/server exec vitest run test/plugins/backupSchedulerPolicyRace.test.ts test/plugins/backupSchedulerPolicy.test.ts test/plugins/backupScheduler.test.ts test/lib/backupPolicy.test.ts --coverage=false
+```
+
+Backup execution is isolated at the databaseRuntime seam; no real backup, native
+Mac or full release is claimed. This round fences policy publication; it does
+not claim to cancel work already admitted before close. Round73's native worker
+fault remains unresolved. Round84's initial push failed DNS resolution; the same
+commit was successfully pushed on retry and origin identity was verified.

@@ -118,6 +118,9 @@ export default fp(
     /** Databases with a scheduled backup in progress — a slow dump never
      *  overlaps the next fire of the same database. */
     const inFlight = new Set<number>();
+    let policyReadVersion = 0;
+    let completedPolicyRefresh = 0;
+    const policyVersions = new Map<number, number>();
 
     /** Dump one database, record it, upload it, audit it, then apply
      *  retention. `policy` null = the built-in rules. Never throws. */
@@ -400,7 +403,16 @@ export default fp(
       }
     }
 
+    // Reads can finish out of order; one database's save must not cancel another's.
+    function publishPolicy(databaseId: number, policy: DatabaseBackupPolicy | undefined, version: number): boolean {
+      if (!running || version < completedPolicyRefresh || version < (policyVersions.get(databaseId) ?? 0)) return false;
+      policyVersions.set(databaseId, version);
+      armPolicy(databaseId, policy);
+      return true;
+    }
+
     const resyncPolicies = async () => {
+      const version = ++policyReadVersion;
       let policies: Map<number, DatabaseBackupPolicy>;
       try {
         policies = await loadBackupPolicies(fastify.db);
@@ -408,17 +420,24 @@ export default fp(
         fastify.log.warn({ err }, 'backup scheduler: could not read backup policies');
         return;
       }
-      if (!running) return;
-      for (const id of [...policyCrons.keys()]) if (!policies.has(id)) armPolicy(id, undefined);
-      for (const [id, p] of policies) armPolicy(id, p);
+      if (!running || version < completedPolicyRefresh) return;
+      completedPolicyRefresh = version;
+      for (const id of [...policyCrons.keys()]) if (!policies.has(id)) publishPolicy(id, undefined, version);
+      for (const [id, p] of policies) publishPolicy(id, p, version);
+      for (const [id, observed] of policyVersions) {
+        if (!policies.has(id) && observed <= version) policyVersions.delete(id);
+      }
     };
 
     const onPolicyChanged = (databaseId: number) => {
+      const version = ++policyReadVersion;
+      policyVersions.set(databaseId, version);
       void (async () => {
         try {
           const policies = await loadBackupPolicies(fastify.db);
-          armPolicy(databaseId, policies.get(databaseId));
-          fastify.log.info({ databaseId }, 'backup policy re-armed');
+          if (publishPolicy(databaseId, policies.get(databaseId), version)) {
+            fastify.log.info({ databaseId }, 'backup policy re-armed');
+          }
         } catch (err) {
           fastify.log.warn({ err, databaseId }, 'backup policy re-arm failed — next resync retries');
         }
@@ -433,12 +452,14 @@ export default fp(
       backupPolicyEvents.off('changed', onPolicyChanged);
       for (const { cron } of policyCrons.values()) cron.stop();
       policyCrons.clear();
+      policyVersions.clear();
     });
     // First run a day after the last built-in scheduled backup (see
     // firstTickDelay); then daily. Policy databases' dumps do not move the
     // built-in anchor.
     let delay = DAY_MS;
     let bootPolicies = new Map<number, DatabaseBackupPolicy>();
+    const bootPolicyVersion = ++policyReadVersion;
     try {
       bootPolicies = await loadBackupPolicies(fastify.db);
     } catch (err) {
@@ -462,7 +483,7 @@ export default fp(
     }
     timer = setTimeout(() => void tick(), delay);
     timer.unref?.();
-    for (const [id, p] of bootPolicies) armPolicy(id, p);
+    for (const [id, p] of bootPolicies) publishPolicy(id, p, bootPolicyVersion);
     resyncTimer = setInterval(() => void resyncPolicies(), POLICY_RESYNC_MS);
     resyncTimer.unref?.();
     fastify.log.info('backup scheduler armed (daily)');

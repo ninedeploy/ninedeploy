@@ -1,0 +1,19 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/plugins/backupSchedulerPolicyRace.test.ts > control: unchanged ten-minute policy does not run at minute two 300ms
+stdout | test/plugins/backupSchedulerPolicyRace.test.ts > F1106: an older gated policy snapshot cannot override the newer cron
+EXPECTED backups:[] ACTUAL: []
+PROBLEM NOT REPRODUCED
+
+ ✓ test/plugins/backupSchedulerPolicyRace.test.ts > F1106: an older gated policy snapshot cannot override the newer cron 228ms
+ ✓ test/plugins/backupSchedulerPolicyRace.test.ts > independent database changes do not cancel each other 218ms
+ ✓ test/plugins/backupSchedulerPolicyRace.test.ts > a stale enabled snapshot cannot rearm a disabled policy 191ms
+ ✓ test/plugins/backupSchedulerPolicyRace.test.ts > an old periodic refresh cannot replace a newer saved cron 190ms
+ ✓ test/plugins/backupSchedulerPolicyRace.test.ts > a pending changed-event read cannot publish after close 225ms
+ ✓ test/plugins/backupSchedulerPolicyRace.test.ts > a failed save read leaves the existing cron armed until a successful refresh 269ms
+
+ Test Files  1 passed (1)
+      Tests  7 passed (7)
+   Start at  13:15:10
+   Duration  2.62s (tests 68%, import 25%, transform 7%)

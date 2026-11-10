@@ -1,0 +1,151 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/plugins/backupSchedulerPolicyRace.test.ts > control: unchanged ten-minute policy does not run at minute two 295ms
+stdout | test/plugins/backupSchedulerPolicyRace.test.ts > F1106: an older gated policy snapshot cannot override the newer cron
+EXPECTED backups:[] ACTUAL: [ 5 ]
+PROBLEM CONFIRMED
+
+ × test/plugins/backupSchedulerPolicyRace.test.ts > F1106: an older gated policy snapshot cannot override the newer cron 356ms
+   → expected [ 5 ] to deeply equal []
+ ✓ test/plugins/backupSchedulerPolicyRace.test.ts > independent database changes do not cancel each other 348ms
+ × test/plugins/backupSchedulerPolicyRace.test.ts > a stale enabled snapshot cannot rearm a disabled policy 316ms
+   → expected 3 to be 2 // Object.is equality
+ × test/plugins/backupSchedulerPolicyRace.test.ts > an old periodic refresh cannot replace a newer saved cron 277ms
+   → expected [ 5 ] to deeply equal []
+ ✓ test/plugins/backupSchedulerPolicyRace.test.ts > a pending changed-event read cannot publish after close 233ms
+ ✓ test/plugins/backupSchedulerPolicyRace.test.ts > a failed save read leaves the existing cron armed until a successful refresh 210ms
+ × test/plugins/backupSchedulerPolicyRace.test.ts > a boot snapshot cannot overwrite a save published while startup is waiting 340ms
+   → expected [ 5 ] to deeply equal []
+ × test/plugins/backupSchedulerPolicyRace.test.ts > a newer completed periodic refresh fences an older changed-event read 307ms
+   → expected [ 5 ] to deeply equal []
+ × test/plugins/backupSchedulerPolicyRace.test.ts > removing a policy during a full refresh still fences its older pending read 281ms
+   → expected 3 to be 2 // Object.is equality
+
+ Test Files  1 failed (1)
+      Tests  6 failed | 4 passed (10)
+   Start at  13:18:27
+   Duration  3.77s (tests 82%, import 15%, transform 4%)
+
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 6 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/plugins/backupSchedulerPolicyRace.test.ts > F1106: an older gated policy snapshot cannot override the newer cron
+AssertionError: expected [ 5 ] to deeply equal []
+
+- Expected
++ Received
+
+- []
++ [
++   5,
++ ]
+
+ ❯ test/plugins/backupSchedulerPolicyRace.test.ts:7:1308
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/6]⎯
+
+ FAIL  test/plugins/backupSchedulerPolicyRace.test.ts > a stale enabled snapshot cannot rearm a disabled policy
+AssertionError: expected 3 to be 2 // Object.is equality
+
+- Expected
++ Received
+
+- 2
++ 3
+
+ ❯ test/plugins/backupSchedulerPolicyRace.test.ts:40:120
+     38|     await db.update(databaseBackupPolicies).set({cron:'*/2 * * * *'}).…
+     39|     await save('*/10 * * * *',5,false); await gate.finish(); const rea…
+     40|     await vi.advanceTimersByTimeAsync(2*60_000); expect(state.backups)…
+       |                                                                                                                        ^
+     41|   } finally { await gate.finish(); gate.spy.mockRestore(); }
+     42| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/6]⎯
+
+ FAIL  test/plugins/backupSchedulerPolicyRace.test.ts > an old periodic refresh cannot replace a newer saved cron
+AssertionError: expected [ 5 ] to deeply equal []
+
+- Expected
++ Received
+
+- []
++ [
++   5,
++ ]
+
+ ❯ test/plugins/backupSchedulerPolicyRace.test.ts:50:72
+     48|     await vi.advanceTimersByTimeAsync(15*60_000); await gate.captured;
+     49|     await save('*/30 * * * *'); await gate.finish(); state.backups=[];
+     50|     await vi.advanceTimersByTimeAsync(5*60_000); expect(state.backups)…
+       |                                                                        ^
+     51|   } finally { await gate.finish(); gate.spy.mockRestore(); }
+     52| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/6]⎯
+
+ FAIL  test/plugins/backupSchedulerPolicyRace.test.ts > a boot snapshot cannot overwrite a save published while startup is waiting
+AssertionError: expected [ 5 ] to deeply equal []
+
+- Expected
++ Received
+
+- []
++ [
++   5,
++ ]
+
+ ❯ test/plugins/backupSchedulerPolicyRace.test.ts:72:72
+     70|   try {
+     71|     await gate.captured; await save('*/10 * * * *'); await gate.finish…
+     72|     await vi.advanceTimersByTimeAsync(2*60_000); expect(state.backups)…
+       |                                                                        ^
+     73|   } finally { await gate.finish(); await ready; gate.spy.mockRestore()…
+     74| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/6]⎯
+
+ FAIL  test/plugins/backupSchedulerPolicyRace.test.ts > a newer completed periodic refresh fences an older changed-event read
+AssertionError: expected [ 5 ] to deeply equal []
+
+- Expected
++ Received
+
+- []
++ [
++   5,
++ ]
+
+ ❯ test/plugins/backupSchedulerPolicyRace.test.ts:84:70
+     82|     await db.update(databaseBackupPolicies).set({cron:'*/30 * * * *'})…
+     83|     await vi.advanceTimersByTimeAsync(15*60_000); await refreshed; awa…
+     84|     await vi.advanceTimersByTimeAsync(60_000); expect(state.backups).t…
+       |                                                                      ^
+     85|   } finally {await gate.finish();gate.spy.mockRestore();}
+     86| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/6]⎯
+
+ FAIL  test/plugins/backupSchedulerPolicyRace.test.ts > removing a policy during a full refresh still fences its older pending read
+AssertionError: expected 3 to be 2 // Object.is equality
+
+- Expected
++ Received
+
+- 2
++ 3
+
+ ❯ test/plugins/backupSchedulerPolicyRace.test.ts:95:82
+     93|     await db.delete(databaseBackupPolicies).where(eq(databaseBackupPol…
+     94|     await vi.advanceTimersByTimeAsync(15*60_000);await refreshed;await…
+     95|     await vi.advanceTimersByTimeAsync(60_000);expect(gate.spy.mock.cal…
+       |                                                                                  ^
+     96|   } finally {await gate.finish();gate.spy.mockRestore();}
+     97| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/6]⎯
+
+
+EXIT 1

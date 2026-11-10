@@ -1,0 +1,39 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1106_backupPolicyRace.test.ts > control: unchanged ten-minute policy does not run at minute two 281ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1106_backupPolicyRace.test.ts > F1106: an older gated policy snapshot cannot override the newer cron
+EXPECTED backups:[] ACTUAL: []
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1106_backupPolicyRace.test.ts > F1106: an older gated policy snapshot cannot override the newer cron 284ms
+
+ Test Files  1 passed (1)
+      Tests  2 passed (2)
+   Start at  13:18:32
+   Duration  1.50s (import 49%, tests 41%, transform 10%)
+
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/plugins/backupSchedulerPolicyRace.test.ts > control: unchanged ten-minute policy does not run at minute two 280ms
+stdout | test/plugins/backupSchedulerPolicyRace.test.ts > F1106: an older gated policy snapshot cannot override the newer cron
+EXPECTED backups:[] ACTUAL: []
+PROBLEM NOT REPRODUCED
+
+ ✓ test/plugins/backupSchedulerPolicyRace.test.ts > F1106: an older gated policy snapshot cannot override the newer cron 201ms
+ ✓ test/plugins/backupSchedulerPolicyRace.test.ts > independent database changes do not cancel each other 304ms
+ ✓ test/plugins/backupSchedulerPolicyRace.test.ts > a stale enabled snapshot cannot rearm a disabled policy 241ms
+ ✓ test/plugins/backupSchedulerPolicyRace.test.ts > an old periodic refresh cannot replace a newer saved cron 174ms
+ ✓ test/plugins/backupSchedulerPolicyRace.test.ts > a pending changed-event read cannot publish after close 221ms
+ ✓ test/plugins/backupSchedulerPolicyRace.test.ts > a failed save read leaves the existing cron armed until a successful refresh 183ms
+ ✓ test/plugins/backupSchedulerPolicyRace.test.ts > a boot snapshot cannot overwrite a save published while startup is waiting 181ms
+ ✓ test/plugins/backupSchedulerPolicyRace.test.ts > a newer completed periodic refresh fences an older changed-event read 181ms
+ ✓ test/plugins/backupSchedulerPolicyRace.test.ts > removing a policy during a full refresh still fences its older pending read 231ms
+
+ Test Files  1 passed (1)
+      Tests  10 passed (10)
+   Start at  13:18:36
+   Duration  3.17s (tests 73%, import 22%, transform 5%)
+
+FIX VERIFIED
