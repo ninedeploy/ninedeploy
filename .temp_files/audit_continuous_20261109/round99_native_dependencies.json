@@ -1,0 +1,109 @@
+[
+  {
+    "name": "ninedeploy-monorepo",
+    "version": "0.18.26",
+    "path": "D:\\Codebox\\PROJECTS\\NineDeploy",
+    "private": true
+  },
+  {
+    "name": "ninedeploy",
+    "version": "0.18.26",
+    "path": "D:\\Codebox\\PROJECTS\\NineDeploy\\apps\\cli",
+    "private": false
+  },
+  {
+    "name": "@ninedeploy/server",
+    "version": "0.18.26",
+    "path": "D:\\Codebox\\PROJECTS\\NineDeploy\\apps\\server",
+    "private": true,
+    "dependencies": {
+      "@ninedeploy/db": {
+        "from": "@ninedeploy/db",
+        "version": "link:../../packages/db",
+        "path": "D:\\Codebox\\PROJECTS\\NineDeploy\\packages\\db",
+        "dependencies": {
+          "@libsql/client": {
+            "from": "@libsql/client",
+            "version": "0.18.0",
+            "resolved": "https://registry.npmjs.org/@libsql/client/-/client-0.18.0.tgz",
+            "path": "D:\\Codebox\\PROJECTS\\NineDeploy\\node_modules\\.pnpm\\@libsql+client@0.18.0\\node_modules\\@libsql\\client"
+          }
+        }
+      },
+      "drizzle-orm": {
+        "from": "drizzle-orm",
+        "version": "0.45.3",
+        "resolved": "https://registry.npmjs.org/drizzle-orm/-/drizzle-orm-0.45.3.tgz",
+        "path": "D:\\Codebox\\PROJECTS\\NineDeploy\\node_modules\\.pnpm\\drizzle-orm@0.45.3_@libsql+client@0.18.0_pg@8.23.1\\node_modules\\drizzle-orm",
+        "dependencies": {
+          "@libsql/client": {
+            "from": "@libsql/client",
+            "version": "0.18.0",
+            "resolved": "https://registry.npmjs.org/@libsql/client/-/client-0.18.0.tgz",
+            "path": "D:\\Codebox\\PROJECTS\\NineDeploy\\node_modules\\.pnpm\\@libsql+client@0.18.0\\node_modules\\@libsql\\client"
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "@ninedeploy/web",
+    "version": "0.18.26",
+    "path": "D:\\Codebox\\PROJECTS\\NineDeploy\\apps\\web",
+    "private": true
+  },
+  {
+    "name": "@ninedeploy/db",
+    "version": "0.18.26",
+    "path": "D:\\Codebox\\PROJECTS\\NineDeploy\\packages\\db",
+    "private": true,
+    "dependencies": {
+      "drizzle-orm": {
+        "from": "drizzle-orm",
+        "version": "0.45.3",
+        "resolved": "https://registry.npmjs.org/drizzle-orm/-/drizzle-orm-0.45.3.tgz",
+        "path": "D:\\Codebox\\PROJECTS\\NineDeploy\\node_modules\\.pnpm\\drizzle-orm@0.45.3_@libsql+client@0.18.0_pg@8.23.1\\node_modules\\drizzle-orm",
+        "deduped": true,
+        "dedupedDependenciesCount": 1
+      },
+      "@libsql/client": {
+        "from": "@libsql/client",
+        "version": "0.18.0",
+        "resolved": "https://registry.npmjs.org/@libsql/client/-/client-0.18.0.tgz",
+        "path": "D:\\Codebox\\PROJECTS\\NineDeploy\\node_modules\\.pnpm\\@libsql+client@0.18.0\\node_modules\\@libsql\\client",
+        "dependencies": {
+          "libsql": {
+            "from": "libsql",
+            "version": "0.5.29",
+            "resolved": "https://registry.npmjs.org/libsql/-/libsql-0.5.29.tgz",
+            "path": "D:\\Codebox\\PROJECTS\\NineDeploy\\node_modules\\.pnpm\\libsql@0.5.29\\node_modules\\libsql"
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "@ninedeploy/mcp",
+    "version": "0.18.26",
+    "path": "D:\\Codebox\\PROJECTS\\NineDeploy\\packages\\mcp",
+    "private": false
+  },
+  {
+    "name": "@ninedeploy/plugin-sdk",
+    "version": "0.18.26",
+    "path": "D:\\Codebox\\PROJECTS\\NineDeploy\\packages\\plugin-sdk",
+    "private": false
+  },
+  {
+    "name": "@ninedeploy/schemas",
+    "version": "0.18.26",
+    "path": "D:\\Codebox\\PROJECTS\\NineDeploy\\packages\\schemas",
+    "private": false
+  },
+  {
+    "name": "@ninedeploy/sdk",
+    "version": "0.18.26",
+    "path": "D:\\Codebox\\PROJECTS\\NineDeploy\\packages\\sdk",
+    "private": false
+  }
+]

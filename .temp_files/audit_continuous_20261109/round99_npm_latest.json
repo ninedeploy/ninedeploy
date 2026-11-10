@@ -1,0 +1,35 @@
+{
+  "checkedAt": "2026-11-10T14:50:48.640Z",
+  "records": [
+    {
+      "name": "libsql",
+      "sourceUrl": "https://registry.npmjs.org/libsql/latest",
+      "version": "0.5.29",
+      "nativeOptionalVersions": {
+        "@libsql/darwin-x64": "0.5.29",
+        "@libsql/darwin-arm64": "0.5.29",
+        "@libsql/linux-x64-gnu": "0.5.29",
+        "@libsql/linux-x64-musl": "0.5.29",
+        "@libsql/win32-x64-msvc": "0.5.29",
+        "@libsql/linux-arm64-gnu": "0.5.29",
+        "@libsql/linux-arm64-musl": "0.5.29",
+        "@libsql/linux-arm-gnueabihf": "0.5.29",
+        "@libsql/linux-arm-musleabihf": "0.5.29"
+      },
+      "repository": "git+https://github.com/tursodatabase/libsql-js.git"
+    },
+    {
+      "name": "@libsql/client",
+      "sourceUrl": "https://registry.npmjs.org/@libsql/client/latest",
+      "version": "0.18.0",
+      "libsqlDependency": "^0.5.28",
+      "repository": "git+https://github.com/tursodatabase/libsql-client-ts.git"
+    }
+  ],
+  "installed": {
+    "client": "0.18.0",
+    "libsql": "0.5.29"
+  },
+  "nativeCoreFixInclusionVerified": false,
+  "dependenciesChanged": false
+}

@@ -1,0 +1,12 @@
+{
+  "checkedAt": "2026-11-10T15:21:06.554Z",
+  "elapsedSeconds": 2574,
+  "expectedFileCount": 854,
+  "reachedFileCount": 854,
+  "passedResultLines": 14267,
+  "failedResultLines": 1,
+  "lastResultLine": " ✓ test/test-data-isolation.test.ts > uses a dedicated temporary data directory and database for server tests 1ms",
+  "sourceUnchanged": true,
+  "logBytes": 2243686,
+  "complete": true
+}

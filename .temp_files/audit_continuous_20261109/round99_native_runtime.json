@@ -1,0 +1,8 @@
+{
+  "client": "0.18.0",
+  "native": "0.5.29",
+  "platform": "win32",
+  "architecture": "x64",
+  "node": "v26.13.0",
+  "nativeEntryRelative": "node_modules\\.pnpm\\libsql@0.5.29\\node_modules\\libsql\\index.js"
+}

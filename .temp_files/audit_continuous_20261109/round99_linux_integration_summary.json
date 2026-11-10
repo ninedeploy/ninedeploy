@@ -1,0 +1,15 @@
+{
+  "runId": 42836023433,
+  "jobId": 129898487417,
+  "sourceSha": "e656bbd6e2e322d07aec825c629d81c93a6ad165",
+  "jobUrl": "https://github.com/ninedeploy/ninedeploy/actions/runs/42836023433/job/129898487417",
+  "conclusion": "success",
+  "resultLines": [
+    "2026-11-10T14:38:47.4883929Z ##[group]Run pnpm --filter @ninedeploy/server exec vitest run --config vitest.integration.config.ts",
+    "2026-11-10T14:41:09.1421238Z \u001b[2m Test Files \u001b[22m \u001b[1m\u001b[32m14 passed\u001b[39m\u001b[22m\u001b[90m (14)\u001b[39m",
+    "2026-11-10T14:41:09.1422490Z \u001b[2m      Tests \u001b[22m \u001b[1m\u001b[32m99 passed\u001b[39m\u001b[22m\u001b[90m (99)\u001b[39m",
+    "2026-11-10T14:41:09.1429031Z \u001b[2m   Duration \u001b[22m 140.86s\u001b[2m (tests 89%, import 10%, transform 1%)\u001b[22m"
+  ],
+  "boundary": "Real Docker/PostgreSQL CI job; no full root gate or live production certification inferred.",
+  "decodedLogCharacters": 75148
+}

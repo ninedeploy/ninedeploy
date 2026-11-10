@@ -1,0 +1,22 @@
+{
+  "sourceSha": "e656bbd6e2e322d07aec825c629d81c93a6ad165",
+  "files": {
+    "passed": 853,
+    "failed": 1,
+    "total": 854
+  },
+  "tests": {
+    "passed": 14268,
+    "failed": 1,
+    "skipped": 2,
+    "total": 14271
+  },
+  "exitCode": 1,
+  "nativeSchedulerCases": 24,
+  "nativeWorkerFaultObserved": false,
+  "nativeFaultRootCauseFixed": false,
+  "unitGatePassed": false,
+  "coverageCertified": false,
+  "releaseCertified": false,
+  "sourceUnchanged": true
+}

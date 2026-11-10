@@ -1,0 +1,17 @@
+{
+  "sourceSha": "e656bbd6e2e322d07aec825c629d81c93a6ad165",
+  "startedAt": "2026-11-10T14:38:13.018Z",
+  "runnerPid": 167428,
+  "command": "pnpm.cmd --dir apps/server exec vitest run --coverage=false --maxWorkers=1 --reporter=verbose",
+  "expectedFileCount": 854,
+  "node": "v26.13.0",
+  "coverage": false,
+  "maxWorkers": 1,
+  "GOMAXPROCS": "4",
+  "treeIds": {
+    "apps/server": "5b4327496d125a0b5e8bfba8bd7fc9f4475f878d",
+    "packages": "71f0c98a9364c86cd5796313123841a189433886",
+    "scripts": "bec51d487ac48bfd541e8175fb2b3830b78f6e4f"
+  },
+  "childPid": 174556
+}

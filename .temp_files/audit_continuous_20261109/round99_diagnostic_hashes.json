@@ -1,0 +1,14 @@
+{
+  "round99_server.log": {
+    "originalCapturedSha256": "58e59f6200507f64472f317ad3e5e43e37625edb4f93a2b57c54e738e8be2074",
+    "originalCapturedBytes": 2243686,
+    "repositoryTextSha256": "d812b97dad7a6013297b821c6fb3e6a3f7dcd10a1d51eb0e0c37fd4c5136fcb6",
+    "transportZipDigestVerified": false
+  },
+  "round99_linux_integration_job129898487417.log": {
+    "originalCapturedSha256": "410cf2619af15301a9b3170fd8b11c3f2b9205a2e359787210851487e67850fa",
+    "originalCapturedBytes": 75540,
+    "repositoryTextSha256": "cf4fe8907d93ff0e9191224a0dc940bcba5693ff13857e845dd5249fcca4b5e9",
+    "transportZipDigestVerified": false
+  }
+}

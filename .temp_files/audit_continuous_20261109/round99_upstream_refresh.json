@@ -1,0 +1,38 @@
+{
+  "checkedAt": "2026-11-10",
+  "issue": {
+    "url": "https://github.com/tursodatabase/libsql-js/issues/231",
+    "state": "open",
+    "updatedAt": "2026-10-19T01:11:40Z",
+    "comments": 3
+  },
+  "nativeFix": {
+    "url": "https://github.com/tursodatabase/libsql/pull/2261",
+    "merged": true,
+    "mergeCommit": "d9f2f7d88823207556a2b9cfa3d766ef528538c2"
+  },
+  "interpretation": "Upstream double-close fix is merged; its presence in the installed binding and identity with NineDeploy's R73 crash have not been demonstrated. No dependency, retry or native workaround applied. Reporter experiments are external observations, not local proof.",
+  "localRuntime": {
+    "client": "0.18.0",
+    "libsql": "0.5.29",
+    "node": "26.13.0",
+    "platform": "win32-x64"
+  },
+  "moduleUnloadFix": {
+    "url": "https://github.com/tursodatabase/libsql-js/pull/235",
+    "merged": true,
+    "mergeCommit": "b2b7691644da9570ee98e859fc18bf499167835a",
+    "localIdentityProven": false
+  },
+  "runnerContext": {
+    "configuredPoolOverride": false,
+    "installedVitestCliDefault": "forks",
+    "source": "node_modules/vitest/dist/chunks/cac.CLrZKo1g.js:928"
+  },
+  "stableRegistryCheck": {
+    "file": "round99_npm_latest.json",
+    "libsql": "0.5.29",
+    "client": "0.18.0",
+    "matchesInstalled": true
+  }
+}
