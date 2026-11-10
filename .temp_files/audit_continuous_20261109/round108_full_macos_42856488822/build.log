@@ -1,0 +1,103 @@
+Scope: 5 of 9 workspace projects
+packages/db build$ tsc
+packages/schemas build$ tsc
+packages/schemas build: Done
+packages/db build: Done
+packages/sdk build$ tsc
+packages/sdk build: Done
+packages/mcp build$ tsc
+packages/mcp build: Done
+apps/server build$ tsc
+apps/server build: Done
+Scope: 3 of 9 workspace projects
+packages/schemas build$ tsc
+packages/schemas build: Done
+packages/sdk build$ tsc
+packages/sdk build: Done
+apps/web build$ tsc --noEmit && vite build
+apps/web build: [36mvite v8.3.6 [32mbuilding client environment for production...[36m[39m
+apps/web build: transforming...
+apps/web build: ✓ 2560 modules transformed.
+apps/web build: rendering chunks...
+apps/web build: computing gzip size...
+apps/web build: dist/index.html                                  1.37 kB │ gzip:   0.60 kB
+apps/web build: dist/assets/terminal-vendor-BrP-ENHg.css         3.93 kB │ gzip:   1.01 kB
+apps/web build: dist/assets/react-vendor-DLioOiRN.css           15.41 kB │ gzip:   2.56 kB
+apps/web build: dist/assets/index-CDJ4iNjD.css                 160.94 kB │ gzip:  22.09 kB
+apps/web build: dist/assets/apiCall-Bs35Zxfr.js                  0.53 kB │ gzip:   0.37 kB
+apps/web build: dist/assets/rolldown-runtime-WkwZ5CU-.js         0.59 kB │ gzip:   0.36 kB
+apps/web build: dist/assets/NodeDatabaseBadge-Bfek358I.js        0.62 kB │ gzip:   0.36 kB
+apps/web build: dist/assets/LanguageSwitch-CAc8RKgo.js           0.67 kB │ gzip:   0.44 kB
+apps/web build: dist/assets/ForwardAuthPage-dKAEIGb8.js          1.16 kB │ gzip:   0.68 kB
+apps/web build: dist/assets/multiNode-Czb9hyvk.js                1.16 kB │ gzip:   0.72 kB
+apps/web build: dist/assets/StepUpModal-_xCy295H.js              1.22 kB │ gzip:   0.68 kB
+apps/web build: dist/assets/DeploymentSupport-qB-kzHx1.js        1.47 kB │ gzip:   0.78 kB
+apps/web build: dist/assets/Toast-DAVkmOfl.js                    1.64 kB │ gzip:   0.88 kB
+apps/web build: dist/assets/PluginSlot-ESZf2ncl.js               1.73 kB │ gzip:   0.75 kB
+apps/web build: dist/assets/ForgotPassword-Cg7_X3f_.js           2.29 kB │ gzip:   1.03 kB
+apps/web build: dist/assets/ResetPassword-DYJ_epO-.js            2.53 kB │ gzip:   1.14 kB
+apps/web build: dist/assets/ServiceDomainLauncher-DKpOK8DS.js    3.39 kB │ gzip:   1.43 kB
+apps/web build: dist/assets/OAuthAuthorize-z2AGzvxA.js           3.54 kB │ gzip:   1.39 kB
+apps/web build: dist/assets/cron-DtJfxy2M.js                     3.75 kB │ gzip:   1.46 kB
+apps/web build: dist/assets/GithubAppPages-Zt-IPI2y.js           4.16 kB │ gzip:   1.57 kB
+apps/web build: dist/assets/SleepState-D1NJk74c.js               4.28 kB │ gzip:   1.78 kB
+apps/web build: dist/assets/OsUpdatesCard-DlGLduda.js            4.70 kB │ gzip:   1.80 kB
+apps/web build: dist/assets/TrafficChart-CLZALDSW.js             4.74 kB │ gzip:   1.80 kB
+apps/web build: dist/assets/Doctor-CitWRQLs.js                   4.79 kB │ gzip:   2.04 kB
+apps/web build: dist/assets/DomainTransferAccept-BKH7MGMd.js     5.00 kB │ gzip:   1.86 kB
+apps/web build: dist/assets/auth-BLuDh2Y6.js                     5.43 kB │ gzip:   2.45 kB
+apps/web build: dist/assets/VolumeBackupsPanel-BGfBmWfV.js       5.91 kB │ gzip:   2.03 kB
+apps/web build: dist/assets/UploadSource-DMT21UdV.js             6.00 kB │ gzip:   2.47 kB
+apps/web build: dist/assets/Terminals-CGiAy6Dy.js                6.81 kB │ gzip:   2.44 kB
+apps/web build: dist/assets/AcceptInvite-6vQU6wtJ.js             6.85 kB │ gzip:   1.88 kB
+apps/web build: dist/assets/TerminalPanel-C9r0Yl8K.js            6.90 kB │ gzip:   2.74 kB
+apps/web build: dist/assets/Login-64lX70cq.js                    7.29 kB │ gzip:   2.71 kB
+apps/web build: dist/assets/Labels-BS-kSOPn.js                   7.39 kB │ gzip:   2.80 kB
+apps/web build: dist/assets/Networks-Du1_GEgn.js                 7.49 kB │ gzip:   2.34 kB
+apps/web build: dist/assets/PortMappingsCard-D_KS362P.js         7.76 kB │ gzip:   2.99 kB
+apps/web build: dist/assets/Databases-CgKEzsS7.js                7.96 kB │ gzip:   2.91 kB
+apps/web build: dist/assets/Deploys-BqwTvqJE.js                  8.00 kB │ gzip:   2.68 kB
+apps/web build: dist/assets/esm-BFCrCNMJ.js                      8.56 kB │ gzip:   2.78 kB
+apps/web build: dist/assets/Tunnels-C59_jCyS.js                  9.74 kB │ gzip:   3.20 kB
+apps/web build: dist/assets/Backups-mGSuRcU0.js                  9.78 kB │ gzip:   3.02 kB
+apps/web build: dist/assets/About-C002f3Xy.js                    9.92 kB │ gzip:   3.15 kB
+apps/web build: dist/assets/Projects-B9Xfplvj.js                10.44 kB │ gzip:   3.65 kB
+apps/web build: dist/assets/Activity-D2Xzz_4r.js                10.63 kB │ gzip:   3.36 kB
+apps/web build: dist/assets/EnvCard-DdEJVfn1.js                 10.75 kB │ gzip:   3.94 kB
+apps/web build: dist/assets/NewResource-BlMkRL9Y.js             10.77 kB │ gzip:   3.83 kB
+apps/web build: dist/assets/Users-DGAUU_2t.js                   10.83 kB │ gzip:   3.44 kB
+apps/web build: dist/assets/Domains-1oxiN-6v.js                 11.08 kB │ gzip:   3.88 kB
+apps/web build: dist/assets/DatabaseWizard-dJBWGeZV.js          11.20 kB │ gzip:   3.81 kB
+apps/web build: dist/assets/VolumeBrowser-DxZZxG_7.js           11.30 kB │ gzip:   4.01 kB
+apps/web build: dist/assets/Volumes-PgXSLPBu.js                 12.14 kB │ gzip:   4.11 kB
+apps/web build: dist/assets/Docker-DDi1JC-7.js                  12.23 kB │ gzip:   3.21 kB
+apps/web build: dist/assets/MonitorBits-BJppaSKp.js             12.99 kB │ gzip:   4.71 kB
+apps/web build: dist/assets/ServicesList-B-4pmiq6.js            15.01 kB │ gzip:   4.46 kB
+apps/web build: dist/assets/Hub-B5ycrbUI.js                     16.62 kB │ gzip:   4.56 kB
+apps/web build: dist/assets/ManifestTab-CyMMvJCn.js             17.05 kB │ gzip:   4.93 kB
+apps/web build: dist/assets/Dashboard-CNpH5750.js               27.16 kB │ gzip:   6.89 kB
+apps/web build: dist/assets/Workspaces-CK_khbRT.js              29.53 kB │ gzip:   7.88 kB
+apps/web build: dist/assets/Topology-CGnmYHiY.js                29.84 kB │ gzip:   8.00 kB
+apps/web build: dist/assets/NetworkTab-C1EN0Ys7.js              30.72 kB │ gzip:   8.24 kB
+apps/web build: dist/assets/Traefik-CH1-peT3.js                 35.13 kB │ gzip:   8.89 kB
+apps/web build: dist/assets/Sources-CAQHnxCD.js                 41.23 kB │ gzip:  11.05 kB
+apps/web build: dist/assets/yaml-vendor-8R0iYpNO.js             42.87 kB │ gzip:  14.27 kB
+apps/web build: dist/assets/DeployWizard-C773k1Bv.js            45.47 kB │ gzip:  13.05 kB
+apps/web build: dist/assets/ManifestCreator-DiAdbKpL.js         56.18 kB │ gzip:  15.79 kB
+apps/web build: dist/assets/Monitoring-Duh768Fg.js              62.32 kB │ gzip:  15.24 kB
+apps/web build: dist/assets/Servers-DRlR5Zzy.js                 64.37 kB │ gzip:  13.79 kB
+apps/web build: dist/assets/DatabaseDetail-DlseYMBu.js          86.40 kB │ gzip:  21.95 kB
+apps/web build: dist/assets/data-vendor-CLunkZ0k.js             94.45 kB │ gzip:  29.03 kB
+apps/web build: dist/assets/index-qBW_169r.js                  215.44 kB │ gzip:  67.15 kB
+apps/web build: dist/assets/settings-Do2JeP-U.js               260.51 kB │ gzip:  60.74 kB
+apps/web build: dist/assets/service-D6IYqYoh.js                306.56 kB │ gzip:  73.21 kB
+apps/web build: dist/assets/terminal-vendor-YHeAwa-f.js        332.12 kB │ gzip:  83.33 kB
+apps/web build: dist/assets/react-vendor-C4ewlid9.js           395.97 kB │ gzip: 126.63 kB
+apps/web build: dist/assets/ui-DWlQErf5.js                     716.79 kB │ gzip: 224.49 kB
+apps/web build: [33m[plugin builtin:vite-reporter]
+apps/web build: (!) Some chunks are larger than 600 kB after minification. Consider:
+apps/web build: - Using dynamic import() to code-split the application
+apps/web build: - Use build.rolldownOptions.output.codeSplitting to improve chunking: https://rolldown.rs/reference/OutputOptions.codeSplitting
+apps/web build: - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.[39m
+apps/web build: [32m✓ built in 1.51s[39m
+apps/web build: Done

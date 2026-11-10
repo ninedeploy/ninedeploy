@@ -1,0 +1,23 @@
+{
+  "sourceSha": "a85e29f6bf17ad82299f27fe119405aa96d0815c",
+  "fullRunConclusion": "failure",
+  "exitCode": 1,
+  "filesPassed": 858,
+  "filesExpected": 859,
+  "testsPassed": 14322,
+  "testsSkipped": 2,
+  "testsExpected": 14325,
+  "unhandledErrors": 1,
+  "workerFile": "test/swarmDeploy.test.ts",
+  "nativeExitDecimal": 3221225477,
+  "nativeExitHex": "0xC0000005",
+  "isolatedFollowup": {
+    "filesPassed": 1,
+    "testsPassed": 27,
+    "fullRunCertified": false
+  },
+  "originalLogSha256": "2f9a74ff7e0944aa90d700465905984638725697883cc9029608fc2f6fb1b6b9",
+  "rootCauseKnown": false,
+  "sourceChangedToHideFailure": false,
+  "fullReleaseCertified": false
+}

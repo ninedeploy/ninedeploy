@@ -1,0 +1,18 @@
+import assert from 'node:assert/strict';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+const dir='.temp_files/audit_continuous_20261109/';
+const result=JSON.parse(readFileSync(dir+'round110_server_result.json','utf8'));
+const raw=readFileSync(dir+'round110_server.log');
+const log=raw.toString('utf8').replace(/\x1b\[[0-9;]*m/g,'');
+assert.equal(result.sourceSha,'a85e29f6bf17ad82299f27fe119405aa96d0815c');
+assert.equal(result.exitCode,1);assert.equal(result.unchangedHead,true);assert.equal(result.cleanEnd,true);
+assert.match(log,/Test Files\s+858 passed \(859\)/);
+assert.match(log,/Tests\s+14322 passed \| 2 skipped \(14325\)/);
+assert.match(log,/Errors\s+1 error/);
+assert.match(log,/exit code 3221225477.*test file .*swarmDeploy\.test\.ts/);
+const isolated=readFileSync(dir+'round110_swarm_isolated.log','utf8').replace(/\x1b\[[0-9;]*m/g,'');
+assert.match(isolated,/Test Files\s+1 passed \(1\)/);assert.match(isolated,/Tests\s+27 passed \(27\)/);
+const receipt={sourceSha:result.sourceSha,fullRunConclusion:'failure',exitCode:1,filesPassed:858,filesExpected:859,testsPassed:14322,testsSkipped:2,testsExpected:14325,unhandledErrors:1,workerFile:'test/swarmDeploy.test.ts',nativeExitDecimal:3221225477,nativeExitHex:'0xC0000005',isolatedFollowup:{filesPassed:1,testsPassed:27,fullRunCertified:false},originalLogSha256:createHash('sha256').update(raw).digest('hex'),rootCauseKnown:false,sourceChangedToHideFailure:false,fullReleaseCertified:false};
+writeFileSync(dir+'round110_failure_receipt.json',JSON.stringify(receipt,null,2)+'\n');
+console.log(JSON.stringify(receipt,null,2));

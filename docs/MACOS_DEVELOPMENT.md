@@ -118,7 +118,11 @@ The initial full native run at `e1de1ee8` failed 9 tests in 6 files
 It exposed a real API-only missing-route credential log, missing dashboard build
 prerequisites, host-architecture assumptions and aliased temporary probe paths.
 The follow-up keeps sandbox denials and Paketo's amd64 restriction intact.
-Full native acceptance remains pending a passing follow-up run.
+The follow-up [run 42856488822](https://github.com/ninedeploy/ninedeploy/actions/runs/42856488822)
+passed at `657c815a`: 14,292 server tests passed and 1 skipped across 856 files
+(855 passed, 1 skipped). Controlled CLI and MCP added 24 passes, for 14,316
+passes overall. The downloaded ZIP matched GitHub's SHA-256 digest. This full
+run precedes the later log-drain changes; their separate native evidence is below.
 
 ## Open the same source revision
 
@@ -1220,6 +1224,17 @@ ran 640 server tests in 42 files, 20 controlled native CLI tests in 4 files and
 matched GitHub's artifact digest. This is controlled HTTP/native SQLite evidence,
 not a live Elasticsearch cluster test or full native acceptance.
 
-CloudWatch event-rejection acknowledgement (F1126) adds 7 further regression
-cases. The affected local scope passed 82 tests across 7 files; native follow-up
-for this later change is pending.
+CloudWatch event-rejection acknowledgement (F1126) adds 7 regression cases.
+The affected local scope passed 82 tests across 7 files. The later native
+[run 42858528932](https://github.com/ninedeploy/ninedeploy/actions/runs/42858528932)
+passed at `a85e29f6`: 647 server tests in 43 files, 20 controlled CLI tests in
+4 files and 4 MCP tests in 1 file (671 passes, 48 files). The downloaded ZIP's
+SHA-256 matched GitHub's artifact digest.
+
+Linux CI at `a85e29f6` passed 14,357 server tests in 859 files and the real
+Docker/PostgreSQL integration lane passed 99 tests in 14 files. The separate
+Windows full run failed with native worker exit `0xC0000005` in
+`swarmDeploy.test.ts`: 858 files passed, 14,322 tests passed and 2 skipped, with
+1 unhandled error. That file passed 27 tests in isolation afterward; the full
+Windows failure remains unresolved. Do not treat this as complete cross-platform
+or release acceptance.

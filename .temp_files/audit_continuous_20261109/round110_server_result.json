@@ -1,0 +1,26 @@
+{
+  "sourceSha": "a85e29f6bf17ad82299f27fe119405aa96d0815c",
+  "startedAt": "2026-11-10T16:49:46.072Z",
+  "runnerPid": 25712,
+  "command": "pnpm.cmd --dir apps/server exec vitest run --coverage=false --maxWorkers=1 --reporter=verbose",
+  "expectedFileCount": 859,
+  "node": "v26.13.0",
+  "coverage": false,
+  "maxWorkers": 1,
+  "GOMAXPROCS": "4",
+  "treeIds": {
+    "apps/server": "0be64ac31b5a3f221dfeaaee8f0f6d7feff075e8",
+    "packages": "71f0c98a9364c86cd5796313123841a189433886",
+    "scripts": "bec51d487ac48bfd541e8175fb2b3830b78f6e4f"
+  },
+  "exitCode": 1,
+  "signal": null,
+  "completedAt": "2026-11-10T17:22:21.237Z",
+  "elapsedSeconds": 1955.165,
+  "endingSha": "a85e29f6bf17ad82299f27fe119405aa96d0815c",
+  "endingStatus": "",
+  "unchangedHead": true,
+  "cleanEnd": true,
+  "releaseCertified": false,
+  "nativeFaultRootCauseFixed": false
+}
