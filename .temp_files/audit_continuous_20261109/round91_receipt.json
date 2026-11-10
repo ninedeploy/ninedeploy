@@ -1,0 +1,91 @@
+{
+  "runId": 42823382868,
+  "url": "https://github.com/ninedeploy/ninedeploy/actions/runs/42823382868",
+  "sourceSha": "66c9f4cbaedf46c04110e181eef9b5fa668db021",
+  "environment": {
+    "sha": "66c9f4cbaedf46c04110e181eef9b5fa668db021",
+    "eventSha": "66c9f4cbaedf46c04110e181eef9b5fa668db021",
+    "runId": "42823382868",
+    "timestamp": "2026-11-10T13:19:37.660Z",
+    "platform": "darwin",
+    "architecture": "arm64",
+    "macOS": "26.7.2",
+    "node": "26.12.1",
+    "pnpm": "11.23.0",
+    "git": "git version 2.56.0"
+  },
+  "mcpReadiness": {
+    "platform": "darwin",
+    "architecture": "arm64",
+    "builtEntryExists": true,
+    "workspaceBinExists": true,
+    "directEntryMissingTokenRefusal": true,
+    "workspaceMissingTokenRefusal": true,
+    "directExit": 1,
+    "workspaceExit": 1
+  },
+  "tests": {
+    "unit": {
+      "files": 24,
+      "passed": 307
+    },
+    "nativeCli": {
+      "files": 4,
+      "passed": 20
+    },
+    "mcpColdInstall": {
+      "files": 1,
+      "passed": 4
+    },
+    "totalPassed": 331
+  },
+  "installMcpBinWarning": false,
+  "artifact": {
+    "digest": "sha256:2fa02c64ec4bcdcee287930dc6acdd69dc355ebc4aa851da047101518c2ffc00",
+    "expired": false,
+    "id": 13767079747,
+    "name": "macos-server-audit-66c9f4cbaedf46c04110e181eef9b5fa668db021-1",
+    "size_in_bytes": 12006
+  },
+  "downloadedFiles": [
+    "bootstrap.txt",
+    "build.log",
+    "docker-cli.log",
+    "environment.json",
+    "install.log",
+    "mcp-bin.log",
+    "mcp-cold-install.log",
+    "native-cli.log",
+    "typecheck.log",
+    "unit.log"
+  ],
+  "originalDownloadedFileSha256": {
+    "bootstrap.txt": "30012be350eee6504d15cebb54637a3640c86097ec250629b8f281269e40e38a",
+    "build.log": "4d4986e859d59189ab6f6c5bdf7cc79d6b55495f500ee9282ad52506d7cc1385",
+    "docker-cli.log": "78b5b478b19eeb8370a1655fca2bdfc303c39f1aede8ed50f5c4b9195f4ddbe5",
+    "environment.json": "4a71d8910c128ecac209b23082d3f5eb90c29a3a4c0f97a25805f00a0af74094",
+    "install.log": "9ad11416c4d3515a905b952fda35e88f36dcf3edc0d0db66d0c7d5611b2a6c0d",
+    "mcp-bin.log": "af65553a8d9c14f5fefffe9adf1ac83e470450e8d04dbde00fc08101c0f8082b",
+    "mcp-cold-install.log": "16ba867624c196e65b1430916b3a0a90fabbdd7c5ac76dee02bddcb8c02887ca",
+    "native-cli.log": "78b0216e5ffa13ac3f6e673d2e65c4a9ab57e1f265876e3cbf29de10017654a2",
+    "typecheck.log": "8366207267355d3e3d5bf3bf6e8c94c5f93f6078c34f08973fa2b38cdda6cc92",
+    "unit.log": "153c19efc4d3e7bd0c0793411daacaa6d4ff415f8e054d209115d458dde86250"
+  },
+  "repositoryDiagnosticSha256": {
+    "bootstrap.txt": "30012be350eee6504d15cebb54637a3640c86097ec250629b8f281269e40e38a",
+    "build.log": "4d4986e859d59189ab6f6c5bdf7cc79d6b55495f500ee9282ad52506d7cc1385",
+    "docker-cli.log": "78b5b478b19eeb8370a1655fca2bdfc303c39f1aede8ed50f5c4b9195f4ddbe5",
+    "environment.json": "4a71d8910c128ecac209b23082d3f5eb90c29a3a4c0f97a25805f00a0af74094",
+    "install.log": "9ad11416c4d3515a905b952fda35e88f36dcf3edc0d0db66d0c7d5611b2a6c0d",
+    "mcp-bin.log": "af65553a8d9c14f5fefffe9adf1ac83e470450e8d04dbde00fc08101c0f8082b",
+    "mcp-cold-install.log": "2238675cec4053917865404ad5ab45e20a66657c51e61454d1e479c172475661",
+    "native-cli.log": "6f4bf69d40df2675d98da66fccfa92459381a65773a102fe362052d5751e55a7",
+    "typecheck.log": "8366207267355d3e3d5bf3bf6e8c94c5f93f6078c34f08973fa2b38cdda6cc92",
+    "unit.log": "d31223cda3b3a53733fc32cc09da59d427bfe05a44fa76f2f84117b2f1c19194"
+  },
+  "diagnosticTextNormalization": "LF, trailing whitespace and terminal blanks normalized; original hashes retained",
+  "zipDigestIndependentlyVerified": false,
+  "publishedToNpm": false,
+  "fullReleaseCertified": false,
+  "ssh2NativeAccelerationCertified": false
+}

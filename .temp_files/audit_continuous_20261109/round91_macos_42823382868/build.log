@@ -1,0 +1,11 @@
+Scope: 5 of 9 workspace projects
+packages/db build$ tsc
+packages/schemas build$ tsc
+packages/schemas build: Done
+packages/db build: Done
+packages/sdk build$ tsc
+packages/sdk build: Done
+packages/mcp build$ tsc
+packages/mcp build: Done
+apps/server build$ tsc
+apps/server build: Done

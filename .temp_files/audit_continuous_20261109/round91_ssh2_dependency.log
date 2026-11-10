@@ -1,0 +1,11 @@
+ssh2@1.17.0
+├─┬ docker-modem@5.0.7
+│ └─┬ dockerode@5.0.1
+│   └─┬ testcontainers@12.2.1
+│     ├── @ninedeploy/server@0.18.26 (devDependencies)
+│     └─┬ @testcontainers/postgresql@12.2.1
+│       └── @ninedeploy/server@0.18.26 (devDependencies)
+└─┬ ssh-remote-port-forward@1.0.4
+  └── testcontainers@12.2.1 [deduped]
+
+Found 1 version of ssh2

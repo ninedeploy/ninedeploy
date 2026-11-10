@@ -75,8 +75,17 @@ for exact identity and original/normalized diagnostic hashes. This is native
 workspace-launcher evidence, not npm publication, full release, physical Mac or
 SSH native-acceleration acceptance.
 
-Diagnostic environment follow-up: pending the new native Mac run. Local
-uppercase/lowercase/mixed-case and empty-value controls passed without API use.
+Diagnostic environment checkpoint: [run 42823382868](https://github.com/ninedeploy/ninedeploy/actions/runs/42823382868)
+passed at source `66c9f4cbaedf46c04110e181eef9b5fa668db021` on macOS 26.7.2 arm64.
+All four workspace cases, including uppercase/lowercase/mixed-case and empty
+credential variables, passed alongside 307 unit and 20 native CLI tests: 331
+tests in 29 files. See the [receipt](../.temp_files/audit_continuous_20261109/round91_receipt.json).
+The parent environment was not modified and fixture probes made no API calls.
+
+The earlier optional ssh2 build warning traces through Dockerode/Testcontainers
+[development dependencies](../.temp_files/audit_continuous_20261109/round91_ssh2_dependency.log).
+No direct apps/packages source imports were found; this warning was not a
+confirmed backend startup failure. Native SSH acceleration remains unverified.
 
 ## Open the same source revision
 
