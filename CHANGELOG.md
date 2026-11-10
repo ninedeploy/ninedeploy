@@ -38,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- API-only servers now keep query credentials out of missing-route logs when the dashboard has not been built (F1125).
 - Failed OIDC discovery requests now release unused response bodies before returning the existing provider error (F1120).
 - GitHub OAuth token, profile and email refusals now release unused HTTP bodies while preserving diagnostics and unverified-email fallback behavior (F1121).
 - Teams and Resend success responses and Lark HTTP refusal responses now release unused bodies while retaining provider diagnostics and Lark application error handling (F1119).

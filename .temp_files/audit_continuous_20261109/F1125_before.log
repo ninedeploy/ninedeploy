@@ -1,0 +1,41 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1125_staticLog.test.ts > F1125 dashboard control GET does not log query credentials
+EXPECTED: no logged query credential; ACTUAL: leaked=false; dashboard=true; method=GET
+PROBLEM NOT REPRODUCED
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1125_staticLog.test.ts > F1125 API-only GET does not log query credentials
+EXPECTED: no logged query credential; ACTUAL: leaked=true; dashboard=false; method=GET
+PROBLEM CONFIRMED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1125_staticLog.test.ts > F1125 dashboard control GET does not log query credentials 81ms
+ × .temp_files/audit_continuous_20261109/prove_F1125_staticLog.test.ts > F1125 API-only GET does not log query credentials 7ms
+   → expected true to be false // Object.is equality
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 1 passed (2)
+   Start at  18:32:44
+   Duration  318ms (import 52%, tests 41%, transform 5%, worker 1%)
+
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1125_staticLog.test.ts > F1125 API-only GET does not log query credentials
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1125_staticLog.test.ts:28:22
+     26|       console.log(`EXPECTED: no logged query credential; ACTUAL: leake…
+     27|       console.log(leaked ? 'PROBLEM CONFIRMED' : 'PROBLEM NOT REPRODUC…
+     28|       expect(leaked).toBe(false);
+       |                      ^
+     29|       expect(lines.some((line) => line.includes('incoming request'))).…
+     30|     } finally {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯

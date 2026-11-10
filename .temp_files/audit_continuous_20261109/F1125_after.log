@@ -1,0 +1,18 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1125_staticLog.test.ts > F1125 dashboard control GET does not log query credentials
+EXPECTED: no logged query credential; ACTUAL: leaked=false; dashboard=true; method=GET
+PROBLEM NOT REPRODUCED
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1125_staticLog.test.ts > F1125 API-only GET does not log query credentials
+EXPECTED: no logged query credential; ACTUAL: leaked=false; dashboard=false; method=GET
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1125_staticLog.test.ts > F1125 dashboard control GET does not log query credentials 76ms
+ ✓ .temp_files/audit_continuous_20261109/prove_F1125_staticLog.test.ts > F1125 API-only GET does not log query credentials 3ms
+
+ Test Files  1 passed (1)
+      Tests  2 passed (2)
+   Start at  18:33:02
+   Duration  292ms (import 46%, tests 41%, transform 12%, worker 1%)

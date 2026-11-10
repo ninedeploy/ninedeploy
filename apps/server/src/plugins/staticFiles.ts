@@ -43,18 +43,17 @@ function isApiPath(url: string): boolean {
  * Serve the built web dashboard (apps/web/dist) from the API and fall back to
  * index.html for client-side routes. Registered LAST so every /v1 route wins;
  * unknown API paths still get JSON 404s, only browser HTML navigations get the
- * SPA entry. When no dist is built (dev: Vite serves :5173), this is a no-op.
+ * SPA entry. Without a dist, retain JSON 404s without Fastify's raw-URL log.
  */
 export async function registerStaticFiles(fastify: FastifyInstance, root: string | null): Promise<void> {
   if (!root) {
     fastify.log.info('web dashboard dist not found — API-only mode (build apps/web or set NINEDEPLOY_WEB_DIST)');
-    return;
+  } else {
+    await fastify.register(fastifyStatic, { root, prefix: '/', wildcard: true, index: ['index.html'] });
   }
 
-  await fastify.register(fastifyStatic, { root, prefix: '/', wildcard: true, index: ['index.html'] });
-
   fastify.setNotFoundHandler((req: FastifyRequest, reply: FastifyReply) => {
-    if (!isApiPath(req.url) && req.method === 'GET') {
+    if (root && !isApiPath(req.url) && req.method === 'GET') {
       // R4: the OAuth consent page is never shown inside another site's frame (clickjacking).
       if (req.url.startsWith('/oauth/authorize')) reply.header('X-Frame-Options', 'DENY').header('Content-Security-Policy', "frame-ancestors 'none'");
       return reply.sendFile('index.html');

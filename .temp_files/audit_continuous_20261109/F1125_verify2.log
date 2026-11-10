@@ -1,0 +1,38 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1125_staticLog.test.ts > F1125 API-only GET does not log query credentials
+EXPECTED: no logged query credential; ACTUAL: leaked=false; dashboard=false; method=GET
+PROBLEM NOT REPRODUCED
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1125_staticLog.test.ts > F1125 API-only POST does not log query credentials
+EXPECTED: no logged query credential; ACTUAL: leaked=false; dashboard=false; method=POST
+PROBLEM NOT REPRODUCED
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1125_staticLog.test.ts > F1125 API-only HEAD does not log query credentials
+EXPECTED: no logged query credential; ACTUAL: leaked=false; dashboard=false; method=HEAD
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1125_staticLog.test.ts > F1125 API-only GET does not log query credentials 85ms
+ ✓ .temp_files/audit_continuous_20261109/prove_F1125_staticLog.test.ts > F1125 API-only POST does not log query credentials 4ms
+ ✓ .temp_files/audit_continuous_20261109/prove_F1125_staticLog.test.ts > F1125 API-only HEAD does not log query credentials 4ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1125_staticLog.test.ts > F1125 dashboard control GET does not log query credentials
+EXPECTED: no logged query credential; ACTUAL: leaked=false; dashboard=true; method=GET
+PROBLEM NOT REPRODUCED
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1125_staticLog.test.ts > F1125 dashboard control POST does not log query credentials
+EXPECTED: no logged query credential; ACTUAL: leaked=false; dashboard=true; method=POST
+PROBLEM NOT REPRODUCED
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1125_staticLog.test.ts > F1125 dashboard control HEAD does not log query credentials
+EXPECTED: no logged query credential; ACTUAL: leaked=false; dashboard=true; method=HEAD
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1125_staticLog.test.ts > F1125 dashboard control GET does not log query credentials 11ms
+ ✓ .temp_files/audit_continuous_20261109/prove_F1125_staticLog.test.ts > F1125 dashboard control POST does not log query credentials 3ms
+ ✓ .temp_files/audit_continuous_20261109/prove_F1125_staticLog.test.ts > F1125 dashboard control HEAD does not log query credentials 4ms
+
+ Test Files  1 passed (1)
+      Tests  6 passed (6)
+   Start at  18:33:03
+   Duration  373ms (tests 47%, import 46%, transform 5%, worker 1%)
