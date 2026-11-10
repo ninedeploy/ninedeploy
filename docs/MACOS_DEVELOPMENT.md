@@ -876,3 +876,31 @@ The native fetch case uses only a loopback fixture and an explicitly triggered
 abort signal, without sleeps or a registry. Native Mac execution, live registry
 rollout and full release/coverage certification remain unverified. Round73's
 native worker fault remains unresolved.
+
+Round 83 (F1103/F1104) addresses structural backup-check helper cleanup. Helpers
+now receive a UUID name before create, so a committed create whose CLI response
+is lost can be removed by that name. Both uncertain-create and normal cleanup
+request `rm -f -v`, including helper-owned anonymous volumes. No volume prune or
+source-backup mutation is used.
+
+Beforeproof: two failures/one normal control. Corrected native Docker CLI fixture
+also failed two cases/one control before patch; it observed a committed create
+with a dropped response and removal without the volume flag. After patch,
+original three cases passed. Ten permanent lifecycle cases were seen red (eight
+failures/two controls), then passed with the original proof in three consecutive
+verifier runs. They gate two concurrent checkers explicitly, and cover copy,
+start, timeout, image failure, foreign resources and cleanup-error policy. Three
+native CLI cases passed three times. The scope passed 222 tests in six files;
+GOMAXPROCS=4 server typecheck/build, five-file lint and diff checks passed.
+
+```bash
+pnpm --dir apps/server exec vitest run test/lib/backupDrillHelperLifecycle.test.ts test/lib/backupDrill.test.ts test/lib/backupDrill.coverage.test.ts --coverage=false
+pnpm --dir apps/server exec vitest run --config vitest.integration.config.ts test/integration/backupDrillHelperLifecycle.test.ts --coverage=false
+```
+
+The native tests need Docker CLI on PATH and use only a private config plus a
+loopback-controlled daemon fixture. Copy/start are isolated seams; this proves
+CLI cleanup requests and modeled ownership, not actual Engine storage deletion
+or a restored database. The structural checker retains best-effort cleanup: a
+persistent daemon failure or a panel crash can still leave a helper. No native
+Mac run, full release or resolution of the round73 worker fault is implied.

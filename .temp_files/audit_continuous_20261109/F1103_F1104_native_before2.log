@@ -1,0 +1,47 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/integration/backupDrillHelperLifecycle.test.ts > native CLI normal create is followed by container removal 1446ms
+ × test/integration/backupDrillHelperLifecycle.test.ts > native CLI lost create response still reaches helper cleanup 616ms
+   → expected { name: '', …(1) } to be undefined
+ × test/integration/backupDrillHelperLifecycle.test.ts > native CLI removal requests anonymous volume cleanup 2637ms
+   → expected true to be false // Object.is equality
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/integration/backupDrillHelperLifecycle.test.ts > native CLI lost create response still reaches helper cleanup
+AssertionError: expected { name: '', …(1) } to be undefined
+
+- Expected:
+undefined
+
++ Received:
+{
+  "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "name": "",
+}
+
+ ❯ test/integration/backupDrillHelperLifecycle.test.ts:75:228
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  test/integration/backupDrillHelperLifecycle.test.ts > native CLI removal requests anonymous volume cleanup
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ test/integration/backupDrillHelperLifecycle.test.ts:76:177
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 1 passed (3)
+   Start at  12:59:57
+   Duration  5.67s (tests 86%, import 11%, transform 4%)

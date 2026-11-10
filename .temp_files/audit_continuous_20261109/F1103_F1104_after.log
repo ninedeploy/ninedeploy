@@ -1,0 +1,19 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1103_F1104_drillHelpers.test.ts > F1103: committed create with a lost reply still cleans its container
+EXPECTED retained helpers:0 ACTUAL: 0
+PROBLEM NOT REPRODUCED
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1103_F1104_drillHelpers.test.ts > F1104: successful checker releases its anonymous volume
+EXPECTED retained anonymous volumes:0 ACTUAL: 0
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1103_F1104_drillHelpers.test.ts > control: normal checker removes its container 7ms
+ ✓ .temp_files/audit_continuous_20261109/prove_F1103_F1104_drillHelpers.test.ts > F1103: committed create with a lost reply still cleans its container 3ms
+ ✓ .temp_files/audit_continuous_20261109/prove_F1103_F1104_drillHelpers.test.ts > F1104: successful checker releases its anonymous volume 2ms
+
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
+   Start at  13:00:44
+   Duration  778ms (import 69%, transform 28%, tests 2%, worker 1%)

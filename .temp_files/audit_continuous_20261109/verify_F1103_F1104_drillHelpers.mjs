@@ -1,0 +1,2 @@
+import {spawnSync} from 'node:child_process';
+for(const command of ['pnpm.cmd exec vitest run --config .temp_files/audit_continuous_20261109/F1073.config.ts .temp_files/audit_continuous_20261109/prove_F1103_F1104_drillHelpers.test.ts --reporter=verbose','pnpm.cmd --dir apps/server exec vitest run test/lib/backupDrillHelperLifecycle.test.ts --coverage=false --reporter=verbose']){const r=spawnSync('cmd.exe',['/d','/s','/c',command],{encoding:'utf8'});process.stdout.write((r.stdout??'')+(r.stderr??''));if(r.status!==0)process.exit(r.status??1);}console.log('FIX VERIFIED');

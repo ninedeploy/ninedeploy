@@ -1,0 +1,11 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/integration/backupDrillHelperLifecycle.test.ts > native CLI normal create is followed by container removal 772ms
+ ✓ test/integration/backupDrillHelperLifecycle.test.ts > native CLI lost create response still reaches helper cleanup 738ms
+ ✓ test/integration/backupDrillHelperLifecycle.test.ts > native CLI removal requests anonymous volume cleanup 928ms
+
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
+   Start at  13:02:19
+   Duration  3.91s (tests 77%, import 17%, transform 5%)

@@ -1,0 +1,1 @@
+import fs from 'node:fs';const p='docs/MACOS_DEVELOPMENT.md';let s=fs.readFileSync(p,'utf8');s=s.replace('The scope passed222tests/sixfiles;\nGOMAXPROCS=4server typecheck/build','The scope passed 222 tests in six files;\nGOMAXPROCS=4 server typecheck/build');fs.writeFileSync(p,s);

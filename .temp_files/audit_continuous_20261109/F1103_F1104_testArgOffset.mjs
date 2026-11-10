@@ -1,0 +1,1 @@
+import fs from 'node:fs';const p='apps/server/test/lib/backupDrill.test.ts';let s=fs.readFileSync(p,'utf8');const a="dockerCall('create')!.args.slice(1, 3)";if(!s.includes(a))throw Error('slice anchor absent');s=s.replace(a,"dockerCall('create')!.args.slice(3, 5)");fs.writeFileSync(p,s);

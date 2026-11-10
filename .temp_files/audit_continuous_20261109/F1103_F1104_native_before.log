@@ -1,0 +1,98 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ × test/integration/backupDrillHelperLifecycle.test.ts > native CLI normal create is followed by container removal 329ms
+   → expected [ 'HEAD /_ping', 'GET /_ping', …(4) ] to deeply equal []
+ × test/integration/backupDrillHelperLifecycle.test.ts > native CLI lost create response still reaches helper cleanup 339ms
+   → expected [ 'HEAD /_ping', 'GET /_ping', …(4) ] to deeply equal []
+ × test/integration/backupDrillHelperLifecycle.test.ts > native CLI removal requests anonymous volume cleanup 663ms
+   → expected [ 'HEAD /_ping', 'GET /_ping', …(4) ] to deeply equal []
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/integration/backupDrillHelperLifecycle.test.ts > native CLI normal create is followed by container removal
+AssertionError: expected [ 'HEAD /_ping', 'GET /_ping', …(4) ] to deeply equal []
+
+- Expected
++ Received
+
+- []
++ [
++   "HEAD /_ping",
++   "GET /_ping",
++   "HEAD /_ping",
++   "GET /_ping",
++   "HEAD /_ping",
++   "GET /_ping",
++ ]
+
+ ❯ check test/integration/backupDrillHelperLifecycle.test.ts:69:24
+     67|   try {
+     68|     const result = await validateDumpFile('redis', file, 'redis:fixtur…
+     69|     expect(unexpected).toEqual([]);
+       |                        ^
+     70|     return { result, container, volume, deletes, source: await readFil…
+     71|   } finally { api.closeAllConnections(); await new Promise<void>(done …
+ ❯ test/integration/backupDrillHelperLifecycle.test.ts:73:94
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  test/integration/backupDrillHelperLifecycle.test.ts > native CLI lost create response still reaches helper cleanup
+AssertionError: expected [ 'HEAD /_ping', 'GET /_ping', …(4) ] to deeply equal []
+
+- Expected
++ Received
+
+- []
++ [
++   "HEAD /_ping",
++   "GET /_ping",
++   "HEAD /_ping",
++   "GET /_ping",
++   "HEAD /_ping",
++   "GET /_ping",
++ ]
+
+ ❯ check test/integration/backupDrillHelperLifecycle.test.ts:69:24
+     67|   try {
+     68|     const result = await validateDumpFile('redis', file, 'redis:fixtur…
+     69|     expect(unexpected).toEqual([]);
+       |                        ^
+     70|     return { result, container, volume, deletes, source: await readFil…
+     71|   } finally { api.closeAllConnections(); await new Promise<void>(done …
+ ❯ test/integration/backupDrillHelperLifecycle.test.ts:74:97
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  test/integration/backupDrillHelperLifecycle.test.ts > native CLI removal requests anonymous volume cleanup
+AssertionError: expected [ 'HEAD /_ping', 'GET /_ping', …(4) ] to deeply equal []
+
+- Expected
++ Received
+
+- []
++ [
++   "HEAD /_ping",
++   "GET /_ping",
++   "HEAD /_ping",
++   "GET /_ping",
++   "HEAD /_ping",
++   "GET /_ping",
++ ]
+
+ ❯ check test/integration/backupDrillHelperLifecycle.test.ts:69:24
+     67|   try {
+     68|     const result = await validateDumpFile('redis', file, 'redis:fixtur…
+     69|     expect(unexpected).toEqual([]);
+       |                        ^
+     70|     return { result, container, volume, deletes, source: await readFil…
+     71|   } finally { api.closeAllConnections(); await new Promise<void>(done …
+ ❯ test/integration/backupDrillHelperLifecycle.test.ts:75:89
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  3 failed (3)
+   Start at  12:59:39
+   Duration  2.39s (tests 59%, import 24%, transform 17%)

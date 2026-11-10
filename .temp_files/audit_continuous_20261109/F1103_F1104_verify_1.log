@@ -1,0 +1,20 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/lib/backupDrillHelperLifecycle.test.ts > control: normal checker removes its owned helper and volume 8ms
+ ✓ test/lib/backupDrillHelperLifecycle.test.ts > cleans helper and volume after create 3ms
+ ✓ test/lib/backupDrillHelperLifecycle.test.ts > cleans helper and volume after create-timeout 3ms
+ ✓ test/lib/backupDrillHelperLifecycle.test.ts > cleans helper and volume after copy 4ms
+ ✓ test/lib/backupDrillHelperLifecycle.test.ts > cleans helper and volume after start 3ms
+ ✓ test/lib/backupDrillHelperLifecycle.test.ts > cleans helper and volume after timeout 3ms
+ ✓ test/lib/backupDrillHelperLifecycle.test.ts > does not attempt helper cleanup if image inspection failed before create 3ms
+ ✓ test/lib/backupDrillHelperLifecycle.test.ts > cleanup errors preserve the structural best-effort verdict policy 3ms
+ ✓ test/lib/backupDrillHelperLifecycle.test.ts > removes no unrelated container, volume or named-volume fixture 3ms
+ ✓ test/lib/backupDrillHelperLifecycle.test.ts > lost create cleanup remains scoped while another checker completes 3ms
+
+ Test Files  1 passed (1)
+      Tests  10 passed (10)
+   Start at  13:01:53
+   Duration  768ms (import 68%, transform 25%, tests 6%)
+
+FIX VERIFIED

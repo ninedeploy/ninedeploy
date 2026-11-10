@@ -501,13 +501,13 @@ describe('lib/backupDrill', () => {
       expect(execState.calls.map((c) => c.cmd)).toEqual(['docker', 'docker', 'docker', 'docker', 'docker']);
       expect(dockerCall('image')!.args).toEqual(['image', 'inspect', '--format', '{{.Id}}', 'postgres:18']);
       expect(dockerCall('create')!.args).toEqual([
-        'create', '--network', 'none', '--cap-drop', 'ALL', '--cap-add', 'DAC_READ_SEARCH', '--security-opt', 'no-new-privileges',
+        'create', '--name', expect.stringMatching(/^ninedeploy-drill-check-[0-9a-f-]{36}$/), '--network', 'none', '--cap-drop', 'ALL', '--cap-add', 'DAC_READ_SEARCH', '--security-opt', 'no-new-privileges',
         '--user', '0:0', '--pull', 'never', '--entrypoint', 'pg_restore', 'postgres:18',
         '--list', '/tmp/ninedeploy-drill.dump',
       ]);
       expect(dockerCall('cp')!.args).toEqual(['cp', file, 'cid123:/tmp/ninedeploy-drill.dump']);
       expect(dockerCall('start')!.args).toEqual(['start', '-a', 'cid123']);
-      expect(dockerCall('rm')!.args).toEqual(['rm', '-f', 'cid123']);
+      expect(dockerCall('rm')!.args).toEqual(['rm', '-f', '-v', 'cid123']);
     });
 
     it('uses the pgvector image for a pgvector database', async () => {
@@ -597,7 +597,7 @@ describe('lib/backupDrill', () => {
       expect(result.details).toMatchObject({ tool: 'redis-check-rdb', image: 'redis:8.8' });
       expect(execState.calls.every((c) => c.cmd === 'docker')).toBe(true);
       expect(dockerCall('create')!.args.slice(-4)).toEqual(['--entrypoint', 'redis-check-rdb', 'redis:8.8', '/tmp/ninedeploy-drill.dump']);
-      expect(dockerCall('create')!.args.slice(1, 3)).toEqual(['--network', 'none']);
+      expect(dockerCall('create')!.args.slice(3, 5)).toEqual(['--network', 'none']);
       expect(dockerCall('cp')!.args).toEqual(['cp', file, 'cid123:/tmp/ninedeploy-drill.dump']);
     });
 
@@ -649,7 +649,7 @@ describe('lib/backupDrill', () => {
       const result = await runBackupDrill(db, 1, 1);
       expect(result.status).toBe('failed');
       expect(result.error).toMatch(/redis-check-rdb rejected the file: .*Unexpected EOF/);
-      expect(dockerCall('rm')!.args).toEqual(['rm', '-f', 'cid123']);
+      expect(dockerCall('rm')!.args).toEqual(['rm', '-f', '-v', 'cid123']);
     });
 
     it('is unverifiable when docker is not installed (spawn ENOENT)', async () => {
@@ -700,7 +700,7 @@ describe('lib/backupDrill', () => {
       const result = await runBackupDrill(db, 1, 1);
       expect(result.status).toBe('failed');
       expect(result.error).toMatch(/redis-check-rdb rejected the file: .*Unexpected EOF/);
-      expect(dockerCall('rm')!.args).toEqual(['rm', '-f', 'cid123']);
+      expect(dockerCall('rm')!.args).toEqual(['rm', '-f', '-v', 'cid123']);
     });
 
     it('is unverifiable when the check times out', async () => {

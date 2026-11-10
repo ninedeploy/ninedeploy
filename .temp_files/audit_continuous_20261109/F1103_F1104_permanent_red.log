@@ -1,0 +1,113 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ × test/lib/backupDrillHelperLifecycle.test.ts > control: normal checker removes its owned helper and volume 12ms
+   → expected 1 to be +0 // Object.is equality
+ × test/lib/backupDrillHelperLifecycle.test.ts > cleans helper and volume after create 3ms
+   → expected 1 to be +0 // Object.is equality
+ × test/lib/backupDrillHelperLifecycle.test.ts > cleans helper and volume after create-timeout 3ms
+   → expected 1 to be +0 // Object.is equality
+ × test/lib/backupDrillHelperLifecycle.test.ts > cleans helper and volume after copy 4ms
+   → expected 1 to be +0 // Object.is equality
+ × test/lib/backupDrillHelperLifecycle.test.ts > cleans helper and volume after start 3ms
+   → expected 1 to be +0 // Object.is equality
+ × test/lib/backupDrillHelperLifecycle.test.ts > cleans helper and volume after timeout 4ms
+   → expected 1 to be +0 // Object.is equality
+ ✓ test/lib/backupDrillHelperLifecycle.test.ts > does not attempt helper cleanup if image inspection failed before create 2ms
+ ✓ test/lib/backupDrillHelperLifecycle.test.ts > cleanup errors preserve the structural best-effort verdict policy 3ms
+ × test/lib/backupDrillHelperLifecycle.test.ts > removes no unrelated container, volume or named-volume fixture 4ms
+   → expected [ 'named-operator-volume', …(2) ] to deeply equal [ Array(2) ]
+ × test/lib/backupDrillHelperLifecycle.test.ts > lost create cleanup remains scoped while another checker completes 3ms
+   → expected 2 to be 1 // Object.is equality
+
+ Test Files  1 failed (1)
+      Tests  8 failed | 2 passed (10)
+   Start at  13:01:48
+   Duration  868ms (import 62%, transform 31%, tests 6%, worker 1%)
+
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 8 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/lib/backupDrillHelperLifecycle.test.ts > control: normal checker removes its owned helper and volume
+AssertionError: expected 1 to be +0 // Object.is equality
+
+- Expected
++ Received
+
+- 0
++ 1
+
+ ❯ test/lib/backupDrillHelperLifecycle.test.ts:55:195
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/8]⎯
+
+ FAIL  test/lib/backupDrillHelperLifecycle.test.ts > cleans helper and volume after create
+ FAIL  test/lib/backupDrillHelperLifecycle.test.ts > cleans helper and volume after create-timeout
+AssertionError: expected 1 to be +0 // Object.is equality
+
+- Expected
++ Received
+
+- 0
++ 1
+
+ ❯ test/lib/backupDrillHelperLifecycle.test.ts:57:148
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/8]⎯
+
+ FAIL  test/lib/backupDrillHelperLifecycle.test.ts > cleans helper and volume after copy
+ FAIL  test/lib/backupDrillHelperLifecycle.test.ts > cleans helper and volume after start
+ FAIL  test/lib/backupDrillHelperLifecycle.test.ts > cleans helper and volume after timeout
+AssertionError: expected 1 to be +0 // Object.is equality
+
+- Expected
++ Received
+
+- 0
++ 1
+
+ ❯ test/lib/backupDrillHelperLifecycle.test.ts:57:184
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/8]⎯
+
+ FAIL  test/lib/backupDrillHelperLifecycle.test.ts > removes no unrelated container, volume or named-volume fixture
+AssertionError: expected [ 'named-operator-volume', …(2) ] to deeply equal [ Array(2) ]
+
+- Expected
++ Received
+
+  [
+    "named-operator-volume",
++   "owned-cid-1",
+    "unrelated",
+  ]
+
+ ❯ test/lib/backupDrillHelperLifecycle.test.ts:63:162
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/8]⎯
+
+ FAIL  test/lib/backupDrillHelperLifecycle.test.ts > lost create cleanup remains scoped while another checker completes
+AssertionError: expected 2 to be 1 // Object.is equality
+
+- Expected
++ Received
+
+- 1
++ 2
+
+ ❯ test/lib/backupDrillHelperLifecycle.test.ts:72:71
+     70|     await reached; expect(state.containers.size).toBe(1);
+     71|     expect((await validateDumpFile('redis', path, 'redis:fixture')).ou…
+     72|     expect(state.containers.size).toBe(1); expect(state.volumes.size).…
+       |                                                                       ^
+     73|   } finally { release(); await first; }
+     74|   expect(state.containers.size).toBe(0); expect(state.volumes.size).to…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/8]⎯
+
+
+EXIT 1

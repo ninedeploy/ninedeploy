@@ -1,0 +1,52 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1103_F1104_drillHelpers.test.ts > F1103: committed create with a lost reply still cleans its container
+EXPECTED retained helpers:0 ACTUAL: 1
+PROBLEM CONFIRMED
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1103_F1104_drillHelpers.test.ts > F1104: successful checker releases its anonymous volume
+EXPECTED retained anonymous volumes:0 ACTUAL: 1
+PROBLEM CONFIRMED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1103_F1104_drillHelpers.test.ts > control: normal checker removes its container 5ms
+ × .temp_files/audit_continuous_20261109/prove_F1103_F1104_drillHelpers.test.ts > F1103: committed create with a lost reply still cleans its container 5ms
+   → expected 1 to be +0 // Object.is equality
+ × .temp_files/audit_continuous_20261109/prove_F1103_F1104_drillHelpers.test.ts > F1104: successful checker releases its anonymous volume 3ms
+   → expected 1 to be +0 // Object.is equality
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1103_F1104_drillHelpers.test.ts > F1103: committed create with a lost reply still cleans its container
+AssertionError: expected 1 to be +0 // Object.is equality
+
+- Expected
++ Received
+
+- 0
++ 1
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1103_F1104_drillHelpers.test.ts:8:325
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1103_F1104_drillHelpers.test.ts > F1104: successful checker releases its anonymous volume
+AssertionError: expected 1 to be +0 // Object.is equality
+
+- Expected
++ Received
+
+- 0
++ 1
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1103_F1104_drillHelpers.test.ts:9:303
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 1 passed (3)
+   Start at  12:58:50
+   Duration  940ms (import 63%, transform 34%, tests 2%, worker 1%)

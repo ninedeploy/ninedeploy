@@ -25,6 +25,7 @@
  * backups are fetched to a local temp first via
  * `lib/backupRemote.ts`.
  */
+import { randomUUID } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { open, readdir, stat, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -481,13 +482,15 @@ async function checkInEngineImage(image: string, file: string, tool: string, arg
   } catch (err) {
     return { kind: 'unavailable', reason: `docker or the engine image ${image} is not available on this host (${errText(err)})` };
   }
+  // A create may commit even when its response is lost. Retain an owned name.
+  const name = `ninedeploy-drill-check-${randomUUID()}`;
   let cid: string;
   try {
     cid = (
       await capture(
         'docker',
         [
-          'create',
+          'create', '--name', name,
           '--network', 'none',
           '--cap-drop', 'ALL',
           // `docker cp` keeps the owner and mode of the decrypted temp file (the panel's
@@ -507,6 +510,7 @@ async function checkInEngineImage(image: string, file: string, tool: string, arg
       )
     ).trim();
   } catch (err) {
+    await run('docker', ['rm', '-f', '-v', name], { timeoutMs: DOCKER_QUICK_TIMEOUT_MS }, () => {}).catch(() => undefined);
     return { kind: 'unavailable', reason: `could not create a ${image} drill container (${errText(err)})` };
   }
   const output: string[] = [];
@@ -534,7 +538,7 @@ async function checkInEngineImage(image: string, file: string, tool: string, arg
       return { kind: 'rejected', error: errText(err), output };
     }
   } finally {
-    await run('docker', ['rm', '-f', cid], { timeoutMs: DOCKER_QUICK_TIMEOUT_MS }, () => {}).catch(() => undefined);
+    await run('docker', ['rm', '-f', '-v', cid], { timeoutMs: DOCKER_QUICK_TIMEOUT_MS }, () => {}).catch(() => undefined);
   }
 }
 

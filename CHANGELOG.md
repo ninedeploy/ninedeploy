@@ -36,6 +36,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Structural backup checkers now retain a UUID helper identity and attempt cleanup when Docker commits a create but its CLI reply is lost (F1103).
+- Structural backup checker cleanup now also requests removal of helper-owned anonymous volumes (F1104).
 - Manifest probes now verify SHA-256/SHA-512 against bounded response bytes before scheduling updates and skip unsupported hash algorithms (F1102).
 - Manifest probes now reject malformed OCI content-digest metadata before it can seed an auto-update baseline or queue a deployment, preserving valid registered and opaque digest syntax (F1101).
 - Watch parsing now rejects malformed registry host text before it can alter manifest probe URI path, query, or fragment semantics (F1099).

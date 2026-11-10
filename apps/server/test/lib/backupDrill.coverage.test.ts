@@ -223,7 +223,7 @@ describe('drill container bookkeeping', () => {
     execState.handler = dockerReplies({ cp: { throw: new Error('copy failed') } });
     const r = await validateDumpFile('valkey', file, 'valkey/valkey:9');
     expect((r as { error: string }).error).toMatch(/could not copy the dump into the drill container \(copy failed\)/);
-    expect(execState.calls.at(-1)).toEqual({ cmd: 'docker', args: ['rm', '-f', 'cid9'] });
+    expect(execState.calls.at(-1)).toEqual({ cmd: 'docker', args: ['rm', '-f', '-v', 'cid9'] });
   });
 
   it('a rejection with no tool output names only the error; the rm failure is ignored', async () => {
