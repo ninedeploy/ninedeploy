@@ -22,6 +22,7 @@ const livePlan = async (): Promise<ImportPlan> => planFromCaprover(fromFixture(c
 /** A panel that hands out ids and remembers every call; `reuse` mimics reuseExisting on a name it has seen. */
 function fakePanel() {
   const calls: Array<{ op: string; input: unknown }> = [];
+  const attached: Array<{ id: number; serviceId: number; databaseId: number; envAlias: string }> = [];
   const byName = new Map<string, number>();
   let next = 100;
   const idFor = (name: string) => {
@@ -32,8 +33,17 @@ function fakePanel() {
     services: { create: vi.fn(async (input) => { calls.push({ op: 'service', input }); return { id: idFor(`s:${input.name}`) }; }) },
     databases: { create: vi.fn(async (input) => { calls.push({ op: 'database', input }); return { id: idFor(`d:${input.name}`) }; }) },
     env: { import: vi.fn(async (serviceId, content) => { calls.push({ op: 'env', input: { serviceId, content } }); return { imported: envFileKeys(content).length, skipped: 0, errors: [] }; }) },
+    attachments: {
+      list: vi.fn(async (serviceId) => attached.filter((a) => a.serviceId === serviceId)),
+      create: vi.fn(async (serviceId, input) => {
+        calls.push({ op: 'attach', input: { serviceId, ...input } });
+        const a = { id: 500 + attached.length, serviceId, databaseId: input.databaseId, envAlias: input.envAlias ?? 'DATABASE_URL' };
+        attached.push(a);
+        return a;
+      }),
+    },
   };
-  return { client, calls };
+  return { client, calls, attached };
 }
 
 /** A receipt store that keeps every saved snapshot, as the file would. */
@@ -309,5 +319,61 @@ describe('ninedeploy import apply', () => {
     expect(renderReceipt(r)).toBe('  … service a: pending\n  – env of a: skipped\n      n');
     expect(renderApplyPreview({ planVersion: 1, source: { kind: 'caprover', url: 'u', version: null, scope: '' }, generatedAt: '', services: [], databases: [{ ref: 'x', name: 'x', engine: null, image: null, issues: [] }], notes: [] }, null, {}))
       .toBe('Services (created, not deployed):\nDatabases (created empty):\n  – x: skipped, no managed equivalent');
+  });
+});
+
+describe('import apply: connection strings that name the source', () => {
+  const SECRET = 'SENTINEL-attach';
+  const env = `DB_PASSWORD=${SECRET}\nurl=http://blog.example\nDATABASE_URL=postgres://ghost:${SECRET}@srv-captain--pg:5432/ghost\nDB_HOST=pg\n`;
+
+  it('attaches the new database under the variable, says what needs a person, and never stores a value', async () => {
+    const plan = await livePlan();
+    const { client, calls } = fakePanel();
+    const s = store();
+    const receipt = await applyPlan(plan, { envFiles: { blog: env } }, { client, panel: PANEL, receipt: null, save: s.save });
+    const pgId = receipt.items['database:pg']!.id!;
+    const blogId = receipt.items['service:blog']!.id!;
+    expect(calls.filter((c) => c.op === 'attach').map((c) => c.input)).toEqual([{ serviceId: blogId, databaseId: pgId, envAlias: 'DATABASE_URL', reuseExisting: true }]);
+    expect(receipt.items['attach:blog:DATABASE_URL']).toMatchObject({ kind: 'attach', state: 'done', id: 500 });
+    expect(receipt.items['attach:blog:DATABASE_URL']!.notes[0]).toMatch(/Attached pg as DATABASE_URL \(the copied value named srv-captain--pg\)\. The service's own DATABASE_URL still shows the old value/);
+    expect(receipt.items['attach:blog:DB_HOST']).toMatchObject({ state: 'skipped', notes: [expect.stringMatching(/^DB_HOST names the source's database pg \(pg\): it holds the source database's host/)] });
+    // pending before the call, done after it
+    expect(s.snapshots.map((r) => r.items['attach:blog:DATABASE_URL']?.state).filter(Boolean)).toEqual(['pending', 'done', 'done']);
+    expect(JSON.stringify(s.snapshots)).not.toContain(SECRET);
+    expect(renderApplyPreview(plan, null, { blog: env })).toContain('  + DATABASE_URL of blog: attach pg under DATABASE_URL (the copied value names srv-captain--pg)');
+    expect(renderApplyPreview(plan, null, { blog: env })).not.toContain(SECRET);
+
+    // A rerun attaches nothing twice; an attachment made by hand counts.
+    const again = await applyPlan(plan, { envFiles: { blog: env } }, { client, panel: PANEL, receipt: structuredClone(receipt), save: () => undefined });
+    expect(calls.filter((c) => c.op === 'attach')).toHaveLength(1);
+    const lost = structuredClone(again);
+    delete lost.items['attach:blog:DATABASE_URL'];
+    const healed = await applyPlan(plan, { envFiles: { blog: env } }, { client, panel: PANEL, receipt: lost, save: () => undefined });
+    expect(calls.filter((c) => c.op === 'attach')).toHaveLength(1);
+    expect(healed.items['attach:blog:DATABASE_URL']).toMatchObject({ state: 'done', id: 500 });
+  });
+
+  it('refuses a variable another database already sets, waits for a database not created, and records panel errors', async () => {
+    const plan = await livePlan();
+    let { client, attached } = fakePanel();
+    const first = await applyPlan(plan, {}, { client, panel: PANEL, receipt: null, save: () => undefined });
+    attached.push({ id: 9, serviceId: first.items['service:blog']!.id!, databaseId: 4242, envAlias: 'DATABASE_URL' });
+    let r = await applyPlan(plan, { envFiles: { blog: env } }, { client, panel: PANEL, receipt: structuredClone(first), save: () => undefined });
+    expect(r.items['attach:blog:DATABASE_URL']).toMatchObject({ state: 'failed', notes: [expect.stringMatching(/already set by another attached database \(#4242\)/)] });
+
+    ({ client } = fakePanel());
+    client.databases.create = vi.fn(async () => { throw new Error('no room'); });
+    r = await applyPlan(plan, { envFiles: { blog: env } }, { client, panel: PANEL, receipt: null, save: () => undefined });
+    expect(r.items['attach:blog:DATABASE_URL']).toMatchObject({ state: 'skipped', notes: [expect.stringMatching(/not created here yet/)] });
+
+    ({ client } = fakePanel());
+    client.attachments.list = vi.fn(async () => { throw new Error('list down'); });
+    r = await applyPlan(plan, { envFiles: { blog: env } }, { client, panel: PANEL, receipt: null, save: () => undefined });
+    expect(r.items['attach:blog:DATABASE_URL']).toMatchObject({ state: 'failed', notes: ['list down'] });
+
+    ({ client } = fakePanel());
+    client.attachments.create = vi.fn(async () => { throw new Error('attach down'); });
+    r = await applyPlan(plan, { envFiles: { blog: env } }, { client, panel: PANEL, receipt: null, save: () => undefined });
+    expect(r.items['attach:blog:DATABASE_URL']).toMatchObject({ state: 'failed', notes: ['attach down'] });
   });
 });

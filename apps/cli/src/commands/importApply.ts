@@ -11,6 +11,10 @@
  *   config, so a certificate would be requested while DNS still points at
  *   the source; with the Cloudflare integration on, a DNS record would be
  *   written too. Domains move at the cutover (step 3).
+ * - A value in such a file that still names a source database (a copied
+ *   connection string) gets the new database attached under that variable
+ *   when the panel's string replaces it exactly; the rest are listed for a
+ *   person (lib/importers/connections.ts).
  * - Environment values come only from a file the person passes
  *   (--dotenv <service>=<path>), through the panel's .env import. The plan
  *   holds names only, so a variable without a value is reported, not created
@@ -29,6 +33,7 @@ import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { getClient, type NineDeployClient } from '../client.js';
 import { loadConfig } from '../config.js';
 import { c, error, header, info, success } from '../lib/format.js';
+import { findConnections } from '../lib/importers/connections.js';
 import type { ImportPlan, PlanEngine, PlanIssue, PlanService } from '../lib/importers/plan.js';
 
 type CreateServiceInput = Parameters<NineDeployClient['services']['create']>[0];
@@ -39,11 +44,15 @@ export interface ApplyClient {
   services: { create: (input: CreateServiceInput) => Promise<{ id: number }> };
   databases: { create: (input: CreateDatabaseInput) => Promise<{ id: number }> };
   env: { import: (serviceId: number, content: string) => Promise<{ imported: number; skipped: number; errors: Array<{ line: number; message: string }> }> };
+  attachments: {
+    list: (serviceId: number) => Promise<Array<{ id: number; databaseId: number; envAlias: string }>>;
+    create: (serviceId: number, input: { databaseId: number; envAlias?: string; reuseExisting?: boolean }) => Promise<{ id: number }>;
+  };
 }
 
 export type ReceiptState = 'pending' | 'done' | 'skipped' | 'failed';
 export interface ReceiptItem {
-  kind: 'service' | 'database' | 'env' | 'data' | 'domain';
+  kind: 'service' | 'database' | 'env' | 'data' | 'domain' | 'attach';
   ref: string;
   name: string;
   state: ReceiptState;
@@ -243,6 +252,58 @@ export async function applyPlan(plan: ImportPlan, opts: ApplyOptions, deps: Appl
       put(key, { ...base, state: 'done', id: created.id, notes: ['Created empty: the data moves in step 3.', versionNote, ...issueNotes(d.issues, ['data'])] });
     }
   }
+
+  // Connection strings in the .env files that still name the source's
+  // databases: attach the new database under that variable when the panel's
+  // string replaces it exactly, otherwise say what to change by hand.
+  for (const s of plan.services) {
+    const file = envFiles[s.name];
+    const svc = receipt.items[`service:${s.ref}`];
+    if (file === undefined || svc?.state !== 'done' || svc.id === undefined) continue;
+    let current: Array<{ id: number; databaseId: number; envAlias: string }> | null = null;
+    for (const h of findConnections(plan, file)) {
+      const key = `attach:${s.ref}:${h.key}`;
+      if (receipt.items[key]?.state === 'done') continue;
+      const base = { kind: 'attach' as const, ref: `${s.ref}:${h.key}`, name: `${h.key} of ${s.name}` };
+      const what = h.database ? `the source's database ${h.database.name}` : 'the old platform';
+      if (h.action === 'manual') {
+        put(key, { ...base, state: 'skipped', notes: [`${h.key} names ${what} (${h.host}): ${h.reason}.`] });
+        continue;
+      }
+      const db = h.database!;
+      const made = receipt.items[`database:${db.ref}`];
+      if (made?.state !== 'done' || made.id === undefined) {
+        put(key, { ...base, state: 'skipped', notes: [`${h.key} names ${what} (${h.host}), which is not created here yet; run again once it is.`] });
+        continue;
+      }
+      try {
+        current ??= await deps.client.attachments.list(svc.id);
+      } catch (err) {
+        put(key, { ...base, state: 'failed', notes: [message(err)] });
+        continue;
+      }
+      const same = current.find((a) => a.envAlias === h.key);
+      if (same && same.databaseId !== made.id) {
+        put(key, { ...base, state: 'failed', notes: [`${h.key} is already set by another attached database (#${same.databaseId}); detach it, or edit the variable by hand.`] });
+        continue;
+      }
+      let id: number;
+      if (same) id = same.id;
+      else {
+        put(key, { ...base, state: 'pending', notes: [] });
+        try {
+          id = (await deps.client.attachments.create(svc.id, { databaseId: made.id, envAlias: h.key, reuseExisting: true })).id;
+        } catch (err) {
+          put(key, { ...base, state: 'failed', notes: [message(err)] });
+          continue;
+        }
+      }
+      put(key, {
+        ...base, state: 'done', id,
+        notes: [`Attached ${db.name} as ${h.key} (the copied value named ${h.host}). The service's own ${h.key} still shows the old value; the attachment replaces it at every deploy.`],
+      });
+    }
+  }
   return receipt;
 }
 
@@ -276,6 +337,18 @@ export function renderApplyPreview(plan: ImportPlan, receipt: ImportReceipt | nu
     if (done(`database:${d.ref}`)) out.push(`  ✓ ${d.name}: already created (#${receipt!.items[`database:${d.ref}`]!.id})`);
     else if (!d.engine) out.push(`  – ${d.name}: skipped, no managed equivalent`);
     else out.push(`  + ${d.name}: ${d.engine}${databaseVersion(d.engine, d.image) ? ` ${databaseVersion(d.engine, d.image)}` : ' (default version)'}`);
+  }
+  const links = plan.services.flatMap((s) => {
+    const file = envFiles[s.name];
+    return file === undefined ? [] : findConnections(plan, file).map((h) => ({ s, h }));
+  });
+  if (links.length) {
+    out.push('Connection strings that name the source:');
+    for (const { s, h } of links) {
+      out.push(h.action === 'attach'
+        ? `  + ${h.key} of ${s.name}: attach ${h.database!.name} under ${h.key} (the copied value names ${h.host})`
+        : `  ! ${h.key} of ${s.name} names ${h.database ? `the source's database ${h.database.name}` : 'the old platform'} (${h.host}); change it by hand: ${h.reason}`);
+    }
   }
   return out.join('\n');
 }

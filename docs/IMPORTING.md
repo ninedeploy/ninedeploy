@@ -38,6 +38,11 @@ ninedeploy import apply plan.json --yes --project 3 --dotenv blog=./blog.env   #
 **What it creates**
 - Each service that has something to deploy from: an image, or a repository and branch, with its port, replicas, limits, health path and first volume.
 - Each database with a NineDeploy engine. It is created empty. The source's version is used when the source runs the same image (for example `postgres:14.5`); otherwise the panel's default is used.
+- **Attachments for copied connection strings.** A value in a `--dotenv` file can still name the source's database, for example `DATABASE_URL=postgres://…@srv-captain--pg:5432/…`. In that case apply attaches the new database to the service under that variable's name. At every deploy the attachment sets the variable to the new database's connection string; the service's own copy still shows the old value. The file is read on your machine, and only variable, database and host names reach the output and the receipt.
+  - Apply attaches only when the panel's connection string can stand in exactly: `postgres://`, `mysql://` or `mariadb://` with no `?options`, or `redis://` on database 0.
+  - Anything else is listed for you to change by hand, with the reason: `postgresql://` and other scheme spellings your driver may need, `?sslmode=` and other options, a Redis database index, Mongo (the panel's string names no database), and a variable that holds only the host.
+  - A value that names the old platform's own host, such as `captain.old.example` or its IP, is listed too. NineDeploy can still reach that host, so the app would quietly keep using the old database.
+  - The source hosts are the CapRover app name (with and without `srv-captain--`), the Coolify container name and the Dokploy app name. Only CapRover's were checked against a live instance.
 
 **What it does not do**
 - **It does not deploy anything.** Deploy each service when its environment is complete.
@@ -63,7 +68,7 @@ Without `--yes`, `import data` prints the order that loses no writes, and the du
 2. Stop writes on the source. A dump of a live database misses every write made after it.
 3. Take the final dumps.
 4. Import them with `--dump <database>=<file> --yes`.
-5. Deploy each service and check it is healthy. Connection strings copied from the source may still name its database hosts: attach the new database to the service (it sets `DATABASE_URL` or the engine's own variable at deploy), or edit them.
+5. Deploy each service and check it is healthy. Where a copied connection string allowed it, `import apply` already attached the new database; change the variables it listed by hand.
 6. Switch DNS, then add the domains with `import cutover` (below).
 
 **The dump commands**

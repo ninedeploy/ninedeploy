@@ -107,7 +107,7 @@ export const CUTOVER_ORDER = [
   'Stop writes on the source: stop the apps that write, or put them in maintenance. A dump of a live database misses every write made after it.',
   'Take the final dump of each database with the commands below, on the source host.',
   'Import them: ninedeploy import data plan.json --dump <database>=<file> --yes',
-  'Deploy each service in NineDeploy and check it is healthy. Connection strings in its environment may still name the source\'s database hosts: attach the new database instead (Databases → attach), or edit them.',
+  'Deploy each service in NineDeploy and check it is healthy. import apply attached the new database where a copied connection string allowed it; change the variables it listed by hand.',
   'Switch DNS to this panel, then add the domains: ninedeploy import cutover plan.json --yes (it adds only hosts whose DNS already points here).',
 ];
 
