@@ -74,7 +74,9 @@ Without `--yes`, `import data` prints the order that loses no writes, and the du
 **The import**
 - Each file goes through the panel's chunked dump import with its sha256 declared. The panel checks the hash before it restores anything.
 - The receipt records the import id, sha256 and size.
-- A run that stops during the upload resumes the same import.
+- Once the receipt has an import id, retrying after an upload/status error checks that same job: unfinished uploads resume, running jobs are awaited, and completed jobs are recorded without restoring again.
+- If that job's status cannot be read, its id stays in the receipt for another retry instead of starting a replacement.
+- A different dump is refused while a prior import id is recorded. Inspect it with `ninedeploy databases imports <database-id>`; use `ninedeploy databases import <database-id> --file <file>` for a deliberate new import.
 - A database whose data is already in is not imported again. The same file is skipped, and a different file is refused; use `ninedeploy databases import` directly if you mean it.
 - ClickHouse has no dump import, so move its data by hand.
 

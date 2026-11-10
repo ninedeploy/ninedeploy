@@ -1,0 +1,179 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/cli
+
+ × test/importDataRecovery.test.ts > known-id retry reconciles upload after receipt serialization 27ms
+   → expected { kind: 'data', ref: 'pg', …(7) } to match object { state: 'done', importId: 701 }
+(8 matching properties omitted from actual)
+ × test/importDataRecovery.test.ts > known-id retry reconciles chunk-response after receipt serialization 2ms
+   → expected { kind: 'data', ref: 'pg', …(7) } to match object { state: 'done', importId: 701 }
+(8 matching properties omitted from actual)
+ × test/importDataRecovery.test.ts > known-id retry reconciles start-response after receipt serialization 2ms
+   → expected { kind: 'data', ref: 'pg', …(8) } to match object { state: 'done', importId: 701 }
+(8 matching properties omitted from actual)
+ × test/importDataRecovery.test.ts > known-id retry reconciles wait after receipt serialization 1ms
+   → expected { kind: 'data', ref: 'pg', …(8) } to match object { state: 'done', importId: 701 }
+(8 matching properties omitted from actual)
+ ✓ test/importDataRecovery.test.ts > fresh upload and repeated done receipt create one restore 1ms
+ × test/importDataRecovery.test.ts > unknown throw reconciliation never creates a replacement 1ms
+   → expected { kind: 'data', ref: 'pg', …(8) } to match object { state: 'failed', importId: 701 }
+(8 matching properties omitted from actual)
+ × test/importDataRecovery.test.ts > unknown missing reconciliation never creates a replacement 1ms
+   → expected { kind: 'data', ref: 'pg', …(8) } to match object { state: 'failed', importId: 701 }
+(8 matching properties omitted from actual)
+ × test/importDataRecovery.test.ts > running restore is only awaited through a gated completion, never restarted 2ms
+   → recovery ended without waiting for its known job
+ × test/importDataRecovery.test.ts > completed-with-warnings remote job records done without repeating restore 2ms
+   → expected 'Imported: 12 bytes, sha256 checked by…' to contain 'with warnings'
+ ✓ test/importDataRecovery.test.ts > confirmed remote failed permits a fresh explicit attempt 1ms
+ ✓ test/importDataRecovery.test.ts > confirmed remote cancelled permits a fresh explicit attempt 1ms
+ ✓ test/importDataRecovery.test.ts > confirmed remote expired permits a fresh explicit attempt 0ms
+ × test/importDataRecovery.test.ts > different dump cannot replace an unresolved known completed job 2ms
+   → promise resolved "{ receiptVersion: 1, …(3) }" instead of rejecting
+ ✓ test/importDataRecovery.test.ts > different dump still refuses after a recorded done receipt 1ms
+ × test/importDataRecovery.test.ts > RDB recovery never sends confirmReplace for a second restore after a lost completion response 1ms
+   → expected [ { source: 'upload', …(4) }, …(1) ] to have a length of 1 but got 2
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 10 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/importDataRecovery.test.ts > known-id retry reconciles upload after receipt serialization
+ FAIL  test/importDataRecovery.test.ts > known-id retry reconciles chunk-response after receipt serialization
+AssertionError: expected { kind: 'data', ref: 'pg', …(7) } to match object { state: 'done', importId: 701 }
+(8 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "importId": 701,
+-   "state": "done",
++   "state": "failed",
+  }
+
+ ❯ test/importDataRecovery.test.ts:51:122
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/10]⎯
+
+ FAIL  test/importDataRecovery.test.ts > known-id retry reconciles start-response after receipt serialization
+ FAIL  test/importDataRecovery.test.ts > known-id retry reconciles wait after receipt serialization
+AssertionError: expected { kind: 'data', ref: 'pg', …(8) } to match object { state: 'done', importId: 701 }
+(8 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "importId": 701,
++   "importId": 702,
+    "state": "done",
+  }
+
+ ❯ test/importDataRecovery.test.ts:51:122
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/10]⎯
+
+ FAIL  test/importDataRecovery.test.ts > unknown throw reconciliation never creates a replacement
+ FAIL  test/importDataRecovery.test.ts > unknown missing reconciliation never creates a replacement
+AssertionError: expected { kind: 'data', ref: 'pg', …(8) } to match object { state: 'failed', importId: 701 }
+(8 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "importId": 701,
++   "importId": 702,
+    "state": "failed",
+  }
+
+ ❯ test/importDataRecovery.test.ts:58:233
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/10]⎯
+
+ FAIL  test/importDataRecovery.test.ts > running restore is only awaited through a gated completion, never restarted
+Error: recovery ended without waiting for its known job
+ ❯ test/importDataRecovery.test.ts:65:70
+
+ ❯ test/importDataRecovery.test.ts:65:8
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/10]⎯
+
+ FAIL  test/importDataRecovery.test.ts > completed-with-warnings remote job records done without repeating restore
+AssertionError: expected 'Imported: 12 bytes, sha256 checked by…' to contain 'with warnings'
+
+Expected: "with warnings"
+Received: "Imported: 12 bytes, sha256 checked by the panel."
+
+ ❯ test/importDataRecovery.test.ts:68:256
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/10]⎯
+
+ FAIL  test/importDataRecovery.test.ts > different dump cannot replace an unresolved known completed job
+AssertionError: promise resolved "{ receiptVersion: 1, …(3) }" instead of rejecting
+
+- Expected
++ Received
+
+- Error {
+-   "message": "rejected promise",
++ {
++   "items": {
++     "data:pg": {
++       "at": "2026-11-09T23:55:39.590Z",
++       "bytes": 22,
++       "id": 5,
++       "importId": 702,
++       "kind": "data",
++       "name": "pg",
++       "notes": [
++         "Imported: 22 bytes, sha256 checked by the panel.",
++       ],
++       "ref": "pg",
++       "sha256": "cd16df935955121899b6573f198a249f95b1e509cb82340eafcfaa9fcb5ed6b7",
++       "state": "done",
++     },
++     "database:pg": {
++       "at": "",
++       "id": 5,
++       "kind": "database",
++       "name": "pg",
++       "notes": [],
++       "ref": "pg",
++       "state": "done",
++     },
++   },
++   "panel": "https://panel.fixture",
++   "receiptVersion": 1,
++   "source": {
++     "kind": "caprover",
++     "url": "https://source.fixture",
++   },
+  }
+
+ ❯ test/importDataRecovery.test.ts:75:122
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/10]⎯
+
+ FAIL  test/importDataRecovery.test.ts > RDB recovery never sends confirmReplace for a second restore after a lost completion response
+AssertionError: expected [ { source: 'upload', …(4) }, …(1) ] to have a length of 1 but got 2
+
+- Expected
++ Received
+
+- 1
++ 2
+
+ ❯ test/importDataRecovery.test.ts:82:342
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/10]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  10 failed | 5 passed (15)
+   Start at  01:55:38
+   Duration  718ms (transform 61%, import 31%, tests 8%)

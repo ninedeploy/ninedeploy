@@ -29,7 +29,10 @@ import { type ImportReceipt, renderReceipt, validatePlan, writeReceipt } from '.
 export interface DataClient {
   databases: {
     importFile: NineDeployClient['databases']['importFile'];
-    imports: { wait: NineDeployClient['databases']['imports']['wait'] };
+    imports: {
+      get: NineDeployClient['databases']['imports']['get'];
+      wait: NineDeployClient['databases']['imports']['wait'];
+    };
   };
 }
 
@@ -168,6 +171,9 @@ export async function importData(plan: ImportPlan, dumps: Record<string, string>
     if (prior?.state === 'done' && prior.sha256 !== sha256) {
       throw new Error(`${name} already has a dump imported (sha256 ${prior.sha256?.slice(0, 12)}…), and this one differs. import data does not import twice; use \`ninedeploy databases import ${created.id} --file …\` if you mean to.`);
     }
+    if ((prior?.state === 'pending' || prior?.state === 'failed') && prior.importId !== undefined && prior.sha256 !== sha256) {
+      throw new Error(`${name} has import #${prior.importId} recorded for a different dump. Check it with \`ninedeploy databases imports ${created.id}\`; use \`ninedeploy databases import ${created.id} --file …\` to deliberately import another dump.`);
+    }
     jobs.push({ db, databaseId: created.id, file, sha256, bytes });
   }
 
@@ -181,19 +187,30 @@ export async function importData(plan: ImportPlan, dumps: Record<string, string>
       deps.save(receipt);
     };
     // An upload of this same file that stopped part-way continues where the panel stands.
-    const resumeImportId = prior?.state === 'pending' && prior.sha256 === job.sha256 ? prior.importId : undefined;
+    let resumeImportId = (prior?.state === 'pending' || prior?.state === 'failed') && prior.sha256 === job.sha256 ? prior.importId : undefined;
     put('pending', [], resumeImportId);
     const options: DatabaseImportOptions = ['redis', 'keydb', 'dragonfly'].includes(job.db.engine!) ? { confirmReplace: true } : {};
     let row: DatabaseImport;
     try {
-      row = await deps.client.databases.importFile(job.databaseId, deps.open(job.file), {
-        sizeBytes: job.bytes,
-        sha256: job.sha256,
-        filename: path.basename(job.file),
-        ...(resumeImportId !== undefined ? { resumeImportId } : { options }),
-        onCreated: (r) => put('pending', [], r.id),
-      });
-      row = await deps.client.databases.imports.wait(job.databaseId, row.id);
+      const existing = resumeImportId === undefined ? undefined : await deps.client.databases.imports.get(job.databaseId, resumeImportId);
+      if (existing && FINISHED_OK.includes(existing.status)) {
+        row = existing;
+      } else if (existing?.status === 'running') {
+        row = await deps.client.databases.imports.wait(job.databaseId, existing.id);
+      } else {
+        if (existing && ['failed', 'cancelled', 'expired'].includes(existing.status)) {
+          resumeImportId = undefined;
+          put('pending', []);
+        }
+        row = await deps.client.databases.importFile(job.databaseId, deps.open(job.file), {
+          sizeBytes: job.bytes,
+          sha256: job.sha256,
+          filename: path.basename(job.file),
+          ...(resumeImportId !== undefined ? { resumeImportId } : { options }),
+          onCreated: (r) => put('pending', [], r.id),
+        });
+        row = await deps.client.databases.imports.wait(job.databaseId, row.id);
+      }
     } catch (err) {
       put('failed', [err instanceof Error ? err.message : String(err)], receipt.items[key]?.importId);
       continue;

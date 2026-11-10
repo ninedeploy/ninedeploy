@@ -26,11 +26,14 @@ function fakePanel(status: string = 'completed') {
     databases: {
       importFile: vi.fn(async (id, _data, opts) => {
         calls.push({ id, opts: opts as Record<string, unknown> });
-        const row = { id: 900 + calls.length, status: 'pending' } as never;
-        opts?.onCreated?.(row);
+        const row = { id: opts?.resumeImportId ?? 900 + calls.length, status: 'pending' } as never;
+        if (opts?.resumeImportId === undefined) opts?.onCreated?.(row);
         return row;
       }),
-      imports: { wait: vi.fn(async (_id, importId) => ({ id: importId, status }) as never) },
+      imports: {
+        get: vi.fn(async (_id, importId) => ({ id: importId, status: 'uploading' }) as never),
+        wait: vi.fn(async (_id, importId) => ({ id: importId, status }) as never),
+      },
     },
   };
   return { client, calls };
@@ -120,8 +123,7 @@ describe('import data', () => {
     await importData(plan([db({})]), { pg: 'pg.dump' }, deps(client, r));
     expect(r.items['data:pg']).toMatchObject({ state: 'failed', importId: 950, notes: ['fetch failed'] });
 
-    // A run killed during the upload leaves "pending" with the import id: the next run resumes it.
-    r.items['data:pg']!.state = 'pending';
+    // A caught upload failure must recover from its saved failed state too.
     client.databases.importFile = importFile;
     await importData(plan([db({})]), { pg: 'pg.dump' }, deps(client, r));
     expect(calls[0]!.opts).toMatchObject({ resumeImportId: 950 });

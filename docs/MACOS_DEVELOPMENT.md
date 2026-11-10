@@ -634,3 +634,20 @@ default parallel run and from a complete release gate. The initial reset after-r
 that exposed the adapter defect is retained as a failure, not passing evidence.
 No live reset email/account, postcommit lost-response recovery, multi-process
 ordering, native Mac acceptance or full root certification was claimed.
+
+Round 69 (F1088, High) fixes CLI database-import recovery after a caught transport
+failure. The actual SDK previously either retried into an active-job conflict
+or sent a second restore after losing a completion response. Retry now reconciles
+its known import id, resumes uploads, waits for running work and records completed
+work without restarting it. A recorded unresolved job cannot be rebound to a
+different dump; the command points to explicit inspection/new-import commands.
+A stronger verifier exposed and closed that different-dump gap before acceptance.
+
+Sixteen permanent cases were seen red (ten failures, six controls); sixteen
+independent SDK/transport/checkpoint/gated-running cases passed three times.
+The final complete CLI suite passed **1139 tests in63 files**, with coverage
+91.39% statements,88.54% branches,88.51% functions and91.68% lines against unchanged
+configured floors. Resource-bound CLI typecheck/build and scoped lint passed.
+Receipt serialization and a target-data marker model were tested; no real process
+restart, power loss, live database loss/restore or native Mac acceptance was claimed.
+A create response lost before an import id is received remains outside recovery.

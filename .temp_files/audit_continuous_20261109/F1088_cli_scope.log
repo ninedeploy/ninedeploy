@@ -1,0 +1,82 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/cli
+
+ ✓ test/importPlan.test.ts > plan helpers > strips userinfo from URLs and scp-style remotes, and leaves other text alone 1ms
+ ✓ test/importPlan.test.ts > plan helpers > reads env names only, domains with their scheme, and memory sizes 1ms
+ ✓ test/importPlan.test.ts > Coolify adapter > keeps no secret anywhere in the plan 0ms
+ ✓ test/importPlan.test.ts > Coolify adapter > maps a Dockerfile app from a GitHub source, with its limits, health check, domains and volumes 0ms
+ ✓ test/importPlan.test.ts > Coolify adapter > maps an image app, a compose app from its repository, and flags an unknown build pack 0ms
+ ✓ test/importPlan.test.ts > Coolify adapter > lists a one-click stack without reading its compose file, and every database type 0ms
+ ✓ test/importPlan.test.ts > Coolify adapter > reads a GitHub owner/repo and an app with no repository 1ms
+ ✓ test/importPlan.test.ts > Dokploy adapter > keeps no secret anywhere in the plan (env blobs, registry and database passwords, git URLs) 0ms
+ ✓ test/importPlan.test.ts > Dokploy adapter > walks project.all and reads each application with application.one 0ms
+ ✓ test/importPlan.test.ts > Dokploy adapter > maps an image app with a private registry, a drop upload, and a custom git URL 0ms
+ ✓ test/importPlan.test.ts > Dokploy adapter > maps compose (inline and from a repository) and every database kind, libSQL unsupported 0ms
+ ✓ test/importPlan.test.ts > Dokploy adapter > flags Gitea (host unknown) and hosted GitLab/Bitbucket guesses 0ms
+ ✓ test/importPlan.test.ts > CapRover adapter > keeps no secret anywhere in the plan (env values, git password and key, tokens, the auth hash) 0ms
+ ✓ test/importPlan.test.ts > CapRover adapter > reads the CapRover version from versionInfo 0ms
+ ✓ test/importPlan.test.ts > CapRover adapter > maps a repository-backed app, with its subdomain, custom domain, replicas and volume 0ms
+ ✓ test/importPlan.test.ts > CapRover adapter > maps an external image, refuses an image only CapRover holds, and lists a one-click database 0ms
+ ✓ test/importPlan.test.ts > CapRover adapter > falls back to the list rootDomain, then captain.localhost 0ms
+ ✓ test/importPlan.test.ts > CapRover adapter, against a capture from a live v1.16.0 > keeps no secret anywhere in the plan (env values, the Git password, the push-webhook token) 0ms
+ ✓ test/importPlan.test.ts > CapRover adapter, against a capture from a live v1.16.0 > reads the version and plans the captured apps, with system/info returning an empty rootDomain 0ms
+ ✓ test/importPlan.test.ts > CapRover adapter, against a capture from a live v1.16.0 > lists a never-deployed one-click database without the placeholder as its image 0ms
+ ✓ test/importPlan.test.ts > CapRover adapter, against a capture from a live v1.16.0 > keeps the srv-captain-- service prefix for a legacy app 0ms
+ ✓ test/importPlan.test.ts > CapRover adapter, against a capture from a live v1.16.0 > never plans the placeholder image for an app that was never deployed 0ms
+ ✓ test/importPlan.test.ts > source clients > normalises the base URL and refuses anything else 1ms
+ ✓ test/importPlan.test.ts > source clients > Coolify: bearer token, plain-text version, and an actionable error for a disabled API, a bad token and a missing ability 18ms
+ ✓ test/importPlan.test.ts > source clients > Dokploy: x-api-key, and errors without the key in them 2ms
+ ✓ test/importPlan.test.ts > source clients > CapRover: signs in once, reads the envelope, and maps every refusal 2ms
+ ✓ test/importPlan.test.ts > ninedeploy import plan > takes the credential from the environment, never asks, and builds every source 3ms
+ ✓ test/importPlan.test.ts > ninedeploy import plan > asks for the credential, then the CapRover two-factor code, through the hidden prompt 1ms
+ ✓ test/importPlan.test.ts > ninedeploy import plan > refuses an unknown source and an empty credential 0ms
+ ✓ test/importPlan.test.ts > ninedeploy import plan > prints the plan, writes --out as JSON, and prints --json without secrets 5ms
+ ✓ test/importPlan.test.ts > ninedeploy import plan > reports a source error and sets the exit code 1ms
+ ✓ test/importData.test.ts > dump commands > reads the credentials inside the container, never on the command line, per engine 277ms
+stdout | test/importDataRecovery.test.ts
+FIX VERIFIED
+
+ ✓ test/importDataRecovery.test.ts > known-id retry reconciles upload after receipt serialization 298ms
+ ✓ test/importDataRecovery.test.ts > known-id retry reconciles chunk-response after receipt serialization 2ms
+ ✓ test/importDataRecovery.test.ts > known-id retry reconciles start-response after receipt serialization 2ms
+ ✓ test/importDataRecovery.test.ts > known-id retry reconciles wait after receipt serialization 2ms
+ ✓ test/importDataRecovery.test.ts > fresh upload and repeated done receipt create one restore 1ms
+ ✓ test/importDataRecovery.test.ts > unknown throw reconciliation never creates a replacement 1ms
+ ✓ test/importDataRecovery.test.ts > unknown missing reconciliation never creates a replacement 1ms
+ ✓ test/importDataRecovery.test.ts > running restore is only awaited through a gated completion, never restarted 2ms
+ ✓ test/importDataRecovery.test.ts > completed-with-warnings remote job records done without repeating restore 1ms
+ ✓ test/importDataRecovery.test.ts > confirmed remote failed permits a fresh explicit attempt 1ms
+ ✓ test/importDataRecovery.test.ts > confirmed remote cancelled permits a fresh explicit attempt 1ms
+ ✓ test/importDataRecovery.test.ts > confirmed remote expired permits a fresh explicit attempt 1ms
+ ✓ test/importDataRecovery.test.ts > different dump cannot replace an unresolved known completed job 2ms
+ ✓ test/importDataRecovery.test.ts > different dump still refuses after a recorded done receipt 1ms
+ ✓ test/importDataRecovery.test.ts > RDB recovery never sends confirmReplace for a second restore after a lost completion response 2ms
+ ✓ test/importData.test.ts > dump commands > previews the cutover order and each database's state 1ms
+ ✓ test/importData.test.ts > import data > uploads with the sha256 declared, waits, and records id, hash and size 3ms
+ ✓ test/importData.test.ts > import data > confirms the replace for an RDB engine, notes warnings, and reports a failed job without the panel's message 1ms
+ ✓ test/importData.test.ts > import data > records an upload error, then resumes the same import on the next run 1ms
+ ✓ test/importData.test.ts > import data > never imports twice: the same file is skipped, a different one refused before any upload 2ms
+ ✓ test/importData.test.ts > import data > checks every dump before uploading any 1ms
+ ✓ test/importData.test.ts > ninedeploy import data > previews without --yes, then imports a real file with its real sha256 30ms
+ ✓ test/importData.test.ts > ninedeploy import data > refuses without a receipt, for another panel, and a malformed --dump; a failed import sets the exit code 25ms
+ ✓ test/importApply.test.ts > import apply: plan checks and helpers > accepts only a complete planVersion 1 plan 6ms
+ ✓ test/importApply.test.ts > import apply: plan checks and helpers > carries the source version only for the same image repository and a version tag 1ms
+ ✓ test/importApply.test.ts > import apply: plan checks and helpers > reads variable names from a .env file, never values 0ms
+ ✓ test/importApply.test.ts > import apply: creating > creates services and databases with reuseExisting, never a domain or a deploy, and records each one 3ms
+ ✓ test/importApply.test.ts > import apply: creating > imports env values from the file passed, keeps no value in the receipt, and names what the file lacks 1ms
+ ✓ test/importApply.test.ts > import apply: creating > marks refused env lines by number only, and a failed import, as failed 2ms
+ ✓ test/importApply.test.ts > import apply: creating > skips a service with nothing to create it from and a database without a managed engine 1ms
+ ✓ test/importApply.test.ts > import apply: creating > lists a custom domain for the cutover and leaves the source's own host behind 1ms
+ ✓ test/importApply.test.ts > import apply: creating > carries the source version into the database when the image matches 1ms
+ ✓ test/importApply.test.ts > import apply: resuming > a failed create stays failed, and the next run repeats only what is not done 1ms
+ ✓ test/importApply.test.ts > import apply: resuming > a run that stopped after the create call but before the receipt said done repeats it with reuseExisting and gets the same id 1ms
+ ✓ test/importApply.test.ts > import apply: resuming > refuses a receipt from another panel, another source or another format, and an --dotenv for no service 1ms
+ ✓ test/importApply.test.ts > ninedeploy import apply > without --yes, shows what it would create and calls nothing 6ms
+ ✓ test/importApply.test.ts > ninedeploy import apply > with --yes, creates, writes the receipt next to the plan, and a second run creates nothing 28ms
+ ✓ test/importApply.test.ts > ninedeploy import apply > reports failed items and bad arguments with a non-zero exit code 22ms
+ ✓ test/importApply.test.ts > ninedeploy import apply > renders every receipt state 0ms
+
+ Test Files  4 passed (4)
+      Tests  71 passed (71)
+   Start at  01:55:47
+   Duration  1.11s (tests 35%, transform 33%, import 31%, worker 1%)

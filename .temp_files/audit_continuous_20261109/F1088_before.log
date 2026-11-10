@@ -1,0 +1,66 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1088_importRecovery.test.ts > upload failure retries the known job without a second restore
+EXPECTED: { state: 'done', creates: 1, restores: 1, target: 'dump snapshot' } ACTUAL: { state: 'failed', creates: 1, restores: 0, target: 'empty' }
+PROBLEM CONFIRMED
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1088_importRecovery.test.ts > wait failure retries the known job without a second restore
+EXPECTED: { state: 'done', creates: 1, restores: 1, target: 'new target writes' } ACTUAL: { state: 'done', creates: 2, restores: 2, target: 'dump snapshot' }
+PROBLEM CONFIRMED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1088_importRecovery.test.ts > control: ordinary SDK upload restores once and receipt skips same dump 14ms
+ × .temp_files/audit_continuous_20261109/prove_F1088_importRecovery.test.ts > upload failure retries the known job without a second restore 5ms
+   → expected { state: 'failed', creates: 1, …(2) } to deeply equal { state: 'done', creates: 1, …(2) }
+ × .temp_files/audit_continuous_20261109/prove_F1088_importRecovery.test.ts > wait failure retries the known job without a second restore 2ms
+   → expected { state: 'done', creates: 2, …(2) } to deeply equal { state: 'done', creates: 1, …(2) }
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1088_importRecovery.test.ts > upload failure retries the known job without a second restore
+AssertionError: expected { state: 'failed', creates: 1, …(2) } to deeply equal { state: 'done', creates: 1, …(2) }
+
+- Expected
++ Received
+
+  {
+    "creates": 1,
+-   "restores": 1,
+-   "state": "done",
+-   "target": "dump snapshot",
++   "restores": 0,
++   "state": "failed",
++   "target": "empty",
+  }
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1088_importRecovery.test.ts:47:187
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1088_importRecovery.test.ts > wait failure retries the known job without a second restore
+AssertionError: expected { state: 'done', creates: 2, …(2) } to deeply equal { state: 'done', creates: 1, …(2) }
+
+- Expected
++ Received
+
+  {
+-   "creates": 1,
+-   "restores": 1,
++   "creates": 2,
++   "restores": 2,
+    "state": "done",
+-   "target": "new target writes",
++   "target": "dump snapshot",
+  }
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1088_importRecovery.test.ts:47:187
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 1 passed (3)
+   Start at  01:47:07
+   Duration  647ms (transform 65%, import 30%, tests 4%, worker 1%)

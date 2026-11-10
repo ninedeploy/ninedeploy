@@ -1,0 +1,431 @@
+$ vitest run --coverage
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/cli
+      Coverage enabled with v8
+
+Reading point-in-time recovery... ✓
+Reading point-in-time recovery... ✓
+Reading point-in-time recovery... ✓
+Reading point-in-time recovery... ✓
+Reading point-in-time recovery... ✗
+Packing C:\Users\ersin\AppData\Local\Temp\nd-cli-up-ipzkrB... ✓
+Uploading 0.0 MiB... ✓
+Restarting the database with WAL archiving... ✓
+Restarting the database with WAL archiving... ✓
+Restarting the database with WAL archiving... ✗
+Restarting the database without archiving... ✓
+Restarting the database without archiving... ✓
+Restarting the database without archiving... ✗
+Starting a base backup... ✓
+Packing C:\Users\ersin\AppData\Local\Temp\nd-cli-up-fPs7Or... ✓
+Uploading 0.0 MiB... ✓
+Packing C:\Users\ersin\AppData\Local\Temp\nd-cli-up-uEhFI9... ✓
+Creating service Drop... ✓
+Uploading 0.0 MiB... ✓
+Starting a base backup... ✗
+Starting the recovery... ✓
+Recovering to 2026-11-05T09:03:30.000Z... ✓
+Starting the recovery... ✓
+Recovering to the latest archived point... ✓
+Starting the recovery... ✓
+Starting the recovery... ✓
+Recovering to the latest archived point... ✗
+Starting the recovery... ✗
+Packing C:\Users\ersin\AppData\Local\Temp\nd-cli-up-QLpevs... ✓
+Uploading 0.0 MiB... ✓
+Uploading 0.0 MiB... ✓
+Starting NineDeploy server container (ninedeploy)... ✓
+Starting NineDeploy server container (ninedeploy)... ✗
+Stopping container ninedeploy... ✓
+Stopping container ninedeploy... ✗
+Starting NineDeploy server container (ninedeploy)... ✗
+Stopping container ninedeploy... ✗
+Packing C:\Users\ersin\AppData\Local\Temp\nd-cli-up-2xUybP... ✓
+Packing C:\Users\ersin\AppData\Local\Temp\nd-cli-up-DjlH2u... ✓
+Packing C:\Users\ersin\AppData\Local\Temp\nd-cli-up-fT8nOA... ✓
+Fetching... ✓
+Fetching... ✓
+Fetching... ✓
+Fetching... ✓
+Checking DNS... ✓
+Checking DNS... ✓
+Checking DNS... ✓
+Checking DNS... ✗
+Fetching... ✓
+Removing volume... ✓
+Fetching... ✓
+Creating network... ✓
+Removing network... ✓
+Fetching... ✓
+Fetching... ✓
+Fetching... ✓
+Fetching... ✓
+Creating network... ✗
+Removing network... ✗
+Revoking session... ✗
+Fetching... ✓
+Revoking session... ✓
+Starting restore verification... ✓
+Restoring backup #8 into an isolated helper... ✓
+Starting restore verification... ✓
+Restoring backup #8 into an isolated helper... ✓
+Starting restore verification... ✓
+Restoring backup #8 into an isolated helper... ✓
+Packing C:\Users\ersin\AppData\Local\Temp\nd-cli-up-aSa6dm... ✓
+Uploading 0.0 MiB... ✗
+Starting restore verification... ✓
+Restoring backup #8 into an isolated helper... ✓
+Starting restore verification... ✓
+Starting restore verification... ✓
+Restoring backup #8 into an isolated helper... ✗
+Starting restore verification... ✗
+Drilling... ✓
+Fetching... ✓
+Fetching... ✓
+Fetching... ✓
+Backing up... ✓
+Restoring... ✓
+Restoring... ✗
+Fetching... ✓
+Revoking session... ✓
+Removing volume... ✗
+Fetching... ✓
+Fetching... ✓
+Fetching... ✓
+Fetching... ✓
+Fetching... ✓
+Backing up... ✗
+Fetching workspaces... ✓
+Fetching workspaces... ✓
+Fetching workspaces... ✗
+Fetching workspace... ✓
+Fetching workspace... ✓
+Fetching workspace... ✗
+Creating workspace... ✓
+Creating workspace... ✗
+Deleting workspace... ✓
+Deleting workspace... ✗
+Fetching sources... ✓
+Fetching sources... ✓
+Fetching sources... ✓
+Fetching... ✓
+Fetching... ✓
+Creating source... ✓
+Verifying credentials... ✓
+Creating source... ✓
+Verifying credentials... ✓
+Creating source... ✓
+Creating source... ✓
+Creating source... ✓
+Creating source... ✓
+Creating source... ✓
+Creating source... ✓
+Creating source... ✗
+Creating source... ✓
+Creating source... ✓
+Creating source... ✓
+Verifying credentials... ✓
+Creating source... ✓
+Verifying credentials... ✓
+Creating source... ✓
+Verifying credentials... ✓
+Verifying credentials... ✓
+Verifying credentials... ✓
+Fetching sources... ✓
+Verifying credentials... ✓
+Fetching sources... ✓
+Fetching sources... ✓
+Verifying credentials... ✓
+Fetching... ✓
+Creating webhook... ✓
+Creating webhook... ✓
+Removing webhook... ✓
+Fetching... ✓
+Fetching... ✓
+Fetching... ✓
+Fetching... ✓
+Verifying credentials... ✓
+Verifying credentials... ✓
+Verifying credentials... ✓
+Verifying credentials... ✓
+Removing source... ✓
+Fetching sources... ✓
+Removing source... ✓
+Fetching sources... ✓
+Fetching sources... ✓
+Removing source... ✗
+Fetching... ✓
+Fetching... ✓
+Fetching... ✓
+Fetching... ✓
+Verifying credentials... ✓
+Fetching... ✓
+Generating ed25519 key pair on the panel server... ✓
+Fetching sources... ✓
+Generating ed25519 key pair on the panel server... ✓
+Fetching sources... ✓
+Fetching sources... ✓
+Creating source... ✓
+Creating source... ✓
+Creating source... ✓
+Starting local NineDeploy server container... ✓
+Starting local NineDeploy server container... ✗
+Starting local NineDeploy server container... ✗
+Starting local NineDeploy server container... ✗
+Fetching sources... ✓
+Fetching sources... ✓
+Fetching sources... ✓
+Fetching sources... ✓
+Cloning & analysing the repo (this clones on the panel server)... ✓
+Creating service... ✓
+Triggering deploy... ✓
+Fetching sources... ✓
+Cloning & analysing the repo (this clones on the panel server)... ✓
+Creating service... ✓
+Fetching sources... ✓
+Creating source... ✓
+Cloning & analysing the repo (this clones on the panel server)... ✓
+Fetching sources... ✓
+Creating source... ✓
+Cloning & analysing the repo (this clones on the panel server)... ✓
+Fetching sources... ✓
+Cloning & analysing the repo (this clones on the panel server)... ✓
+Creating service... ✓
+Fetching sources... ✓
+Fetching sources... ✓
+Cloning & analysing the repo (this clones on the panel server)... ✓
+Creating service... ✓
+Setting NODE_ENV... ✓
+Fetching sources... ✓
+Cloning & analysing the repo (this clones on the panel server)... ✓
+Creating service... ✓
+Fetching sources... ✓
+Cloning & analysing the repo (this clones on the panel server)... ✓
+Creating service... ✓
+Fetching sources... ✓
+Cloning & analysing the repo (this clones on the panel server)... ✓
+Fetching sources... ✓
+Fetching sources... ✓
+Cloning & analysing the repo (this clones on the panel server)... ✗
+Creating service... ✓
+Fetching sources... ✓
+Cloning & analysing the repo (this clones on the panel server)... ✓
+Creating service... ✓
+Setting FOO... ✗
+Fetching sources... ✓
+Cloning & analysing the repo (this clones on the panel server)... ✓
+Creating service... ✓
+Fetching sources... ✓
+Cloning & analysing the repo (this clones on the panel server)... ✓
+Creating service... ✓
+Fetching sources... ✓
+Creating source... ✓
+Cloning & analysing the repo (this clones on the panel server)... ✓
+Fetching sources... ✓
+Cloning & analysing the repo (this clones on the panel server)... ✓
+Creating service... ✓
+Reading backup policy... ✓
+Saving backup policy... ✓
+Saving backup policy... ✗
+Running system prune... ✓
+Running system prune... ✓
+Listing... ✓
+Running system prune... ✗
+Fetching services... ✓
+Fetching services... ✓
+Creating service... ✓
+Deploying... ✓
+Creating service... ✓
+Creating service... ✗
+Creating service... ✗
+Fetching... ✓
+Fetching... ✓
+Triggering deploy... ✓
+Triggering deploy... ✗
+Triggering deploy... ✗
+Stopping service... ✓
+Starting service... ✓
+Restarting service... ✓
+Stopping service... ✗
+Starting service... ✗
+Starting service... ✓
+Deleting service... ✓
+Deleting service... ✗
+Deleting service... ✗
+Exporting... ✓
+Exporting... ✓
+Exporting... ✓
+Exporting... ✗
+Exporting... ✗
+Exporting... ✗
+Generating manifest... ✓
+Inspecting container... ✓
+Generating manifest... ✓
+Generating manifest... ✓
+Inspecting container... ✓
+Inspecting container... ✓
+Exporting system... ✓
+Importing system... ✓
+Exporting system... ✓
+Exporting system... ✗
+Exporting system... ✓
+Exporting system... ✗
+Importing system... ✓
+Importing system... ✓
+Exporting system... ✓
+Fetching... ✓
+Fetching... ✓
+Creating database... ✓
+Importing system... ✓
+Exporting system... ✓
+Creating database... ✓
+Creating database... ✓
+Creating database... ✓
+Creating database... ✓
+Creating database... ✓
+Creating database... ✓
+Creating database... ✓
+Creating database... ✓
+Creating database... ✓
+Creating database... ✓
+Creating database... ✓
+Creating database... ✓
+Creating database... ✓
+Creating database... ✓
+Creating database... ✓
+Creating database... ✓
+Creating database... ✗
+Creating database... ✗
+Fetching templates... ✓
+Fetching templates... ✓
+Deploying nextjs... ✓
+Deploying nextjs... ✗
+Deploying nextjs... ✗
+Fetching... ✓
+Fetching... ✓
+Rolling back... ✓
+Rolling back... ✗
+Rolling back... ✗
+Cancelling... ✓
+Cancelling... ✗
+Cancelling... ✗
+Fetching... ✓
+Fetching... ✓
+Fetching... ✓
+Removing... ✓
+Removing... ✓
+Removing... ✗
+Removing... ✗
+Creating token... ✓
+Creating token... ✓
+Creating token... ✗
+Creating token... ✗
+Fetching... ✓
+Fetching... ✓
+Fetching... ✓
+Fetching... ✓
+Probing health... ✓
+Probing health... ✓
+Probing health... ✓
+Probing health... ✓
+Checking for updates... ✓
+Checking for updates... ✓
+Checking for updates... ✓
+Checking for updates... ✓
+Reading key ring... ✓
+Reading key ring... ✓
+Reading key ring... ✓
+Re-encrypting... ✓
+Reading key ring... ✓
+Re-encrypting... ✓
+(node:77920) MaxListenersExceededWarning: Possible EventEmitter memory leak detected. 11 SIGINT listeners added to [process]. MaxListeners is 10. Use emitter.setMaxListeners() to increase limit
+(Use `node --trace-warnings ...` to show where the warning was created)
+Fetching... ✓
+Fetching... ✓
+Resolving user... ✓
+Resolving user... ✓
+Resolving user... ✗
+Resolving user... ✗
+
+ Test Files  63 passed (63)
+      Tests  1138 passed (1138)
+   Start at  01:55:50
+   Duration  23.44s (transform 55%, import 22%, tests 19%, worker 3%)
+
+    Isolate  63 workers spawned · ~1.36s startup each (spawn + environment, per file)
+             at least ~1.40s faster with isolate: false — reuses workers across files instead of one per file
+
+ % Coverage report from v8
+-------------------|---------|----------|---------|---------|-------------------
+File               | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s
+-------------------|---------|----------|---------|---------|-------------------
+All files          |   91.39 |    88.54 |   88.51 |   91.68 |
+ src               |   81.63 |    75.13 |   62.13 |   83.78 |
+  client.ts        |      96 |    96.55 |     100 |    97.5 | 54
+  config.ts        |   83.33 |       75 |     100 |   88.23 | 42-43
+  index.ts         |   77.93 |    52.63 |   56.17 |   80.44 | ...1060,1065,1634
+  prompts.ts       |   89.04 |    82.41 |     100 |   89.31 | ...47-149,230-231
+ src/commands      |   91.83 |    88.85 |   93.64 |   91.94 |
+  aiDiagnose.ts    |     100 |    95.65 |     100 |     100 | 15,66
+  aiLogs.ts        |     100 |       90 |     100 |     100 | 14,39
+  approvals.ts     |     100 |    98.36 |     100 |     100 | 23
+  autoscale.ts     |     100 |    98.63 |     100 |     100 | 131
+  backupPolicy.ts  |   97.01 |    85.71 |     100 |   98.27 | 50
+  branding.ts      |     100 |       85 |     100 |     100 | 44,47,77
+  certificates.ts  |     100 |     94.2 |     100 |     100 | 55,82,97-100
+  ci.ts            |   77.05 |    58.33 |   96.55 |   80.71 | ...48-249,255,274
+  ...yTemplates.ts |     100 |    84.21 |     100 |     100 | 68-78,95
+  ...baseAccess.ts |     100 |    98.26 |     100 |     100 | 24,214,331
+  deploy.ts        |   98.73 |    98.21 |     100 |     100 | 55
+  domains.ts       |     100 |    95.45 |     100 |     100 | 163
+  egress.ts        |   91.66 |    73.07 |     100 |   91.66 | 48,125-127
+  ...lTemplates.ts |    5.45 |        0 |       0 |    5.55 | 15-20,24,35-111
+  githubApps.ts    |     100 |    97.76 |     100 |     100 | 26,126,278
+  hostIps.ts       |     100 |    92.68 |     100 |     100 | 28,58-68
+  housekeeping.ts  |   48.78 |       40 |      70 |      50 | ...1,34-35,84-105
+  importApply.ts   |   99.45 |     94.8 |     100 |     100 | ...71,278,313,322
+  importData.ts    |   98.17 |    95.72 |    91.3 |     100 | ...15,248,263,272
+  importPlan.ts    |     100 |    95.58 |     100 |     100 | 44,71,99
+  logDrains.ts     |     100 |    71.42 |     100 |     100 | 14-22,31
+  logs.ts          |   14.28 |     6.66 |   33.33 |   10.86 | 11-16,43-89
+  manage.ts        |   85.84 |    88.39 |    90.9 |   85.91 | 157-240,450-457
+  manifest.ts      |   74.85 |    76.66 |   83.33 |    75.3 | ...58-271,283-313
+  metrics.ts       |   96.82 |     87.5 |     100 |      98 | 83
+  misc.ts          |     100 |    89.55 |     100 |     100 | ...23-125,263,270
+  multiNode.ts     |   98.51 |    96.84 |     100 |   99.06 | 409,440
+  notifications.ts |    3.03 |        0 |       0 |    3.22 | 12-17,21-173
+  panelBackup.ts   |   76.63 |    70.93 |   72.72 |   80.45 | ...28,138-139,146
+  pgbouncer.ts     |    2.63 |        0 |       0 |    2.94 | 17-63
+  pitr.ts          |     100 |    91.08 |     100 |     100 | ...49,134,148-153
+  plugins.ts       |   91.48 |       80 |    90.9 |   91.48 | 39-40,60-61
+  proxyConfig.ts   |     100 |    97.56 |     100 |     100 | 15
+  ...tProviders.ts |     100 |     99.2 |     100 |     100 | 29
+  server.ts        |   98.46 |    94.44 |     100 |   98.43 | 28
+  services.ts      |   99.25 |    93.98 |     100 |     100 | ...68,247,257,292
+  setup.ts         |   98.33 |    96.22 |     100 |     100 | 70,84
+  sleep.ts         |   97.67 |    81.94 |     100 |    98.5 | 56
+  sources.ts       |   98.85 |    98.06 |     100 |     100 | 199,219,269
+  sso.ts           |      85 |    61.11 |     100 |      85 | 75-77,100-102
+  templates.ts     |     100 |    96.55 |     100 |     100 | 126
+  token.ts         |     100 |       95 |     100 |     100 | 36
+  tunnel.ts        |   67.46 |    62.93 |   65.38 |   73.26 | ...48,167,194,207
+  upload.ts        |     100 |    88.37 |     100 |     100 | 54-55,79,82,109
+  volumeFiles.ts   |    92.1 |    89.83 |    87.5 |   95.55 | 29-30
+ src/lib           |   94.49 |    90.15 |   93.47 |   94.76 |
+  format.ts        |   95.91 |       92 |   96.55 |   95.18 | 70-71,79,87
+  ...BackupFile.ts |   95.23 |       76 |     100 |   97.22 | 42
+  serverRunner.ts  |    92.3 |    94.73 |   85.71 |   93.05 | 124-129
+ src/lib/importers |   99.15 |    90.47 |   98.55 |   99.71 |
+  caprover.ts      |     100 |    89.02 |     100 |     100 | ...85,108,124,135
+  coolify.ts       |   99.12 |    91.15 |     100 |    98.8 | 38
+  dokploy.ts       |    97.7 |    85.81 |   94.44 |     100 | ...37,146-147,152
+  plan.ts          |     100 |    98.38 |     100 |     100 | 156
+  sources.ts       |     100 |    93.75 |     100 |     100 | 62,86,92
+-------------------|---------|----------|---------|---------|-------------------
+
+=============================== Coverage summary ===============================
+Statements   : 91.39% ( 6540/7156 )
+Branches     : 88.54% ( 4482/5062 )
+Functions    : 88.51% ( 1064/1202 )
+Lines        : 91.68% ( 5445/5939 )
+================================================================================

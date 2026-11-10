@@ -1,0 +1,19 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1088_importRecovery.test.ts > upload failure retries the known job without a second restore
+EXPECTED: { state: 'done', creates: 1, restores: 1, target: 'dump snapshot' } ACTUAL: { state: 'done', creates: 1, restores: 1, target: 'dump snapshot' }
+PROBLEM NOT REPRODUCED
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1088_importRecovery.test.ts > wait failure retries the known job without a second restore
+EXPECTED: { state: 'done', creates: 1, restores: 1, target: 'new target writes' } ACTUAL: { state: 'done', creates: 1, restores: 1, target: 'new target writes' }
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1088_importRecovery.test.ts > control: ordinary SDK upload restores once and receipt skips same dump 15ms
+ ✓ .temp_files/audit_continuous_20261109/prove_F1088_importRecovery.test.ts > upload failure retries the known job without a second restore 2ms
+ ✓ .temp_files/audit_continuous_20261109/prove_F1088_importRecovery.test.ts > wait failure retries the known job without a second restore 1ms
+
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
+   Start at  01:49:11
+   Duration  619ms (import 47%, transform 46%, tests 6%, worker 1%)

@@ -1,0 +1,73 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1088_importRecovery.test.ts > known-id retry reconciles upload after receipt serialization 20ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1088_importRecovery.test.ts > known-id retry reconciles chunk-response after receipt serialization 1ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1088_importRecovery.test.ts > known-id retry reconciles start-response after receipt serialization 1ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1088_importRecovery.test.ts > known-id retry reconciles wait after receipt serialization 1ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1088_importRecovery.test.ts > fresh upload and repeated done receipt create one restore 1ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1088_importRecovery.test.ts > unknown throw reconciliation never creates a replacement 1ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1088_importRecovery.test.ts > unknown missing reconciliation never creates a replacement 1ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1088_importRecovery.test.ts > running restore is only awaited through a gated completion, never restarted 1ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1088_importRecovery.test.ts > completed-with-warnings remote job records done without repeating restore 1ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1088_importRecovery.test.ts > confirmed remote failed permits a fresh explicit attempt 1ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1088_importRecovery.test.ts > confirmed remote cancelled permits a fresh explicit attempt 1ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1088_importRecovery.test.ts > confirmed remote expired permits a fresh explicit attempt 0ms
+ × .temp_files/audit_continuous_20261109/verify_F1088_importRecovery.test.ts > different dump cannot replace an unresolved known completed job 8ms
+   → promise resolved "{ receiptVersion: 1, …(3) }" instead of rejecting
+ ✓ .temp_files/audit_continuous_20261109/verify_F1088_importRecovery.test.ts > different dump still refuses after a recorded done receipt 2ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/verify_F1088_importRecovery.test.ts > different dump cannot replace an unresolved known completed job
+AssertionError: promise resolved "{ receiptVersion: 1, …(3) }" instead of rejecting
+
+- Expected
++ Received
+
+- Error {
+-   "message": "rejected promise",
++ {
++   "items": {
++     "data:pg": {
++       "at": "2026-11-09T23:53:09.021Z",
++       "bytes": 22,
++       "id": 5,
++       "importId": 702,
++       "kind": "data",
++       "name": "pg",
++       "notes": [
++         "Imported: 22 bytes, sha256 checked by the panel.",
++       ],
++       "ref": "pg",
++       "sha256": "cd16df935955121899b6573f198a249f95b1e509cb82340eafcfaa9fcb5ed6b7",
++       "state": "done",
++     },
++     "database:pg": {
++       "at": "",
++       "id": 5,
++       "kind": "database",
++       "name": "pg",
++       "notes": [],
++       "ref": "pg",
++       "state": "done",
++     },
++   },
++   "panel": "https://panel.fixture",
++   "receiptVersion": 1,
++   "source": {
++     "kind": "caprover",
++     "url": "https://source.fixture",
++   },
+  }
+
+ ❯ .temp_files/audit_continuous_20261109/verify_F1088_importRecovery.test.ts:75:122
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 13 passed (14)
+   Start at  01:53:08
+   Duration  719ms (import 45%, transform 43%, tests 11%, worker 1%)

@@ -1,0 +1,26 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/verify_F1088_importRecovery.test.ts
+FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1088_importRecovery.test.ts > known-id retry reconciles upload after receipt serialization 21ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1088_importRecovery.test.ts > known-id retry reconciles chunk-response after receipt serialization 1ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1088_importRecovery.test.ts > known-id retry reconciles start-response after receipt serialization 1ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1088_importRecovery.test.ts > known-id retry reconciles wait after receipt serialization 1ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1088_importRecovery.test.ts > fresh upload and repeated done receipt create one restore 0ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1088_importRecovery.test.ts > unknown throw reconciliation never creates a replacement 1ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1088_importRecovery.test.ts > unknown missing reconciliation never creates a replacement 1ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1088_importRecovery.test.ts > running restore is only awaited through a gated completion, never restarted 1ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1088_importRecovery.test.ts > completed-with-warnings remote job records done without repeating restore 1ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1088_importRecovery.test.ts > confirmed remote failed permits a fresh explicit attempt 1ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1088_importRecovery.test.ts > confirmed remote cancelled permits a fresh explicit attempt 0ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1088_importRecovery.test.ts > confirmed remote expired permits a fresh explicit attempt 0ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1088_importRecovery.test.ts > different dump cannot replace an unresolved known completed job 1ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1088_importRecovery.test.ts > different dump still refuses after a recorded done receipt 1ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1088_importRecovery.test.ts > RDB recovery never sends confirmReplace for a second restore after a lost completion response 1ms
+
+ Test Files  1 passed (1)
+      Tests  15 passed (15)
+   Start at  01:55:44
+   Duration  751ms (import 48%, transform 41%, tests 10%, worker 1%)
