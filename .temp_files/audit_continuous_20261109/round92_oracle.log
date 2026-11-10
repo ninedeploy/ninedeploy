@@ -1,0 +1,133 @@
+{
+  "version": "git-lfs/3.8.1 (GitHub; windows amd64; go 1.27.3; git a662a6db)",
+  "report": [
+    {
+      "name": "canonical",
+      "check": 0,
+      "strict": 0,
+      "smudgeExit": 0,
+      "smudgedToBody": true,
+      "preservedInput": false
+    },
+    {
+      "name": "trailing_prose",
+      "check": 1,
+      "strict": 1,
+      "smudgeExit": 0,
+      "smudgedToBody": false,
+      "preservedInput": true
+    },
+    {
+      "name": "trailing_unknown_field",
+      "check": 1,
+      "strict": 1,
+      "smudgeExit": 0,
+      "smudgedToBody": false,
+      "preservedInput": true
+    },
+    {
+      "name": "trailing_blank",
+      "check": 0,
+      "strict": 2,
+      "smudgeExit": 0,
+      "smudgedToBody": true,
+      "preservedInput": false
+    },
+    {
+      "name": "trailing_spaces",
+      "check": 0,
+      "strict": 2,
+      "smudgeExit": 0,
+      "smudgedToBody": true,
+      "preservedInput": false
+    },
+    {
+      "name": "missing_final_newline",
+      "check": 0,
+      "strict": 2,
+      "smudgeExit": 0,
+      "smudgedToBody": true,
+      "preservedInput": false
+    },
+    {
+      "name": "crlf",
+      "check": 0,
+      "strict": 2,
+      "smudgeExit": 0,
+      "smudgedToBody": true,
+      "preservedInput": false
+    },
+    {
+      "name": "duplicate_size",
+      "check": 1,
+      "strict": 1,
+      "smudgeExit": 0,
+      "smudgedToBody": false,
+      "preservedInput": true
+    },
+    {
+      "name": "binary_suffix",
+      "check": 1,
+      "strict": 1,
+      "smudgeExit": 0,
+      "smudgedToBody": false,
+      "preservedInput": true
+    },
+    {
+      "name": "legacy",
+      "check": 0,
+      "strict": 2,
+      "smudgeExit": 0,
+      "smudgedToBody": true,
+      "preservedInput": false
+    },
+    {
+      "name": "leading_spaces",
+      "check": 0,
+      "strict": 2,
+      "smudgeExit": 0,
+      "smudgedToBody": true,
+      "preservedInput": false
+    },
+    {
+      "name": "trailing_nbsp",
+      "check": 0,
+      "strict": 2,
+      "smudgeExit": 0,
+      "smudgedToBody": true,
+      "preservedInput": false
+    },
+    {
+      "name": "trailing_nel",
+      "check": 0,
+      "strict": 2,
+      "smudgeExit": 0,
+      "smudgedToBody": true,
+      "preservedInput": false
+    },
+    {
+      "name": "trailing_bom",
+      "check": 1,
+      "strict": 1,
+      "smudgeExit": 0,
+      "smudgedToBody": false,
+      "preservedInput": true
+    },
+    {
+      "name": "padded1023",
+      "check": 0,
+      "strict": 2,
+      "smudgeExit": 0,
+      "smudgedToBody": true,
+      "preservedInput": false
+    },
+    {
+      "name": "padded1024",
+      "check": 0,
+      "strict": 2,
+      "smudgeExit": 0,
+      "smudgedToBody": true,
+      "preservedInput": false
+    }
+  ]
+}

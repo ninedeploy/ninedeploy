@@ -1,0 +1,77 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: canonical 1499ms
+ × test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: trailing prose 219ms
+   → expected [ 'candidate.bin', 'control.bin' ] to deeply equal [ 'control.bin' ]
+ × test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: trailing unknown field 184ms
+   → expected [ 'candidate.bin', 'control.bin' ] to deeply equal [ 'control.bin' ]
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: trailing blank 264ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: trailing spaces 337ms
+ × test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: missing final LF 276ms
+   → expected [ 'control.bin' ] to deeply equal [ 'candidate.bin', 'control.bin' ]
+ × test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: CRLF 570ms
+   → expected [ 'control.bin' ] to deeply equal [ 'candidate.bin', 'control.bin' ]
+ × test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: duplicate size 276ms
+   → expected [ 'candidate.bin', 'control.bin' ] to deeply equal [ 'control.bin' ]
+ × test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: NUL suffix 302ms
+   → expected [ 'candidate.bin', 'control.bin' ] to deeply equal [ 'control.bin' ]
+ × test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: leading whitespace 497ms
+   → expected [ 'control.bin' ] to deeply equal [ 'candidate.bin', 'control.bin' ]
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: NBSP suffix 400ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: NEL suffix 275ms
+ × test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: BOM suffix 193ms
+   → expected [ 'candidate.bin', 'control.bin' ] to deeply equal [ 'control.bin' ]
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: 1023 byte wrapper 248ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: 1024 byte wrapper 653ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: unknown version 345ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: over local pointer cap 329ms
+
+ Test Files  1 failed (1)
+      Tests  8 failed | 9 passed (17)
+   Start at  15:39:05
+   Duration  7.02s (tests 99%)
+
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 8 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: trailing prose
+ FAIL  test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: trailing unknown field
+ FAIL  test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: duplicate size
+ FAIL  test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: NUL suffix
+ FAIL  test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: BOM suffix
+AssertionError: expected [ 'candidate.bin', 'control.bin' ] to deeply equal [ 'control.bin' ]
+
+- Expected
++ Received
+
+  [
++   "candidate.bin",
+    "control.bin",
+  ]
+
+ ❯ test/lib/gitLfsPointer.test.ts:26:222
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/8]⎯
+
+ FAIL  test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: missing final LF
+ FAIL  test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: CRLF
+ FAIL  test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: leading whitespace
+AssertionError: expected [ 'control.bin' ] to deeply equal [ 'candidate.bin', 'control.bin' ]
+
+- Expected
++ Received
+
+  [
+-   "candidate.bin",
+    "control.bin",
+  ]
+
+ ❯ test/lib/gitLfsPointer.test.ts:26:222
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/8]⎯
+
+
+EXIT 1

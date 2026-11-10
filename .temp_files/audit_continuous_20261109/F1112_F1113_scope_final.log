@@ -1,0 +1,46 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: canonical 280ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: trailing prose 273ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: trailing unknown field 685ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: trailing blank 280ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: trailing spaces 385ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: missing final LF 645ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: CRLF 407ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: duplicate size 1375ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: NUL suffix 1306ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: leading whitespace 2039ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: NBSP suffix 4291ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: NEL suffix 728ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: BOM suffix 1503ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: 1023 byte wrapper 951ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: 1024 byte wrapper 908ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: unknown version 656ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: over local pointer cap 713ms
+ ✓ test/gitLfs.test.ts > lfsEndpoint > is the repository's own .git/info/lfs, without credentials; SSH has none 345ms
+ ✓ test/gitLfs.test.ts > Git LFS fetch > finds only the tracked pointer files 539ms
+ ✓ test/gitLfs.test.ts > Git LFS fetch > replaces each pointer with its verified content; the credential goes to the repository host only 823ms
+ ✓ test/gitLfs.test.ts > Git LFS fetch > refuses content that does not match its pointer, and leaves the pointer in place 742ms
+ ✓ test/gitLfs.test.ts > Git LFS fetch > explains a refused API call, an object error, a missing object and an SSH repository 1130ms
+ ✓ test/gitLfs.test.ts > Git LFS fetch > a commit without LFS files asks nothing of the network 917ms
+ ✓ test/gitLfs.test.ts > Git LFS fetch > stops a redirect loop 509ms
+ ✓ test/lib/gitLfsCleanup.test.ts > control: complete verified content replaces its pointer and removes the temporary store 958ms
+stdout | test/lib/gitLfsCleanup.test.ts > F1109: disconnect after native file drain removes partial private objects and preserves pointer
+EXPECTED retained cachebytes:0 ACTUAL: []
+PROBLEM NOT REPRODUCED
+
+ ✓ test/lib/gitLfsCleanup.test.ts > F1109: disconnect after native file drain removes partial private objects and preserves pointer 530ms
+ ✓ test/lib/gitLfsCleanup.test.ts > cleans object store after short rejection 896ms
+ ✓ test/lib/gitLfsCleanup.test.ts > cleans object store after oversized rejection 889ms
+ ✓ test/lib/gitLfsCleanup.test.ts > cleans object store after hash-mismatch rejection 1118ms
+ ✓ test/lib/gitLfsCleanup.test.ts > cleans an already verified first object when a later object returns404 3409ms
+ ✓ test/lib/gitLfsCleanup.test.ts > handles a failed http batch without leaving a store 652ms
+ ✓ test/lib/gitLfsCleanup.test.ts > handles a failed json batch without leaving a store 559ms
+ ✓ test/lib/gitLfsCleanup.test.ts > retry on the same checkout succeeds after failed content and starts with no cached objects 696ms
+ ✓ test/lib/gitLfsCleanup.test.ts > native checkout write-open failure still removes all verified cached objects 263ms
+
+ Test Files  3 passed (3)
+      Tests  34 passed (34)
+   Start at  15:42:26
+   Duration  33.42s (tests 100%)

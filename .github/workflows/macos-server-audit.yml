@@ -116,6 +116,7 @@ jobs:
             test/lib/requestRateRetention.test.ts \
             test/gitLfs.test.ts \
             test/lib/gitLfsCleanup.test.ts \
+            test/lib/gitLfsPointer.test.ts \
             --coverage=false --reporter=verbose --maxWorkers=1 \
             2>&1 | tee "$AUDIT_LOG_DIR/unit.log"
 

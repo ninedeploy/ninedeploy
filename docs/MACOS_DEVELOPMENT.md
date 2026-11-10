@@ -14,7 +14,7 @@ The hosted macOS checkpoint below records which native CI checks subsequently pa
 The [manual server audit workflow](../.github/workflows/macos-server-audit.yml)
 checks backend filesystem, SQLite, scheduler, image and LFS regressions on a
 native macOS runner. It installs the root frozen lockfile, builds the server and
-its workspace dependencies, and runs 24 focused test files plus four controlled
+its workspace dependencies, and runs 25 focused test files plus four controlled
 Docker CLI integration files. Docker CLI is installed without starting a daemon;
 all native CLI cases use private configs and loopback fixtures.
 
@@ -1106,3 +1106,29 @@ these regressions. No live provider, egress-security, concurrent-checkout,
 whole-checkout rollback, native Mac or full release claim. Historical stores
 outside an initialized fetch attempt are not swept, and a filesystem refusal
 can still prevent cleanup. Round73's native worker fault remains unresolved.
+
+Round 92 (F1112/F1113) validates the complete basic current-v1 LFS pointer instead
+of a prefix. Native Git LFS 3.8.1 rejected and preserved text with trailing prose,
+unknown records, duplicate size, NUL or BOM suffixes; the previous producer
+classified those prefixes and could overwrite the text with object bytes.
+Native-compatible CRLF, absent final newline and outer Unicode White_Space now
+hydrate instead of remaining as pointer text. Existing size/hash verification,
+headers, egress policy and inclusive 1024-byte local cap are unchanged.
+
+Original before: two failures/one canonical control; after: three passes. The
+permanent 17-case suite was seen red (eight failures/nine controls), then the
+original three plus those seventeen passed three consecutive verifier runs.
+Final neighboring scope passed 34 tests in three files. Bounded server
+typecheck/build, two-file lint and manual workflow YAML/bash checks passed.
+The native oracle used its own temporary repo and local object cache; no remote
+LFS provider was contacted. Unit regressions need Git but no git-lfs binary.
+
+```bash
+pnpm --dir apps/server exec vitest run test/lib/gitLfsPointer.test.ts test/lib/gitLfsCleanup.test.ts test/gitLfs.test.ts --coverage=false
+```
+
+This covers bounded basic current-v1 inputs. Legacy version identifiers and LFS
+extensions are not newly implemented; no full native-format equivalence or live
+deployment certification is claimed. The Mac lane now includes the pointer
+suite (25 server files). Native LFS pointer follow-up: pending the new Mac run.
+Full root release/coverage and round73's Windows native fault remain unresolved.

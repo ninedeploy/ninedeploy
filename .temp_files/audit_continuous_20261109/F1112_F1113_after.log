@@ -1,0 +1,19 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1112_F1113_lfsPointer.test.ts > control: canonical v1 pointer hydrates to verified bytes 596ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1112_F1113_lfsPointer.test.ts > F1112: ordinary text with a pointer-looking prefix must remain byte-for-byte unchanged
+EXPECTED ordinary text preserved:true ACTUAL: true classified [ 'canonical.bin' ]
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1112_F1113_lfsPointer.test.ts > F1112: ordinary text with a pointer-looking prefix must remain byte-for-byte unchanged 1573ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1112_F1113_lfsPointer.test.ts > F1113: native-supported CRLF and missing-final-LF basic v1 pointers hydrate
+EXPECTED3hydrated ACTUAL: { files: 3, bytes: 23 } [ true, true, true ]
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1112_F1113_lfsPointer.test.ts > F1113: native-supported CRLF and missing-final-LF basic v1 pointers hydrate 1075ms
+
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
+   Start at  15:36:15
+   Duration  3.39s (tests 99%, transform 1%, import 1%)

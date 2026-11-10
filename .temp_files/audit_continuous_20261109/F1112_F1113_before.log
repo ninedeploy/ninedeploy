@@ -1,0 +1,61 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1112_F1113_lfsPointer.test.ts > control: canonical v1 pointer hydrates to verified bytes 544ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1112_F1113_lfsPointer.test.ts > F1112: ordinary text with a pointer-looking prefix must remain byte-for-byte unchanged
+EXPECTED ordinary text preserved:true ACTUAL: false classified [ 'canonical.bin', 'ordinary.txt' ]
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/prove_F1112_F1113_lfsPointer.test.ts > F1112: ordinary text with a pointer-looking prefix must remain byte-for-byte unchanged 302ms
+   → expected 'verified fixture object' to be 'version https://git-lfs.github.com/sp…' // Object.is equality
+stdout | .temp_files/audit_continuous_20261109/prove_F1112_F1113_lfsPointer.test.ts > F1113: native-supported CRLF and missing-final-LF basic v1 pointers hydrate
+EXPECTED3hydrated ACTUAL: { files: 1, bytes: 23 } [ true, false, false ]
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/prove_F1112_F1113_lfsPointer.test.ts > F1113: native-supported CRLF and missing-final-LF basic v1 pointers hydrate 503ms
+   → expected [ true, false, false ] to deeply equal [ true, true, true ]
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1112_F1113_lfsPointer.test.ts > F1112: ordinary text with a pointer-looking prefix must remain byte-for-byte unchanged
+AssertionError: expected 'verified fixture object' to be 'version https://git-lfs.github.com/sp…' // Object.is equality
+
+- Expected
++ Received
+
+- version https://git-lfs.github.com/spec/v1
+- oid sha256:cb95d14851bb343e22b913704d2fe728b3aca2368cf1f89482d1dced4ee41f2a
+- size 23
+- This is explanatory text, not an LFS pointer.
+-
++ verified fixture object
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1112_F1113_lfsPointer.test.ts:7:561
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1112_F1113_lfsPointer.test.ts > F1113: native-supported CRLF and missing-final-LF basic v1 pointers hydrate
+AssertionError: expected [ true, false, false ] to deeply equal [ true, true, true ]
+
+- Expected
++ Received
+
+  [
+    true,
+-   true,
+-   true,
++   false,
++   false,
+  ]
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1112_F1113_lfsPointer.test.ts:8:498
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 1 passed (3)
+   Start at  15:34:39
+   Duration  1.50s (tests 96%, transform 2%, import 1%)

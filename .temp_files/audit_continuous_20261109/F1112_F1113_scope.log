@@ -1,0 +1,46 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: canonical 292ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: trailing prose 553ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: trailing unknown field 262ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: trailing blank 501ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: trailing spaces 873ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: missing final LF 607ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: CRLF 1089ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: duplicate size 566ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: NUL suffix 288ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: leading whitespace 646ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: NBSP suffix 282ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: NEL suffix 620ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: BOM suffix 575ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: 1023 byte wrapper 277ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: 1024 byte wrapper 606ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: unknown version 560ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: over local pointer cap 641ms
+ ✓ test/gitLfs.test.ts > lfsEndpoint > is the repository's own .git/info/lfs, without credentials; SSH has none 630ms
+ ✓ test/gitLfs.test.ts > Git LFS fetch > finds only the tracked pointer files 1718ms
+ ✓ test/gitLfs.test.ts > Git LFS fetch > replaces each pointer with its verified content; the credential goes to the repository host only 380ms
+ ✓ test/gitLfs.test.ts > Git LFS fetch > refuses content that does not match its pointer, and leaves the pointer in place 194ms
+ ✓ test/gitLfs.test.ts > Git LFS fetch > explains a refused API call, an object error, a missing object and an SSH repository 515ms
+ ✓ test/gitLfs.test.ts > Git LFS fetch > a commit without LFS files asks nothing of the network 728ms
+ ✓ test/gitLfs.test.ts > Git LFS fetch > stops a redirect loop 223ms
+ ✓ test/lib/gitLfsCleanup.test.ts > control: complete verified content replaces its pointer and removes the temporary store 229ms
+stdout | test/lib/gitLfsCleanup.test.ts > F1109: disconnect after native file drain removes partial private objects and preserves pointer
+EXPECTED retained cachebytes:0 ACTUAL: []
+PROBLEM NOT REPRODUCED
+
+ ✓ test/lib/gitLfsCleanup.test.ts > F1109: disconnect after native file drain removes partial private objects and preserves pointer 258ms
+ ✓ test/lib/gitLfsCleanup.test.ts > cleans object store after short rejection 409ms
+ ✓ test/lib/gitLfsCleanup.test.ts > cleans object store after oversized rejection 213ms
+ ✓ test/lib/gitLfsCleanup.test.ts > cleans object store after hash-mismatch rejection 194ms
+ ✓ test/lib/gitLfsCleanup.test.ts > cleans an already verified first object when a later object returns404 195ms
+ ✓ test/lib/gitLfsCleanup.test.ts > handles a failed http batch without leaving a store 200ms
+ ✓ test/lib/gitLfsCleanup.test.ts > handles a failed json batch without leaving a store 474ms
+ ✓ test/lib/gitLfsCleanup.test.ts > retry on the same checkout succeeds after failed content and starts with no cached objects 289ms
+ ✓ test/lib/gitLfsCleanup.test.ts > native checkout write-open failure still removes all verified cached objects 206ms
+
+ Test Files  3 passed (3)
+      Tests  34 passed (34)
+   Start at  15:40:00
+   Duration  16.70s (tests 99%)

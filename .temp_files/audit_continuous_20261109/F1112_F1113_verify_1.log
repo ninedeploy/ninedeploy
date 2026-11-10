@@ -1,0 +1,47 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1112_F1113_lfsPointer.test.ts > control: canonical v1 pointer hydrates to verified bytes 227ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1112_F1113_lfsPointer.test.ts > F1112: ordinary text with a pointer-looking prefix must remain byte-for-byte unchanged
+EXPECTED ordinary text preserved:true ACTUAL: true classified [ 'canonical.bin' ]
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1112_F1113_lfsPointer.test.ts > F1112: ordinary text with a pointer-looking prefix must remain byte-for-byte unchanged 591ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1112_F1113_lfsPointer.test.ts > F1113: native-supported CRLF and missing-final-LF basic v1 pointers hydrate
+EXPECTED3hydrated ACTUAL: { files: 3, bytes: 23 } [ true, true, true ]
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1112_F1113_lfsPointer.test.ts > F1113: native-supported CRLF and missing-final-LF basic v1 pointers hydrate 225ms
+
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
+   Start at  15:39:14
+   Duration  1.18s (tests 97%, import 2%, transform 1%)
+
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: canonical 306ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: trailing prose 265ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: trailing unknown field 570ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: trailing blank 356ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: trailing spaces 370ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: missing final LF 621ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: CRLF 439ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: duplicate size 641ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: NUL suffix 290ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: leading whitespace 662ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: NBSP suffix 336ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: NEL suffix 714ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: BOM suffix 337ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: 1023 byte wrapper 611ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: 1024 byte wrapper 331ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: unknown version 690ms
+ ✓ test/lib/gitLfsPointer.test.ts > classifies and hydrates complete basic-v1 input: over local pointer cap 297ms
+
+ Test Files  1 passed (1)
+      Tests  17 passed (17)
+   Start at  15:39:16
+   Duration  8.03s (tests 99%)
+
+FIX VERIFIED

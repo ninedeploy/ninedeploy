@@ -30,7 +30,7 @@ const DOWNLOAD_TIMEOUT_MS = 10 * 60_000;
 const LFS_MEDIA = 'application/vnd.git-lfs+json';
 /** A pointer file is small; anything larger is content, not a pointer. */
 const MAX_POINTER_BYTES = 1024;
-const POINTER_RE = /^version https:\/\/git-lfs\.github\.com\/spec\/v1\noid sha256:([0-9a-f]{64})\nsize (\d+)\n/;
+const POINTER_RE = /^version https:\/\/git-lfs\.github\.com\/spec\/v1\noid sha256:([0-9a-f]{64})\nsize (\d+)$/;
 
 export const GIT_LFS_PANEL_ONLY =
   'Git LFS files are fetched for builds on the panel host only; a build on a node or a build server would get pointer files. Build on the panel (Service → Settings → Build on: panel, or leave the placement unset) or turn Git LFS off.';
@@ -63,7 +63,10 @@ export async function findLfsPointers(dir: string): Promise<LfsPointer[]> {
     } finally {
       closeSync(fd);
     }
-    const m = POINTER_RE.exec(buf.subarray(0, n).toString('utf8'));
+    // Validate the whole basic v1 payload; native LFS also accepts outer whitespace and CRLF.
+    const text = buf.subarray(0, n).toString('utf8').replace(/\r\n/g, '\n')
+      .replace(/^\p{White_Space}+|\p{White_Space}+$/gu, '');
+    const m = POINTER_RE.exec(text);
     if (m) pointers.push({ path: rel, oid: m[1]!, size: Number(m[2]) });
   }
   return pointers;

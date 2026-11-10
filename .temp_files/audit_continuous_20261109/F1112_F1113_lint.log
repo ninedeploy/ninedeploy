@@ -1,0 +1,212 @@
+apps\server\test\lib\gitLfsPointer.test.ts:8:20 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+     6 │ const cases=[
+     7 │  ['canonical',canonical,true],
+   > 8 │  ['trailing prose',canonical+'This is explanatory text.\n',false],
+       │                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     9 │  ['trailing unknown field',canonical+'z-note explanation\n',false],
+    10 │  ['trailing blank',canonical+'\n',true],
+
+  i Unsafe fix: Use a template literal.
+
+     6  6 │   const cases=[
+     7  7 │    ['canonical',canonical,true],
+     8    │ - ·['trailing·prose',canonical+'This·is·explanatory·text.\n',false],
+        8 │ + ·['trailing·prose',`${canonical}This·is·explanatory·text.\n`,false],
+     9  9 │    ['trailing unknown field',canonical+'z-note explanation\n',false],
+    10 10 │    ['trailing blank',canonical+'\n',true],
+
+
+apps\server\test\lib\gitLfsPointer.test.ts:9:28 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+     7 │  ['canonical',canonical,true],
+     8 │  ['trailing prose',canonical+'This is explanatory text.\n',false],
+   > 9 │  ['trailing unknown field',canonical+'z-note explanation\n',false],
+       │                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    10 │  ['trailing blank',canonical+'\n',true],
+    11 │  ['trailing spaces',canonical+'  \n',true],
+
+  i Unsafe fix: Use a template literal.
+
+     7  7 │    ['canonical',canonical,true],
+     8  8 │    ['trailing prose',canonical+'This is explanatory text.\n',false],
+     9    │ - ·['trailing·unknown·field',canonical+'z-note·explanation\n',false],
+        9 │ + ·['trailing·unknown·field',`${canonical}z-note·explanation\n`,false],
+    10 10 │    ['trailing blank',canonical+'\n',true],
+    11 11 │    ['trailing spaces',canonical+'  \n',true],
+
+
+apps\server\test\lib\gitLfsPointer.test.ts:10:20 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+     8 │  ['trailing prose',canonical+'This is explanatory text.\n',false],
+     9 │  ['trailing unknown field',canonical+'z-note explanation\n',false],
+  > 10 │  ['trailing blank',canonical+'\n',true],
+       │                    ^^^^^^^^^^^^^^
+    11 │  ['trailing spaces',canonical+'  \n',true],
+    12 │  ['missing final LF',canonical.trimEnd(),true],
+
+  i Unsafe fix: Use a template literal.
+
+     8  8 │    ['trailing prose',canonical+'This is explanatory text.\n',false],
+     9  9 │    ['trailing unknown field',canonical+'z-note explanation\n',false],
+    10    │ - ·['trailing·blank',canonical+'\n',true],
+       10 │ + ·['trailing·blank',`${canonical}\n`,true],
+    11 11 │    ['trailing spaces',canonical+'  \n',true],
+    12 12 │    ['missing final LF',canonical.trimEnd(),true],
+
+
+apps\server\test\lib\gitLfsPointer.test.ts:11:21 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+     9 │  ['trailing unknown field',canonical+'z-note explanation\n',false],
+    10 │  ['trailing blank',canonical+'\n',true],
+  > 11 │  ['trailing spaces',canonical+'  \n',true],
+       │                     ^^^^^^^^^^^^^^^^
+    12 │  ['missing final LF',canonical.trimEnd(),true],
+    13 │  ['CRLF',canonical.replaceAll('\n','\r\n'),true],
+
+  i Unsafe fix: Use a template literal.
+
+     9  9 │    ['trailing unknown field',canonical+'z-note explanation\n',false],
+    10 10 │    ['trailing blank',canonical+'\n',true],
+    11    │ - ·['trailing·spaces',canonical+'··\n',true],
+       11 │ + ·['trailing·spaces',`${canonical}··\n`,true],
+    12 12 │    ['missing final LF',canonical.trimEnd(),true],
+    13 13 │    ['CRLF',canonical.replaceAll('\n','\r\n'),true],
+
+
+apps\server\test\lib\gitLfsPointer.test.ts:14:20 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+    12 │  ['missing final LF',canonical.trimEnd(),true],
+    13 │  ['CRLF',canonical.replaceAll('\n','\r\n'),true],
+  > 14 │  ['duplicate size',canonical+`size ${Buffer.byteLength(body)}\n`,false],
+       │                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    15 │  ['NUL suffix',canonical+'\0not a pointer\n',false],
+    16 │  ['leading whitespace',' \t'+canonical,true],
+
+  i Unsafe fix: Use a template literal.
+
+    12 12 │    ['missing final LF',canonical.trimEnd(),true],
+    13 13 │    ['CRLF',canonical.replaceAll('\n','\r\n'),true],
+    14    │ - ·['duplicate·size',canonical+`size·${Buffer.byteLength(body)}\n`,false],
+       14 │ + ·['duplicate·size',`${canonical}size·${Buffer.byteLength(body)}\n`,false],
+    15 15 │    ['NUL suffix',canonical+'\0not a pointer\n',false],
+    16 16 │    ['leading whitespace',' \t'+canonical,true],
+
+
+apps\server\test\lib\gitLfsPointer.test.ts:15:16 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+    13 │  ['CRLF',canonical.replaceAll('\n','\r\n'),true],
+    14 │  ['duplicate size',canonical+`size ${Buffer.byteLength(body)}\n`,false],
+  > 15 │  ['NUL suffix',canonical+'\0not a pointer\n',false],
+       │                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    16 │  ['leading whitespace',' \t'+canonical,true],
+    17 │  ['NBSP suffix',canonical+'\u00a0\n',true],
+
+  i Unsafe fix: Use a template literal.
+
+    13 13 │    ['CRLF',canonical.replaceAll('\n','\r\n'),true],
+    14 14 │    ['duplicate size',canonical+`size ${Buffer.byteLength(body)}\n`,false],
+    15    │ - ·['NUL·suffix',canonical+'\0not·a·pointer\n',false],
+       15 │ + ·['NUL·suffix',`${canonical}\0not·a·pointer\n`,false],
+    16 16 │    ['leading whitespace',' \t'+canonical,true],
+    17 17 │    ['NBSP suffix',canonical+'\u00a0\n',true],
+
+
+apps\server\test\lib\gitLfsPointer.test.ts:16:24 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+    14 │  ['duplicate size',canonical+`size ${Buffer.byteLength(body)}\n`,false],
+    15 │  ['NUL suffix',canonical+'\0not a pointer\n',false],
+  > 16 │  ['leading whitespace',' \t'+canonical,true],
+       │                        ^^^^^^^^^^^^^^^
+    17 │  ['NBSP suffix',canonical+'\u00a0\n',true],
+    18 │  ['NEL suffix',canonical+'\u0085\n',true],
+
+  i Unsafe fix: Use a template literal.
+
+    14 14 │    ['duplicate size',canonical+`size ${Buffer.byteLength(body)}\n`,false],
+    15 15 │    ['NUL suffix',canonical+'\0not a pointer\n',false],
+    16    │ - ·['leading·whitespace','·\t'+canonical,true],
+       16 │ + ·['leading·whitespace',`·\t${canonical}`,true],
+    17 17 │    ['NBSP suffix',canonical+'\u00a0\n',true],
+    18 18 │    ['NEL suffix',canonical+'\u0085\n',true],
+
+
+apps\server\test\lib\gitLfsPointer.test.ts:17:17 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+    15 │  ['NUL suffix',canonical+'\0not a pointer\n',false],
+    16 │  ['leading whitespace',' \t'+canonical,true],
+  > 17 │  ['NBSP suffix',canonical+'\u00a0\n',true],
+       │                 ^^^^^^^^^^^^^^^^^^^^
+    18 │  ['NEL suffix',canonical+'\u0085\n',true],
+    19 │  ['BOM suffix',canonical+'\ufeff\n',false],
+
+  i Unsafe fix: Use a template literal.
+
+    15 15 │    ['NUL suffix',canonical+'\0not a pointer\n',false],
+    16 16 │    ['leading whitespace',' \t'+canonical,true],
+    17    │ - ·['NBSP·suffix',canonical+'\u00a0\n',true],
+       17 │ + ·['NBSP·suffix',`${canonical}\u00a0\n`,true],
+    18 18 │    ['NEL suffix',canonical+'\u0085\n',true],
+    19 19 │    ['BOM suffix',canonical+'\ufeff\n',false],
+
+
+apps\server\test\lib\gitLfsPointer.test.ts:18:16 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+    16 │  ['leading whitespace',' \t'+canonical,true],
+    17 │  ['NBSP suffix',canonical+'\u00a0\n',true],
+  > 18 │  ['NEL suffix',canonical+'\u0085\n',true],
+       │                ^^^^^^^^^^^^^^^^^^^^
+    19 │  ['BOM suffix',canonical+'\ufeff\n',false],
+    20 │  ['1023 byte wrapper',canonical+' '.repeat(1023-Buffer.byteLength(canonical)),true],
+
+  i Unsafe fix: Use a template literal.
+
+    16 16 │    ['leading whitespace',' \t'+canonical,true],
+    17 17 │    ['NBSP suffix',canonical+'\u00a0\n',true],
+    18    │ - ·['NEL·suffix',canonical+'\u0085\n',true],
+       18 │ + ·['NEL·suffix',`${canonical}\u0085\n`,true],
+    19 19 │    ['BOM suffix',canonical+'\ufeff\n',false],
+    20 20 │    ['1023 byte wrapper',canonical+' '.repeat(1023-Buffer.byteLength(canonical)),true],
+
+
+apps\server\test\lib\gitLfsPointer.test.ts:19:16 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+    17 │  ['NBSP suffix',canonical+'\u00a0\n',true],
+    18 │  ['NEL suffix',canonical+'\u0085\n',true],
+  > 19 │  ['BOM suffix',canonical+'\ufeff\n',false],
+       │                ^^^^^^^^^^^^^^^^^^^^
+    20 │  ['1023 byte wrapper',canonical+' '.repeat(1023-Buffer.byteLength(canonical)),true],
+    21 │  ['1024 byte wrapper',canonical+' '.repeat(1024-Buffer.byteLength(canonical)),true],
+
+  i Unsafe fix: Use a template literal.
+
+    17 17 │    ['NBSP suffix',canonical+'\u00a0\n',true],
+    18 18 │    ['NEL suffix',canonical+'\u0085\n',true],
+    19    │ - ·['BOM·suffix',canonical+'\ufeff\n',false],
+       19 │ + ·['BOM·suffix',`${canonical}\ufeff\n`,false],
+    20 20 │    ['1023 byte wrapper',canonical+' '.repeat(1023-Buffer.byteLength(canonical)),true],
+    21 21 │    ['1024 byte wrapper',canonical+' '.repeat(1024-Buffer.byteLength(canonical)),true],
+
+
+Checked 2 files in 10ms. No fixes applied.
+Found 10 infos.
