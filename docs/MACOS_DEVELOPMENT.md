@@ -697,3 +697,12 @@ These commands do not enable coverage or integration/diag tests. Upstream
 [libsql issue231](https://github.com/tursodatabase/libsql-js/issues/231) reports
 similar Windows native faults; it is context, not proof of this local cause.
 No Mac result, native crash fix, coverage or release certification is claimed.
+
+Round 74 (F1092) completes the native cross-process lock identity write before
+returning a holder, so short successful writes do not leave an unrecognizable
+lock behind at release. Ten permanent cases were seen red (eight failures,two
+controls), then120 neighboring lock/lifecycle/database tests passed. Ten native
+file controls passed three times; resource-bound server typecheck/build and scoped
+lint passed. Error-path cleanup after failed initialization and existing stale
+takeover windows are outside this change; no native Mac or distributed-lock
+completeness is claimed.

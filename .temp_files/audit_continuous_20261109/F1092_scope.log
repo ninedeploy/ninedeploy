@@ -1,0 +1,39 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/lib/crossProcessLockWrite.test.ts > completes native identity writes limited to 1 bytes 97ms
+ ✓ test/lib/crossProcessLockWrite.test.ts > completes native identity writes limited to 2 bytes 5ms
+ ✓ test/lib/crossProcessLockWrite.test.ts > completes native identity writes limited to 3 bytes 26ms
+ ✓ test/lib/crossProcessLockWrite.test.ts > completes native identity writes limited to 7 bytes 6ms
+ ✓ test/lib/crossProcessLockWrite.test.ts > completes native identity writes limited to 1024 bytes 4ms
+ ✓ test/lib/crossProcessLockWrite.test.ts > advances the buffer offset through uneven native writes 20ms
+ ✓ test/lib/crossProcessLockWrite.test.ts > late old release preserves a later holder after the replacement barrier 8ms
+ ✓ test/lib/crossProcessLockWrite.test.ts > double release cannot delete a newly acquired owner 9ms
+ ✓ test/lib/crossProcessLockWrite.test.ts > zero progress refuses ownership and closes the native descriptor 8ms
+ ✓ test/lib/crossProcessLockWrite.test.ts > failure after a native partial write propagates and closes the descriptor 16ms
+ ✓ test/lib/crossProcessLock.test.ts > acquireCrossProcessLock > acquires, releases, and allows immediate re-acquisition 14ms
+ ✓ test/lib/crossProcessLock.test.ts > acquireCrossProcessLock > writes the holder identity into the lock file 3ms
+ ✓ test/lib/crossProcessLock.test.ts > acquireCrossProcessLock > refuses a second acquisition while held and throws LockUnavailableError 361ms
+ ✓ test/lib/crossProcessLock.test.ts > acquireCrossProcessLock > steals a stale lock whose holder stopped heartbeating 282ms
+ ✓ test/lib/crossProcessLock.test.ts > acquireCrossProcessLock > does not steal a live lock just because the waiter is impatient 306ms
+ ✓ test/lib/crossProcessLock.test.ts > acquireCrossProcessLock > mutually excludes a REAL second process and steals the lock after a crash 568ms
+ ✓ test/lib/crossProcessLock-r314.test.ts > r314: cross-process lock ownership > a waiter that judged a lock stale does not delete the fresh lock another waiter just took 311ms
+ ✓ test/lib/crossProcessLock-r314.test.ts > r314: cross-process lock ownership > still steals a genuinely stale lock 62ms
+ ✓ test/lib/crossProcessLock-r314.test.ts > r314: cross-process lock ownership > release() does not delete a lock file that now belongs to another holder 5ms
+ ✓ test/lib/nodeDatabaseLifecycle.test.ts > node database lifecycle exclusion > refuses invalid resource 0 before any operation 5ms
+ ✓ test/lib/nodeDatabaseLifecycle.test.ts > node database lifecycle exclusion > refuses invalid resource -1 before any operation 1ms
+ ✓ test/lib/nodeDatabaseLifecycle.test.ts > node database lifecycle exclusion > refuses invalid resource 1.5 before any operation 1ms
+ ✓ test/lib/nodeDatabaseLifecycle.test.ts > node database lifecycle exclusion > refuses invalid resource NaN before any operation 1ms
+ ✓ test/lib/nodeDatabaseLifecycle.test.ts > node database lifecycle exclusion > refuses invalid resource 9007199254740992 before any operation 2ms
+ ✓ test/lib/nodeDatabaseLifecycle.test.ts > node database lifecycle exclusion > refuses a same-resource overlap without queueing and allows another database 14ms
+ ✓ test/lib/nodeDatabaseLifecycle.test.ts > node database lifecycle exclusion > releases both locks after the operation fails 9ms
+ ✓ test/lib/nodeDatabaseLifecycle.test.ts > node database lifecycle exclusion > honors an independently acquired on-disk lock, bounds waiting, and permits retry after release 17ms
+ ✓ test/lib/nodeDatabaseLifecycle.test.ts > node database lifecycle exclusion > preserves filesystem failures and releases in-process exclusion after failed acquisition 6ms
+
+ Test Files  4 passed (4)
+      Tests  28 passed (28)
+   Start at  10:26:58
+   Duration  3.21s (tests 94%, import 4%, transform 2%, worker 1%)
+
+    Isolate  4 workers spawned · ~210ms startup each (spawn + environment, per file)
+             at least ~631ms faster with isolate: false — reuses workers across files instead of one per file

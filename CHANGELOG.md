@@ -36,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Cross-process operation locks now complete short native identity writes before granting a holder, preserving recognition and cleanup by its release operation (F1092).
 - Database-import chunks now complete short native writes before advancing upload metadata and fail without acknowledging a zero-progress write (F1091).
 - Concurrent database-import chunk retries now preserve acknowledged bytes by serializing native writes and rechecking upload metadata before writing (F1090).
 - A stale database-import refusal now returns a conflict without deleting staging owned by an admitted worker or emitting a false failure audit (F1089).

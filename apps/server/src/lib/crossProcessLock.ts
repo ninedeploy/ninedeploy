@@ -67,7 +67,13 @@ export async function acquireCrossProcessLock(lockPath: string, opts: LockOption
     try {
       const fd = openSync(lockPath, 'wx', 0o600);
       try {
-        writeSync(fd, token);
+        const identity = Buffer.from(token);
+        let offset = 0;
+        while (offset < identity.length) {
+          const written = writeSync(fd, identity, offset, identity.length - offset);
+          if (written === 0) throw new Error('The operation lock identity write made no progress');
+          offset += written;
+        }
       } catch (error) {
         closeSync(fd);
         throw error;

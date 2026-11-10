@@ -1,0 +1,151 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ × test/lib/crossProcessLockWrite.test.ts > completes native identity writes limited to 1 bytes 13ms
+   → expected '1' to match /^\d+ \d+ [a-f0-9-]+\n$/
+ × test/lib/crossProcessLockWrite.test.ts > completes native identity writes limited to 2 bytes 4ms
+   → expected '13' to match /^\d+ \d+ [a-f0-9-]+\n$/
+ × test/lib/crossProcessLockWrite.test.ts > completes native identity writes limited to 3 bytes 3ms
+   → expected '132' to match /^\d+ \d+ [a-f0-9-]+\n$/
+ × test/lib/crossProcessLockWrite.test.ts > completes native identity writes limited to 7 bytes 5ms
+   → expected '132056 ' to match /^\d+ \d+ [a-f0-9-]+\n$/
+ ✓ test/lib/crossProcessLockWrite.test.ts > completes native identity writes limited to 1024 bytes 6ms
+ × test/lib/crossProcessLockWrite.test.ts > advances the buffer offset through uneven native writes 6ms
+   → expected [ +0 ] to deeply equal [ +0, 2, 3, 7 ]
+ ✓ test/lib/crossProcessLockWrite.test.ts > late old release preserves a later holder after the replacement barrier 6ms
+ × test/lib/crossProcessLockWrite.test.ts > double release cannot delete a newly acquired owner 10162ms
+   → another process holds the operation lock operation.lock
+ × test/lib/crossProcessLockWrite.test.ts > zero progress refuses ownership and closes the native descriptor 5ms
+   → promise resolved "{ release: [Function release] }" instead of rejecting
+ × test/lib/crossProcessLockWrite.test.ts > failure after a native partial write propagates and closes the descriptor 3ms
+   → promise resolved "{ release: [Function release] }" instead of rejecting
+
+ Test Files  1 failed (1)
+      Tests  8 failed | 2 passed (10)
+   Start at  10:26:45
+   Duration  10.45s (tests 99%)
+
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 8 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/lib/crossProcessLockWrite.test.ts > completes native identity writes limited to 1 bytes
+AssertionError: expected '1' to match /^\d+ \d+ [a-f0-9-]+\n$/
+
+- Expected:
+/^\d+ \d+ [a-f0-9-]+\n$/
+
++ Received:
+"1"
+
+ ❯ test/lib/crossProcessLockWrite.test.ts:19:233
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/8]⎯
+
+ FAIL  test/lib/crossProcessLockWrite.test.ts > completes native identity writes limited to 2 bytes
+AssertionError: expected '13' to match /^\d+ \d+ [a-f0-9-]+\n$/
+
+- Expected:
+/^\d+ \d+ [a-f0-9-]+\n$/
+
++ Received:
+"13"
+
+ ❯ test/lib/crossProcessLockWrite.test.ts:19:233
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/8]⎯
+
+ FAIL  test/lib/crossProcessLockWrite.test.ts > completes native identity writes limited to 3 bytes
+AssertionError: expected '132' to match /^\d+ \d+ [a-f0-9-]+\n$/
+
+- Expected:
+/^\d+ \d+ [a-f0-9-]+\n$/
+
++ Received:
+"132"
+
+ ❯ test/lib/crossProcessLockWrite.test.ts:19:233
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/8]⎯
+
+ FAIL  test/lib/crossProcessLockWrite.test.ts > completes native identity writes limited to 7 bytes
+AssertionError: expected '132056 ' to match /^\d+ \d+ [a-f0-9-]+\n$/
+
+- Expected:
+/^\d+ \d+ [a-f0-9-]+\n$/
+
++ Received:
+"132056 "
+
+ ❯ test/lib/crossProcessLockWrite.test.ts:19:233
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/8]⎯
+
+ FAIL  test/lib/crossProcessLockWrite.test.ts > advances the buffer offset through uneven native writes
+AssertionError: expected [ +0 ] to deeply equal [ +0, 2, 3, 7 ]
+
+- Expected
++ Received
+
+  [
+    0,
+-   2,
+-   3,
+-   7,
+  ]
+
+ ❯ test/lib/crossProcessLockWrite.test.ts:20:172
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/8]⎯
+
+ FAIL  test/lib/crossProcessLockWrite.test.ts > double release cannot delete a newly acquired owner
+LockUnavailableError: another process holds the operation lock operation.lock
+ ❯ acquireCrossProcessLock src/lib/crossProcessLock.ts:115:40
+    113|         /* vanished between EEXIST and stat — retry */
+    114|       }
+    115|       if (Date.now() > deadline) throw new LockUnavailableError(lockPa…
+       |                                        ^
+    116|       await new Promise((resolve) => setTimeout(resolve, retryMs));
+    117|     }
+ ❯ acquire test/lib/crossProcessLockWrite.test.ts:14:52
+ ❯ test/lib/crossProcessLockWrite.test.ts:22:162
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/8]⎯
+
+ FAIL  test/lib/crossProcessLockWrite.test.ts > zero progress refuses ownership and closes the native descriptor
+AssertionError: promise resolved "{ release: [Function release] }" instead of rejecting
+
+- Expected
++ Received
+
+- Error {
+-   "message": "rejected promise",
++ {
++   "release": [Function release],
+  }
+
+ ❯ test/lib/crossProcessLockWrite.test.ts:23:149
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/8]⎯
+
+ FAIL  test/lib/crossProcessLockWrite.test.ts > failure after a native partial write propagates and closes the descriptor
+AssertionError: promise resolved "{ release: [Function release] }" instead of rejecting
+
+- Expected
++ Received
+
+- Error {
+-   "message": "rejected promise",
++ {
++   "release": [Function release],
+  }
+
+ ❯ test/lib/crossProcessLockWrite.test.ts:24:161
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/8]⎯

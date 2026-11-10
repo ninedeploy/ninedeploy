@@ -1,0 +1,32 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1092_lockIdentity.test.ts > short native token writes still permit owned release
+EXPECTED: owned lock removed ACTUAL: orphan remains token bytes: 3
+PROBLEM CONFIRMED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1092_lockIdentity.test.ts > control: full native token write is removed by its own release 7ms
+ × .temp_files/audit_continuous_20261109/prove_F1092_lockIdentity.test.ts > short native token writes still permit owned release 5ms
+   → expected true to be false // Object.is equality
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1092_lockIdentity.test.ts > short native token writes still permit owned release
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1092_lockIdentity.test.ts:12:452
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 1 passed (2)
+   Start at  10:25:09
+   Duration  175ms (transform 51%, import 24%, tests 20%, worker 4%)

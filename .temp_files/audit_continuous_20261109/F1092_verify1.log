@@ -1,0 +1,21 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/verify_F1092_lockIdentity.test.ts
+FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1092_lockIdentity.test.ts > completes native identity writes limited to 1 bytes 11ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1092_lockIdentity.test.ts > completes native identity writes limited to 2 bytes 5ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1092_lockIdentity.test.ts > completes native identity writes limited to 3 bytes 4ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1092_lockIdentity.test.ts > completes native identity writes limited to 7 bytes 4ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1092_lockIdentity.test.ts > completes native identity writes limited to 1024 bytes 4ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1092_lockIdentity.test.ts > advances the buffer offset through uneven native writes 5ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1092_lockIdentity.test.ts > late old release preserves a later holder after the replacement barrier 6ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1092_lockIdentity.test.ts > double release cannot delete a newly acquired owner 18ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1092_lockIdentity.test.ts > zero progress refuses ownership and closes the native descriptor 4ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1092_lockIdentity.test.ts > failure after a native partial write propagates and closes the descriptor 3ms
+
+ Test Files  1 passed (1)
+      Tests  10 passed (10)
+   Start at  10:26:20
+   Duration  603ms (tests 50%, transform 26%, import 19%, worker 4%)
