@@ -14,3 +14,6 @@ Original proof after patch2passed/PROBLEM NOT REPRODUCED. Permanent nine-case re
 
 ## Publication preflight
 33owned paths staged; expected normalized blobs, index diffcheck and limited staged credential-pattern check passed. Prior working tree clean; only owned scope staged.
+
+## Native Mac follow-up
+Run42829905100 exactde41df9eef4640334fcb36deb241ea7d88391db0 successful, macOS26.7.2 arm64. Server333/26files, CLI20/4files, MCP4/1file=357passed/31files. Frozen install/build/typecheck passed. Ten diagnostics and source/event SHA checked; original+normalized SHA256 hashes retained in round93_receipt.json. ZIP digest metadata not independently verified. Backend remains identical for evidence publication; full release/server R73 still uncertified.
