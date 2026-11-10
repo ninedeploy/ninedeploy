@@ -12,3 +12,6 @@ Original after2passed/PROBLEM NOT REPRODUCED. Stronger nine-case regression capt
 
 ## Publication preflight
 29ownedpaths staged, exactexpectednormalizedblobs/indexdiff/limitedcredentialpatternscanpassed. Only confirmedscope and ownedevidence staged.
+
+## Native Mac follow-up
+Run42832031978 exactc0be1bd032abd6139f8a97e1707837e12d9190f7 successfulonmacOS26.7.2arm64. Server359/29files,CLI20/4files,MCP4/1file=383passed/34files. Frozeninstall/build/typecheckpassed. Ten diagnostics source/eventSHAchecked, original+normalized SHA256 recorded in round95_receipt.json. ZIPdigest metadata notindependentlyverified. Backendidentityunchanged for evidencepublication; fullrootrelease/R73notcertified.
