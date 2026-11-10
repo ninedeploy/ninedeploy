@@ -1,0 +1,73 @@
+{
+  "runId": 42813045891,
+  "url": "https://github.com/ninedeploy/ninedeploy/actions/runs/42813045891",
+  "sourceSha": "f71b619db87cd34350a9e15ac2c6c12ac45c6467",
+  "environment": {
+    "sha": "f71b619db87cd34350a9e15ac2c6c12ac45c6467",
+    "eventSha": "f71b619db87cd34350a9e15ac2c6c12ac45c6467",
+    "runId": "42813045891",
+    "timestamp": "2026-11-10T12:07:46.658Z",
+    "platform": "darwin",
+    "architecture": "arm64",
+    "macOS": "26.7.2",
+    "node": "26.12.1",
+    "pnpm": "11.23.0",
+    "git": "git version 2.56.0"
+  },
+  "unit": {
+    "files": 24,
+    "passed": 307
+  },
+  "nativeCli": {
+    "files": 4,
+    "passed": 20,
+    "version": "Docker version 29.9.2, build a82e528901"
+  },
+  "artifact": {
+    "digest": "sha256:599d5b9b469d4b2f04266ad23029d58e024cee28a5f9fe1d22767279bc1e13ff",
+    "expired": false,
+    "id": 13763646830,
+    "name": "macos-server-audit-f71b619db87cd34350a9e15ac2c6c12ac45c6467-1",
+    "size_in_bytes": 13267
+  },
+  "downloadedFiles": [
+    "bootstrap.txt",
+    "build.log",
+    "docker-cli.log",
+    "environment.json",
+    "install.log",
+    "native-cli.log",
+    "typecheck.log",
+    "unit.log"
+  ],
+  "artifactZipDigestIndependentlyVerified": false,
+  "fullReleaseCertified": false,
+  "physicalMacOrNormalKeychainTested": false,
+  "serverTree": "e6cd3dfbfcbd13d5c9ec69488eb0f153444a9ec8",
+  "originalDownloadedFileSha256": {
+    "bootstrap.txt": "1249c447dca1c917a24cac1d616109b0e49c654bb7ca73c04f54d29387240ca0",
+    "build.log": "4d4986e859d59189ab6f6c5bdf7cc79d6b55495f500ee9282ad52506d7cc1385",
+    "docker-cli.log": "78b5b478b19eeb8370a1655fca2bdfc303c39f1aede8ed50f5c4b9195f4ddbe5",
+    "environment.json": "d867b86708ef67ea8e97c1953cda300b34016d4796f55d90d024222fbfd0df1b",
+    "install.log": "498b55dd636d13000f53dfd018b7ecf79847ad14661a88f7bed8d4a684f7b757",
+    "native-cli.log": "d947d7d11ba4d8bf949cd51a66da3b643c2867581f462156d3ff817d9388b4e2",
+    "typecheck.log": "8366207267355d3e3d5bf3bf6e8c94c5f93f6078c34f08973fa2b38cdda6cc92",
+    "unit.log": "9ce4932c860f24b598f8c0ff4bb0538adae2acec63f82ec77e5dd0d8116a26b3"
+  },
+  "repositoryDiagnosticSha256": {
+    "bootstrap.txt": "1249c447dca1c917a24cac1d616109b0e49c654bb7ca73c04f54d29387240ca0",
+    "build.log": "4d4986e859d59189ab6f6c5bdf7cc79d6b55495f500ee9282ad52506d7cc1385",
+    "docker-cli.log": "78b5b478b19eeb8370a1655fca2bdfc303c39f1aede8ed50f5c4b9195f4ddbe5",
+    "environment.json": "d867b86708ef67ea8e97c1953cda300b34016d4796f55d90d024222fbfd0df1b",
+    "install.log": "68ffaf9f9ff01516841737e01c371e638dd2d59ae3278e805d0af0d7b8ddcf5c",
+    "native-cli.log": "44c37d2684a5d7b658d0117106397132cf949fdd273b85bdb6c7105437e5291b",
+    "typecheck.log": "8366207267355d3e3d5bf3bf6e8c94c5f93f6078c34f08973fa2b38cdda6cc92",
+    "unit.log": "db1cb3e3d36514e0df0549e8ee8d01fa74741096d86da9c9a921516722908e7d"
+  },
+  "diagnosticTextNormalization": "LF, trailing whitespace and terminal blank lines normalized for Git; original downloaded hashes retained",
+  "installWarnings": {
+    "optionalSsh2CryptoBindingBuildFailed": true,
+    "preBuildWorkspaceMcpBinTargetAbsent": true,
+    "nativeSshAccelerationOrPostBuildMcpBinNotCertified": true
+  }
+}

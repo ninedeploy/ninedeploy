@@ -1,0 +1,184 @@
+Scope: all 9 workspace projects
+? Verifying lockfile against supply-chain policies (737 entries)...
+Lockfile is up to date, resolution step is skipped
+Progress: resolved 1, reused 0, downloaded 0, added 0
+Packages: +617
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+Progress: resolved 617, reused 0, downloaded 0, added 0
+Progress: resolved 617, reused 0, downloaded 1, added 0
+Progress: resolved 617, reused 0, downloaded 32, added 0
+✓ Lockfile passes supply-chain policies (737 entries in 4.1s)
+Progress: resolved 617, reused 0, downloaded 62, added 0
+Packages are cloned from the content-addressable store to the virtual store.
+  Content-addressable store is at: /Users/runner/setup-pnpm/node_modules/.bin/store/v11
+  Virtual store is at:             node_modules/.pnpm
+Progress: resolved 617, reused 0, downloaded 122, added 4
+Progress: resolved 617, reused 0, downloaded 240, added 12
+Progress: resolved 617, reused 0, downloaded 366, added 20
+Progress: resolved 617, reused 0, downloaded 485, added 28
+Progress: resolved 617, reused 0, downloaded 588, added 36
+Progress: resolved 617, reused 0, downloaded 616, added 65
+Progress: resolved 617, reused 0, downloaded 616, added 184
+Progress: resolved 617, reused 0, downloaded 616, added 373
+Progress: resolved 617, reused 0, downloaded 616, added 617, done
+.../node_modules/cpu-features install$ node buildcheck.js > buildcheck.gypi && node-gyp rebuild
+.../node_modules/protobufjs postinstall$ node scripts/postinstall
+.../esbuild@0.25.12/node_modules/esbuild postinstall$ node install.js
+.../node_modules/protobufjs postinstall: Done
+.../esbuild@0.25.12/node_modules/esbuild postinstall: Done
+.../node_modules/cpu-features install: gyp info it worked if it ends with ok
+.../node_modules/cpu-features install: gyp info using node-gyp@12.3.0
+.../node_modules/cpu-features install: gyp info using node@26.12.1 | darwin | arm64
+.../node_modules/cpu-features install: gyp info find Python using Python version 3.15.2 found at "/opt/homebrew/opt/python@3.15/bin/python3.15"
+.../node_modules/cpu-features install: gyp http GET https://nodejs.org/download/release/v26.12.1/node-v26.12.1-headers.tar.gz
+.../node_modules/cpu-features install: gyp http 200 https://nodejs.org/download/release/v26.12.1/node-v26.12.1-headers.tar.gz
+.../node_modules/cpu-features install: gyp http GET https://nodejs.org/download/release/v26.12.1/SHASUMS256.txt
+.../node_modules/cpu-features install: gyp http 200 https://nodejs.org/download/release/v26.12.1/SHASUMS256.txt
+.../node_modules/cpu-features install: gyp info spawn /opt/homebrew/opt/python@3.15/bin/python3.15
+.../node_modules/cpu-features install: gyp info spawn args [
+.../node_modules/cpu-features install: gyp info spawn args '/Users/runner/setup-pnpm/node_modules/.bin/store/v11/links/@/pnpm/11.23.0/91452b8bfa917972161ba8dbcc3c471ccf52686a76f51d52f63f160a7ce1ff9d/node_modules/pnpm/dist/node_modules/node-gyp/gyp/gyp_main.py',
+.../node_modules/cpu-features install: gyp info spawn args 'binding.gyp',
+.../node_modules/cpu-features install: gyp info spawn args '-f',
+.../node_modules/cpu-features install: gyp info spawn args 'make',
+.../node_modules/cpu-features install: gyp info spawn args '-I',
+.../node_modules/cpu-features install: gyp info spawn args '/Users/runner/work/ninedeploy/ninedeploy/node_modules/.pnpm/cpu-features@0.0.10/node_modules/cpu-features/build/config.gypi',
+.../node_modules/cpu-features install: gyp info spawn args '-I',
+.../node_modules/cpu-features install: gyp info spawn args '/Users/runner/setup-pnpm/node_modules/.bin/store/v11/links/@/pnpm/11.23.0/91452b8bfa917972161ba8dbcc3c471ccf52686a76f51d52f63f160a7ce1ff9d/node_modules/pnpm/dist/node_modules/node-gyp/addon.gypi',
+.../node_modules/cpu-features install: gyp info spawn args '-I',
+.../node_modules/cpu-features install: gyp info spawn args '/Users/runner/Library/Caches/node-gyp/26.12.1/include/node/common.gypi',
+.../node_modules/cpu-features install: gyp info spawn args '-Dlibrary=shared_library',
+.../node_modules/cpu-features install: gyp info spawn args '-Dvisibility=default',
+.../node_modules/cpu-features install: gyp info spawn args '-Dnode_root_dir=/Users/runner/Library/Caches/node-gyp/26.12.1',
+.../node_modules/cpu-features install: gyp info spawn args '-Dnode_gyp_dir=/Users/runner/setup-pnpm/node_modules/.bin/store/v11/links/@/pnpm/11.23.0/91452b8bfa917972161ba8dbcc3c471ccf52686a76f51d52f63f160a7ce1ff9d/node_modules/pnpm/dist/node_modules/node-gyp',
+.../node_modules/cpu-features install: gyp info spawn args '-Dnode_lib_file=/Users/runner/Library/Caches/node-gyp/26.12.1/<(target_arch)/node.lib',
+.../node_modules/cpu-features install: gyp info spawn args '-Dmodule_root_dir=/Users/runner/work/ninedeploy/ninedeploy/node_modules/.pnpm/cpu-features@0.0.10/node_modules/cpu-features',
+.../node_modules/cpu-features install: gyp info spawn args '-Dnode_engine=v8',
+.../node_modules/cpu-features install: gyp info spawn args '--depth=.',
+.../node_modules/cpu-features install: gyp info spawn args '--no-parallel',
+.../node_modules/cpu-features install: gyp info spawn args '--generator-output',
+.../node_modules/cpu-features install: gyp info spawn args 'build',
+.../node_modules/cpu-features install: gyp info spawn args '-Goutput_dir=.'
+.../node_modules/cpu-features install: gyp info spawn args ]
+.../node_modules/cpu-features install: gyp info spawn make
+.../node_modules/cpu-features install: gyp info spawn args [ 'BUILDTYPE=Release', '-C', 'build' ]
+.../node_modules/cpu-features install:   CC(target) Release/obj.target/cpu_features/deps/cpu_features/src/impl_aarch64_linux_or_android.o
+.../node_modules/cpu-features install:   CC(target) Release/obj.target/cpu_features/deps/cpu_features/src/impl_aarch64_macos_or_iphone.o
+.../node_modules/cpu-features install:   CC(target) Release/obj.target/cpu_features/deps/cpu_features/src/impl_aarch64_windows.o
+.../node_modules/cpu-features install:   CC(target) Release/obj.target/cpu_features/deps/cpu_features/src/impl_arm_linux_or_android.o
+.../node_modules/cpu-features install:   CC(target) Release/obj.target/cpu_features/deps/cpu_features/src/impl_mips_linux_or_android.o
+.../node_modules/cpu-features install:   CC(target) Release/obj.target/cpu_features/deps/cpu_features/src/impl_ppc_linux.o
+.../node_modules/cpu-features install:   CC(target) Release/obj.target/cpu_features/deps/cpu_features/src/impl_x86_freebsd.o
+.../node_modules/cpu-features install:   CC(target) Release/obj.target/cpu_features/deps/cpu_features/src/impl_x86_linux_or_android.o
+.../node_modules/cpu-features install:   CC(target) Release/obj.target/cpu_features/deps/cpu_features/src/impl_x86_macos.o
+.../node_modules/cpu-features install:   CC(target) Release/obj.target/cpu_features/deps/cpu_features/src/impl_x86_windows.o
+.../node_modules/cpu-features install:   CC(target) Release/obj.target/cpu_features/deps/cpu_features/src/filesystem.o
+.../node_modules/cpu-features install:   CC(target) Release/obj.target/cpu_features/deps/cpu_features/src/stack_line_reader.o
+.../node_modules/cpu-features install:   CC(target) Release/obj.target/cpu_features/deps/cpu_features/src/string_view.o
+.../node_modules/cpu-features install:   CC(target) Release/obj.target/cpu_features/deps/cpu_features/src/hwcaps.o
+.../node_modules/cpu-features install:   LIBTOOL-STATIC Release/cpu_features.a
+.../node_modules/cpu-features install: libtool: warning: 'impl_aarch64_linux_or_android.o' has no symbols
+.../node_modules/cpu-features install: libtool: warning: 'impl_aarch64_windows.o' has no symbols
+.../node_modules/cpu-features install: libtool: warning: 'impl_arm_linux_or_android.o' has no symbols
+.../node_modules/cpu-features install: libtool: warning: 'impl_mips_linux_or_android.o' has no symbols
+.../node_modules/cpu-features install: libtool: warning: 'impl_ppc_linux.o' has no symbols
+.../node_modules/cpu-features install: libtool: warning: 'impl_x86_freebsd.o' has no symbols
+.../node_modules/cpu-features install: libtool: warning: 'impl_x86_linux_or_android.o' has no symbols
+.../node_modules/cpu-features install: libtool: warning: 'impl_x86_macos.o' has no symbols
+.../node_modules/cpu-features install: libtool: warning: 'impl_x86_windows.o' has no symbols
+.../node_modules/cpu-features install:   CXX(target) Release/obj.target/cpufeatures/src/binding.o
+.../node_modules/cpu-features install: ../src/binding.cc:151:1: warning: cast from 'void (*)(Nan::ADDON_REGISTER_FUNCTION_ARGS_TYPE)' (aka 'void (*)(Local<v8::Object>)') to 'node::addon_register_func' (aka 'void (*)(v8::Local<v8::Object>, v8::Local<v8::Value>, void *)') converts to incompatible function type [-Wcast-function-type-mismatch]
+.../node_modules/cpu-features install:   151 | NODE_MODULE(cpufeatures, init)
+.../node_modules/cpu-features install:       | ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.../node_modules/cpu-features install: /Users/runner/Library/Caches/node-gyp/26.12.1/include/node/node.h:1409:3: note: expanded from macro 'NODE_MODULE'
+.../node_modules/cpu-features install:  1409 |   NODE_MODULE_X(modname, regfunc, NULL, 0)  // NOLINT (readability/null_usage)
+.../node_modules/cpu-features install:       |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.../node_modules/cpu-features install: /Users/runner/Library/Caches/node-gyp/26.12.1/include/node/node.h:1375:7: note: expanded from macro 'NODE_MODULE_X'
+.../node_modules/cpu-features install:  1375 |       (node::addon_register_func) (regfunc),                          \
+.../node_modules/cpu-features install:       |       ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.../node_modules/cpu-features install: 1 warning generated.
+.../node_modules/cpu-features install:   SOLINK_MODULE(target) Release/cpufeatures.node
+.../node_modules/cpu-features install: gyp info ok
+.../node_modules/cpu-features install: Done
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install$ node install.js
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp info it worked if it ends with ok
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp info using node-gyp@12.3.0
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp info using node@26.12.1 | darwin | arm64
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp info find Python using Python version 3.15.2 found at "/opt/homebrew/opt/python@3.15/bin/python3.15"
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp info spawn /opt/homebrew/opt/python@3.15/bin/python3.15
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp info spawn args [
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp info spawn args '/Users/runner/setup-pnpm/node_modules/.bin/store/v11/links/@/pnpm/11.23.0/91452b8bfa917972161ba8dbcc3c471ccf52686a76f51d52f63f160a7ce1ff9d/node_modules/pnpm/dist/node_modules/node-gyp/gyp/gyp_main.py',
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp info spawn args 'binding.gyp',
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp info spawn args '-f',
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp info spawn args 'make',
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp info spawn args '-I',
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp info spawn args '/Users/runner/work/ninedeploy/ninedeploy/node_modules/.pnpm/ssh2@1.17.0/node_modules/ssh2/lib/protocol/crypto/build/config.gypi',
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp info spawn args '-I',
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp info spawn args '/Users/runner/setup-pnpm/node_modules/.bin/store/v11/links/@/pnpm/11.23.0/91452b8bfa917972161ba8dbcc3c471ccf52686a76f51d52f63f160a7ce1ff9d/node_modules/pnpm/dist/node_modules/node-gyp/addon.gypi',
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp info spawn args '-I',
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp info spawn args '/Users/runner/Library/Caches/node-gyp/26.12.1/include/node/common.gypi',
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp info spawn args '-Dlibrary=shared_library',
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp info spawn args '-Dvisibility=default',
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp info spawn args '-Dnode_root_dir=/Users/runner/Library/Caches/node-gyp/26.12.1',
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp info spawn args '-Dnode_gyp_dir=/Users/runner/setup-pnpm/node_modules/.bin/store/v11/links/@/pnpm/11.23.0/91452b8bfa917972161ba8dbcc3c471ccf52686a76f51d52f63f160a7ce1ff9d/node_modules/pnpm/dist/node_modules/node-gyp',
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp info spawn args '-Dnode_lib_file=/Users/runner/Library/Caches/node-gyp/26.12.1/<(target_arch)/node.lib',
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp info spawn args '-Dmodule_root_dir=/Users/runner/work/ninedeploy/ninedeploy/node_modules/.pnpm/ssh2@1.17.0/node_modules/ssh2/lib/protocol/crypto',
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp info spawn args '-Dnode_engine=v8',
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp info spawn args '--depth=.',
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp info spawn args '--no-parallel',
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp info spawn args '--generator-output',
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp info spawn args 'build',
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp info spawn args '-Goutput_dir=.'
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp info spawn args ]
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp info spawn make
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp info spawn args [ 'BUILDTYPE=Release', '-C', 'build' ]
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install:   CXX(target) Release/obj.target/sshcrypto/src/binding.o
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: ../src/binding.cc:89:37: error: no member named 'GetIsolate' in 'v8::Context'
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install:    89 |     v8::Isolate* isolate = context->GetIsolate();
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install:       |                            ~~~~~~~~~^
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: ../src/binding.cc:423:37: error: no member named 'GetIsolate' in 'v8::Context'
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install:   423 |     v8::Isolate* isolate = context->GetIsolate();
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install:       |                            ~~~~~~~~~^
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: ../src/binding.cc:664:37: error: no member named 'GetIsolate' in 'v8::Context'
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install:   664 |     v8::Isolate* isolate = context->GetIsolate();
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install:       |                            ~~~~~~~~~^
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: ../src/binding.cc:1061:37: error: no member named 'GetIsolate' in 'v8::Context'
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install:  1061 |     v8::Isolate* isolate = context->GetIsolate();
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install:       |                            ~~~~~~~~~^
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: ../src/binding.cc:1489:37: error: no member named 'GetIsolate' in 'v8::Context'
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install:  1489 |     v8::Isolate* isolate = context->GetIsolate();
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install:       |                            ~~~~~~~~~^
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: ../src/binding.cc:1741:37: error: no member named 'GetIsolate' in 'v8::Context'
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install:  1741 |     v8::Isolate* isolate = context->GetIsolate();
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install:       |                            ~~~~~~~~~^
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: 6 errors generated.
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: make: *** [Release/obj.target/sshcrypto/src/binding.o] Error 1
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp ERR! build error
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp ERR! stack Error: `make` failed with exit code: 2
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp ERR! stack at ChildProcess.<anonymous> (/Users/runner/setup-pnpm/node_modules/.bin/store/v11/links/@/pnpm/11.23.0/91452b8bfa917972161ba8dbcc3c471ccf52686a76f51d52f63f160a7ce1ff9d/node_modules/pnpm/dist/node_modules/node-gyp/lib/build.js:219:23)
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp ERR! System Darwin 25.6.0
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp ERR! command "/Users/runner/hostedtoolcache/node/26.12.1/arm64/bin/node" "/Users/runner/setup-pnpm/node_modules/.bin/store/v11/links/@/pnpm/11.23.0/91452b8bfa917972161ba8dbcc3c471ccf52686a76f51d52f63f160a7ce1ff9d/node_modules/pnpm/dist/node_modules/node-gyp/bin/node-gyp.js" "--target=v26.12.1" "--real_openssl_major=3" "rebuild"
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp ERR! cwd /Users/runner/work/ninedeploy/ninedeploy/node_modules/.pnpm/ssh2@1.17.0/node_modules/ssh2/lib/protocol/crypto
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp ERR! node -v v26.12.1
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp ERR! node-gyp -v v12.3.0
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp ERR! $npm_package_name ssh2
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp ERR! $npm_package_version 1.17.0
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: gyp ERR! not ok
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: Failed to build optional crypto binding
+.../.pnpm/ssh2@1.17.0/node_modules/ssh2 install: Done
+[WARN] Failed to create bin at /Users/runner/work/ninedeploy/ninedeploy/apps/server/node_modules/.bin/ninedeploy-mcp. ENOENT: no such file or directory, open '/Users/runner/work/ninedeploy/ninedeploy/packages/mcp/dist/index.js'
+
+devDependencies:
++ @biomejs/biome 2.5.14
++ @testing-library/dom 10.4.2
++ @testing-library/jest-dom 7.0.1
++ @testing-library/react 16.3.3
++ @testing-library/user-event 14.6.7
++ @vitest/coverage-v8 5.0.5
++ jsdom 30.1.0
++ pg 8.23.1
++ turbo 2.11.2
++ typescript 7.0.2
++ vitest 5.0.5
+
+[WARN] Failed to create bin at /Users/runner/work/ninedeploy/ninedeploy/apps/server/node_modules/.bin/ninedeploy-mcp. ENOENT: no such file or directory, open '/Users/runner/work/ninedeploy/ninedeploy/apps/server/node_modules/@ninedeploy/mcp/dist/index.js'
+Done in 37.7s using pnpm v11.23.0

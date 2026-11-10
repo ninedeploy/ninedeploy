@@ -32,7 +32,18 @@ GOMAXPROCS=4. No GUI, deployment, real registry or Docker daemon is started.
 This focused lane is separate from full release/coverage acceptance and normal
 Keychain/desktop checks. It does not resolve the round73 Windows worker fault.
 
-Native server run status: not dispatched at this preparation checkpoint.
+Native server checkpoint (November 10): [run 42813045891](https://github.com/ninedeploy/ninedeploy/actions/runs/42813045891)
+passed at source `f71b619db87cd34350a9e15ac2c6c12ac45c6467`: macOS 26.7.2 arm64,
+Node 26.12.1, pnpm 11.23.0 and Docker CLI 29.9.2. Frozen install, five-project
+workspace/server build, typecheck, 307 unit tests in 24 files and 20 controlled
+native CLI tests in four files passed. The downloaded environment/logs match
+the run SHA and counts; see the [receipt](../.temp_files/audit_continuous_20261109/round89_receipt.json)
+and [retained normalized text diagnostics](../.temp_files/audit_continuous_20261109/round89_macos_42813045891).
+The result records hosted native arm64 evidence, not physical Mac, Intel,
+normal Keychain persistence or full release acceptance. The successful install
+reported an optional ssh2 crypto-binding build failure on Node 26's V8 API and a
+pre-build workspace MCP bin-target warning. Native SSH acceleration and the
+post-build MCP executable link were not certified by this focused lane.
 
 ## Open the same source revision
 
