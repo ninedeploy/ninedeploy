@@ -1,0 +1,28 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/lib/gitCommitStatus.test.ts > the request per provider > GitLab: the encoded project path, PRIVATE-TOKEN, running then success 289ms
+ ✓ test/lib/gitCommitStatus.test.ts > the request per provider > Gitea: owner/name on the source host with a token header; Bitbucket Cloud with a Bearer token and a url 205ms
+ ✓ test/lib/gitCommitStatus.test.ts > the request per provider > a preview reports through its parent with the preview context; a fork preview never reports 192ms
+ ✓ test/lib/gitCommitStatus.test.ts > what does not report > off, a GitHub PAT source, an unknown commit, a status that is not an outcome 197ms
+ ✓ test/lib/gitCommitStatus.test.ts > what does not report > never sends a self-hosted source token to another host, nor Bitbucket statuses off bitbucket.org 182ms
+ ✓ test/lib/gitCommitStatus.test.ts > what does not report > a refused or failing request is logged without the token and never throws 189ms
+ ✓ test/lib/gitCommitStatus.test.ts > parseRepoUrl > reads https URLs and refuses others and traversal 156ms
+ ✓ test/lib/gitCommitStatus.test.ts > GET|PUT /services/:id/commit-status > reads the setting and the provider, turns it on and off, and refuses a service that cannot report 325ms
+ ✓ test/lib/gitCommitStatusResponse.test.ts > releases a native streaming gitlab response (201) 22ms
+ ✓ test/lib/gitCommitStatusResponse.test.ts > releases a native streaming gitea response (403) 4ms
+ ✓ test/lib/gitCommitStatusResponse.test.ts > releases a native streaming bitbucket response (302) 3ms
+ ✓ test/lib/gitCommitStatusResponse.test.ts > accepts a bodyless success response 1ms
+ ✓ test/lib/gitCommitStatusResponse.test.ts > cancels finite response content (201) 0ms
+ ✓ test/lib/gitCommitStatusResponse.test.ts > cancels finite response content (503) 0ms
+ ✓ test/lib/gitCommitStatusResponse.test.ts > keeps reporting observational if cancellation rejects (201) 0ms
+ ✓ test/lib/gitCommitStatusResponse.test.ts > keeps reporting observational if cancellation rejects (403) 0ms
+ ✓ test/lib/gitCommitStatusResponse.test.ts > does not fetch for non-outcome events 0ms
+
+ Test Files  2 passed (2)
+      Tests  17 passed (17)
+   Start at  16:12:38
+   Duration  4.46s (tests 57%, import 36%, transform 7%)
+
+    Isolate  2 workers spawned · ~667ms startup each (spawn + environment, per file)
+             at least ~667ms faster with isolate: false — reuses workers across files instead of one per file

@@ -1,0 +1,32 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1116_commitStatusResponse.test.ts > releases a real streaming HTTP response before reporting returns
+EXPECTED: unused native HTTP body cancelled before return; ACTUAL: { cancelled: 0, bodyUsed: false }
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/prove_F1116_commitStatusResponse.test.ts > releases a real streaming HTTP response before reporting returns 30ms
+   → expected +0 to be 1 // Object.is equality
+ ✓ .temp_files/audit_continuous_20261109/prove_F1116_commitStatusResponse.test.ts > control: a bodyless response remains observational 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1116_commitStatusResponse.test.ts > releases a real streaming HTTP response before reporting returns
+AssertionError: expected +0 to be 1 // Object.is equality
+
+- Expected
++ Received
+
+- 1
++ 0
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1116_commitStatusResponse.test.ts:9:993
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 1 passed (2)
+   Start at  16:09:21
+   Duration  1.18s (import 68%, transform 29%, tests 3%)

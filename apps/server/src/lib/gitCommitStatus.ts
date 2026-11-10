@@ -165,6 +165,7 @@ async function report(db: DB, log: FeedbackLog, serviceId: number, sha: string |
       body: JSON.stringify(req.json),
       signal: AbortSignal.timeout(15_000),
     });
+    await res.body?.cancel().catch(() => undefined);
     if (!res.ok) throw new Error(`${t.provider} answered ${res.status} for the commit status`);
   } catch (err) {
     try {

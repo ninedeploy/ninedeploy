@@ -1,0 +1,56 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+ × .temp_files/audit_continuous_20261109/round95_regression_red.test.ts > releases a native streaming gitlab response (201) 29ms
+   → expected +0 to be 1 // Object.is equality
+ × .temp_files/audit_continuous_20261109/round95_regression_red.test.ts > releases a native streaming gitea response (403) 7ms
+   → expected +0 to be 1 // Object.is equality
+ × .temp_files/audit_continuous_20261109/round95_regression_red.test.ts > releases a native streaming bitbucket response (302) 4ms
+   → expected +0 to be 1 // Object.is equality
+ ✓ .temp_files/audit_continuous_20261109/round95_regression_red.test.ts > accepts a bodyless success response 2ms
+ × .temp_files/audit_continuous_20261109/round95_regression_red.test.ts > cancels finite response content (201) 2ms
+   → expected +0 to be 1 // Object.is equality
+ × .temp_files/audit_continuous_20261109/round95_regression_red.test.ts > cancels finite response content (503) 2ms
+   → expected +0 to be 1 // Object.is equality
+ ✓ .temp_files/audit_continuous_20261109/round95_regression_red.test.ts > keeps reporting observational if cancellation rejects (201) 1ms
+ ✓ .temp_files/audit_continuous_20261109/round95_regression_red.test.ts > keeps reporting observational if cancellation rejects (403) 0ms
+ ✓ .temp_files/audit_continuous_20261109/round95_regression_red.test.ts > does not fetch for non-outcome events 0ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 5 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/round95_regression_red.test.ts > releases a native streaming gitlab response (201)
+ FAIL  .temp_files/audit_continuous_20261109/round95_regression_red.test.ts > releases a native streaming gitea response (403)
+ FAIL  .temp_files/audit_continuous_20261109/round95_regression_red.test.ts > releases a native streaming bitbucket response (302)
+AssertionError: expected +0 to be 1 // Object.is equality
+
+- Expected
++ Received
+
+- 1
++ 0
+
+ ❯ .temp_files/audit_continuous_20261109/round95_regression_red.test.ts:12:1061
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/5]⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/round95_regression_red.test.ts > cancels finite response content (201)
+ FAIL  .temp_files/audit_continuous_20261109/round95_regression_red.test.ts > cancels finite response content (503)
+AssertionError: expected +0 to be 1 // Object.is equality
+
+- Expected
++ Received
+
+- 1
++ 0
+
+ ❯ .temp_files/audit_continuous_20261109/round95_regression_red.test.ts:14:357
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/5]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  5 failed | 4 passed (9)
+   Start at  16:10:58
+   Duration  1.26s (import 67%, transform 26%, tests 6%, worker 1%)

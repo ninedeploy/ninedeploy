@@ -1,0 +1,34 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1116_commitStatusResponse.test.ts > releases a real streaming HTTP response before reporting returns
+EXPECTED: unused native HTTP body cancelled before return; ACTUAL: { cancelled: 1, bodyUsed: true }
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1116_commitStatusResponse.test.ts > releases a real streaming HTTP response before reporting returns 25ms
+ ✓ .temp_files/audit_continuous_20261109/prove_F1116_commitStatusResponse.test.ts > control: a bodyless response remains observational 1ms
+
+ Test Files  1 passed (1)
+      Tests  2 passed (2)
+   Start at  16:12:23
+   Duration  811ms (import 70%, transform 26%, tests 4%)
+
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/lib/gitCommitStatusResponse.test.ts > releases a native streaming gitlab response (201) 34ms
+ ✓ test/lib/gitCommitStatusResponse.test.ts > releases a native streaming gitea response (403) 6ms
+ ✓ test/lib/gitCommitStatusResponse.test.ts > releases a native streaming bitbucket response (302) 6ms
+ ✓ test/lib/gitCommitStatusResponse.test.ts > accepts a bodyless success response 2ms
+ ✓ test/lib/gitCommitStatusResponse.test.ts > cancels finite response content (201) 1ms
+ ✓ test/lib/gitCommitStatusResponse.test.ts > cancels finite response content (503) 0ms
+ ✓ test/lib/gitCommitStatusResponse.test.ts > keeps reporting observational if cancellation rejects (201) 0ms
+ ✓ test/lib/gitCommitStatusResponse.test.ts > keeps reporting observational if cancellation rejects (403) 0ms
+ ✓ test/lib/gitCommitStatusResponse.test.ts > does not fetch for non-outcome events 0ms
+
+ Test Files  1 passed (1)
+      Tests  9 passed (9)
+   Start at  16:12:26
+   Duration  1.00s (import 64%, transform 30%, tests 6%)
+
+FIX VERIFIED
