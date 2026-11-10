@@ -1,0 +1,18 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1095_registryLogout.test.ts > control: implicit Hub credential is removed by the paired logout
+EXPECTED only unrelated auth after logout ACTUAL: [ 'unrelated.invalid' ] resolved server: (default)
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1095_registryLogout.test.ts > control: implicit Hub credential is removed by the paired logout 705ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1095_registryLogout.test.ts > explicit docker.io credential is removed by the paired logout
+EXPECTED only unrelated auth after logout ACTUAL: [ 'unrelated.invalid' ] resolved server: (default)
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1095_registryLogout.test.ts > explicit docker.io credential is removed by the paired logout 489ms
+
+ Test Files  1 passed (1)
+      Tests  2 passed (2)
+   Start at  10:55:35
+   Duration  1.86s (tests 68%, import 24%, transform 7%)

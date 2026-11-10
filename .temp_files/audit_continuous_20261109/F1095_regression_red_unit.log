@@ -1,0 +1,54 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/lib/registryCredentialLogout.test.ts > image/source-build/push agree on the same Hub session identity: alpine:3.23 236ms
+ × test/lib/registryCredentialLogout.test.ts > image/source-build/push agree on the same Hub session identity: docker.io/library/alpine:3.23 178ms
+   → expected { username: 'fixture-user', …(2) } to deeply equal { username: 'fixture-user', …(2) }
+ × test/lib/registryCredentialLogout.test.ts > image/source-build/push agree on the same Hub session identity: docker.io/acme/app@sha256:1111111111111111111111111111111111111111111111111111111111111111 211ms
+   → expected { username: 'fixture-user', …(2) } to deeply equal { username: 'fixture-user', …(2) }
+ ✓ test/lib/registryCredentialLogout.test.ts > non-Hub image/source-build/push keep the same explicit target 185ms
+ ✓ test/lib/registryCredentialLogout.test.ts > revoking the binding still withholds image and source-build credentials 161ms
+ × test/lib/registryCredentialLogout.test.ts > multiple bindings do not guess a source-build or push target 228ms
+   → expected 'docker.io' to be undefined
+ ✓ test/lib/registryCredentialLogout.test.ts > an incomplete credential remains unavailable across all workflows 233ms
+
+ Test Files  1 failed (1)
+      Tests  3 failed | 4 passed (7)
+   Start at  10:57:25
+   Duration  1.95s (tests 77%, import 18%, transform 4%)
+
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/lib/registryCredentialLogout.test.ts > image/source-build/push agree on the same Hub session identity: docker.io/library/alpine:3.23
+ FAIL  test/lib/registryCredentialLogout.test.ts > image/source-build/push agree on the same Hub session identity: docker.io/acme/app@sha256:1111111111111111111111111111111111111111111111111111111111111111
+AssertionError: expected { username: 'fixture-user', …(2) } to deeply equal { username: 'fixture-user', …(2) }
+
+- Expected
++ Received
+
+  {
+    "password": "fixture-token",
+-   "server": undefined,
++   "server": "docker.io",
+    "username": "fixture-user",
+  }
+
+ ❯ test/lib/registryCredentialLogout.test.ts:12:451
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  test/lib/registryCredentialLogout.test.ts > multiple bindings do not guess a source-build or push target
+AssertionError: expected 'docker.io' to be undefined
+
+- Expected:
+undefined
+
++ Received:
+"docker.io"
+
+ ❯ test/lib/registryCredentialLogout.test.ts:15:289
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯

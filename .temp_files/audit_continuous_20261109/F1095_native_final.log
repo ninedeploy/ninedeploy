@@ -1,0 +1,47 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+stdout | test/integration/registryCredentialLogout.test.ts > control: implicit Hub credential is removed by the paired logout
+EXPECTED only unrelated auth after logout ACTUAL: [ 'unrelated.invalid' ] resolved server: (default)
+PROBLEM NOT REPRODUCED
+
+ ✓ test/integration/registryCredentialLogout.test.ts > control: implicit Hub credential is removed by the paired logout 837ms
+stdout | test/integration/registryCredentialLogout.test.ts > explicit docker.io credential is removed by the paired logout
+EXPECTED only unrelated auth after logout ACTUAL: [ 'unrelated.invalid' ] resolved server: (default)
+PROBLEM NOT REPRODUCED
+
+ ✓ test/integration/registryCredentialLogout.test.ts > explicit docker.io credential is removed by the paired logout 430ms
+stdout | test/integration/registryCredentialLogout.test.ts > digest Hub reference also clears the exact credential key
+EXPECTED only unrelated auth after logout ACTUAL: [ 'unrelated.invalid' ] resolved server: (default)
+PROBLEM NOT REPRODUCED
+
+ ✓ test/integration/registryCredentialLogout.test.ts > digest Hub reference also clears the exact credential key 442ms
+stdout | test/integration/registryCredentialLogout.test.ts > non-Hub host remains literal and cleans its own key
+EXPECTED only unrelated auth after logout ACTUAL: [ 'unrelated.invalid' ] resolved server: ghcr.io
+PROBLEM NOT REPRODUCED
+
+ ✓ test/integration/registryCredentialLogout.test.ts > non-Hub host remains literal and cleans its own key 435ms
+stdout | test/integration/registryCredentialLogout.test.ts > legacy Hub alias keeps its own matching login/logout spelling
+EXPECTED only unrelated auth after logout ACTUAL: [ 'unrelated.invalid' ] resolved server: index.docker.io
+PROBLEM NOT REPRODUCED
+
+ ✓ test/integration/registryCredentialLogout.test.ts > legacy Hub alias keeps its own matching login/logout spelling 630ms
+stdout | test/integration/registryCredentialLogout.test.ts > case spelling remains unchanged and cleans its literal key
+EXPECTED only unrelated auth after logout ACTUAL: [ 'unrelated.invalid' ] resolved server: Docker.IO
+PROBLEM NOT REPRODUCED
+
+ ✓ test/integration/registryCredentialLogout.test.ts > case spelling remains unchanged and cleans its literal key 599ms
+stdout | test/integration/registryCredentialLogout.test.ts > a repeated explicit Hub session leaves no completed auth behind
+EXPECTED only unrelated auth after logout ACTUAL: [ 'unrelated.invalid' ] resolved server: (default)
+PROBLEM NOT REPRODUCED
+
+stdout | test/integration/registryCredentialLogout.test.ts > a repeated explicit Hub session leaves no completed auth behind
+EXPECTED only unrelated auth after logout ACTUAL: [ 'unrelated.invalid' ] resolved server: (default)
+PROBLEM NOT REPRODUCED
+
+ ✓ test/integration/registryCredentialLogout.test.ts > a repeated explicit Hub session leaves no completed auth behind 1028ms
+
+ Test Files  1 passed (1)
+      Tests  7 passed (7)
+   Start at  10:59:34
+   Duration  5.07s (tests 88%, import 9%, transform 3%)

@@ -1,0 +1,39 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1095_registryLogout.test.ts > control: implicit Hub credential is removed by the paired logout
+EXPECTED only unrelated auth after logout ACTUAL: [ 'unrelated.invalid' ] resolved server: (default)
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1095_registryLogout.test.ts > control: implicit Hub credential is removed by the paired logout 1168ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1095_registryLogout.test.ts > explicit docker.io credential is removed by the paired logout
+EXPECTED only unrelated auth after logout ACTUAL: [ 'https://index.docker.io/v1/', 'unrelated.invalid' ] resolved server: docker.io
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/prove_F1095_registryLogout.test.ts > explicit docker.io credential is removed by the paired logout 929ms
+   → expected [ 'https://index.docker.io/v1/', …(1) ] to deeply equal [ 'unrelated.invalid' ]
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1095_registryLogout.test.ts > explicit docker.io credential is removed by the paired logout
+AssertionError: expected [ 'https://index.docker.io/v1/', …(1) ] to deeply equal [ 'unrelated.invalid' ]
+
+- Expected
++ Received
+
+  [
++   "https://index.docker.io/v1/",
+    "unrelated.invalid",
+  ]
+
+ ❯ session .temp_files/audit_continuous_20261109/prove_F1095_registryLogout.test.ts:13:670
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1095_registryLogout.test.ts:16:78
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 1 passed (2)
+   Start at  10:54:04
+   Duration  3.90s (tests 63%, import 25%, transform 12%)

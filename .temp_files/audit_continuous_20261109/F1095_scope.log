@@ -1,0 +1,82 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/lib/registryCredentialLogout.test.ts > image/source-build/push agree on the same Hub session identity: alpine:3.23 252ms
+ ✓ test/lib/registryCredentialLogout.test.ts > image/source-build/push agree on the same Hub session identity: docker.io/library/alpine:3.23 177ms
+ ✓ test/lib/registryCredentialLogout.test.ts > image/source-build/push agree on the same Hub session identity: docker.io/acme/app@sha256:1111111111111111111111111111111111111111111111111111111111111111 204ms
+ ✓ test/lib/registryCredentialLogout.test.ts > non-Hub image/source-build/push keep the same explicit target 231ms
+ ✓ test/lib/registryCredentialLogout.test.ts > revoking the binding still withholds image and source-build credentials 231ms
+ ✓ test/lib/registryCredentialLogout.test.ts > multiple bindings do not guess a source-build or push target 234ms
+ ✓ test/lib/registryCredentialLogout.test.ts > an incomplete credential remains unavailable across all workflows 217ms
+ ✓ test/tenancyIsolation.test.ts > r510: vault references resolve only for allowed tenants > upgrade seed: grandfathers current non-operator usage once, audits and logs it 436ms
+ ✓ test/tenancyIsolation.test.ts > r510: vault references resolve only for allowed tenants > deploy-time: a member service outside the allowlist cannot read a vault secret; allowed ones can 456ms
+ ✓ test/tenancyIsolation.test.ts > r510: vault references resolve only for allowed tenants > write-time: member gets a clear 403 for a reference on a non-allowed service, project, import and PATCH 523ms
+ ✓ test/tenancyIsolation.test.ts > r510: vault references resolve only for allowed tenants > settings API: GET exposes the allowlist with names, PUT /vault/allowlist replaces it and audits 351ms
+ ✓ test/tenancyIsolation.test.ts > r601: the write-time vault gate also covers the template deploy env > a member cannot plant a reference through a template deploy outside the allowlist; nothing is created 397ms
+ ✓ test/tenancyIsolation.test.ts > r511: PR preview domains cannot claim another tenant's host > a stored pattern without {{pr}}/{{slug}} (the takeover shape) deploys but provisions no domain 397ms
+ ✓ test/tenancyIsolation.test.ts > r511: PR preview domains cannot claim another tenant's host > a token-bearing pattern that still renders onto another service's automatic host is refused 356ms
+ ✓ test/tenancyIsolation.test.ts > r511: PR preview domains cannot claim another tenant's host > the default pattern still provisions the preview host 372ms
+ ✓ test/tenancyIsolation.test.ts > r511: PR preview domains cannot claim another tenant's host > services PATCH/create refuse a changed pattern without the tokens (400), re-sending a stored one is allowed 372ms
+ ✓ test/tenancyIsolation.test.ts > r512: a registry credential is only sent to the host it is bound to > upgrade seed binds each registry source to the hosts its services use today, audited 337ms
+ ✓ test/tenancyIsolation.test.ts > r512: a registry credential is only sent to the host it is bound to > the shared resolver withholds the credential from an unbound host and audits it 303ms
+ ✓ test/tenancyIsolation.test.ts > r512: a registry credential is only sent to the host it is bound to > services PATCH: a member cannot retarget the image to another registry; an operator change binds the host 369ms
+ ✓ test/tenancyIsolation.test.ts > r512: a registry credential is only sent to the host it is bound to > sources API exposes, accepts and clears registryHosts 341ms
+ ✓ test/tenancyIsolation.test.ts > r513: the auto-update sweep applies the owner-privilege gate > skips (logs + audits, no deploy) a member service the owner could not deploy; operator-owned still deploys 415ms
+ ✓ test/tenancyIsolation.test.ts > r513: the auto-update sweep applies the owner-privilege gate > r514: an operator-owned image may probe a LAN registry; a member-owned one is skipped with the reason 324ms
+ ✓ test/tenancyIsolation.test.ts > r513: the auto-update sweep applies the owner-privilege gate > r512: the registry probe never receives a credential for an unbound host 388ms
+ ✓ test/tenancyIsolation.test.ts > storage > the allowlist and the bindings live in the existing settings table (no migration) 308ms
+ ✓ test/lib/imageTransfer.coverage.test.ts > image metadata > panelImageInfo reads id and size with a bounded inspect; a bad size is 0, a bad id is refused 204ms
+ ✓ test/lib/imageTransfer.coverage.test.ts > image metadata > nodeImageInfo reads the last non-empty line from docker.imageInspect 175ms
+ ✓ test/lib/imageTransfer.coverage.test.ts > image metadata > hostLabel names the panel host or the node 168ms
+ ✓ test/lib/imageTransfer.coverage.test.ts > panelLoadArchive (the panel twin of the node image.load) > inspects the archive, loads it, confirms the id and tags it 187ms
+ ✓ test/lib/imageTransfer.coverage.test.ts > panelLoadArchive (the panel twin of the node image.load) > a refused archive never reaches docker load 275ms
+ ✓ test/lib/imageTransfer.coverage.test.ts > panelLoadArchive (the panel twin of the node image.load) > a failed load is still checked for smuggled tags, then rethrown; a smuggling check wins over it 243ms
+ ✓ test/lib/imageTransfer.coverage.test.ts > panelLoadArchive (the panel twin of the node image.load) > a loaded id that is not the build image removes what was loaded (ids and the expected tag only) 194ms
+ ✓ test/lib/imageTransfer.coverage.test.ts > the panel as the source: docker save | gzip > spawns docker save by id and streams it gzipped into the node load 279ms
+ ✓ test/lib/imageTransfer.coverage.test.ts > the panel as the source: docker save | gzip > a docker save that exits non-zero fails with its stderr tail after one retry, and kills the save 348ms
+ ✓ test/lib/imageTransfer.coverage.test.ts > the panel as the source: docker save | gzip > a docker binary that cannot spawn fails the transfer 321ms
+ ✓ test/lib/imageTransfer.coverage.test.ts > relay refusals > never ships to the build host itself 337ms
+ ✓ test/lib/imageTransfer.coverage.test.ts > relay refusals > refuses a stream that answers in the wrong direction (save, then load) 221ms
+ ✓ test/lib/imageTransfer.coverage.test.ts > relay refusals > a target that fails mid-pipe is aborted with the reason, and the source too 227ms
+ ✓ test/lib/imageTransfer.coverage.test.ts > relay refusals > node → panel refuses when the panel disk cannot hold the image, and proceeds when free space is unknown 313ms
+ ✓ test/lib/imageTransfer.coverage.test.ts > relay refusals > a non-Error failure is still reported as an Error 223ms
+ ✓ test/lib/imageTransfer.coverage.test.ts > the history row is best effort > a failed insert ships the image without a row 233ms
+ ✓ test/lib/imageTransfer.coverage.test.ts > the history row is best effort > a failed update is swallowed; an insert with no row id skips the update 236ms
+ ✓ test/lib/imageTransfer.coverage.test.ts > registry push and pull > a credential without a username or token is refused 240ms
+ ✓ test/lib/imageTransfer.coverage.test.ts > registry push and pull > the panel host logs in with the password on stdin, tags, pushes, reads the digest and logs out 235ms
+ ✓ test/lib/imageTransfer.coverage.test.ts > registry push and pull > Docker Hub: no server operand; a push without a digest fails; a failing logout is ignored 277ms
+ ✓ test/lib/imageTransfer.coverage.test.ts > registry push and pull > a build node on Docker Hub logs in and out without a server operand 223ms
+ ✓ test/lib/imageTransfer.coverage.test.ts > registry push and pull > the panel pulls by digest, confirms the id, and removes a wrong image 222ms
+ ✓ test/lib/imageTransfer.coverage.test.ts > registry push and pull > a node whose inspect fails is trusted on the digest alone 415ms
+ ✓ test/artifactRegistry.test.ts > immutable artifact registry archive > retains a node-built image on the panel and exposes historical origin without requiring the node later 205ms
+ ✓ test/artifactRegistry.test.ts > immutable artifact registry archive > reuses an already verified panel copy without contacting the origin node 194ms
+ ✓ test/artifactRegistry.test.ts > immutable artifact registry archive > never records an unavailable node copy: unsealed 188ms
+ ✓ test/artifactRegistry.test.ts > immutable artifact registry archive > never records an unavailable node copy: old agent 178ms
+ ✓ test/artifactRegistry.test.ts > immutable artifact registry archive > never records an unavailable node copy: transfer failure 187ms
+ ✓ test/artifactRegistry.test.ts > immutable artifact registry archive > never records an unavailable node copy: wrong image 300ms
+ ✓ test/artifactRegistry.test.ts > immutable artifact registry archive > archives the exact image and records the returned manifest digest without credentials 211ms
+ ✓ test/artifactRegistry.test.ts > immutable artifact registry archive > accepts a missing local image for enqueue without pulling its valid archive 222ms
+ ✓ test/artifactRegistry.test.ts > immutable artifact registry archive > restores the panel image by manifest digest and verifies its image ID 193ms
+ ✓ test/artifactRegistry.test.ts > immutable artifact registry archive > refuses revoked or ambiguous credential binding: registry.other.test 409ms
+ ✓ test/artifactRegistry.test.ts > immutable artifact registry archive > refuses revoked or ambiguous credential binding: registry.example.test,registry.other.test 204ms
+ ✓ test/artifactRegistry.test.ts > immutable artifact registry archive > fails a mismatched registry image before it can run and records the failed transfer 209ms
+ ✓ test/artifactRegistry.test.ts > immutable artifact registry archive > pulls a copied archive onto a sealed node after original history and local image are gone 222ms
+ ✓ test/artifactRegistry.test.ts > immutable artifact registry archive > refuses unsealed or old node before registry login (sealed=false) 182ms
+ ✓ test/artifactRegistry.test.ts > immutable artifact registry archive > refuses unsealed or old node before registry login (sealed=true) 335ms
+ ✓ test/lib/registryLockStore.test.ts > preserves two registry snapshots in credential store null 7ms
+ ✓ test/lib/registryLockStore.test.ts > preserves two registry snapshots in credential store 4 7ms
+ ✓ test/lib/registryLockStore.test.ts > preserves two registry snapshots in credential store 8 6ms
+ ✓ test/lib/registryLockStore.test.ts > preserves two registry snapshots in credential store undefined 5ms
+ ✓ test/lib/registryLockStore.test.ts > different nodes progress while the local credential store is held 7ms
+ ✓ test/lib/registryLockStore.test.ts > a failing login releases the entire store for another registry 6ms
+ ✓ test/lib/registryLockStore.test.ts > late duplicate release cannot admit a third session over the next holder 0ms
+ ✓ test/lib/registryLockStore.test.ts > a mixed registry queue preserves every write and the unrelated entry 27ms
+ ✓ test/lib/registryLock.test.ts > registry session lock (r230) > serialises the login → pull → logout window per registry 37ms
+ ✓ test/lib/registryLock.test.ts > registry session lock (r230) > shares one host store across registries while keeping nodes independent 1ms
+ ✓ test/lib/registryLock.test.ts > registry session lock (r230) > survives a holder that throws and a double release 0ms
+ ✓ test/lib/registryLock.test.ts > registry lock wiring (r230) > every registry login site takes the lock first 2ms
+
+ Test Files  6 passed (6)
+      Tests  74 passed (74)
+   Start at  10:57:34
+   Duration  21.70s (tests 83%, import 14%, transform 3%)

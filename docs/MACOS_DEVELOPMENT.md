@@ -747,3 +747,21 @@ pnpm --dir apps/server exec vitest run --config vitest.integration.config.ts tes
 This uses only explicitly isolated fixture Docker configs and fake credentials.
 No native Mac result, external-process locking, live private pull, full release
 or resolution of the round73 native worker crash is claimed.
+
+Round77 (F1095) maps literal lowercase docker.io image credentials to the
+existing default Hub operand. Docker29.9.3 login otherwise saved the canonical
+Hub auth while logout docker.io reported success without erasing it. Only this
+spelling changed; other hosts,case and legacy Hub aliases keep their operands.
+NativeCLI+controlledloopbackauth+realbinding/crypto/SQLite beforeproof was seen
+red with an implicitHub control. Seven native cases passed three times; both
+permanent unit and native suites were seen red3/7, then passed. Nearest scope
+74tests/6files, resource-bound server typecheck/build and scoped lint passed.
+
+Mac check (private fixture configs/fakecredentials; no real daemon required):
+
+```bash
+pnpm --dir apps/server exec vitest run --config vitest.integration.config.ts test/integration/registryCredentialLogout.test.ts --coverage=false
+```
+
+No native Mac result, real credential compromise, live private pull, fullrelease
+or resolution of the round73 native worker fault is claimed.

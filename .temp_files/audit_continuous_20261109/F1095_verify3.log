@@ -1,0 +1,50 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/verify_F1095_registryLogout.test.ts > control: implicit Hub credential is removed by the paired logout
+EXPECTED only unrelated auth after logout ACTUAL: [ 'unrelated.invalid' ] resolved server: (default)
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1095_registryLogout.test.ts > control: implicit Hub credential is removed by the paired logout 3364ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1095_registryLogout.test.ts > explicit docker.io credential is removed by the paired logout
+EXPECTED only unrelated auth after logout ACTUAL: [ 'unrelated.invalid' ] resolved server: (default)
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1095_registryLogout.test.ts > explicit docker.io credential is removed by the paired logout 759ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1095_registryLogout.test.ts > digest Hub reference also clears the exact credential key
+EXPECTED only unrelated auth after logout ACTUAL: [ 'unrelated.invalid' ] resolved server: (default)
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1095_registryLogout.test.ts > digest Hub reference also clears the exact credential key 767ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1095_registryLogout.test.ts > non-Hub host remains literal and cleans its own key
+EXPECTED only unrelated auth after logout ACTUAL: [ 'unrelated.invalid' ] resolved server: ghcr.io
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1095_registryLogout.test.ts > non-Hub host remains literal and cleans its own key 1510ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1095_registryLogout.test.ts > legacy Hub alias keeps its own matching login/logout spelling
+EXPECTED only unrelated auth after logout ACTUAL: [ 'unrelated.invalid' ] resolved server: index.docker.io
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1095_registryLogout.test.ts > legacy Hub alias keeps its own matching login/logout spelling 743ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1095_registryLogout.test.ts > case spelling remains unchanged and cleans its literal key
+EXPECTED only unrelated auth after logout ACTUAL: [ 'unrelated.invalid' ] resolved server: Docker.IO
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1095_registryLogout.test.ts > case spelling remains unchanged and cleans its literal key 1727ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1095_registryLogout.test.ts > a repeated explicit Hub session leaves no completed auth behind
+EXPECTED only unrelated auth after logout ACTUAL: [ 'unrelated.invalid' ] resolved server: (default)
+PROBLEM NOT REPRODUCED
+
+stdout | .temp_files/audit_continuous_20261109/verify_F1095_registryLogout.test.ts > a repeated explicit Hub session leaves no completed auth behind
+EXPECTED only unrelated auth after logout ACTUAL: [ 'unrelated.invalid' ] resolved server: (default)
+PROBLEM NOT REPRODUCED
+
+stdout | .temp_files/audit_continuous_20261109/verify_F1095_registryLogout.test.ts
+FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1095_registryLogout.test.ts > a repeated explicit Hub session leaves no completed auth behind 1299ms
+
+ Test Files  1 passed (1)
+      Tests  7 passed (7)
+   Start at  10:56:01
+   Duration  12.37s (tests 88%, import 11%, transform 1%)

@@ -1,0 +1,100 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+stdout | test/integration/registryCredentialLogout.test.ts > control: implicit Hub credential is removed by the paired logout
+EXPECTED only unrelated auth after logout ACTUAL: [ 'unrelated.invalid' ] resolved server: (default)
+PROBLEM NOT REPRODUCED
+
+ ✓ test/integration/registryCredentialLogout.test.ts > control: implicit Hub credential is removed by the paired logout 469ms
+stdout | test/integration/registryCredentialLogout.test.ts > explicit docker.io credential is removed by the paired logout
+EXPECTED only unrelated auth after logout ACTUAL: [ 'https://index.docker.io/v1/', 'unrelated.invalid' ] resolved server: docker.io
+PROBLEM CONFIRMED
+
+ × test/integration/registryCredentialLogout.test.ts > explicit docker.io credential is removed by the paired logout 452ms
+   → expected [ 'https://index.docker.io/v1/', …(1) ] to deeply equal [ 'unrelated.invalid' ]
+stdout | test/integration/registryCredentialLogout.test.ts > digest Hub reference also clears the exact credential key
+EXPECTED only unrelated auth after logout ACTUAL: [ 'https://index.docker.io/v1/', 'unrelated.invalid' ] resolved server: docker.io
+PROBLEM CONFIRMED
+
+ × test/integration/registryCredentialLogout.test.ts > digest Hub reference also clears the exact credential key 502ms
+   → expected [ 'https://index.docker.io/v1/', …(1) ] to deeply equal [ 'unrelated.invalid' ]
+stdout | test/integration/registryCredentialLogout.test.ts > non-Hub host remains literal and cleans its own key
+EXPECTED only unrelated auth after logout ACTUAL: [ 'unrelated.invalid' ] resolved server: ghcr.io
+PROBLEM NOT REPRODUCED
+
+ ✓ test/integration/registryCredentialLogout.test.ts > non-Hub host remains literal and cleans its own key 511ms
+stdout | test/integration/registryCredentialLogout.test.ts > legacy Hub alias keeps its own matching login/logout spelling
+EXPECTED only unrelated auth after logout ACTUAL: [ 'unrelated.invalid' ] resolved server: index.docker.io
+PROBLEM NOT REPRODUCED
+
+ ✓ test/integration/registryCredentialLogout.test.ts > legacy Hub alias keeps its own matching login/logout spelling 440ms
+stdout | test/integration/registryCredentialLogout.test.ts > case spelling remains unchanged and cleans its literal key
+EXPECTED only unrelated auth after logout ACTUAL: [ 'unrelated.invalid' ] resolved server: Docker.IO
+PROBLEM NOT REPRODUCED
+
+ ✓ test/integration/registryCredentialLogout.test.ts > case spelling remains unchanged and cleans its literal key 775ms
+stdout | test/integration/registryCredentialLogout.test.ts > a repeated explicit Hub session leaves no completed auth behind
+EXPECTED only unrelated auth after logout ACTUAL: [ 'https://index.docker.io/v1/', 'unrelated.invalid' ] resolved server: docker.io
+PROBLEM CONFIRMED
+
+ × test/integration/registryCredentialLogout.test.ts > a repeated explicit Hub session leaves no completed auth behind 542ms
+   → expected [ 'https://index.docker.io/v1/', …(1) ] to deeply equal [ 'unrelated.invalid' ]
+
+ Test Files  1 failed (1)
+      Tests  3 failed | 4 passed (7)
+   Start at  10:57:28
+   Duration  4.50s (tests 85%, import 9%, transform 6%)
+
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/integration/registryCredentialLogout.test.ts > explicit docker.io credential is removed by the paired logout
+AssertionError: expected [ 'https://index.docker.io/v1/', …(1) ] to deeply equal [ 'unrelated.invalid' ]
+
+- Expected
++ Received
+
+  [
++   "https://index.docker.io/v1/",
+    "unrelated.invalid",
+  ]
+
+ ❯ session test/integration/registryCredentialLogout.test.ts:13:634
+
+ ❯ test/integration/registryCredentialLogout.test.ts:16:78
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  test/integration/registryCredentialLogout.test.ts > digest Hub reference also clears the exact credential key
+AssertionError: expected [ 'https://index.docker.io/v1/', …(1) ] to deeply equal [ 'unrelated.invalid' ]
+
+- Expected
++ Received
+
+  [
++   "https://index.docker.io/v1/",
+    "unrelated.invalid",
+  ]
+
+ ❯ session test/integration/registryCredentialLogout.test.ts:13:634
+
+ ❯ test/integration/registryCredentialLogout.test.ts:18:74
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  test/integration/registryCredentialLogout.test.ts > a repeated explicit Hub session leaves no completed auth behind
+AssertionError: expected [ 'https://index.docker.io/v1/', …(1) ] to deeply equal [ 'unrelated.invalid' ]
+
+- Expected
++ Received
+
+  [
++   "https://index.docker.io/v1/",
+    "unrelated.invalid",
+  ]
+
+ ❯ session test/integration/registryCredentialLogout.test.ts:13:634
+
+ ❯ test/integration/registryCredentialLogout.test.ts:22:80
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯

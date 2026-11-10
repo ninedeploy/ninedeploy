@@ -208,12 +208,13 @@ export async function registryCredentialFor(
     });
     return undefined;
   }
-  // The login server keeps the image's own spelling (unchanged from before):
-  // a host-like first segment, else Docker Hub's default (undefined).
+  // Docker login folds literal docker.io into the default Hub credential key;
+  // logout must also use the default to erase it. Other host spellings stay
+  // unchanged so their login and logout continue to address the same key.
   const parts = service.image.split('/');
   const first = parts.length > 1 ? parts[0]! : '';
   const isHost = first.includes('.') || first.includes(':') || first === 'localhost';
-  return { username, password, server: first !== '' && isHost ? first : undefined };
+  return { username, password, server: first !== '' && isHost && first !== DOCKER_HUB ? first : undefined };
 }
 
 /**
