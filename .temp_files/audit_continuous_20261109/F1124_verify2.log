@@ -1,0 +1,23 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+stdout | test/engine/elasticsearchEndpoint.test.ts > routes an accepted index target to a documented bulk endpoint
+EXPECTED: bulk operation and one accepted log; ACTUAL: {
+  urls: [ 'https://elastic.example.test/logs-fixture/_bulk' ],
+  outcome: { ok: true, status: 200 },
+  stored: 1
+}
+PROBLEM NOT REPRODUCED
+
+ ✓ test/engine/elasticsearchEndpoint.test.ts > routes an accepted index target to a documented bulk endpoint 19ms
+ ✓ test/engine/elasticsearchEndpoint.test.ts > control: ordinary HTTP drains keep their configured URL 1ms
+ ✓ test/engine/elasticsearchEndpoint.test.ts > preserves index, origin, query and headers for endpoint suffix  1ms
+ ✓ test/engine/elasticsearchEndpoint.test.ts > preserves index, origin, query and headers for endpoint suffix / 0ms
+ ✓ test/engine/elasticsearchEndpoint.test.ts > preserves index, origin, query and headers for endpoint suffix /// 0ms
+ ✓ test/engine/elasticsearchEndpoint.test.ts > preserves index, origin, query and headers for endpoint suffix ?filter_path=errors&refresh=wait_for 1ms
+ ✓ test/engine/elasticsearchEndpoint.test.ts > preserves index, origin, query and headers for endpoint suffix /?routing=owned 1ms
+
+ Test Files  1 passed (1)
+      Tests  7 passed (7)
+   Start at  18:42:12
+   Duration  164ms (import 50%, tests 33%, transform 12%, worker 4%)

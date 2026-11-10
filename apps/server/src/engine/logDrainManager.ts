@@ -176,7 +176,13 @@ async function postToDrain(
   }
 
   try {
-    const res = await fetchImpl(drain.url, {
+    let target = drain.url;
+    if (drain.type === 'elasticsearch') {
+      const bulk = new URL(drain.url);
+      bulk.pathname = `${bulk.pathname.replace(/\/+$/, '')}/_bulk`;
+      target = bulk.toString();
+    }
+    const res = await fetchImpl(target, {
       method: 'POST',
       headers,
       body,

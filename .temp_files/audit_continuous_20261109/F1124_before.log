@@ -1,0 +1,40 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1124_elasticEndpoint.test.ts > routes an accepted index target to a documented bulk endpoint
+EXPECTED: bulk operation and one accepted log; ACTUAL: {
+  urls: [ 'https://elastic.example.test/logs-fixture' ],
+  outcome: { ok: false, status: 405 },
+  stored: 0
+}
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/prove_F1124_elasticEndpoint.test.ts > routes an accepted index target to a documented bulk endpoint 32ms
+   → expected { ok: false, status: 405 } to match object { ok: true, status: 200 }
+ ✓ .temp_files/audit_continuous_20261109/prove_F1124_elasticEndpoint.test.ts > control: ordinary HTTP drains keep their configured URL 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1124_elasticEndpoint.test.ts > routes an accepted index target to a documented bulk endpoint
+AssertionError: expected { ok: false, status: 405 } to match object { ok: true, status: 200 }
+
+- Expected
++ Received
+
+  {
+-   "ok": true,
+-   "status": 200,
++   "ok": false,
++   "status": 405,
+  }
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1124_elasticEndpoint.test.ts:7:1613
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 1 passed (2)
+   Start at  18:41:19
+   Duration  539ms (import 42%, tests 29%, transform 25%, worker 3%)

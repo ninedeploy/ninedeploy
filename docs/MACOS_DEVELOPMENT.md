@@ -1211,3 +1211,8 @@ Native OAuth and tenancy follow-up: [run 42846979571](https://github.com/ninedep
 passed at `e1de1ee8`: 609 server tests in 39 files, 20 controlled native CLI tests
 in 4 files and 4 workspace MCP tests in 1 file (633 tests, 44 files total).
 This focused result does not certify the separate full native suite.
+
+The next focused lane adds API-only query-token logging and Elasticsearch bulk
+acknowledgement/endpoint regressions (F1122–F1125). Local affected log-drain tests
+passed 65 cases across 5 files; this is controlled HTTP/native SQLite evidence,
+not a live Elasticsearch cluster test. Native follow-up is pending its own run.
