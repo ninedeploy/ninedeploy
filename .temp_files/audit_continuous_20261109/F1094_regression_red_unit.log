@@ -1,0 +1,70 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ × test/lib/registryLockStore.test.ts > preserves two registry snapshots in credential store null 9ms
+   → expected true to be false // Object.is equality
+ × test/lib/registryLockStore.test.ts > preserves two registry snapshots in credential store 4 5ms
+   → expected true to be false // Object.is equality
+ × test/lib/registryLockStore.test.ts > preserves two registry snapshots in credential store 8 4ms
+   → expected true to be false // Object.is equality
+ × test/lib/registryLockStore.test.ts > preserves two registry snapshots in credential store undefined 4ms
+   → expected true to be false // Object.is equality
+ ✓ test/lib/registryLockStore.test.ts > different nodes progress while the local credential store is held 6ms
+ ✓ test/lib/registryLockStore.test.ts > a failing login releases the entire store for another registry 7ms
+ × test/lib/registryLockStore.test.ts > late duplicate release cannot admit a third session over the next holder 1ms
+   → expected true to be false // Object.is equality
+ × test/lib/registryLockStore.test.ts > a mixed registry queue preserves every write and the unrelated entry 2188ms
+   → expected [ 'unrelated', 'registry-15.invalid' ] to have a length of 17 but got 2
+
+ Test Files  1 failed (1)
+      Tests  6 failed | 2 passed (8)
+   Start at  10:48:07
+   Duration  2.91s (tests 98%, transform 1%, import 1%)
+
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 6 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/lib/registryLockStore.test.ts > preserves two registry snapshots in credential store null
+ FAIL  test/lib/registryLockStore.test.ts > preserves two registry snapshots in credential store 4
+ FAIL  test/lib/registryLockStore.test.ts > preserves two registry snapshots in credential store 8
+ FAIL  test/lib/registryLockStore.test.ts > preserves two registry snapshots in credential store undefined
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ test/lib/registryLockStore.test.ts:8:312
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/6]⎯
+
+ FAIL  test/lib/registryLockStore.test.ts > late duplicate release cannot admit a third session over the next holder
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ test/lib/registryLockStore.test.ts:11:612
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/6]⎯
+
+ FAIL  test/lib/registryLockStore.test.ts > a mixed registry queue preserves every write and the unrelated entry
+AssertionError: expected [ 'unrelated', 'registry-15.invalid' ] to have a length of 17 but got 2
+
+- Expected
++ Received
+
+- 17
++ 2
+
+ ❯ test/lib/registryLockStore.test.ts:12:530
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/6]⎯

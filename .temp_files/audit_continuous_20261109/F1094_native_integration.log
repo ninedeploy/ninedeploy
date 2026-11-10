@@ -1,0 +1,18 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+stdout | test/integration/registryCredentialStore.test.ts > keeps same-registry admission serialized with native Docker CLI
+same-registry control EXPECTED first registry auth retained:true ACTUAL: true overlap: false keys: [ 'one.invalid', 'unrelated.invalid' ]
+PROBLEM NOT REPRODUCED
+
+ ✓ test/integration/registryCredentialStore.test.ts > keeps same-registry admission serialized with native Docker CLI 1234ms
+stdout | test/integration/registryCredentialStore.test.ts > preserves both different-registry credentials in one native Docker config
+different-registry race EXPECTED first registry auth retained:true ACTUAL: true overlap: false keys: [ 'one.invalid', 'two.invalid', 'unrelated.invalid' ]
+PROBLEM NOT REPRODUCED
+
+ ✓ test/integration/registryCredentialStore.test.ts > preserves both different-registry credentials in one native Docker config 629ms
+
+ Test Files  1 passed (1)
+      Tests  2 passed (2)
+   Start at  10:46:57
+   Duration  2.43s (tests 97%, transform 2%, import 1%)

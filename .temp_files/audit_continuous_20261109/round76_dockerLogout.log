@@ -1,0 +1,6 @@
+CLI Docker version 29.9.3, build 5457199
+{"server":"docker.io","exit":0,"remainingKeys":["https://index.docker.io/v1/"],"stdout":"Removing login credentials for docker.io","stderr":""}
+{"server":"index.docker.io","exit":0,"remainingKeys":["https://index.docker.io/v1/"],"stdout":"Removing login credentials for index.docker.io","stderr":""}
+{"server":"registry-1.docker.io","exit":0,"remainingKeys":["https://index.docker.io/v1/"],"stdout":"Removing login credentials for registry-1.docker.io","stderr":""}
+{"server":"Docker.IO","exit":0,"remainingKeys":["https://index.docker.io/v1/"],"stdout":"Removing login credentials for Docker.IO","stderr":""}
+{"server":"ghcr.io","exit":0,"remainingKeys":["https://index.docker.io/v1/"],"stdout":"Removing login credentials for ghcr.io","stderr":""}

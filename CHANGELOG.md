@@ -36,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Registry sessions now serialize per host credential store across different registries, preventing Docker CLI snapshot saves from dropping another live login (F1094).
 - Cross-process lock identities now publish only after complete private preparation, so rejected initialization cannot leave a fresh public lock or delete a newer holder (F1093).
 - Cross-process operation locks now complete short native identity writes before granting a holder, preserving recognition and cleanup by its release operation (F1092).
 - Database-import chunks now complete short native writes before advancing upload metadata and fail without acknowledging a zero-progress write (F1091).

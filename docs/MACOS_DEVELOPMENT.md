@@ -727,3 +727,23 @@ pnpm --dir apps/server exec vitest run test/lib/crossProcessLockInit.test.ts tes
 
 No native Mac execution, live backup/restore or complete distributed-lock
 acceptance is implied. The round73 native worker fault remains unresolved.
+
+Round76 (F1094) serializes registry sessions per host credential store, including
+different registries: Docker CLI saves a whole loaded config snapshot and could
+drop another still-held login. Different nodes remain independent; same-host
+parallelism is intentionally reduced. Actual Docker29.9.3 plus a loopback-only
+controlled auth API and disposable config reproduced the lost entry, with a
+same-registry control. The permanent native CLI regression was seen red
+(one failure,one control), then passed2/2three times. Eight native-JSON unit
+controls passed three times; permanent unit was seen red6/8. Final neighboring
+scope313tests/8files, resource-bound server typecheck/build and scoped lint passed.
+
+Mac native CLI check after installing Docker CLI (no live daemon/registry needed):
+
+```bash
+pnpm --dir apps/server exec vitest run --config vitest.integration.config.ts test/integration/registryCredentialStore.test.ts --coverage=false
+```
+
+This uses only explicitly isolated fixture Docker configs and fake credentials.
+No native Mac result, external-process locking, live private pull, full release
+or resolution of the round73 native worker crash is claimed.

@@ -1,0 +1,41 @@
+apps\server\test\integration\registryCredentialStore.test.ts:6:451 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+    4 │ const docker='docker';const env={...Object.fromEntries(['SystemRoot','PATH','TEMP','TMP','USERPROFILE'].filter(k=>process.env[k]).map(k=>[k,process.env[k]])),DOCKER_API_VERSION:'1.52'};
+    5 │ function gate(){let release!:()=>void;const promise=new Promise<void>(resolve=>{release=resolve;});return {promise,release};}
+  > 6 │ ...==0?resolve():reject(new Error('Controlled Docker exit '+code+': '+err));});child.stdin.on('error',(...
+      │                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    7 │ async function scenario(label:string,firstServer:string,secondServer:string){
+    8 │  const root=path.resolve(mkdtempSync(path.join(tmpdir(),'nd-registry-store-proof-'))),config=path.join(root,'config.json');const auth={a:{entered:gate(),reply:gate()},b:{entered:gate(),reply:gate()}};
+
+  i Unsafe fix: Use a template literal.
+
+     4  4 │   const docker='docker';const env={...Object.fromEntries(['SystemRoot','PATH','TEMP','TMP','USERPROFILE'].filter(k=>process.env[k]).map(k=>[k,process.env[k]])),DOCKER_API_VERSION:'1.52'};
+     5  5 │   function gate(){let release!:()=>void;const promise=new Promise<void>(resolve=>{release=resolve;});return {promise,release};}
+     6    │ - ...out(timer);code===0?resolve():reject(new·Error('Controlled·Docker·exit·'+code+':·'+err));});child.st...
+        6 │ + ...ut(timer);code===0?resolve():reject(new·Error(`Controlled·Docker·exit·${code}:·${err}`));});child.st...
+     7  7 │   async function scenario(label:string,firstServer:string,secondServer:string){
+     8  8 │    const root=path.resolve(mkdtempSync(path.join(tmpdir(),'nd-registry-store-proof-'))),config=path.join(root,'config.json');const auth={a:{entered:gate(),reply:gate()},b:{entered:gate(),reply:gate()}};
+
+
+apps\server\test\integration\registryCredentialStore.test.ts:18:349 lint/correctness/noUnsafeFinally ━━━━━━━━━━
+
+  × Unsafe usage of 'throw'.
+
+    16 │  if(!overlaps){releaseA();await Promise.race([auth.b.entered.promise,second.then(()=>{throw new Error('B completed before auth barrier');})]);}
+    17 │  auth.b.reply.release();await second;const keys=Object.keys(JSON.parse(readFileSync(config,'utf8')).auths);const correct=keys.includes(firstServer);console.log(label,'EXPECTED first registry auth retained:true ACTUAL:',correct,'overlap:',overlaps,'keys:',keys);console.log(correct?'PROBLEM NOT REPRODUCED':'PROBLEM CONFIRMED');return correct;
+  > 18 │ ...With('nd-registry-store-proof-'))throw new Error('Unowned cleanup');rmSync(root,{recursive:true,forc...
+       │                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    19 │ }
+    20 │ it('keeps same-registry admission serialized with native Docker CLI',async()=>{expect(await scenario('same-registry control','one.invalid','one.invalid')).toBe(true);});
+
+  i 'throw' in 'finally' overwrites the control flow statements inside 'try' and 'catch'.
+
+
+Checked 4 files in 13ms. No fixes applied.
+Found 1 error.
+Found 1 info.
+check ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Some errors were emitted while running checks.

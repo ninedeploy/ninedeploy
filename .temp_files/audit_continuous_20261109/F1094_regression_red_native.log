@@ -1,0 +1,40 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+stdout | test/integration/registryCredentialStore.test.ts > keeps same-registry admission serialized with native Docker CLI
+same-registry control EXPECTED first registry auth retained:true ACTUAL: true overlap: false keys: [ 'one.invalid', 'unrelated.invalid' ]
+PROBLEM NOT REPRODUCED
+
+ ✓ test/integration/registryCredentialStore.test.ts > keeps same-registry admission serialized with native Docker CLI 2362ms
+stdout | test/integration/registryCredentialStore.test.ts > preserves both different-registry credentials in one native Docker config
+different-registry race EXPECTED first registry auth retained:true ACTUAL: false overlap: true keys: [ 'two.invalid', 'unrelated.invalid' ]
+PROBLEM CONFIRMED
+
+ × test/integration/registryCredentialStore.test.ts > preserves both different-registry credentials in one native Docker config 1723ms
+   → expected false to be true // Object.is equality
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 1 passed (2)
+   Start at  10:48:14
+   Duration  4.72s (tests 98%, transform 1%, import 1%)
+
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/integration/registryCredentialStore.test.ts > preserves both different-registry credentials in one native Docker config
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ test/integration/registryCredentialStore.test.ts:21:168
+     19| }
+     20| it('keeps same-registry admission serialized with native Docker CLI',a…
+     21| it('preserves both different-registry credentials in one native Docker…
+       |                                                                                                                                                                        ^
+     22|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯

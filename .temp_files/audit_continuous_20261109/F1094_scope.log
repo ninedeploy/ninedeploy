@@ -1,0 +1,175 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/lib/registryLockStore.test.ts > preserves two registry snapshots in credential store null 83ms
+ ✓ test/lib/registryLockStore.test.ts > preserves two registry snapshots in credential store 4 9ms
+ ✓ test/lib/registryLockStore.test.ts > preserves two registry snapshots in credential store 8 6ms
+ ✓ test/lib/registryLockStore.test.ts > preserves two registry snapshots in credential store undefined 6ms
+ ✓ test/lib/registryLockStore.test.ts > different nodes progress while the local credential store is held 7ms
+ ✓ test/lib/registryLockStore.test.ts > a failing login releases the entire store for another registry 7ms
+ ✓ test/lib/registryLockStore.test.ts > late duplicate release cannot admit a third session over the next holder 0ms
+ ✓ test/lib/registryLockStore.test.ts > a mixed registry queue preserves every write and the unrelated entry 22ms
+ ✓ test/lib/imageTransfer.coverage.test.ts > image metadata > panelImageInfo reads id and size with a bounded inspect; a bad size is 0, a bad id is refused 597ms
+ ✓ test/lib/imageTransfer.coverage.test.ts > image metadata > nodeImageInfo reads the last non-empty line from docker.imageInspect 245ms
+ ✓ test/lib/imageTransfer.coverage.test.ts > image metadata > hostLabel names the panel host or the node 274ms
+ ✓ test/lib/imageTransfer.coverage.test.ts > panelLoadArchive (the panel twin of the node image.load) > inspects the archive, loads it, confirms the id and tags it 269ms
+ ✓ test/lib/imageTransfer.coverage.test.ts > panelLoadArchive (the panel twin of the node image.load) > a refused archive never reaches docker load 248ms
+ ✓ test/lib/imageTransfer.coverage.test.ts > panelLoadArchive (the panel twin of the node image.load) > a failed load is still checked for smuggled tags, then rethrown; a smuggling check wins over it 253ms
+ ✓ test/lib/imageTransfer.coverage.test.ts > panelLoadArchive (the panel twin of the node image.load) > a loaded id that is not the build image removes what was loaded (ids and the expected tag only) 257ms
+ ✓ test/lib/imageTransfer.coverage.test.ts > the panel as the source: docker save | gzip > spawns docker save by id and streams it gzipped into the node load 302ms
+ ✓ test/lib/imageTransfer.coverage.test.ts > the panel as the source: docker save | gzip > a docker save that exits non-zero fails with its stderr tail after one retry, and kills the save 339ms
+ ✓ test/lib/imageTransfer.coverage.test.ts > the panel as the source: docker save | gzip > a docker binary that cannot spawn fails the transfer 340ms
+ ✓ test/lib/imageTransfer.coverage.test.ts > relay refusals > never ships to the build host itself 233ms
+ ✓ test/lib/imageTransfer.coverage.test.ts > relay refusals > refuses a stream that answers in the wrong direction (save, then load) 250ms
+ ✓ test/lib/imageTransfer.coverage.test.ts > relay refusals > a target that fails mid-pipe is aborted with the reason, and the source too 240ms
+ ✓ test/lib/imageTransfer.coverage.test.ts > relay refusals > node → panel refuses when the panel disk cannot hold the image, and proceeds when free space is unknown 292ms
+ ✓ test/lib/imageTransfer.coverage.test.ts > relay refusals > a non-Error failure is still reported as an Error 251ms
+ ✓ test/lib/imageTransfer.coverage.test.ts > the history row is best effort > a failed insert ships the image without a row 251ms
+ ✓ test/lib/imageTransfer.coverage.test.ts > the history row is best effort > a failed update is swallowed; an insert with no row id skips the update 243ms
+ ✓ test/lib/imageTransfer.coverage.test.ts > registry push and pull > a credential without a username or token is refused 253ms
+ ✓ test/lib/imageTransfer.coverage.test.ts > registry push and pull > the panel host logs in with the password on stdin, tags, pushes, reads the digest and logs out 271ms
+ ✓ test/lib/imageTransfer.coverage.test.ts > registry push and pull > Docker Hub: no server operand; a push without a digest fails; a failing logout is ignored 264ms
+ ✓ test/lib/imageTransfer.coverage.test.ts > registry push and pull > a build node on Docker Hub logs in and out without a server operand 229ms
+ ✓ test/lib/imageTransfer.coverage.test.ts > registry push and pull > the panel pulls by digest, confirms the id, and removes a wrong image 231ms
+ ✓ test/lib/imageTransfer.coverage.test.ts > registry push and pull > a node whose inspect fails is trusted on the digest alone 240ms
+ ✓ test/imageTransferIntegrity.test.ts > confirms source and target image identity and stream digest before recording success 182ms
+ ✓ test/imageTransferIntegrity.test.ts > retries a corrupt relay on fresh streams and records only the successful transfer 190ms
+ ✓ test/imageTransferIntegrity.test.ts > fails and records persistent digest mismatch without reporting a successful transfer 167ms
+ ✓ test/imageTransferIntegrity.test.ts > rejects an image saved under a different identity on both attempts 164ms
+ ✓ test/imageTransferIntegrity.test.ts > rejects a target that reports a different loaded image 178ms
+ ✓ test/imageTransferIntegrity.test.ts > rejects a byte-count mismatch even when both digests match 180ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — image services > passes the built image and resolved runtime inputs to ordered capacity preparation without starting a legacy container 3ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — image services > rejects a prepared runtime with a mismatched owner without falling back to legacy creation 1ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — image services > rejects a prepared runtime with a mismatched image without falling back to legacy creation 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — image services > does not accept an unconfirmed single-container creation identity: [] 1ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — image services > does not accept an unconfirmed single-container creation identity: [ …(2) ] 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — image services > does not accept an unconfirmed single-container creation identity: [ 'not-a-container-id' ] 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — image services > carries the immutable creation receipt into node readiness 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — image services > preserves an explicitly configured container-state readiness mode 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — image services > records the actual image and pack conventions of an ordinary node source build when requested 1ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — image services > keeps an ordinary deployment usable when optional image observation fails: unreachable 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — image services > keeps an ordinary deployment usable when optional image observation fails: invalid image 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — image services > records placed source build conventions {"builtWithNixpacks":true,"builtStatic":false} without changing legacy placement 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — image services > records placed source build conventions {"builtWithNixpacks":false,"builtStatic":true} without changing legacy placement 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — image services > does not record a placed tag that no longer names the shipped image 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — image services > runs an immutable artifact with its original pack conventions {"builtWithNixpacks":true,"builtStatic":false,"port":3000} 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — image services > runs an immutable artifact with its original pack conventions {"builtWithNixpacks":false,"builtStatic":true,"port":80} 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — image services > removes only the candidate when the node reports a different runtime image 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — image services > cleans the candidate if image verification loses contact with the node 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — image services > refuses an unconfirmed environment receipt: missing 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — image services > refuses an unconfirmed environment receipt: wrong path 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — image services > refuses an unconfirmed environment receipt: duplicate 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — image services > refuses an unconfirmed environment receipt: failed operation 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — image services > pulls and runs the image on the node, never locally 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — image services > pins the exact digest on a rollback rather than the mutable tag 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — image services > r270: never records a mutable tag as the release digest 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — image services > r270: keeps a genuine digest pin 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — image services > sends the environment as a file and deletes it once the container has it 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — image services > r267: escapes multi-line values the agent would otherwise refuse 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — image services > deletes the env file even when the run fails 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — image services > logs in to a private registry and always logs out again 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — image services > logs out even when the pull fails, so no credential lingers on the node 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — repository services > checks the repo out in the node workspace and builds the Dockerfile there 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — repository services > runs the egress gate before the node clones, and stops when it refuses (r099) 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — repository services > skips the branch checkout when the service pins no branch 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — what it refuses > refuses an agent without immutable identity support before changing node runtime 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — what it refuses > refuses an unsealed node before any runtime or secret operation 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — what it refuses > refuses an unsupported default port probe before retiring the previous container 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — what it refuses > checks the default probe after resolving a static image port and before starting the container 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — what it refuses > reports an unsupported default port probe without waiting for the readiness timeout 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — what it refuses > does not accept a running default-health candidate before its configured port listens 6ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — what it refuses > accepts a default-health candidate only after consecutive successful TCP probes 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — what it refuses > refuses opted-in readiness on an old agent before creating any runtime 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — what it refuses > keeps a running container unready until its HTTP readiness succeeds 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — what it refuses > does not accept a probe if the candidate name changes to another immutable container 1ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — what it refuses > accepts a probe against the immutable ID while its candidate name still refers to it 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — what it refuses > rejects a probe result if the container changes during that probe: restarting|none|0|1 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — what it refuses > rejects a probe result if the container changes during that probe: running|none|0|1 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — what it refuses > rejects a probe result if the container changes during that probe: running|unhealthy|1|0 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — what it refuses > rejects a probe result if the container changes during that probe: running|none||0 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — what it refuses > fails an always-unready application even while its container stays running 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — what it refuses > does not route on contradictory or ambiguous HTTP probe evidence: {"exitCode":0,"lines":["ND-PROBE {\"ready\":true,\"protocol\":\"tcp\"}"]} 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — what it refuses > does not route on contradictory or ambiguous HTTP probe evidence: {"exitCode":0,"lines":["ND-PROBE {\"ready\":true,\"protocol\":\"http\",\"status\":200}","ND-PROBE {\"ready\":true,\"protocol\":\"http\",\"status\":200}"]} 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — what it refuses > does not route on contradictory or ambiguous HTTP probe evidence: {"exitCode":1,"lines":["ND-PROBE {\"ready\":true,\"protocol\":\"http\",\"status\":200}"]} 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — what it refuses > does not route on contradictory or ambiguous HTTP probe evidence: {"exitCode":0,"lines":["ND-PROBE {\"ready\":true,\"protocol\":\"http\"}"]} 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — what it refuses > does not route on contradictory or ambiguous HTTP probe evidence: {"exitCode":0,"lines":["ND-PROBE {\"ready\":true,\"protocol\":\"http\",\"status\":503}"]} 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — what it refuses > refuses a Nixpacks build instead of pretending the node can do it 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — what it refuses > refuses a non-docker service 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — what it refuses > refuses a service with neither an image nor a repository 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — logging > streams the node output into the deploy log 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — runtime shape > carries limits and the primary volume through to the node 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — runtime shape > publishes a host port only when the service asks for direct access 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — runtime shape > r264: retires the previous runtime before re-binding a published host port 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — runtime shape > r264: keeps blue-green (previous untouched) when no host port is published 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — runtime shape > r264: a failed run removes its Created container and still fails the deploy 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — health and teardown > does not accept a missing Docker healthcheck when command readiness is configured 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — health and teardown > accepts a passing Docker healthcheck when command readiness is configured 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — health and teardown > does not treat failed Docker inspection output as a healthy container 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — health and teardown > does not accept ambiguous or malformed running-state evidence: [ 'running|none|0|0', …(1) ] 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — health and teardown > does not accept ambiguous or malformed running-state evidence: [ 'running|none|0|unknown' ] 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — health and teardown > does not accept ambiguous or malformed running-state evidence: [ 'running|none|unknown|0' ] 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — health and teardown > does not accept ambiguous or malformed running-state evidence: [ 'running|none||0' ] 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — health and teardown > requires consecutive healthy samples after an inspect failure (false) 69ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — health and teardown > requires consecutive healthy samples after an inspect failure (true) 45ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — health and teardown > reports healthy once the node says the container is running 31ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — health and teardown > r265: fails a crash-looping container even though it samples as running 45ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — health and teardown > r265: needs several consecutive running samples with no restart in between 48ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — health and teardown > r265: `restarting` never counts as healthy 211ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — health and teardown > r265: waits for an image HEALTHCHECK to pass 46ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — health and teardown > r265: the rollback probe (grace 0) settles on one good sample 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — health and teardown > reports unhealthy and pulls the container logs when it exited 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — health and teardown > gives up at the deadline rather than polling forever 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — health and teardown > does not fail a good deploy because the logout call failed 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — health and teardown > tolerates a teardown where both stop and rm fail 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — health and teardown > stops and removes the container, tolerating one that is already gone 0ms
+ ✓ test/engine/remoteDocker.test.ts > remote docker builder — health and teardown > r526: passes the stop grace to the node (old agents ignore the operand) 0ms
+ ✓ test/engine/remoteDocker.test.ts > r660: source builds need an agent that guards build paths > refuses a source build to an agent that predates the guard, before anything is cloned 0ms
+ ✓ test/engine/remoteDocker.test.ts > r660: source builds need an agent that guards build paths > names the version an agent reports when it lacks the capability 0ms
+ ✓ test/engine/remoteDocker.test.ts > r660: source builds need an agent that guards build paths > refuses when the agent cannot even answer the ping (pre-ping agents answer unknown_op) 0ms
+ ✓ test/engine/remoteDocker.test.ts > r660: source builds need an agent that guards build paths > refuses IMAGE releases to an agent without immutable identity support 0ms
+ ✓ test/engine/remoteDocker.test.ts > 0.16: the shared ninedeploy network on the node > an existing network is a silent no-op: no daemon error in the deploy log, the deploy goes on 0ms
+ ✓ test/engine/remoteDocker.test.ts > 0.16: the shared ninedeploy network on the node > any other failure still reaches the deploy log 0ms
+ ✓ test/lib/registryLock.test.ts > registry session lock (r230) > serialises the login → pull → logout window per registry 24ms
+ ✓ test/lib/registryLock.test.ts > registry session lock (r230) > shares one host store across registries while keeping nodes independent 0ms
+ ✓ test/lib/registryLock.test.ts > registry session lock (r230) > survives a holder that throws and a double release 0ms
+ ✓ test/lib/registryLock.test.ts > registry lock wiring (r230) > every registry login site takes the lock first 2ms
+ ✓ test/fanout.test.ts > multi-server fan-out (phase 1) > keeps a host-port target when sealed readiness is unavailable 5ms
+ ✓ test/fanout.test.ts > multi-server fan-out (phase 1) > does not promote a target missing its configured command healthcheck 3ms
+ ✓ test/fanout.test.ts > multi-server fan-out (phase 1) > keeps the previous target when the default application port is not listening 1ms
+ ✓ test/fanout.test.ts > multi-server fan-out (phase 1) > does not retire a host-port target when the default probe is unsupported 1ms
+ ✓ test/fanout.test.ts > multi-server fan-out (phase 1) > does not start a fan-out candidate when the environment receipt names another file 1ms
+ ✓ test/fanout.test.ts > multi-server fan-out (phase 1) > keeps a host-port target running when its replacement environment receipt is invalid 0ms
+ ✓ test/fanout.test.ts > multi-server fan-out (phase 1) > pushes the release to each extra node: login, pull, run, health 1ms
+ ✓ test/fanout.test.ts > multi-server fan-out (phase 1) > r267: sends multi-line env values escaped, as the local builder writes them 0ms
+ ✓ test/fanout.test.ts > multi-server fan-out (phase 1) > keeps the primary serving when a target node fails 1ms
+ ✓ test/fanout.test.ts > multi-server fan-out (phase 1) > r226: retires the previous target generation only AFTER the new one runs 1ms
+ ✓ test/fanout.test.ts > multi-server fan-out (phase 1) > r226: keeps the proven container when the new generation fails its state check 0ms
+ ✓ test/fanout.test.ts > multi-server fan-out (phase 1) > r226: a host-port publish still retires the old container first 0ms
+ ✓ test/fanout.test.ts > multi-server fan-out (phase 1) > F116: removes the Created container of a failed target start, never the tracked one 1ms
+ ✓ test/fanout.test.ts > multi-server fan-out (phase 1) > F117: a crash-looping target container is refused and the proven one keeps serving 1ms
+ ✓ test/fanout.test.ts > multi-server fan-out (phase 1) > r226: turns a local image ID into a reference a node can pull 0ms
+ ✓ test/fanout.test.ts > multi-server fan-out (phase 1) > builds the pinned commit on each target node for source releases 1ms
+ ✓ test/fanout.test.ts > multi-server fan-out (phase 1) > r353: a source release clears the clone egress gate before any node clones it 0ms
+ ✓ test/fanout.test.ts > multi-server fan-out (phase 1) > skips targets equal to the primary placement 0ms
+ ✓ test/fanout.test.ts > multi-server fan-out (phase 1) > records a per-node failure when the container exits during the state poll 0ms
+ ✓ test/fanout.test.ts > multi-server fan-out (phase 1) > updates existing rows and RETIRES the container of a row deleted mid-fan-out (r403) 1ms
+ ✓ test/fanout.test.ts > multi-server fan-out (phase 1) > lists fan-out candidate nodes 0ms
+ ✓ test/fanout.test.ts > multi-server fan-out (phase 1) > teardown removes every target container and the rows 0ms
+ ✓ test/fanout.test.ts > multi-server fan-out (phase 1) > r526: logs into the registry BEFORE a target builds from source, and out after 1ms
+ ✓ test/fanout.test.ts > multi-server fan-out (phase 1) > r592: a rejected login on a SOURCE build warns and builds anonymously instead of failing the target 1ms
+ ✓ test/fanout.test.ts > multi-server fan-out (phase 1) > r592: a rejected login on an IMAGE release still fails that target (unchanged) 0ms
+ ✓ test/fanout.test.ts > 0.16 T4: fan-out runs what the primary runs (D1) and ships what it built (D2, design §6.5) > D1: a command and an attachment reach the target through docker.runSpec (volume created first), never dropped 1ms
+ ✓ test/fanout.test.ts > 0.16 T4: fan-out runs what the primary runs (D1) and ships what it built (D2, design §6.5) > D1: an agent without docker.runSpec is refused before anything is sent; the target is recorded failed 0ms
+ ✓ test/fanout.test.ts > 0.16 T4: fan-out runs what the primary runs (D1) and ships what it built (D2, design §6.5) > 0.16.4: a target runs with the labels and the healthcheck command; an agent that predates them is refused by name 1ms
+ ✓ test/fanout.test.ts > 0.16 T4: fan-out runs what the primary runs (D1) and ships what it built (D2, design §6.5) > 0.16.5: a target writes the service files and mounts them; an agent that predates them is refused by name 5ms
+ ✓ test/fanout.test.ts > 0.16 T4: fan-out runs what the primary runs (D1) and ships what it built (D2, design §6.5) > 0.16.6: a target applies the container options when its agent can; an older one runs without them, warned 2ms
+ ✓ test/fanout.test.ts > 0.16 T4: fan-out runs what the primary runs (D1) and ships what it built (D2, design §6.5) > a shipped release: the target receives it through `prebuilt.ship` — no pull, no clone, no build — and runs it 1ms
+
+ Test Files  6 passed (6)
+      Tests  163 passed (163)
+   Start at  10:48:25
+   Duration  14.88s (tests 63%, import 27%, transform 10%)
+
+     Import  163 modules were evaluated 340 times · 3.48s total, 27% of tracked time
+             ~1.81s faster with isolate: false — shared modules are evaluated once per worker instead of once per file
+             learn more: https://vitest.dev/guide/improving-performance#test-isolation

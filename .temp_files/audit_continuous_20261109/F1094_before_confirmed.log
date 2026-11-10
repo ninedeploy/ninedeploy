@@ -1,0 +1,4 @@
+same-registry control EXPECTED first registry auth retained:true ACTUAL: true overlap: false keys: [ 'one.invalid', 'unrelated.invalid' ]
+PROBLEM NOT REPRODUCED
+different-registry race EXPECTED first registry auth retained:true ACTUAL: false overlap: true keys: [ 'two.invalid', 'unrelated.invalid' ]
+PROBLEM CONFIRMED

@@ -20,12 +20,13 @@ describe('registry session lock (r230)', () => {
     expect(events).toEqual(['a login', 'a pull', 'a logout', 'b login', 'b pull', 'b logout']);
   });
 
-  it('keeps different registries and different nodes independent', async () => {
+  it('shares one host store across registries while keeping nodes independent', async () => {
     expect(registryLockKey(null, 'ghcr.io')).not.toBe(registryLockKey(4, 'ghcr.io'));
-    expect(registryLockKey(4, undefined)).toBe('node:4|docker.io');
+    expect(registryLockKey(4, undefined)).toBe('node:4');
+    expect(registryLockKey(null, 'ghcr.io')).toBe(registryLockKey(null, 'registry.gitlab.com'));
     const a = await acquireRegistryLock(registryLockKey(null, 'ghcr.io'));
-    // Would hang if keys collided.
-    const b = await acquireRegistryLock(registryLockKey(null, 'registry.gitlab.com'));
+    // Would hang if the local and node credential stores collided.
+    const b = await acquireRegistryLock(registryLockKey(4, 'registry.gitlab.com'));
     a();
     b();
   });

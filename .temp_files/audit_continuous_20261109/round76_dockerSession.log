@@ -1,0 +1,6 @@
+{"server":"(default)","loginExit":0,"logoutExit":0,"before":["https://index.docker.io/v1/","unrelated.invalid"],"after":["unrelated.invalid"]}
+{"server":"docker.io","loginExit":0,"logoutExit":0,"before":["https://index.docker.io/v1/","unrelated.invalid"],"after":["https://index.docker.io/v1/","unrelated.invalid"]}
+{"server":"index.docker.io","loginExit":0,"logoutExit":0,"before":["index.docker.io","unrelated.invalid"],"after":["unrelated.invalid"]}
+{"server":"registry-1.docker.io","loginExit":0,"logoutExit":0,"before":["registry-1.docker.io","unrelated.invalid"],"after":["unrelated.invalid"]}
+{"server":"Docker.IO","loginExit":0,"logoutExit":0,"before":["Docker.IO","unrelated.invalid"],"after":["unrelated.invalid"]}
+Controlled daemon requests: [{"url":"/v1.52/auth","serveraddress":"https://index.docker.io/v1/"},{"url":"/v1.52/auth","serveraddress":"https://index.docker.io/v1/"},{"url":"/v1.52/auth","serveraddress":"index.docker.io"},{"url":"/v1.52/auth","serveraddress":"registry-1.docker.io"},{"url":"/v1.52/auth","serveraddress":"Docker.IO"}]

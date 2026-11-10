@@ -1,0 +1,19 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1094_registryStore.test.ts > preserves two registry snapshots in credential store null 7ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1094_registryStore.test.ts > preserves two registry snapshots in credential store 4 6ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1094_registryStore.test.ts > preserves two registry snapshots in credential store 8 6ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1094_registryStore.test.ts > preserves two registry snapshots in credential store undefined 8ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1094_registryStore.test.ts > different nodes progress while the local credential store is held 8ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1094_registryStore.test.ts > a failing login releases the entire store for another registry 7ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1094_registryStore.test.ts > late duplicate release cannot admit a third session over the next holder 0ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1094_registryStore.test.ts
+FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1094_registryStore.test.ts > a mixed registry queue preserves every write and the unrelated entry 406ms
+
+ Test Files  1 passed (1)
+      Tests  8 passed (8)
+   Start at  10:46:47
+   Duration  1.02s (tests 92%, transform 5%, import 2%, worker 1%)
