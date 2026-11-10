@@ -1,0 +1,313 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/lib/notifier.test.ts > notifyEvent > does nothing when there are no channels 1ms
+ ✓ test/lib/notifier.test.ts > notifyEvent > returns silently when the channels query fails (table missing) 1ms
+ ✓ test/lib/notifier.test.ts > notifyEvent > r179: an undecryptable channel is logged as failed and does not stop the others 5ms
+ ✓ test/lib/notifier.test.ts > notifyEvent > a delivered event whose sent-row write fails gets no failed row (log writes are best-effort) 1ms
+ ✓ test/lib/notifier.test.ts > notifyEvent > sendSystemEmail: a mail that was sent still returns true when its sent-row write fails 1ms
+ ✓ test/lib/notifier.test.ts > notifyEvent > skips inactive channels and filter mismatches 1ms
+ ✓ test/lib/notifier.test.ts > notifyEvent > delivers to a webhook channel when the filter matches 1ms
+ ✓ test/lib/notifier.test.ts > notifyEvent > delivers to a telegram channel with bot token and chat id 0ms
+ ✓ test/lib/notifier.test.ts > notifyEvent > correctly parses real telegram bot tokens that contain an internal colon 0ms
+ ✓ test/lib/notifier.test.ts > notifyEvent > logs a failure for an invalid telegram target (missing chat id) 2528ms
+ ✓ test/lib/notifier.test.ts > notifyEvent > records a failed log entry when telegram returns an error (after retries) 3ms
+ ✓ test/lib/notifier.test.ts > notifyEvent > records a failed log entry when a webhook returns an error 1ms
+ ✓ test/lib/notifier.test.ts > notifyEvent > retries a transient failure and records success with the attempt count 1ms
+ ✓ test/lib/notifier.test.ts > notifyEvent > delivers to a discord channel 0ms
+ ✓ test/lib/notifier.test.ts > notifyEvent > records a failure when discord returns an error 1ms
+ ✓ test/lib/notifier.test.ts > notifyEvent > delivers to a slack channel 0ms
+ ✓ test/lib/notifier.test.ts > notifyEvent > records a failure when slack returns an error 1ms
+ ✓ test/lib/notifier.test.ts > notifyEvent > delivers to an ntfy topic as plain text 0ms
+ ✓ test/lib/notifier.test.ts > notifyEvent > records a failure when ntfy returns an error 0ms
+ ✓ test/lib/notifier.test.ts > notifyEvent > delivers to an email channel via SMTP 3ms
+ ✓ test/lib/notifier.test.ts > notifyEvent > records a failure for a malformed email target 1ms
+ ✓ test/lib/notifier.test.ts > notifyEvent > records a failure when fetch rejects with a non-Error value 1ms
+ ✓ test/lib/notifier.test.ts > notifyEvent > records a failure for a channel with an unknown type (no misleading sent entry) 1ms
+ ✓ test/lib/notifier.test.ts > notifyEvent > includes the entity in the message when present 0ms
+ ✓ test/lib/notifier.test.ts > notifyEvent > formats actions without a dot, unknown subjects, and a null entity 0ms
+ ✓ test/lib/notifier.test.ts > notifyEvent > HTML-escapes a hostile entity so Telegram parse_mode cannot break 0ms
+ ✓ test/lib/notifier.test.ts > notifyEvent > sends every dispatch with an abort signal (bounded timeout) and records failures 1ms
+ ✓ test/lib/notifier.test.ts > notifyEvent > delivers to an email channel without auth when user is absent 3ms
+ ✓ test/lib/notifier.test.ts > notifyEvent > treats a user without a password as an empty password 4ms
+ ✓ test/lib/notifier.test.ts > notifyEvent > formats the alert subject with a bell emoji 1ms
+ ✓ test/lib/notifier.test.ts > withRetry > returns 1 on immediate success 0ms
+ ✓ test/lib/notifier.test.ts > withRetry > retries with the given delays and returns the attempt count 1ms
+ ✓ test/lib/notifier.test.ts > withRetry > throws after exhausting the delays 1ms
+ ✓ test/lib/notifier.test.ts > parseEmailTarget > parses a full target 0ms
+ ✓ test/lib/notifier.test.ts > parseEmailTarget > rejects non-JSON input 0ms
+ ✓ test/lib/notifier.test.ts > parseEmailTarget > rejects JSON missing required fields 0ms
+ ✓ test/lib/notifier.test.ts > sendSystemEmail > returns false when no active email channel exists 1ms
+ ✓ test/lib/notifier.test.ts > sendSystemEmail > returns false when the channels query fails (table missing) 1ms
+ ✓ test/lib/notifier.test.ts > sendSystemEmail > sends through the first active email channel and logs the delivery 4ms
+ ✓ test/lib/notifier.test.ts > sendSystemEmail > logs a failed delivery and returns false (non-Error rejections stringified) 2527ms
+ ✓ test/lib/notifier.test.ts > sendSystemEmail > logs Error rejections with their message 2522ms
+ ✓ test/lib/notifier.test.ts > sendDiscord > posts a plain content body when no options are provided 0ms
+ ✓ test/lib/notifier.test.ts > sendDiscord > forwards the username and avatar_url override 0ms
+ ✓ test/lib/notifier.test.ts > sendDiscord > appends a coloured embed when title is set, with default blue 0ms
+ ✓ test/lib/notifier.test.ts > sendDiscord > honours a custom embed color 0ms
+ ✓ test/lib/notifier.test.ts > sendDiscord > throws on a non-2xx response 0ms
+ ✓ test/lib/notifier.test.ts > dispatchChannel Discord config_json > falls back to plain content when configJson is null 0ms
+ ✓ test/lib/notifier.test.ts > dispatchChannel Discord config_json > ignores malformed configJson and sends a plain content body 0ms
+ ✓ test/lib/notifier.test.ts > dispatchChannel Discord config_json > propagates configJson title and color into the embed 0ms
+ ✓ test/lib/notifier.test.ts > dispatchChannel Discord config_json > ignores configJson keys with wrong types 0ms
+ ✓ test/lib/notifier.test.ts > scopeMatchesAction (per-service subscription scopes) > maps the three manifest scopes onto audit actions 0ms
+ ✓ test/lib/notifier.test.ts > dispatchChannel — fcm > refuses an fcm channel without a service-account configJson 0ms
+ ✓ test/lib/notifier.test.ts > dispatchChannel — fcm > hands the device token, service account and action data to sendFcm 0ms
+ ✓ test/lib/notifier.test.ts > dispatchChannel — fcm > refuses unknown channel types with a loud error 0ms
+ ✓ test/lib/notifier.test.ts > notifyEvent — dead FCM device tokens (F924) > deactivates the channel when FCM answers 404 UNREGISTERED 1ms
+ ✓ test/lib/notifier.test.ts > notifyEvent — dead FCM device tokens (F924) > keeps the channel on a transient 503 1ms
+ ✓ test/lib/notifier.test.ts > notifyEvent — per-service subscription deliveries > delivers a scoped event to a rule-subscribed channel despite the global filter 1ms
+ ✓ test/lib/notifier.test.ts > notifyEvent — per-service subscription deliveries > does not deliver the channel anything without meta.serviceId 0ms
+ ✓ test/lib/notifier.test.ts > notifyEvent — per-service subscription deliveries > does not deliver when the rule scope does not cover the action 0ms
+ ✓ test/lib/notifier.test.ts > notifyEvent — per-service subscription deliveries > delivers a deploy outcome for a deploy-scoped rule on another service only with its own id 0ms
+ ✓ test/lib/notifier.test.ts > notifyEvent — per-service subscription deliveries > r652: ignores rules on a service whose owner is not an operator 0ms
+ ✓ test/lib/notifier.test.ts > notifyEvent — per-service subscription deliveries > r652: still delivers through the channel’s own filter for that service 0ms
+ ✓ test/lib/notifier.test.ts > notifyEvent — per-service subscription deliveries > survives a failing per-service rules lookup and still delivers globally 0ms
+ ✓ test/lib/notifier.test.ts > outbound payload injection (r653) > JSON-escapes substitutions in a string webhook template, so a service name cannot add keys 1ms
+ ✓ test/lib/notifier.test.ts > outbound payload injection (r653) > a template whose values need no escaping renders exactly as before 0ms
+ ✓ test/lib/notifier.test.ts > outbound payload injection (r653) > Discord never parses mentions out of the message 0ms
+ ✓ test/lib/notifier.test.ts > Microsoft Teams channel > builds a message carrying one Adaptive Card attachment 1ms
+ ✓ test/lib/notifier.test.ts > Microsoft Teams channel > posts the card as JSON to the webhook URL 0ms
+ ✓ test/lib/notifier.test.ts > Microsoft Teams channel > accepts a legacy incoming-webhook URL as well 0ms
+ ✓ test/lib/notifier.test.ts > Microsoft Teams channel > trims the pasted URL 0ms
+ ✓ test/lib/notifier.test.ts > Microsoft Teams channel > refuses "not a url" before dialling 0ms
+ ✓ test/lib/notifier.test.ts > Microsoft Teams channel > refuses "http://contoso.webhook.office.com/x" before dialling 0ms
+ ✓ test/lib/notifier.test.ts > Microsoft Teams channel > refuses "ftp://example.com/x" before dialling 0ms
+ ✓ test/lib/notifier.test.ts > Microsoft Teams channel > refuses "" before dialling 0ms
+ ✓ test/lib/notifier.test.ts > Microsoft Teams channel > reports the status and the connector explanation, never the URL 0ms
+ ✓ test/lib/notifier.test.ts > Microsoft Teams channel > falls back to the bare status when the body is empty or unreadable 0ms
+ ✓ test/lib/notifier.test.ts > Microsoft Teams channel > treats an unfollowed redirect as a delivery failure 0ms
+ ✓ test/lib/notifier.test.ts > Microsoft Teams channel > delivers through notifyEvent and logs it as sent 0ms
+ ✓ test/lib/notifier.test.ts > Microsoft Teams channel > records a failure when Teams keeps answering an error 5ms
+ ✓ test/lib/notifier.test.ts > Resend channel > parses a comma-separated or array recipient list and trims every field 0ms
+ ✓ test/lib/notifier.test.ts > Resend channel > rejects the malformed target not json 0ms
+ ✓ test/lib/notifier.test.ts > Resend channel > rejects the malformed target null 0ms
+ ✓ test/lib/notifier.test.ts > Resend channel > rejects the malformed target [] 0ms
+ ✓ test/lib/notifier.test.ts > Resend channel > rejects the malformed target {"from":"a@x.io","to":"b@x.io"} 0ms
+ ✓ test/lib/notifier.test.ts > Resend channel > rejects the malformed target {"apiKey":"k","to":"b@x.io"} 0ms
+ ✓ test/lib/notifier.test.ts > Resend channel > rejects the malformed target {"apiKey":"k","from":"a@x.io"} 0ms
+ ✓ test/lib/notifier.test.ts > Resend channel > rejects the malformed target {"apiKey":"k","from":"a@x.io","to":" , "} 0ms
+ ✓ test/lib/notifier.test.ts > Resend channel > rejects the malformed target {"apiKey":5,"from":"a@x.io","to":"b@x.io"} 0ms
+ ✓ test/lib/notifier.test.ts > Resend channel > builds the same subject and text the email channel sends 0ms
+ ✓ test/lib/notifier.test.ts > Resend channel > POSTs to the Resend API with the bearer key and never puts the key in the body 0ms
+ ✓ test/lib/notifier.test.ts > Resend channel > refuses a malformed target without calling the API 0ms
+ ✓ test/lib/notifier.test.ts > Resend channel > surfaces the API error message but never the key 0ms
+ ✓ test/lib/notifier.test.ts > Resend channel > falls back to the bare status for an unreadable or message-less error body 0ms
+ ✓ test/lib/notifier.test.ts > Resend channel > delivers through notifyEvent and logs it as sent 1ms
+ ✓ test/lib/notifier.test.ts > Resend channel > records a failure without leaking the key into the delivery log 1ms
+ ✓ test/lib/notifier.test.ts > Resend channel > system email (password reset, invitations) > goes to the account address, not the channel recipients, when Resend is the only email route 1ms
+ ✓ test/lib/notifier.test.ts > Resend channel > system email (password reset, invitations) > keeps preferring an SMTP channel when both exist, so existing installs behave as before 11ms
+ ✓ test/lib/notifier.test.ts > Resend channel > system email (password reset, invitations) > skips an inactive Resend channel 0ms
+ ✓ test/lib/notifier.test.ts > Resend channel > system email (password reset, invitations) > logs a failed delivery without the key and returns false 1ms
+stdout | test/lib/notifierResponse.test.ts > disposes native webhook response 201
+EXPECTED: response disposed before delivery settles; ACTUAL: { provider: 'webhook', status: 201, cancelled: 1, error: 'undefined' }
+PROBLEM NOT REPRODUCED
+
+stdout | test/lib/notifierResponse.test.ts > disposes native webhook response 503
+EXPECTED: response disposed before delivery settles; ACTUAL: {
+  provider: 'webhook',
+  status: 503,
+  cancelled: 1,
+  error: 'Error: Webhook 503'
+}
+PROBLEM NOT REPRODUCED
+
+stdout | test/lib/notifierResponse.test.ts > disposes native discord response 201
+EXPECTED: response disposed before delivery settles; ACTUAL: { provider: 'discord', status: 201, cancelled: 1, error: 'undefined' }
+PROBLEM NOT REPRODUCED
+
+stdout | test/lib/notifierResponse.test.ts > disposes native discord response 503
+EXPECTED: response disposed before delivery settles; ACTUAL: {
+  provider: 'discord',
+  status: 503,
+  cancelled: 1,
+  error: 'Error: Discord 503'
+}
+PROBLEM NOT REPRODUCED
+
+stdout | test/lib/notifierResponse.test.ts > disposes native slack response 201
+EXPECTED: response disposed before delivery settles; ACTUAL: { provider: 'slack', status: 201, cancelled: 1, error: 'undefined' }
+PROBLEM NOT REPRODUCED
+
+stdout | test/lib/notifierResponse.test.ts > disposes native slack response 503
+EXPECTED: response disposed before delivery settles; ACTUAL: {
+  provider: 'slack',
+  status: 503,
+  cancelled: 1,
+  error: 'Error: Slack 503'
+}
+PROBLEM NOT REPRODUCED
+
+stdout | test/lib/notifierResponse.test.ts > disposes native mattermost response 201
+EXPECTED: response disposed before delivery settles; ACTUAL: {
+  provider: 'mattermost',
+  status: 201,
+  cancelled: 1,
+  error: 'undefined'
+}
+PROBLEM NOT REPRODUCED
+
+stdout | test/lib/notifierResponse.test.ts > disposes native mattermost response 503
+EXPECTED: response disposed before delivery settles; ACTUAL: {
+  provider: 'mattermost',
+  status: 503,
+  cancelled: 1,
+  error: 'Error: Mattermost 503'
+}
+PROBLEM NOT REPRODUCED
+
+stdout | test/lib/notifierResponse.test.ts > disposes native googlechat response 201
+EXPECTED: response disposed before delivery settles; ACTUAL: {
+  provider: 'googlechat',
+  status: 201,
+  cancelled: 1,
+  error: 'undefined'
+}
+PROBLEM NOT REPRODUCED
+
+stdout | test/lib/notifierResponse.test.ts > disposes native googlechat response 503
+EXPECTED: response disposed before delivery settles; ACTUAL: {
+  provider: 'googlechat',
+  status: 503,
+  cancelled: 1,
+  error: 'Error: Google Chat 503'
+}
+PROBLEM NOT REPRODUCED
+
+stdout | test/lib/notifierResponse.test.ts > disposes native matrix response 201
+EXPECTED: response disposed before delivery settles; ACTUAL: { provider: 'matrix', status: 201, cancelled: 1, error: 'undefined' }
+PROBLEM NOT REPRODUCED
+
+stdout | test/lib/notifierResponse.test.ts > disposes native matrix response 503
+EXPECTED: response disposed before delivery settles; ACTUAL: {
+  provider: 'matrix',
+  status: 503,
+  cancelled: 1,
+  error: 'Error: Matrix 503'
+}
+PROBLEM NOT REPRODUCED
+
+stdout | test/lib/notifierResponse.test.ts > disposes native ntfy response 201
+EXPECTED: response disposed before delivery settles; ACTUAL: { provider: 'ntfy', status: 201, cancelled: 1, error: 'undefined' }
+PROBLEM NOT REPRODUCED
+
+stdout | test/lib/notifierResponse.test.ts > disposes native ntfy response 503
+EXPECTED: response disposed before delivery settles; ACTUAL: {
+  provider: 'ntfy',
+  status: 503,
+  cancelled: 1,
+  error: 'Error: ntfy 503'
+}
+PROBLEM NOT REPRODUCED
+
+stdout | test/lib/notifierResponse.test.ts > disposes native gotify response 201
+EXPECTED: response disposed before delivery settles; ACTUAL: { provider: 'gotify', status: 201, cancelled: 1, error: 'undefined' }
+PROBLEM NOT REPRODUCED
+
+stdout | test/lib/notifierResponse.test.ts > disposes native gotify response 503
+EXPECTED: response disposed before delivery settles; ACTUAL: {
+  provider: 'gotify',
+  status: 503,
+  cancelled: 1,
+  error: 'Error: Gotify 503'
+}
+PROBLEM NOT REPRODUCED
+
+ ✓ test/lib/notifierResponse.test.ts > disposes native webhook response 201 42ms
+ ✓ test/lib/notifierResponse.test.ts > disposes native webhook response 503 6ms
+ ✓ test/lib/notifierResponse.test.ts > disposes native discord response 201 5ms
+ ✓ test/lib/notifierResponse.test.ts > disposes native discord response 503 4ms
+ ✓ test/lib/notifierResponse.test.ts > disposes native slack response 201 3ms
+ ✓ test/lib/notifierResponse.test.ts > disposes native slack response 503 3ms
+ ✓ test/lib/notifierResponse.test.ts > disposes native mattermost response 201 5ms
+ ✓ test/lib/notifierResponse.test.ts > disposes native mattermost response 503 5ms
+ ✓ test/lib/notifierResponse.test.ts > disposes native googlechat response 201 6ms
+ ✓ test/lib/notifierResponse.test.ts > disposes native googlechat response 503 4ms
+ ✓ test/lib/notifierResponse.test.ts > disposes native matrix response 201 3ms
+ ✓ test/lib/notifierResponse.test.ts > disposes native matrix response 503 3ms
+ ✓ test/lib/notifierResponse.test.ts > disposes native ntfy response 201 2ms
+ ✓ test/lib/notifierResponse.test.ts > disposes native ntfy response 503 2ms
+ ✓ test/lib/notifierResponse.test.ts > disposes native gotify response 201 5ms
+stdout | test/lib/notifierResponse.test.ts > disposes native pushover response 201
+EXPECTED: response disposed before delivery settles; ACTUAL: { provider: 'pushover', status: 201, cancelled: 1, error: 'undefined' }
+PROBLEM NOT REPRODUCED
+
+stdout | test/lib/notifierResponse.test.ts > disposes native pushover response 503
+EXPECTED: response disposed before delivery settles; ACTUAL: {
+  provider: 'pushover',
+  status: 503,
+  cancelled: 1,
+  error: 'Error: Pushover 503'
+}
+PROBLEM NOT REPRODUCED
+
+stdout | test/lib/notifierResponse.test.ts > disposes native telegram response 201
+EXPECTED: response disposed before delivery settles; ACTUAL: { provider: 'telegram', status: 201, cancelled: 1, error: 'undefined' }
+PROBLEM NOT REPRODUCED
+
+ ✓ test/lib/notifierResponse.test.ts > disposes native gotify response 503 3ms
+ ✓ test/lib/notifierResponse.test.ts > disposes native pushover response 201 3ms
+ ✓ test/lib/notifierResponse.test.ts > disposes native pushover response 503 3ms
+ ✓ test/lib/notifierResponse.test.ts > disposes native telegram response 201 3ms
+ ✓ test/lib/notifierResponse.test.ts > control: Lark consumes semantic success JSON 1ms
+ ✓ test/lib/notifierResponse.test.ts > control: Telegram consumes refusal details 1ms
+ ✓ test/lib/notifierResponse.test.ts > preserves bodyless webhook success 0ms
+ ✓ test/lib/notifierResponse.test.ts > does not fail webhook success if cancellation rejects 0ms
+ ✓ test/lib/notifierResponse.test.ts > preserves bodyless discord success 0ms
+ ✓ test/lib/notifierResponse.test.ts > does not fail discord success if cancellation rejects 0ms
+ ✓ test/lib/notifierResponse.test.ts > preserves bodyless slack success 0ms
+ ✓ test/lib/notifierResponse.test.ts > does not fail slack success if cancellation rejects 0ms
+ ✓ test/lib/notifierResponse.test.ts > preserves bodyless mattermost success 0ms
+ ✓ test/lib/notifierResponse.test.ts > does not fail mattermost success if cancellation rejects 0ms
+ ✓ test/lib/notifierResponse.test.ts > preserves bodyless googlechat success 0ms
+ ✓ test/lib/notifierResponse.test.ts > does not fail googlechat success if cancellation rejects 0ms
+ ✓ test/lib/notifierResponse.test.ts > preserves bodyless matrix success 0ms
+ ✓ test/lib/notifierResponse.test.ts > does not fail matrix success if cancellation rejects 0ms
+ ✓ test/lib/notifierResponse.test.ts > preserves bodyless ntfy success 0ms
+ ✓ test/lib/notifierResponse.test.ts > does not fail ntfy success if cancellation rejects 0ms
+ ✓ test/lib/notifierResponse.test.ts > preserves bodyless gotify success 0ms
+ ✓ test/lib/notifierResponse.test.ts > does not fail gotify success if cancellation rejects 0ms
+ ✓ test/lib/notifierResponse.test.ts > preserves bodyless pushover success 0ms
+ ✓ test/lib/notifierResponse.test.ts > does not fail pushover success if cancellation rejects 0ms
+ ✓ test/lib/notifierResponse.test.ts > preserves bodyless telegram success 0ms
+ ✓ test/lib/notifierResponse.test.ts > does not fail telegram success if cancellation rejects 0ms
+stdout | test/lib/incidentResponse.test.ts > releases native streaming success for pagerduty
+EXPECTED: native body cancelled before send returns; ACTUAL: { provider: 'pagerduty', cancelled: 1, bodyUsed: true }
+PROBLEM NOT REPRODUCED
+
+stdout | test/lib/incidentResponse.test.ts > releases native streaming success for opsgenie
+EXPECTED: native body cancelled before send returns; ACTUAL: { provider: 'opsgenie', cancelled: 1, bodyUsed: true }
+PROBLEM NOT REPRODUCED
+
+ ✓ test/lib/incidentResponse.test.ts > releases native streaming success for pagerduty 37ms
+ ✓ test/lib/incidentResponse.test.ts > releases native streaming success for opsgenie 7ms
+ ✓ test/lib/incidentResponse.test.ts > control: refusal body is consumed for the provider diagnostic 2ms
+ ✓ test/lib/incidentResponse.test.ts > cancels pagerduty trigger response content 1ms
+ ✓ test/lib/incidentResponse.test.ts > cancels pagerduty resolve response content 0ms
+ ✓ test/lib/incidentResponse.test.ts > preserves pagerduty bodyless success 0ms
+ ✓ test/lib/incidentResponse.test.ts > ignores pagerduty success cancellation rejection 0ms
+ ✓ test/lib/incidentResponse.test.ts > disposes both pagerduty test incident responses 0ms
+ ✓ test/lib/incidentResponse.test.ts > cancels opsgenie trigger response content 0ms
+ ✓ test/lib/incidentResponse.test.ts > cancels opsgenie resolve response content 0ms
+ ✓ test/lib/incidentResponse.test.ts > preserves opsgenie bodyless success 0ms
+ ✓ test/lib/incidentResponse.test.ts > ignores opsgenie success cancellation rejection 0ms
+ ✓ test/lib/incidentResponse.test.ts > disposes both opsgenie test incident responses 0ms
+ ✓ test/lib/incidentResponse.test.ts > preserves Opsgenie refusal details and consumes body 0ms
+ ✓ test/lib/notifierG37.test.ts > Mattermost and Google Chat > posts a Slack-style text payload to a Mattermost webhook 3ms
+ ✓ test/lib/notifierG37.test.ts > Mattermost and Google Chat > posts to a Google Chat space webhook and refuses any other host 1ms
+ ✓ test/lib/notifierG37.test.ts > Matrix > PUTs an m.text message with a transaction id derived from the event 1ms
+ ✓ test/lib/notifierG37.test.ts > Matrix > validates the target 6ms
+ ✓ test/lib/notifierG37.test.ts > incident classification > opens on problems and closes on their fix with the same key 1ms
+ ✓ test/lib/notifierG37.test.ts > incident classification > falls back to a hash of the entity, and ignores fixes it cannot match and everything else 0ms
+ ✓ test/lib/notifierG37.test.ts > incident classification > parses a bare key or JSON with a region 0ms
+ ✓ test/lib/notifierG37.test.ts > PagerDuty > triggers with a dedup key and resolves with the same key 0ms
+ ✓ test/lib/notifierG37.test.ts > PagerDuty > sends nothing for an event that is no problem, and reports a refusal 1ms
+ ✓ test/lib/notifierG37.test.ts > PagerDuty > opens and closes a test incident 0ms
+ ✓ test/lib/notifierG37.test.ts > Opsgenie > creates an alert with an alias and closes it by that alias 0ms
+ ✓ test/lib/notifierG37.test.ts > notifyEvent with an incident channel > skips events that neither report nor fix a problem, without a log row 3ms
+
+ Test Files  4 passed (4)
+      Tests  166 passed (166)
+   Start at  16:22:55
+   Duration  9.85s (tests 84%, import 14%, transform 1%)

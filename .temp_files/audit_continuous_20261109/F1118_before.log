@@ -1,0 +1,214 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1118_notifierResponse.test.ts > disposes native webhook response 201
+EXPECTED: response disposed before delivery settles; ACTUAL: { provider: 'webhook', status: 201, cancelled: 0, error: 'undefined' }
+PROBLEM CONFIRMED
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1118_notifierResponse.test.ts > disposes native webhook response 503
+EXPECTED: response disposed before delivery settles; ACTUAL: {
+  provider: 'webhook',
+  status: 503,
+  cancelled: 0,
+  error: 'Error: Webhook 503'
+}
+PROBLEM CONFIRMED
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1118_notifierResponse.test.ts > disposes native discord response 201
+EXPECTED: response disposed before delivery settles; ACTUAL: { provider: 'discord', status: 201, cancelled: 0, error: 'undefined' }
+PROBLEM CONFIRMED
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1118_notifierResponse.test.ts > disposes native discord response 503
+EXPECTED: response disposed before delivery settles; ACTUAL: {
+  provider: 'discord',
+  status: 503,
+  cancelled: 0,
+  error: 'Error: Discord 503'
+}
+PROBLEM CONFIRMED
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1118_notifierResponse.test.ts > disposes native slack response 201
+EXPECTED: response disposed before delivery settles; ACTUAL: { provider: 'slack', status: 201, cancelled: 0, error: 'undefined' }
+PROBLEM CONFIRMED
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1118_notifierResponse.test.ts > disposes native slack response 503
+EXPECTED: response disposed before delivery settles; ACTUAL: {
+  provider: 'slack',
+  status: 503,
+  cancelled: 0,
+  error: 'Error: Slack 503'
+}
+PROBLEM CONFIRMED
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1118_notifierResponse.test.ts > disposes native mattermost response 201
+EXPECTED: response disposed before delivery settles; ACTUAL: {
+  provider: 'mattermost',
+  status: 201,
+  cancelled: 0,
+  error: 'undefined'
+}
+PROBLEM CONFIRMED
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1118_notifierResponse.test.ts > disposes native mattermost response 503
+EXPECTED: response disposed before delivery settles; ACTUAL: {
+  provider: 'mattermost',
+  status: 503,
+  cancelled: 0,
+  error: 'Error: Mattermost 503'
+}
+PROBLEM CONFIRMED
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1118_notifierResponse.test.ts > disposes native googlechat response 201
+EXPECTED: response disposed before delivery settles; ACTUAL: {
+  provider: 'googlechat',
+  status: 201,
+  cancelled: 0,
+  error: 'undefined'
+}
+PROBLEM CONFIRMED
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1118_notifierResponse.test.ts > disposes native googlechat response 503
+EXPECTED: response disposed before delivery settles; ACTUAL: {
+  provider: 'googlechat',
+  status: 503,
+  cancelled: 0,
+  error: 'Error: Google Chat 503'
+}
+PROBLEM CONFIRMED
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1118_notifierResponse.test.ts > disposes native matrix response 201
+EXPECTED: response disposed before delivery settles; ACTUAL: { provider: 'matrix', status: 201, cancelled: 0, error: 'undefined' }
+PROBLEM CONFIRMED
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1118_notifierResponse.test.ts > disposes native matrix response 503
+EXPECTED: response disposed before delivery settles; ACTUAL: {
+  provider: 'matrix',
+  status: 503,
+  cancelled: 0,
+  error: 'Error: Matrix 503'
+}
+PROBLEM CONFIRMED
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1118_notifierResponse.test.ts > disposes native ntfy response 201
+EXPECTED: response disposed before delivery settles; ACTUAL: { provider: 'ntfy', status: 201, cancelled: 0, error: 'undefined' }
+PROBLEM CONFIRMED
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1118_notifierResponse.test.ts > disposes native ntfy response 503
+EXPECTED: response disposed before delivery settles; ACTUAL: {
+  provider: 'ntfy',
+  status: 503,
+  cancelled: 0,
+  error: 'Error: ntfy 503'
+}
+PROBLEM CONFIRMED
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1118_notifierResponse.test.ts > disposes native gotify response 201
+EXPECTED: response disposed before delivery settles; ACTUAL: { provider: 'gotify', status: 201, cancelled: 0, error: 'undefined' }
+PROBLEM CONFIRMED
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1118_notifierResponse.test.ts > disposes native gotify response 503
+EXPECTED: response disposed before delivery settles; ACTUAL: {
+  provider: 'gotify',
+  status: 503,
+  cancelled: 0,
+  error: 'Error: Gotify 503'
+}
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/prove_F1118_notifierResponse.test.ts > disposes native webhook response 201 41ms
+   → expected +0 to be 1 // Object.is equality
+ × .temp_files/audit_continuous_20261109/prove_F1118_notifierResponse.test.ts > disposes native webhook response 503 7ms
+   → expected +0 to be 1 // Object.is equality
+ × .temp_files/audit_continuous_20261109/prove_F1118_notifierResponse.test.ts > disposes native discord response 201 5ms
+   → expected +0 to be 1 // Object.is equality
+ × .temp_files/audit_continuous_20261109/prove_F1118_notifierResponse.test.ts > disposes native discord response 503 4ms
+   → expected +0 to be 1 // Object.is equality
+ × .temp_files/audit_continuous_20261109/prove_F1118_notifierResponse.test.ts > disposes native slack response 201 4ms
+   → expected +0 to be 1 // Object.is equality
+ × .temp_files/audit_continuous_20261109/prove_F1118_notifierResponse.test.ts > disposes native slack response 503 3ms
+   → expected +0 to be 1 // Object.is equality
+ × .temp_files/audit_continuous_20261109/prove_F1118_notifierResponse.test.ts > disposes native mattermost response 201 3ms
+   → expected +0 to be 1 // Object.is equality
+ × .temp_files/audit_continuous_20261109/prove_F1118_notifierResponse.test.ts > disposes native mattermost response 503 4ms
+   → expected +0 to be 1 // Object.is equality
+ × .temp_files/audit_continuous_20261109/prove_F1118_notifierResponse.test.ts > disposes native googlechat response 201 4ms
+   → expected +0 to be 1 // Object.is equality
+ × .temp_files/audit_continuous_20261109/prove_F1118_notifierResponse.test.ts > disposes native googlechat response 503 6ms
+   → expected +0 to be 1 // Object.is equality
+ × .temp_files/audit_continuous_20261109/prove_F1118_notifierResponse.test.ts > disposes native matrix response 201 4ms
+   → expected +0 to be 1 // Object.is equality
+ × .temp_files/audit_continuous_20261109/prove_F1118_notifierResponse.test.ts > disposes native matrix response 503 3ms
+   → expected +0 to be 1 // Object.is equality
+ × .temp_files/audit_continuous_20261109/prove_F1118_notifierResponse.test.ts > disposes native ntfy response 201 3ms
+   → expected +0 to be 1 // Object.is equality
+ × .temp_files/audit_continuous_20261109/prove_F1118_notifierResponse.test.ts > disposes native ntfy response 503 3ms
+   → expected +0 to be 1 // Object.is equality
+ × .temp_files/audit_continuous_20261109/prove_F1118_notifierResponse.test.ts > disposes native gotify response 201 3ms
+   → expected +0 to be 1 // Object.is equality
+ × .temp_files/audit_continuous_20261109/prove_F1118_notifierResponse.test.ts > disposes native gotify response 503 3ms
+   → expected +0 to be 1 // Object.is equality
+stdout | .temp_files/audit_continuous_20261109/prove_F1118_notifierResponse.test.ts > disposes native pushover response 201
+EXPECTED: response disposed before delivery settles; ACTUAL: { provider: 'pushover', status: 201, cancelled: 0, error: 'undefined' }
+PROBLEM CONFIRMED
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1118_notifierResponse.test.ts > disposes native pushover response 503
+EXPECTED: response disposed before delivery settles; ACTUAL: {
+  provider: 'pushover',
+  status: 503,
+  cancelled: 0,
+  error: 'Error: Pushover 503'
+}
+PROBLEM CONFIRMED
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1118_notifierResponse.test.ts > disposes native telegram response 201
+EXPECTED: response disposed before delivery settles; ACTUAL: { provider: 'telegram', status: 201, cancelled: 0, error: 'undefined' }
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/prove_F1118_notifierResponse.test.ts > disposes native pushover response 201 3ms
+   → expected +0 to be 1 // Object.is equality
+ × .temp_files/audit_continuous_20261109/prove_F1118_notifierResponse.test.ts > disposes native pushover response 503 3ms
+   → expected +0 to be 1 // Object.is equality
+ × .temp_files/audit_continuous_20261109/prove_F1118_notifierResponse.test.ts > disposes native telegram response 201 4ms
+   → expected +0 to be 1 // Object.is equality
+ ✓ .temp_files/audit_continuous_20261109/prove_F1118_notifierResponse.test.ts > control: Lark consumes semantic success JSON 1ms
+ ✓ .temp_files/audit_continuous_20261109/prove_F1118_notifierResponse.test.ts > control: Telegram consumes refusal details 2ms
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 19 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1118_notifierResponse.test.ts > disposes native webhook response 201
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1118_notifierResponse.test.ts > disposes native webhook response 503
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1118_notifierResponse.test.ts > disposes native discord response 201
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1118_notifierResponse.test.ts > disposes native discord response 503
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1118_notifierResponse.test.ts > disposes native slack response 201
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1118_notifierResponse.test.ts > disposes native slack response 503
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1118_notifierResponse.test.ts > disposes native mattermost response 201
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1118_notifierResponse.test.ts > disposes native mattermost response 503
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1118_notifierResponse.test.ts > disposes native googlechat response 201
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1118_notifierResponse.test.ts > disposes native googlechat response 503
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1118_notifierResponse.test.ts > disposes native matrix response 201
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1118_notifierResponse.test.ts > disposes native matrix response 503
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1118_notifierResponse.test.ts > disposes native ntfy response 201
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1118_notifierResponse.test.ts > disposes native ntfy response 503
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1118_notifierResponse.test.ts > disposes native gotify response 201
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1118_notifierResponse.test.ts > disposes native gotify response 503
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1118_notifierResponse.test.ts > disposes native pushover response 201
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1118_notifierResponse.test.ts > disposes native pushover response 503
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1118_notifierResponse.test.ts > disposes native telegram response 201
+AssertionError: expected +0 to be 1 // Object.is equality
+
+- Expected
++ Received
+
+- 1
++ 0
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1118_notifierResponse.test.ts:10:1310
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/19]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  19 failed | 2 passed (21)
+   Start at  16:20:38
+   Duration  1.13s (import 66%, transform 22%, tests 12%)

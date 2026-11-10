@@ -98,6 +98,7 @@ async function sendTelegram(botToken: string, chatId: string, message: string): 
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
   if (!res.ok) throw new Error(`Telegram API ${res.status}: ${await res.text()}`);
+  await res.body?.cancel().catch(() => undefined);
 }
 
 /**
@@ -130,6 +131,7 @@ async function sendWebhook(
     body,
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
+  await res.body?.cancel().catch(() => undefined);
   if (!res.ok) throw new Error(`Webhook ${res.status}`);
 }
 
@@ -253,6 +255,7 @@ export async function sendDiscord(
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
+  await res.body?.cancel().catch(() => undefined);
   if (!res.ok) throw new Error(`Discord ${res.status}`);
 }
 
@@ -264,6 +267,7 @@ async function sendSlack(webhookUrl: string, message: string): Promise<void> {
     body: JSON.stringify({ text: message }),
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
+  await res.body?.cancel().catch(() => undefined);
   if (!res.ok) throw new Error(`Slack ${res.status}`);
 }
 
@@ -275,6 +279,7 @@ async function sendMattermost(webhookUrl: string, message: string): Promise<void
     body: JSON.stringify({ text: message, username: 'NineDeploy' }),
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
+  await res.body?.cancel().catch(() => undefined);
   if (!res.ok) throw new Error(`Mattermost ${res.status}`);
 }
 
@@ -295,6 +300,7 @@ async function sendGoogleChat(webhookUrl: string, message: string): Promise<void
     body: JSON.stringify({ text: message }),
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
+  await res.body?.cancel().catch(() => undefined);
   if (!res.ok) throw new Error(`Google Chat ${res.status}`);
 }
 
@@ -339,6 +345,7 @@ async function sendMatrix(target: MatrixTarget, message: string, event: AppEvent
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     },
   );
+  await res.body?.cancel().catch(() => undefined);
   if (!res.ok) throw new Error(`Matrix ${res.status}`);
 }
 
@@ -350,6 +357,7 @@ async function sendNtfy(topicUrl: string, message: string): Promise<void> {
     body: message,
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
+  await res.body?.cancel().catch(() => undefined);
   if (!res.ok) throw new Error(`ntfy ${res.status}`);
 }
 
@@ -362,6 +370,7 @@ async function sendGotify(endpoint: string, message: string): Promise<void> {
     body: JSON.stringify({ title: 'NineDeploy', message, priority: 5 }),
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
+  await res.body?.cancel().catch(() => undefined);
   if (!res.ok) throw new Error(`Gotify ${res.status}`);
 }
 
@@ -374,6 +383,7 @@ async function sendPushover(appToken: string, userKey: string, message: string):
     body: new URLSearchParams({ token: appToken, user: userKey, title: 'NineDeploy', message }),
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
+  await res.body?.cancel().catch(() => undefined);
   if (!res.ok) throw new Error(`Pushover ${res.status}`);
 }
 

@@ -37,6 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Basic webhook, chat and push notification deliveries now release unused HTTP response bodies on success and refusal, preserving Telegram diagnostic text and existing channel payloads (F1118).
 - PagerDuty and Opsgenie deliveries now release unused success-response bodies before returning, while preserving provider refusal details and notification payloads (F1117).
 - GitLab, Gitea and Bitbucket commit-status reports now cancel unused response bodies before returning, releasing HTTP resources on success and failure without affecting deployments (F1116).
 - Git LFS builds now hydrate verified empty objects locally, avoiding a failed download or misleading credential error when no remote empty object is stored (F1115).

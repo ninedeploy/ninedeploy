@@ -1154,3 +1154,9 @@ The focused Mac lane checks incident delivery and response disposal in
 (31 server files). PagerDuty/Opsgenie fixtures use loopback HTTP and inert keys;
 no real incidents are opened or resolved.
 Native incident response checkpoint: [run 42832976904](https://github.com/ninedeploy/ninedeploy/actions/runs/42832976904) passed at source `8895be6132dd13f9e9b9550fa5691d34d1b30ee7` on macOS 26.7.2 arm64: 385 server, 20 native CLI and four workspace MCP tests, 409 tests in 36 files. See the [receipt](../.temp_files/audit_continuous_20261109/round96_receipt.json). Full release certification remains outside this focused run.
+
+The focused Mac lane also runs basic notification delivery and response
+disposal in `test/lib/notifier.test.ts` and
+`test/lib/notifierResponse.test.ts` (33 server files). Ten channel types use
+inert targets and controlled loopback HTTP; no real notifications are sent.
+Native basic notification response follow-up: pending the new Mac run.
