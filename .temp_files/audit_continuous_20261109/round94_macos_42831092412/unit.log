@@ -1,0 +1,377 @@
+
+[1m[30m[46m RUN [49m[39m[22m [36mv5.0.5 [39m[90m/Users/runner/work/ninedeploy/ninedeploy/apps/server[39m
+
+ [32m✓[39m test/lib/autoscaler.test.ts[2m > [22mmeasure[2m > [22mcpu is the average per serving container, in percent of its limit or of one core[32m 221[2mms[22m[39m
+ [32m✓[39m test/lib/autoscaler.test.ts[2m > [22mmeasure[2m > [22mmemory is the percent of the limit; a missing limit holds scaling[32m 145[2mms[22m[39m
+ [32m✓[39m test/lib/autoscaler.test.ts[2m > [22mmeasure[2m > [22mholds without stats, and rps needs traffic analytics[32m 114[2mms[22m[39m
+ [32m✓[39m test/lib/autoscaler.test.ts[2m > [22mrequestRate[2m > [22mcounts per service in ten-second buckets, leaves out the last bucket, and forgets after a day[32m 105[2mms[22m[39m
+ [32m✓[39m test/lib/autoscaler.test.ts[2m > [22mdecide[2m > [22mscales up once the need has lasted the up window, to the smallest count asked for[32m 121[2mms[22m[39m
+ [32m✓[39m test/lib/autoscaler.test.ts[2m > [22mdecide[2m > [22mscales down only after the down window, to the largest count asked for in it[32m 105[2mms[22m[39m
+ [32m✓[39m test/lib/autoscaler.test.ts[2m > [22mdecide[2m > [22ma value back near the target, or a swing the other way, restarts the window[32m 117[2mms[22m[39m
+ [32m✓[39m test/lib/autoscaler.test.ts[2m > [22mdecide[2m > [22mdoes not act when the window asks for the current count after all, and labels rps[32m 115[2mms[22m[39m
+ [32m✓[39m test/lib/autoscaler.test.ts[2m > [22mscaleService[2m > [22mup: starts and probes each spare, then routes them and audits[32m 162[2mms[22m[39m
+ [32m✓[39m test/lib/autoscaler.test.ts[2m > [22mscaleService[2m > [22mup: stops at a spare that fails its healthcheck, and says so[32m 228[2mms[22m[39m
+ [32m✓[39m test/lib/autoscaler.test.ts[2m > [22mscaleService[2m > [22mup: a spare that does not exist (autoscaling turned on since the deploy) leaves everything as it was[32m 238[2mms[22m[39m
+ [32m✓[39m test/lib/autoscaler.test.ts[2m > [22mscaleService[2m > [22mdown: routes the containers away first, then stops them[32m 223[2mms[22m[39m
+ [32m✓[39m test/lib/autoscaler.test.ts[2m > [22mscaleService[2m > [22mdown: a failed stop is logged; the containers are already unrouted[32m 153[2mms[22m[39m
+ [32m✓[39m test/lib/autoscaler.test.ts[2m > [22mscaleService[2m > [22ma deploy that replaced the runtime meanwhile wins: nothing is written or audited[32m 159[2mms[22m[39m
+ [32m✓[39m test/lib/autoscaler.test.ts[2m > [22mautoscaleStep[2m > [22mholds with the reason and touches nothing[32m 137[2mms[22m[39m
+ [32m✓[39m test/lib/autoscaler.test.ts[2m > [22mautoscaleStep[2m > [22mstops a spare that runs unrouted[32m 149[2mms[22m[39m
+ [32m✓[39m test/lib/autoscaler.test.ts[2m > [22mautoscaleStep[2m > [22mmoves inside new bounds at once[32m 143[2mms[22m[39m
+ [32m✓[39m test/lib/autoscaler.test.ts[2m > [22mautoscaleStep[2m > [22mG5.6: raises to a scheduled floor while its window is in force, and names it[32m 265[2mms[22m[39m
+ [32m✓[39m test/lib/autoscaler.test.ts[2m > [22mautoscaleStep[2m > [22mG5.6: outside the window the floor does not hold capacity[32m 195[2mms[22m[39m
+ [32m✓[39m test/lib/autoscaler.test.ts[2m > [22mautoscaleStep[2m > [22mmeasures, waits the window, then scales; status shows what it saw[32m 148[2mms[22m[39m
+ [32m✓[39m test/lib/autoscaler.test.ts[2m > [22mautoscaleStep[2m > [22mstarts a new decision window and confirms routing after a redeploy between ticks[32m 160[2mms[22m[39m
+ [32m✓[39m test/lib/autoscaler.test.ts[2m > [22mautoscaleStep[2m > [22mdoes not treat a long unobserved gap as sustained load[32m 149[2mms[22m[39m
+ [32m✓[39m test/lib/autoscaler.test.ts[2m > [22mautoscaleStep[2m > [22mdoes not scale on the same cached sample twice[32m 145[2mms[22m[39m
+ [32m✓[39m test/lib/autoscaler.test.ts[2m > [22mautoscaleStep[2m > [22mrestarts the decision window when the collector sample timestamp moves backwards[32m 158[2mms[22m[39m
+ [32m✓[39m test/lib/autoscaler.test.ts[2m > [22mautoscaleStep[2m > [22mholds when the metric cannot be read[32m 131[2mms[22m[39m
+ [32m✓[39m test/lib/autoscaler.test.ts[2m > [22mholdReason, autoscaleOf, status[2m > [22mnames each reason not to measure[32m 126[2mms[22m[39m
+ [32m✓[39m test/lib/autoscaler.test.ts[2m > [22mholdReason, autoscaleOf, status[2m > [22mreads a stored configuration, and none from an invalid one[32m 132[2mms[22m[39m
+ [32m✓[39m test/lib/autoscaler.test.ts[2m > [22mholdReason, autoscaleOf, status[2m > [22mlists the metrics each placement can act on[32m 179[2mms[22m[39m
+ [32m✓[39m test/lib/autoscaler.test.ts[2m > [22mcreateAutoscaler[2m > [22mdispatches node work separately and cancels it during shutdown[32m 130[2mms[22m[39m
+ [32m✓[39m test/lib/autoscaler.test.ts[2m > [22mcreateAutoscaler[2m > [22mreleases a node service after a worker failure so a later tick can retry[32m 245[2mms[22m[39m
+ [32m✓[39m test/lib/autoscaler.test.ts[2m > [22mcreateAutoscaler[2m > [22mruns recovery even without configured autoscaling services[32m 112[2mms[22m[39m
+ [32m✓[39m test/lib/autoscaler.test.ts[2m > [22mcreateAutoscaler[2m > [22mcancels an in-flight recovery and waits for it before shutdown[32m 128[2mms[22m[39m
+ [32m✓[39m test/lib/autoscaler.test.ts[2m > [22mcreateAutoscaler[2m > [22mreports recovery failure while continuing the ordinary autoscaler tick[32m 139[2mms[22m[39m
+ [32m✓[39m test/lib/autoscaler.test.ts[2m > [22mcreateAutoscaler[2m > [22mlooks at autoscaled services only, one step per service at a time[32m 262[2mms[22m[39m
+ [32m✓[39m test/lib/autoscaler.test.ts[2m > [22mcreateAutoscaler[2m > [22mdoes nothing without autoscaled services, and reports a failed load[32m 130[2mms[22m[39m
+ [32m✓[39m test/lib/autoscaler.test.ts[2m > [22mcreateAutoscaler[2m > [22mreports a failed step[32m 130[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefHostValidation.test.ts[2m > [22mnative-verified accepted ghcr.io/web:v1[32m 7[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefHostValidation.test.ts[2m > [22mnative-verified accepted REGISTRY/web:v1[32m 1[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefHostValidation.test.ts[2m > [22mnative-verified accepted localhost:5000/web:v1[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefHostValidation.test.ts[2m > [22mnative-verified accepted REGISTRY:5000/web:v1[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefHostValidation.test.ts[2m > [22mnative-verified accepted [2001:4860:4860::8888]:5000/web:v1[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefHostValidation.test.ts[2m > [22mnative-verified accepted registry.example.test:99999/web:v1[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefHostValidation.test.ts[2m > [22mnative-verified refused ghcr.io?fixture=1/web:v1[32m 1[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefHostValidation.test.ts[2m > [22mnative-verified refused ghcr.io#fixture/web:v1[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefHostValidation.test.ts[2m > [22mnative-verified refused ghcr.io\extra/web:v1[32m 1[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefHostValidation.test.ts[2m > [22mnative-verified refused ghcr..io/web:v1[32m 1[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefHostValidation.test.ts[2m > [22mnative-verified refused -registry.example/web:v1[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefHostValidation.test.ts[2m > [22mnative-verified refused registry_.example/web:v1[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefHostValidation.test.ts[2m > [22mnative-verified refused ghcr.io:bad/web:v1[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefHostValidation.test.ts[2m > [22mnative-verified refused [::1/web:v1[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefHostValidation.test.ts[2m > [22mnative-verified refused bad%host.example/web:v1[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefHostValidation.test.ts[2m > [22mnative-verified accepted ghcr.io/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefHostValidation.test.ts[2m > [22mnative-verified refused ghcr.io/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefHostValidation.test.ts[2m > [22mnative-verified accepted docker.io/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefHostValidation.test.ts[2m > [22mnative-verified refused docker.io/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefHostValidation.test.ts[2m > [22mnative-verified accepted index.docker.io/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefHostValidation.test.ts[2m > [22mnative-verified refused index.docker.io/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefHostValidation.test.ts[2m > [22mnative-verified accepted registry-1.docker.io/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefHostValidation.test.ts[2m > [22mnative-verified refused registry-1.docker.io/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefHostValidation.test.ts[2m > [22mnative-verified accepted REGISTRY/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefHostValidation.test.ts[2m > [22mnative-verified refused REGISTRY/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefHostValidation.test.ts[2m > [22mnative-verified accepted [2001:4860:4860::8888]:5000/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefHostValidation.test.ts[2m > [22mnative-verified refused [2001:4860:4860::8888]:5000/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefHostValidation.test.ts[2m > [22mnative-verified accepted aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefHostValidation.test.ts[2m > [22mnative-verified refused aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefHostValidation.test.ts[2m > [22mnative-verified accepted reg--istry.example:0005000/web:v1[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefHostValidation.test.ts[2m > [22mnative-verified refused [::ffff:192.0.2.1]:5000/web:v1[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefHostValidation.test.ts[2m > [22mnative-verified refused example.test./web:v1[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefHostValidation.test.ts[2m > [22mnative-verified accepted foo_bar.example/web:v1[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefHostValidation.test.ts[2m > [22mnative-verified accepted [:::]:5000/web:v1[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefHostValidation.test.ts[2m > [22mnative-verified refused [::1%25eth0]:5000/web:v1[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefHostValidation.test.ts[2m > [22mnative-verified accepted REGISTRY.EXAMPLE/web:v1[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefHostValidation.test.ts[2m > [22mnative-verified accepted docker.io/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefHostValidation.test.ts[2m > [22mnative-verified refused docker.io/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefHostValidation.test.ts[2m > [22mnative-verified accepted index.docker.io/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefHostValidation.test.ts[2m > [22mnative-verified refused index.docker.io/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefHostValidation.test.ts[2m > [22mnative-verified accepted registry-1.docker.io/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefHostValidation.test.ts[2m > [22mnative-verified refused registry-1.docker.io/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefHostValidation.test.ts[2m > [22mvalid ordinary host still probes the exact v2 manifest path[32m 30[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefHostValidation.test.ts[2m > [22mvalid repository255 remains probeable even though the full name is longer[32m 1[2mms[22m[39m
+ [32m✓[39m test/lib/imageWatch.test.ts[2m > [22mfetchImageDigest[2m > [22mreads the manifest digest from a direct anonymous response[32m 47[2mms[22m[39m
+ [32m✓[39m test/lib/imageWatch.test.ts[2m > [22mfetchImageDigest[2m > [22mperforms the Docker Hub anonymous token dance on 401[32m 2[2mms[22m[39m
+ [32m✓[39m test/lib/imageWatch.test.ts[2m > [22mfetchImageDigest[2m > [22mperforms the ghcr token dance with its own realm[32m 1[2mms[22m[39m
+ [32m✓[39m test/lib/imageWatch.test.ts[2m > [22mfetchImageDigest[2m > [22mrefuses to chase realms of registries outside the known table[32m 1[2mms[22m[39m
+ [32m✓[39m test/lib/imageWatch.test.ts[2m > [22mfetchImageDigest[2m > [22mreports the registry status when the retry also fails[32m 1[2mms[22m[39m
+ [32m✓[39m test/lib/imageWatch.test.ts[2m > [22mfetchImageDigest[2m > [22mrejects a 200 that carries no digest header[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageWatch.test.ts[2m > [22mfetchImageDigest[2m > [22mmaps network failures to a readable reason[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageWatch.test.ts[2m > [22mfetchImageDigest[2m > [22mnames timeouts distinctly[32m 1[2mms[22m[39m
+ [32m✓[39m test/lib/imageWatch.test.ts[2m > [22mfetchImageDigest[2m > [22mreports a token endpoint failure instead of retrying blindly[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageWatch.test.ts[2m > [22mfetchImageDigest[2m > [22mprobes private repos with Basic auth when credentials are given[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageWatch.test.ts[2m > [22mfetchImageDigest[2m > [22mruns the token dance WITH credentials for private Docker Hub repos[32m 1[2mms[22m[39m
+ [32m✓[39m test/lib/imageWatch.test.ts[2m > [22mfetchImageDigest[2m > [22mnames rejected credentials when the token endpoint answers 401[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageWatch.test.ts[2m > [22mfetchImageDigest[2m > [22mstill refuses unknown auth realms for credentialed probes[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageWatch.test.ts[2m > [22mfetchImageDigest[2m > [22mreports an unreachable token endpoint[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageWatch.test.ts[2m > [22mfetchImageDigest[2m > [22mr514: refuses a registry host that resolves to a private / metadata address, before any request[32m 1[2mms[22m[39m
+ [32m✓[39m test/lib/imageWatch.test.ts[2m > [22mfetchImageDigest[2m > [22mr514: never follows a registry redirect (and never with the credential header)[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageWatch.test.ts[2m > [22mfetchImageDigest[2m > [22mrejects a token response that carries no token[32m 1[2mms[22m[39m
+ [32m✓[39m test/plugins/backupSchedulerPolicyRace.test.ts[2m > [22mcontrol: unchanged ten-minute policy does not run at minute two[32m 253[2mms[22m[39m
+[90mstdout[2m | test/plugins/backupSchedulerPolicyRace.test.ts[2m > [22m[2mF1106: an older gated policy snapshot cannot override the newer cron
+[22m[39mEXPECTED backups:[] ACTUAL: []
+PROBLEM NOT REPRODUCED
+
+ [32m✓[39m test/plugins/backupSchedulerPolicyRace.test.ts[2m > [22mF1106: an older gated policy snapshot cannot override the newer cron[32m 167[2mms[22m[39m
+ [32m✓[39m test/plugins/backupSchedulerPolicyRace.test.ts[2m > [22mindependent database changes do not cancel each other[32m 166[2mms[22m[39m
+ [32m✓[39m test/plugins/backupSchedulerPolicyRace.test.ts[2m > [22ma stale enabled snapshot cannot rearm a disabled policy[32m 129[2mms[22m[39m
+ [32m✓[39m test/plugins/backupSchedulerPolicyRace.test.ts[2m > [22man old periodic refresh cannot replace a newer saved cron[32m 149[2mms[22m[39m
+ [32m✓[39m test/plugins/backupSchedulerPolicyRace.test.ts[2m > [22ma pending changed-event read cannot publish after close[32m 179[2mms[22m[39m
+ [32m✓[39m test/plugins/backupSchedulerPolicyRace.test.ts[2m > [22ma failed save read leaves the existing cron armed until a successful refresh[32m 186[2mms[22m[39m
+ [32m✓[39m test/plugins/backupSchedulerPolicyRace.test.ts[2m > [22ma boot snapshot cannot overwrite a save published while startup is waiting[32m 145[2mms[22m[39m
+ [32m✓[39m test/plugins/backupSchedulerPolicyRace.test.ts[2m > [22ma newer completed periodic refresh fences an older changed-event read[32m 148[2mms[22m[39m
+ [32m✓[39m test/plugins/backupSchedulerPolicyRace.test.ts[2m > [22mremoving a policy during a full refresh still fences its older pending read[32m 155[2mms[22m[39m
+ [32m✓[39m test/gitLfs.test.ts[2m > [22mlfsEndpoint[2m > [22mis the repository's own .git/info/lfs, without credentials; SSH has none[32m 100[2mms[22m[39m
+ [32m✓[39m test/gitLfs.test.ts[2m > [22mGit LFS fetch[2m > [22mfinds only the tracked pointer files[32m 90[2mms[22m[39m
+ [32m✓[39m test/gitLfs.test.ts[2m > [22mGit LFS fetch[2m > [22mreplaces each pointer with its verified content; the credential goes to the repository host only[32m 164[2mms[22m[39m
+ [32m✓[39m test/gitLfs.test.ts[2m > [22mGit LFS fetch[2m > [22mrefuses content that does not match its pointer, and leaves the pointer in place[32m 41[2mms[22m[39m
+ [32m✓[39m test/gitLfs.test.ts[2m > [22mGit LFS fetch[2m > [22mexplains a refused API call, an object error, a missing object and an SSH repository[32m 105[2mms[22m[39m
+ [32m✓[39m test/gitLfs.test.ts[2m > [22mGit LFS fetch[2m > [22ma commit without LFS files asks nothing of the network[32m 98[2mms[22m[39m
+ [32m✓[39m test/gitLfs.test.ts[2m > [22mGit LFS fetch[2m > [22mstops a redirect loop[32m 37[2mms[22m[39m
+ [32m✓[39m test/modules/databaseImportChunkRace.test.ts[2m > [22mqueued retry preserves winner and advances once final=false identical=false[32m 273[2mms[22m[39m
+ [32m✓[39m test/modules/databaseImportChunkRace.test.ts[2m > [22mqueued retry preserves winner and advances once final=false identical=true[32m 177[2mms[22m[39m
+ [32m✓[39m test/modules/databaseImportChunkRace.test.ts[2m > [22mqueued retry preserves winner and advances once final=true identical=false[32m 134[2mms[22m[39m
+ [32m✓[39m test/modules/databaseImportChunkRace.test.ts[2m > [22mqueued retry preserves winner and advances once final=true identical=true[32m 165[2mms[22m[39m
+ [32m✓[39m test/modules/databaseImportChunkRace.test.ts[2m > [22mnext chunk queued behind held first uses fresh offset[32m 197[2mms[22m[39m
+ [32m✓[39m test/modules/databaseImportChunkRace.test.ts[2m > [22munrelated import completes while another native writer is held[32m 212[2mms[22m[39m
+ [32m✓[39m test/modules/databaseImportChunkRace.test.ts[2m > [22mnative write failure closes ownership and permits retry[32m 178[2mms[22m[39m
+ [32m✓[39m test/modules/databaseImportChunkRace.test.ts[2m > [22mvalidation failure releases admission for valid chunk[32m 243[2mms[22m[39m
+ [32m✓[39m test/lib/crossProcessLockInit.test.ts[2m > [22mfailed fail preparation leaves no artifact and immediately retries[32m 15[2mms[22m[39m
+ [32m✓[39m test/lib/crossProcessLockInit.test.ts[2m > [22mfailed partial preparation leaves no artifact and immediately retries[32m 26[2mms[22m[39m
+ [32m✓[39m test/lib/crossProcessLockInit.test.ts[2m > [22mfailed zero preparation leaves no artifact and immediately retries[32m 2[2mms[22m[39m
+ [32m✓[39m test/lib/crossProcessLockInit.test.ts[2m > [22mpublic identity remains absent throughout preparation and is complete at publication[32m 3[2mms[22m[39m
+ [32m✓[39m test/lib/crossProcessLockInit.test.ts[2m > [22mpublication EACCES propagates without unsafe fallback or leaked candidate[32m 3[2mms[22m[39m
+ [32m✓[39m test/lib/crossProcessLockInit.test.ts[2m > [22mpublication ENOTSUP propagates without unsafe fallback or leaked candidate[32m 3[2mms[22m[39m
+ [32m✓[39m test/lib/crossProcessLockInit.test.ts[2m > [22ma newer owner admitted at the publish barrier survives the loser cleanup[32m 2[2mms[22m[39m
+ [32m✓[39m test/lib/crossProcessLockInit.test.ts[2m > [22man existing live owner remains untouched by a rejected contender[32m 1[2mms[22m[39m
+ [32m✓[39m test/lib/crossProcessLockInit.test.ts[2m > [22ma failed initialization cannot clean a later public owner at the write barrier[32m 1[2mms[22m[39m
+ [32m✓[39m test/lib/crossProcessLockInit.test.ts[2m > [22mstale takeover leaves only the new public inode and release removes it[32m 6[2mms[22m[39m
+ [32m✓[39m test/lib/crossProcessLockInit.test.ts[2m > [22mprivate exclusive-create collision preserves the pre-existing candidate[32m 1[2mms[22m[39m
+ [32m✓[39m test/lib/crossProcessLockInit.test.ts[2m > [22mrelease retries a transient private-unlink failure without dropping ownership[32m 2[2mms[22m[39m
+ [32m✓[39m test/lib/crossProcessLockInit.test.ts[2m > [22mheartbeat updates the published inode after its private link is removed[32m 4[2mms[22m[39m
+ [32m✓[39m test/lib/gitLfsCleanup.test.ts[2m > [22mcontrol: complete verified content replaces its pointer and removes the temporary store[32m 92[2mms[22m[39m
+[90mstdout[2m | test/lib/gitLfsCleanup.test.ts[2m > [22m[2mF1109: disconnect after native file drain removes partial private objects and preserves pointer
+[22m[39mEXPECTED retained cachebytes:0 ACTUAL: []
+PROBLEM NOT REPRODUCED
+
+ [32m✓[39m test/lib/gitLfsCleanup.test.ts[2m > [22mF1109: disconnect after native file drain removes partial private objects and preserves pointer[32m 85[2mms[22m[39m
+ [32m✓[39m test/lib/gitLfsCleanup.test.ts[2m > [22mcleans object store after short rejection[32m 124[2mms[22m[39m
+ [32m✓[39m test/lib/gitLfsCleanup.test.ts[2m > [22mcleans object store after oversized rejection[32m 86[2mms[22m[39m
+ [32m✓[39m test/lib/gitLfsCleanup.test.ts[2m > [22mcleans object store after hash-mismatch rejection[33m 317[2mms[22m[39m
+ [32m✓[39m test/lib/gitLfsCleanup.test.ts[2m > [22mcleans an already verified first object when a later object returns404[32m 150[2mms[22m[39m
+ [32m✓[39m test/lib/gitLfsCleanup.test.ts[2m > [22mhandles a failed http batch without leaving a store[32m 93[2mms[22m[39m
+ [32m✓[39m test/lib/gitLfsCleanup.test.ts[2m > [22mhandles a failed json batch without leaving a store[32m 41[2mms[22m[39m
+ [32m✓[39m test/lib/gitLfsCleanup.test.ts[2m > [22mretry on the same checkout succeeds after failed content and starts with no cached objects[32m 76[2mms[22m[39m
+ [32m✓[39m test/lib/gitLfsCleanup.test.ts[2m > [22mnative checkout write-open failure still removes all verified cached objects[32m 40[2mms[22m[39m
+ [32m✓[39m test/plugins/autoscaler.test.ts[2m > [22mautoscaler plugin[2m > [22mdispatches node services to the node worker instead of the panel Docker path[32m 195[2mms[22m[39m
+ [32m✓[39m test/plugins/autoscaler.test.ts[2m > [22mautoscaler plugin[2m > [22mscales a busy service up after its window: starts and probes the spare, routes it, audits[32m 195[2mms[22m[39m
+ [32m✓[39m test/plugins/autoscaler.test.ts[2m > [22mautoscaler plugin[2m > [22mholds while a deploy is in progress, and without the collector[33m 303[2mms[22m[39m
+ [32m✓[39m test/plugins/autoscaler.test.ts[2m > [22mautoscaler plugin[2m > [22ma panel whose database predates migration 0088 looks at nothing[32m 3[2mms[22m[39m
+ [32m✓[39m test/modules/databaseImportShortWrite.test.ts[2m > [22mcompletes each short write size=1[32m 279[2mms[22m[39m
+ [32m✓[39m test/modules/databaseImportShortWrite.test.ts[2m > [22mcompletes each short write size=3[32m 169[2mms[22m[39m
+ [32m✓[39m test/modules/databaseImportShortWrite.test.ts[2m > [22mcompletes each short write size=9[32m 194[2mms[22m[39m
+ [32m✓[39m test/modules/databaseImportShortWrite.test.ts[2m > [22mcompletes each short write size=10[32m 180[2mms[22m[39m
+ [32m✓[39m test/modules/databaseImportShortWrite.test.ts[2m > [22madvances native buffer offset, remaining length and absolute file position[32m 185[2mms[22m[39m
+ [32m✓[39m test/modules/databaseImportShortWrite.test.ts[2m > [22munsuccessful partial sequence 0 leaves metadata retryable[32m 255[2mms[22m[39m
+ [32m✓[39m test/modules/databaseImportShortWrite.test.ts[2m > [22munsuccessful partial sequence 3,0 leaves metadata retryable[32m 185[2mms[22m[39m
+ [32m✓[39m test/modules/databaseImportShortWrite.test.ts[2m > [22munsuccessful partial sequence 3,-1 leaves metadata retryable[32m 209[2mms[22m[39m
+ [32m✓[39m test/lib/imageWatchDigest.test.ts[2m > [22maccepts OCI syntax sha256:29cee9ce6d9eadb2b289937[32m 18[2mms[22m[39m
+ [32m✓[39m test/lib/imageWatchDigest.test.ts[2m > [22maccepts OCI syntax sha512:dd39bdec42141e9f75aa6c5[32m 1[2mms[22m[39m
+ [32m✓[39m test/lib/imageWatchDigest.test.ts[2m > [22mskips syntactically valid unsupported algorithm blake3[32m 1[2mms[22m[39m
+ [32m✓[39m test/lib/imageWatchDigest.test.ts[2m > [22mskips syntactically valid unsupported algorithm sha256+b64u[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageWatchDigest.test.ts[2m > [22mskips syntactically valid unsupported algorithm multihash+base58[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageWatchDigest.test.ts[2m > [22mskips syntactically valid unsupported algorithm future.v1-hash_2[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageWatchDigest.test.ts[2m > [22mskips syntactically valid unsupported algorithm constructor[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageWatchDigest.test.ts[2m > [22mrejects malformed metadata not-a-digest length12[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageWatchDigest.test.ts[2m > [22mrejects malformed metadata sha256: length7[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageWatchDigest.test.ts[2m > [22mrejects malformed metadata :abc length4[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageWatchDigest.test.ts[2m > [22mrejects malformed metadata sha256:abc:def length14[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageWatchDigest.test.ts[2m > [22mrejects malformed metadata SHA256:aaaaaaaaaaaaaaaaaaaaaaa length71[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageWatchDigest.test.ts[2m > [22mrejects malformed metadata sha256:AAAAAAAAAAAAAAAAAAAAAAA length71[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageWatchDigest.test.ts[2m > [22mrejects malformed metadata sha256:ggggggggggggggggggggggg length71[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageWatchDigest.test.ts[2m > [22mrejects malformed metadata sha256:aaaaaaaaaaaaaaaaaaaaaaa length70[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageWatchDigest.test.ts[2m > [22mrejects malformed metadata sha256:aaaaaaaaaaaaaaaaaaaaaaa length72[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageWatchDigest.test.ts[2m > [22mrejects malformed metadata sha512:aaaaaaaaaaaaaaaaaaaaaaa length134[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageWatchDigest.test.ts[2m > [22mrejects malformed metadata sha512:aaaaaaaaaaaaaaaaaaaaaaa length136[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageWatchDigest.test.ts[2m > [22mrejects malformed metadata blake3:aaaaaaaaaaaaaaaaaaaaaaa length70[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageWatchDigest.test.ts[2m > [22mrejects malformed metadata future__hash:ABC length16[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageWatchDigest.test.ts[2m > [22mrejects malformed metadata future-:ABC length11[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageWatchDigest.test.ts[2m > [22mrejects malformed metadata -future:ABC length11[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageWatchDigest.test.ts[2m > [22mrejects malformed metadata future:abc+def length14[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageWatchDigest.test.ts[2m > [22mrejects malformed metadata future:abc/def length14[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageWatchDigest.test.ts[2m > [22mrejects malformed metadata sha256 :aaaaaaaaaaaaaaaaaaaaaa length72[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageWatchDigest.test.ts[2m > [22mrejects malformed metadata sha256:29cee9ce6d9eadb2b289937 length144[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageWatchDigest.test.ts[2m > [22mvalidates the final manifest after the credentialed token retry and cancels both manifest bodies[32m 2[2mms[22m[39m
+ [32m✓[39m test/lib/imageWatchDigest.test.ts[2m > [22mHTTP failure remains a status error rather than accepting a present digest[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageWatchDigest.test.ts[2m > [22mcleanup failure does not replace the safe malformed-header error or echo its input[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageWatchDigest.test.ts[2m > [22mtwo malformed headers cannot seed a baseline or schedule an unchanged image[32m 166[2mms[22m[39m
+ [32m✓[39m test/lib/imageWatchDigest.test.ts[2m > [22mmalformed metadata preserves an existing valid baseline and creates no deployment[32m 124[2mms[22m[39m
+ [32m✓[39m test/lib/imageWatchDigest.test.ts[2m > [22munchanged valid metadata remains idle and a valid move enqueues once[32m 175[2mms[22m[39m
+ [32m✓[39m test/lib/imageWatchIntegrity.test.ts[2m > [22mverifies sha256 across binary chunk boundaries[32m 23[2mms[22m[39m
+ [32m✓[39m test/lib/imageWatchIntegrity.test.ts[2m > [22mverifies sha512 across binary chunk boundaries[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageWatchIntegrity.test.ts[2m > [22mrejects a validly encoded SHA256 for different bytes and releases its reader[32m 3[2mms[22m[39m
+ [32m✓[39m test/lib/imageWatchIntegrity.test.ts[2m > [22mrejects a validly encoded SHA512 for different bytes[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageWatchIntegrity.test.ts[2m > [22maccepts exactly the local byte cap without a content-length header[32m 7[2mms[22m[39m
+ [32m✓[39m test/lib/imageWatchIntegrity.test.ts[2m > [22mbounds actual streamed bytes with declared length undefined[32m 5[2mms[22m[39m
+ [32m✓[39m test/lib/imageWatchIntegrity.test.ts[2m > [22mbounds actual streamed bytes with declared length 1[32m 5[2mms[22m[39m
+ [32m✓[39m test/lib/imageWatchIntegrity.test.ts[2m > [22mrejects oversized declared bodies before reading and cancels them[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageWatchIntegrity.test.ts[2m > [22mcleanup errors cannot mask an overflow rejection[32m 1[2mms[22m[39m
+ [32m✓[39m test/lib/imageWatchIntegrity.test.ts[2m > [22mpropagates body read failure Error and releases the lock[32m 1[2mms[22m[39m
+ [32m✓[39m test/lib/imageWatchIntegrity.test.ts[2m > [22mpropagates body read failure TimeoutError and releases the lock[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageWatchIntegrity.test.ts[2m > [22mpreserves a fetch timeout signal for body consumption[32m 1[2mms[22m[39m
+ [32m✓[39m test/lib/imageWatchIntegrity.test.ts[2m > [22mdoes not accept a null body even when the declared digest hashes empty bytes[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageWatchIntegrity.test.ts[2m > [22mreports an opaque algorithm as unsupported and cancels its unread body[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageWatchIntegrity.test.ts[2m > [22mnative fetch aborts an incomplete manifest body when the probe deadline fires[32m 24[2mms[22m[39m
+ [32m✓[39m test/lib/backupDrillHelperLifecycle.test.ts[2m > [22mcontrol: normal checker removes its owned helper and volume[32m 6[2mms[22m[39m
+ [32m✓[39m test/lib/backupDrillHelperLifecycle.test.ts[2m > [22mcleans helper and volume after create[32m 3[2mms[22m[39m
+ [32m✓[39m test/lib/backupDrillHelperLifecycle.test.ts[2m > [22mcleans helper and volume after create-timeout[32m 2[2mms[22m[39m
+ [32m✓[39m test/lib/backupDrillHelperLifecycle.test.ts[2m > [22mcleans helper and volume after copy[32m 2[2mms[22m[39m
+ [32m✓[39m test/lib/backupDrillHelperLifecycle.test.ts[2m > [22mcleans helper and volume after start[32m 2[2mms[22m[39m
+ [32m✓[39m test/lib/backupDrillHelperLifecycle.test.ts[2m > [22mcleans helper and volume after timeout[32m 2[2mms[22m[39m
+ [32m✓[39m test/lib/backupDrillHelperLifecycle.test.ts[2m > [22mdoes not attempt helper cleanup if image inspection failed before create[32m 2[2mms[22m[39m
+ [32m✓[39m test/lib/backupDrillHelperLifecycle.test.ts[2m > [22mcleanup errors preserve the structural best-effort verdict policy[32m 2[2mms[22m[39m
+ [32m✓[39m test/lib/backupDrillHelperLifecycle.test.ts[2m > [22mremoves no unrelated container, volume or named-volume fixture[32m 3[2mms[22m[39m
+ [32m✓[39m test/lib/backupDrillHelperLifecycle.test.ts[2m > [22mlost create cleanup remains scoped while another checker completes[32m 2[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefValidation.test.ts[2m > [22mnative-verified accepted ghcr.io/acme/app__one--two.v3:v1_2.3-4[32m 47[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefValidation.test.ts[2m > [22mnative-verified refused ghcr.io/acme/../../outside:v1[32m 1[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefValidation.test.ts[2m > [22mnative-verified refused ghcr.io/acme//app:v1[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefValidation.test.ts[2m > [22mnative-verified refused ghcr.io/./app:v1[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefValidation.test.ts[2m > [22mnative-verified refused ghcr.io/-app:v1[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefValidation.test.ts[2m > [22mnative-verified refused ghcr.io/.app:v1[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefValidation.test.ts[2m > [22mnative-verified refused ghcr.io/app_:v1[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefValidation.test.ts[2m > [22mnative-verified refused ghcr.io/a___b:v1[32m 3[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefValidation.test.ts[2m > [22mnative-verified refused ghcr.io/a..b:v1[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefValidation.test.ts[2m > [22mnative-verified refused ghcr.io/acme/:v1[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefValidation.test.ts[2m > [22mnative-verified accepted ghcr.io/app_v2:v1[32m 1[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefValidation.test.ts[2m > [22mnative-verified accepted ghcr.io/app__v2:v1[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefValidation.test.ts[2m > [22mnative-verified accepted ghcr.io/app-v2:v1[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefValidation.test.ts[2m > [22mnative-verified accepted ghcr.io/app--v2:v1[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefValidation.test.ts[2m > [22mnative-verified accepted ghcr.io/app.v2:v1[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefValidation.test.ts[2m > [22mnative-verified accepted ghcr.io/acme/deep/web:v1[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefValidation.test.ts[2m > [22mnative-verified accepted ghcr.io/acme/web:_valid[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefValidation.test.ts[2m > [22mnative-verified accepted ghcr.io/acme/web:_[32m 5[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefValidation.test.ts[2m > [22mnative-verified accepted ghcr.io/acme/web:9[32m 1[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefValidation.test.ts[2m > [22mnative-verified accepted ghcr.io/acme/web:a.b-c_d[32m 6[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefValidation.test.ts[2m > [22mnative-verified accepted ghcr.io/acme/web:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefValidation.test.ts[2m > [22mnative-verified refused ghcr.io/acme/web:..[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefValidation.test.ts[2m > [22mnative-verified refused ghcr.io/acme/web:-bad[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefValidation.test.ts[2m > [22mnative-verified refused ghcr.io/acme/web:.bad[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefValidation.test.ts[2m > [22mnative-verified refused ghcr.io/acme/web:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/imageRefValidation.test.ts[2m > [22mnative-verified refused ghcr.io/acme/web:[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/gitLfsEmpty.test.ts[2m > [22mhydrates 1 empty references without HTTP[32m 49[2mms[22m[39m
+ [32m✓[39m test/lib/gitLfsEmpty.test.ts[2m > [22mhydrates 2 empty references without HTTP[32m 39[2mms[22m[39m
+ [32m✓[39m test/lib/gitLfsEmpty.test.ts[2m > [22mhydrates 3 empty references without HTTP[32m 44[2mms[22m[39m
+ [32m✓[39m test/lib/gitLfsEmpty.test.ts[2m > [22mexcludes empty objects from mixed batch requests[32m 59[2mms[22m[39m
+ [32m✓[39m test/lib/gitLfsEmpty.test.ts[2m > [22mleaves all pointers intact when a mixed transfer fails[32m 47[2mms[22m[39m
+ [32m✓[39m test/lib/gitLfsEmpty.test.ts[2m > [22mdoes not trust size zero with a different hash[32m 55[2mms[22m[39m
+ [32m✓[39m test/lib/gitLfsEmpty.test.ts[2m > [22mdoes not bypass a nonzero empty-hash declaration[32m 40[2mms[22m[39m
+ [32m✓[39m test/lib/gitLfsEmpty.test.ts[2m > [22mstill rejects conflicting sizes for the empty hash[32m 39[2mms[22m[39m
+ [32m✓[39m test/lib/gitLfsEmpty.test.ts[2m > [22mretains normal nonempty verification and deduplication[32m 42[2mms[22m[39m
+ [32m✓[39m test/lib/crossProcessLock.test.ts[2m > [22macquireCrossProcessLock[2m > [22macquires, releases, and allows immediate re-acquisition[32m 5[2mms[22m[39m
+ [32m✓[39m test/lib/crossProcessLock.test.ts[2m > [22macquireCrossProcessLock[2m > [22mwrites the holder identity into the lock file[32m 1[2mms[22m[39m
+ [32m✓[39m test/lib/crossProcessLock.test.ts[2m > [22macquireCrossProcessLock[2m > [22mrefuses a second acquisition while held and throws LockUnavailableError[33m 325[2mms[22m[39m
+ [32m✓[39m test/lib/crossProcessLock.test.ts[2m > [22macquireCrossProcessLock[2m > [22msteals a stale lock whose holder stopped heartbeating[32m 263[2mms[22m[39m
+ [32m✓[39m test/lib/crossProcessLock.test.ts[2m > [22macquireCrossProcessLock[2m > [22mdoes not steal a live lock just because the waiter is impatient[33m 324[2mms[22m[39m
+ [32m✓[39m test/lib/crossProcessLock.test.ts[2m > [22macquireCrossProcessLock[2m > [22mmutually excludes a REAL second process and steals the lock after a crash[33m 533[2mms[22m[39m
+ [32m✓[39m test/plugins/backupSchedulerShutdown.test.ts[2m > [22mcontrol: open policy scheduler admits its due backup[32m 82[2mms[22m[39m
+ [32m✓[39m test/plugins/backupSchedulerShutdown.test.ts[2m > [22mcontrol: open daily scheduler admits its due backup[32m 2[2mms[22m[39m
+ [32m✓[39m test/plugins/backupSchedulerShutdown.test.ts[2m > [22mclose while awaiting policy prevents later policy backup admission[32m 3[2mms[22m[39m
+ [32m✓[39m test/plugins/backupSchedulerShutdown.test.ts[2m > [22mclose while awaiting database prevents later policy backup admission[32m 2[2mms[22m[39m
+ [32m✓[39m test/plugins/backupSchedulerShutdown.test.ts[2m > [22mclose while daily database enumeration waits prevents later backup admission[32m 1[2mms[22m[39m
+ [32m✓[39m test/plugins/backupSchedulerShutdown.test.ts[2m > [22mclose during the first daily dump does not admit the next database[32m 2[2mms[22m[39m
+ [32m✓[39m test/plugins/backupSchedulerShutdown.test.ts[2m > [22man already-admitted policy backup may settle after close without another admission[32m 3[2mms[22m[39m
+ [32m✓[39m test/plugins/backupSchedulerShutdown.test.ts[2m > [22mthe existing in-flight guard prevents overlapping policy dumps[32m 3[2mms[22m[39m
+ [32m✓[39m test/plugins/backupSchedulerShutdown.test.ts[2m > [22mclose before a due timer admits no backup[32m 4[2mms[22m[39m
+ [32m✓[39m test/lib/backupDrillHistory.test.ts[2m > [22mcontrol: single entry exposes its required database identity[32m 191[2mms[22m[39m
+[90mstdout[2m | test/lib/backupDrillHistory.test.ts[2m > [22m[2mF1105: history exposes the same required database identity as detail
+[22m[39mEXPECTED databaseId:5 ACTUAL: [33m5[39m
+PROBLEM NOT REPRODUCED
+
+ [32m✓[39m test/lib/backupDrillHistory.test.ts[2m > [22mF1105: history exposes the same required database identity as detail[32m 118[2mms[22m[39m
+[90mstdout[2m | test/lib/backupDrillHistory.test.ts[2m > [22m[2mordering candidate: equal-second rows retain newest id first in current SQLite
+[22m[39mORDER EXPECTED [13,12] ACTUAL [ [33m13[39m, [33m12[39m ]
+
+ [32m✓[39m test/lib/backupDrillHistory.test.ts[2m > [22mordering candidate: equal-second rows retain newest id first in current SQLite[32m 187[2mms[22m[39m
+ [32m✓[39m test/lib/backupDrillHistory.test.ts[2m > [22mhistory and detail agree on all advertised identity and timing fields[32m 120[2mms[22m[39m
+ [32m✓[39m test/lib/backupDrillHistory.test.ts[2m > [22mdatabase filtering preserves every returned database identity[32m 136[2mms[22m[39m
+ [32m✓[39m test/lib/backupDrillHistory.test.ts[2m > [22mexisting database with no drills returns an empty history[32m 118[2mms[22m[39m
+ [32m✓[39m test/lib/backupDrillHistory.test.ts[2m > [22mretains the HTTP history cap with identity on every row[32m 143[2mms[22m[39m
+ [32m✓[39m test/lib/backupDrillHistory.test.ts[2m > [22mretains not-found behavior for missing database history[32m 126[2mms[22m[39m
+ [32m✓[39m test/lib/registryLockStore.test.ts[2m > [22mpreserves two registry snapshots in credential store null[32m 4[2mms[22m[39m
+ [32m✓[39m test/lib/registryLockStore.test.ts[2m > [22mpreserves two registry snapshots in credential store 4[32m 2[2mms[22m[39m
+ [32m✓[39m test/lib/registryLockStore.test.ts[2m > [22mpreserves two registry snapshots in credential store 8[32m 2[2mms[22m[39m
+ [32m✓[39m test/lib/registryLockStore.test.ts[2m > [22mpreserves two registry snapshots in credential store undefined[32m 1[2mms[22m[39m
+ [32m✓[39m test/lib/registryLockStore.test.ts[2m > [22mdifferent nodes progress while the local credential store is held[32m 2[2mms[22m[39m
+ [32m✓[39m test/lib/registryLockStore.test.ts[2m > [22ma failing login releases the entire store for another registry[32m 2[2mms[22m[39m
+ [32m✓[39m test/lib/registryLockStore.test.ts[2m > [22mlate duplicate release cannot admit a third session over the next holder[32m 1[2mms[22m[39m
+ [32m✓[39m test/lib/registryLockStore.test.ts[2m > [22ma mixed registry queue preserves every write and the unrelated entry[32m 7[2mms[22m[39m
+ [32m✓[39m test/lib/autoscaleSchedule.test.ts[2m > [22mlocalTime[2m > [22mreads the weekday and minute in the time zone[32m 25[2mms[22m[39m
+ [32m✓[39m test/lib/autoscaleSchedule.test.ts[2m > [22mwindowActive[2m > [22mcovers the start and stops at the end[32m 1[2mms[22m[39m
+ [32m✓[39m test/lib/autoscaleSchedule.test.ts[2m > [22mwindowActive[2m > [22mruns past midnight into the next day[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/autoscaleSchedule.test.ts[2m > [22meffectiveMinimum[2m > [22mtakes the highest floor in force, capped at the maximum[32m 1[2mms[22m[39m
+ [32m✓[39m test/lib/autoscaleSchedule.test.ts[2m > [22meffectiveMinimum[2m > [22mkeeps the configured minimum when it is higher[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/autoscaleSchedule.test.ts[2m > [22meffectiveMinimum[2m > [22mdescribes a window for logs[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/autoscaleSchedule.test.ts[2m > [22mthe schema[2m > [22mrefuses a bad time zone, an empty window, a floor above the maximum, and bad times[32m 5[2mms[22m[39m
+ [32m✓[39m test/lib/autoscaleSchedule.test.ts[2m > [22mthe schema[2m > [22mkeeps a stored configuration without schedules as it was[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/crossProcessLockWrite.test.ts[2m > [22mcompletes native identity writes limited to 1 bytes[32m 4[2mms[22m[39m
+ [32m✓[39m test/lib/crossProcessLockWrite.test.ts[2m > [22mcompletes native identity writes limited to 2 bytes[32m 2[2mms[22m[39m
+ [32m✓[39m test/lib/crossProcessLockWrite.test.ts[2m > [22mcompletes native identity writes limited to 3 bytes[32m 2[2mms[22m[39m
+ [32m✓[39m test/lib/crossProcessLockWrite.test.ts[2m > [22mcompletes native identity writes limited to 7 bytes[32m 1[2mms[22m[39m
+ [32m✓[39m test/lib/crossProcessLockWrite.test.ts[2m > [22mcompletes native identity writes limited to 1024 bytes[32m 1[2mms[22m[39m
+ [32m✓[39m test/lib/crossProcessLockWrite.test.ts[2m > [22madvances the buffer offset through uneven native writes[32m 2[2mms[22m[39m
+ [32m✓[39m test/lib/crossProcessLockWrite.test.ts[2m > [22mlate old release preserves a later holder after the replacement barrier[32m 2[2mms[22m[39m
+ [32m✓[39m test/lib/crossProcessLockWrite.test.ts[2m > [22mdouble release cannot delete a newly acquired owner[32m 3[2mms[22m[39m
+ [32m✓[39m test/lib/crossProcessLockWrite.test.ts[2m > [22mzero progress refuses ownership and closes the native descriptor[32m 2[2mms[22m[39m
+ [32m✓[39m test/lib/crossProcessLockWrite.test.ts[2m > [22mfailure after a native partial write propagates and closes the descriptor[32m 1[2mms[22m[39m
+ [32m✓[39m test/lib/gitLfsPointer.test.ts[2m > [22mclassifies and hydrates complete basic-v1 input: canonical[32m 121[2mms[22m[39m
+ [32m✓[39m test/lib/gitLfsPointer.test.ts[2m > [22mclassifies and hydrates complete basic-v1 input: trailing prose[32m 62[2mms[22m[39m
+ [32m✓[39m test/lib/gitLfsPointer.test.ts[2m > [22mclassifies and hydrates complete basic-v1 input: trailing unknown field[32m 62[2mms[22m[39m
+ [32m✓[39m test/lib/gitLfsPointer.test.ts[2m > [22mclassifies and hydrates complete basic-v1 input: trailing blank[32m 64[2mms[22m[39m
+ [32m✓[39m test/lib/gitLfsPointer.test.ts[2m > [22mclassifies and hydrates complete basic-v1 input: trailing spaces[32m 77[2mms[22m[39m
+ [32m✓[39m test/lib/gitLfsPointer.test.ts[2m > [22mclassifies and hydrates complete basic-v1 input: missing final LF[32m 63[2mms[22m[39m
+ [32m✓[39m test/lib/gitLfsPointer.test.ts[2m > [22mclassifies and hydrates complete basic-v1 input: CRLF[32m 54[2mms[22m[39m
+ [32m✓[39m test/lib/gitLfsPointer.test.ts[2m > [22mclassifies and hydrates complete basic-v1 input: duplicate size[32m 61[2mms[22m[39m
+ [32m✓[39m test/lib/gitLfsPointer.test.ts[2m > [22mclassifies and hydrates complete basic-v1 input: NUL suffix[32m 50[2mms[22m[39m
+ [32m✓[39m test/lib/gitLfsPointer.test.ts[2m > [22mclassifies and hydrates complete basic-v1 input: leading whitespace[32m 52[2mms[22m[39m
+ [32m✓[39m test/lib/gitLfsPointer.test.ts[2m > [22mclassifies and hydrates complete basic-v1 input: NBSP suffix[32m 59[2mms[22m[39m
+ [32m✓[39m test/lib/gitLfsPointer.test.ts[2m > [22mclassifies and hydrates complete basic-v1 input: NEL suffix[32m 69[2mms[22m[39m
+ [32m✓[39m test/lib/gitLfsPointer.test.ts[2m > [22mclassifies and hydrates complete basic-v1 input: BOM suffix[32m 49[2mms[22m[39m
+ [32m✓[39m test/lib/gitLfsPointer.test.ts[2m > [22mclassifies and hydrates complete basic-v1 input: 1023 byte wrapper[32m 63[2mms[22m[39m
+ [32m✓[39m test/lib/gitLfsPointer.test.ts[2m > [22mclassifies and hydrates complete basic-v1 input: 1024 byte wrapper[32m 79[2mms[22m[39m
+ [32m✓[39m test/lib/gitLfsPointer.test.ts[2m > [22mclassifies and hydrates complete basic-v1 input: unknown version[32m 54[2mms[22m[39m
+ [32m✓[39m test/lib/gitLfsPointer.test.ts[2m > [22mclassifies and hydrates complete basic-v1 input: over local pointer cap[32m 70[2mms[22m[39m
+ [32m✓[39m test/lib/registryCredentialLogout.test.ts[2m > [22mimage/source-build/push agree on the same Hub session identity: alpine:3.23[32m 195[2mms[22m[39m
+ [32m✓[39m test/lib/registryCredentialLogout.test.ts[2m > [22mimage/source-build/push agree on the same Hub session identity: docker.io/library/alpine:3.23[32m 147[2mms[22m[39m
+ [32m✓[39m test/lib/registryCredentialLogout.test.ts[2m > [22mimage/source-build/push agree on the same Hub session identity: docker.io/acme/app@sha256:1111111111111111111111111111111111111111111111111111111111111111[32m 130[2mms[22m[39m
+ [32m✓[39m test/lib/registryCredentialLogout.test.ts[2m > [22mnon-Hub image/source-build/push keep the same explicit target[32m 138[2mms[22m[39m
+ [32m✓[39m test/lib/registryCredentialLogout.test.ts[2m > [22mrevoking the binding still withholds image and source-build credentials[32m 138[2mms[22m[39m
+ [32m✓[39m test/lib/registryCredentialLogout.test.ts[2m > [22mmultiple bindings do not guess a source-build or push target[32m 151[2mms[22m[39m
+ [32m✓[39m test/lib/registryCredentialLogout.test.ts[2m > [22man incomplete credential remains unavailable across all workflows[32m 130[2mms[22m[39m
+ [32m✓[39m test/lib/gitLfsObjectSizes.test.ts[2m > [22mrejects conflicting shared-object metadata before network: wrong first[32m 75[2mms[22m[39m
+ [32m✓[39m test/lib/gitLfsObjectSizes.test.ts[2m > [22mrejects conflicting shared-object metadata before network: wrong last[32m 46[2mms[22m[39m
+ [32m✓[39m test/lib/gitLfsObjectSizes.test.ts[2m > [22mrejects conflicting shared-object metadata before network: zero first[32m 35[2mms[22m[39m
+ [32m✓[39m test/lib/gitLfsObjectSizes.test.ts[2m > [22mrejects conflicting shared-object metadata before network: zero last[32m 52[2mms[22m[39m
+ [32m✓[39m test/lib/gitLfsObjectSizes.test.ts[2m > [22mrejects conflicting shared-object metadata before network: three declarations[32m 43[2mms[22m[39m
+ [32m✓[39m test/lib/gitLfsObjectSizes.test.ts[2m > [22mrejects conflicting shared-object metadata before network: over limit first[32m 46[2mms[22m[39m
+ [32m✓[39m test/lib/gitLfsObjectSizes.test.ts[2m > [22mhydrates 1 consistent references with one download[32m 84[2mms[22m[39m
+ [32m✓[39m test/lib/gitLfsObjectSizes.test.ts[2m > [22mhydrates 2 consistent references with one download[32m 42[2mms[22m[39m
+ [32m✓[39m test/lib/gitLfsObjectSizes.test.ts[2m > [22mhydrates 3 consistent references with one download[32m 48[2mms[22m[39m
+ [32m✓[39m test/lib/requestRateRetention.test.ts[2m > [22mbounds retained heap for30 days of traffic without rate-reader pruning[32m 146[2mms[22m[39m
+ [32m✓[39m test/lib/requestRateRetention.test.ts[2m > [22mexpires write-only history strictly outside24 hours while retaining the exact boundary[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/requestRateRetention.test.ts[2m > [22mlate expired requests cannot repopulate an evicted bucket[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/requestRateRetention.test.ts[2m > [22mreset and rate-driven emptying release latest-bucket ownership[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/registryLock.test.ts[2m > [22mregistry session lock (r230)[2m > [22mserialises the login → pull → logout window per registry[32m 14[2mms[22m[39m
+ [32m✓[39m test/lib/registryLock.test.ts[2m > [22mregistry session lock (r230)[2m > [22mshares one host store across registries while keeping nodes independent[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/registryLock.test.ts[2m > [22mregistry session lock (r230)[2m > [22msurvives a holder that throws and a double release[32m 0[2mms[22m[39m
+ [32m✓[39m test/lib/registryLock.test.ts[2m > [22mregistry lock wiring (r230)[2m > [22mevery registry login site takes the lock first[32m 1[2mms[22m[39m
+[90mstdout[2m | test/lib/requestRateLargeHistory.test.ts[2m > [22m[2mlong-running valid request history returns latest bucket without throwing
+[22m[39mEXPECTED: [33m2000000000[39m error null; ACTUAL: [33m2000000000[39m [1mnull[22m
+PROBLEM NOT REPRODUCED
+
+[90mstdout[2m | test/lib/requestRateLargeHistory.test.ts[2m > [22m[2mlong-running traffic history does not abort the scale-to-zero idle decision
+[22m[39mEXPECTED: idle decision null without error; ACTUAL: [1mnull[22m [1mnull[22m
+PROBLEM NOT REPRODUCED
+
+ [32m✓[39m test/lib/requestRateLargeHistory.test.ts[2m > [22mcontrol: last timestamp works for a full day of distinct buckets[32m 3[2mms[22m[39m
+ [32m✓[39m test/lib/requestRateLargeHistory.test.ts[2m > [22mlong-running valid request history returns latest bucket without throwing[32m 26[2mms[22m[39m
+ [32m✓[39m test/lib/requestRateLargeHistory.test.ts[2m > [22mlong-running traffic history does not abort the scale-to-zero idle decision[32m 34[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m27 passed[39m[22m[90m (27)[39m
+[2m      Tests [22m [1m[32m342 passed[39m[22m[90m (342)[39m
+[2m   Start at [22m 14:09:56
+[2m   Duration [22m 34.18s[2m (tests 64%, import 28%, transform 8%)[22m
+
+[2m     Import [22m [33m247 modules were evaluated 456 times[39m[2m · 8.64s total, 28% of tracked time[22m
+[2m            [22m [2m~3.96s faster with [22m[33misolate: false[39m[2m — shared modules are evaluated once per worker instead of once per file[22m
+[2m            [22m [2mlearn more: https://vitest.dev/guide/improving-performance#test-isolation[22m

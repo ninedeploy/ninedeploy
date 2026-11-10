@@ -1,0 +1,68 @@
+
+[1m[30m[46m RUN [49m[39m[22m [36mv5.0.5 [39m[90m/Users/runner/work/ninedeploy/ninedeploy/apps/server[39m
+
+ [32m✓[39m test/integration/backupDrillHelperLifecycle.test.ts[2m > [22mnative CLI normal create is followed by container removal[32m 104[2mms[22m[39m
+ [32m✓[39m test/integration/backupDrillHelperLifecycle.test.ts[2m > [22mnative CLI lost create response still reaches helper cleanup[32m 87[2mms[22m[39m
+ [32m✓[39m test/integration/backupDrillHelperLifecycle.test.ts[2m > [22mnative CLI removal requests anonymous volume cleanup[32m 61[2mms[22m[39m
+ [32m✓[39m test/integration/registryImageReference.test.ts[2m > [22mbinding and watch classification match native Docker CLI for REGISTRY/web:v1[32m 206[2mms[22m[39m
+ [32m✓[39m test/integration/registryImageReference.test.ts[2m > [22mbinding and watch classification match native Docker CLI for LOCALHOST/web:v1[32m 206[2mms[22m[39m
+ [32m✓[39m test/integration/registryImageReference.test.ts[2m > [22mbinding and watch classification match native Docker CLI for Acme/web:Tag[32m 173[2mms[22m[39m
+ [32m✓[39m test/integration/registryImageReference.test.ts[2m > [22mbinding and watch classification match native Docker CLI for UPPERCASE/web[32m 182[2mms[22m[39m
+ [32m✓[39m test/integration/registryImageReference.test.ts[2m > [22mbinding and watch classification match native Docker CLI for ghcr.io/acme/web:v1[32m 158[2mms[22m[39m
+ [32m✓[39m test/integration/registryImageReference.test.ts[2m > [22mbinding and watch classification match native Docker CLI for acme/web:v1[32m 208[2mms[22m[39m
+ [32m✓[39m test/integration/registryImageReference.test.ts[2m > [22mbinding and watch classification match native Docker CLI for REGISTRY/web@sha256:1111111111111111111111111111111111111111111111111111111111111111[32m 195[2mms[22m[39m
+ [32m✓[39m test/integration/registryImageReference.test.ts[2m > [22muppercase repository remains refused by native CLI and the watch parser[32m 265[2mms[22m[39m
+[90mstdout[2m | test/integration/registryCredentialLogout.test.ts[2m > [22m[2mcontrol: implicit Hub credential is removed by the paired logout
+[22m[39mEXPECTED only unrelated auth after logout ACTUAL: [ [32m'unrelated.invalid'[39m ] resolved server: (default)
+PROBLEM NOT REPRODUCED
+
+ [32m✓[39m test/integration/registryCredentialLogout.test.ts[2m > [22mcontrol: implicit Hub credential is removed by the paired logout[32m 262[2mms[22m[39m
+[90mstdout[2m | test/integration/registryCredentialLogout.test.ts[2m > [22m[2mexplicit docker.io credential is removed by the paired logout
+[22m[39mEXPECTED only unrelated auth after logout ACTUAL: [ [32m'unrelated.invalid'[39m ] resolved server: (default)
+PROBLEM NOT REPRODUCED
+
+ [32m✓[39m test/integration/registryCredentialLogout.test.ts[2m > [22mexplicit docker.io credential is removed by the paired logout[32m 247[2mms[22m[39m
+[90mstdout[2m | test/integration/registryCredentialLogout.test.ts[2m > [22m[2mdigest Hub reference also clears the exact credential key
+[22m[39mEXPECTED only unrelated auth after logout ACTUAL: [ [32m'unrelated.invalid'[39m ] resolved server: (default)
+PROBLEM NOT REPRODUCED
+
+ [32m✓[39m test/integration/registryCredentialLogout.test.ts[2m > [22mdigest Hub reference also clears the exact credential key[32m 226[2mms[22m[39m
+[90mstdout[2m | test/integration/registryCredentialLogout.test.ts[2m > [22m[2mnon-Hub host remains literal and cleans its own key
+[22m[39mEXPECTED only unrelated auth after logout ACTUAL: [ [32m'unrelated.invalid'[39m ] resolved server: ghcr.io
+PROBLEM NOT REPRODUCED
+
+ [32m✓[39m test/integration/registryCredentialLogout.test.ts[2m > [22mnon-Hub host remains literal and cleans its own key[32m 245[2mms[22m[39m
+[90mstdout[2m | test/integration/registryCredentialLogout.test.ts[2m > [22m[2mlegacy Hub alias keeps its own matching login/logout spelling
+[22m[39mEXPECTED only unrelated auth after logout ACTUAL: [ [32m'unrelated.invalid'[39m ] resolved server: index.docker.io
+PROBLEM NOT REPRODUCED
+
+ [32m✓[39m test/integration/registryCredentialLogout.test.ts[2m > [22mlegacy Hub alias keeps its own matching login/logout spelling[32m 208[2mms[22m[39m
+[90mstdout[2m | test/integration/registryCredentialLogout.test.ts[2m > [22m[2mcase spelling remains unchanged and cleans its literal key
+[22m[39mEXPECTED only unrelated auth after logout ACTUAL: [ [32m'unrelated.invalid'[39m ] resolved server: Docker.IO
+PROBLEM NOT REPRODUCED
+
+ [32m✓[39m test/integration/registryCredentialLogout.test.ts[2m > [22mcase spelling remains unchanged and cleans its literal key[32m 178[2mms[22m[39m
+[90mstdout[2m | test/integration/registryCredentialLogout.test.ts[2m > [22m[2ma repeated explicit Hub session leaves no completed auth behind
+[22m[39mEXPECTED only unrelated auth after logout ACTUAL: [ [32m'unrelated.invalid'[39m ] resolved server: (default)
+PROBLEM NOT REPRODUCED
+
+[90mstdout[2m | test/integration/registryCredentialLogout.test.ts[2m > [22m[2ma repeated explicit Hub session leaves no completed auth behind
+[22m[39mEXPECTED only unrelated auth after logout ACTUAL: [ [32m'unrelated.invalid'[39m ] resolved server: (default)
+PROBLEM NOT REPRODUCED
+
+ [32m✓[39m test/integration/registryCredentialLogout.test.ts[2m > [22ma repeated explicit Hub session leaves no completed auth behind[32m 233[2mms[22m[39m
+[90mstdout[2m | test/integration/registryCredentialStore.test.ts[2m > [22m[2mkeeps same-registry admission serialized with native Docker CLI
+[22m[39msame-registry control EXPECTED first registry auth retained:true ACTUAL: [33mtrue[39m overlap: [33mfalse[39m keys: [ [32m'one.invalid'[39m, [32m'unrelated.invalid'[39m ]
+PROBLEM NOT REPRODUCED
+
+ [32m✓[39m test/integration/registryCredentialStore.test.ts[2m > [22mkeeps same-registry admission serialized with native Docker CLI[32m 79[2mms[22m[39m
+[90mstdout[2m | test/integration/registryCredentialStore.test.ts[2m > [22m[2mpreserves both different-registry credentials in one native Docker config
+[22m[39mdifferent-registry race EXPECTED first registry auth retained:true ACTUAL: [33mtrue[39m overlap: [33mfalse[39m keys: [ [32m'one.invalid'[39m, [32m'two.invalid'[39m, [32m'unrelated.invalid'[39m ]
+PROBLEM NOT REPRODUCED
+
+ [32m✓[39m test/integration/registryCredentialStore.test.ts[2m > [22mpreserves both different-registry credentials in one native Docker config[32m 46[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m4 passed[39m[22m[90m (4)[39m
+[2m      Tests [22m [1m[32m20 passed[39m[22m[90m (20)[39m
+[2m   Start at [22m 14:10:38
+[2m   Duration [22m 7.46s[2m (tests 51%, import 33%, transform 16%)[22m

@@ -12,3 +12,6 @@ Strengthened native oracle has no empty object in the owned cache before or afte
 
 ## Publication preflight
 31ownedpaths/expected normalized indexblobs/diffcheck/limitedcredentialpatterncheck passed. Exactselectedscopeonly; no unrelated work staged.
+
+## Native Mac follow-up
+Run42831092412 exact906e575a2a57edd40f60ee246543ff1f9b839d77 passed onmacOS26.7.2arm64. Server342/27files,CLI20/4files,MCP4/1file=366passed/32files. Frozen install/build/typecheck passed. Ten diagnostics verified source/eventSHA and original+normalized SHA256 recorded in round94_receipt.json. ZIP digest metadata not independently verified. Backend identity unchanged for evidencepublication; no fullrelease/R73resolutionclaim.

@@ -1141,4 +1141,4 @@ Native LFS shared-size checkpoint: [run 42829905100](https://github.com/ninedepl
 The focused Mac lane also covers locally verified empty LFS content in
 `test/lib/gitLfsEmpty.test.ts` (27 server files). Empty SHA-256 plus size zero
 requires no remote object; mixed and contradictory declarations retain checks.
-Native empty LFS follow-up: pending the new Mac run.
+Native empty LFS checkpoint: [run 42831092412](https://github.com/ninedeploy/ninedeploy/actions/runs/42831092412) passed at source `906e575a2a57edd40f60ee246543ff1f9b839d77` on macOS 26.7.2 arm64: 342 server, 20 native CLI and four workspace MCP tests, 366 tests in 32 files. See the [receipt](../.temp_files/audit_continuous_20261109/round94_receipt.json). This is focused validation, not full release certification.
