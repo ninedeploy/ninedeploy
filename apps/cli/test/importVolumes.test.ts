@@ -122,7 +122,7 @@ describe('importVolumes', () => {
   it('records failures, and names an old panel', async () => {
     let r = receipt();
     await importVolumes(plan([svc()]), { blog: 'x' }, deps(panel({ importFile: vi.fn(async () => { throw Object.assign(new Error('Not Found'), { status: 404 }); }) as never }), r).d);
-    expect(r.items['volume:blog']).toMatchObject({ state: 'failed', notes: [expect.stringMatching(/no volume import: update it \(0\.18\.27 or later\)/)] });
+    expect(r.items['volume:blog']).toMatchObject({ state: 'failed', notes: ['This panel has no volume import yet: update it, or copy the files by hand.'] });
     r = receipt();
     await importVolumes(plan([svc()]), { blog: 'x' }, deps(panel({ importFile: vi.fn(async (_i, _d, o) => { o?.onCreated?.(row({ status: 'pending' })); throw Object.assign(new Error('Stop the service first'), { status: 409 }); }) as never }), r).d);
     expect(r.items['volume:blog']).toMatchObject({ state: 'failed', importId: 41, notes: ['Stop the service first'] });

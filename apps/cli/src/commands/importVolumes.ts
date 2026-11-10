@@ -149,7 +149,7 @@ export async function importVolumes(plan: ImportPlan, archives: Record<string, s
     } catch (err) {
       const status = (err as { status?: number }).status;
       const message = status === 404 && receipt.items[key]?.importId === undefined
-        ? 'This panel has no volume import: update it (0.18.27 or later), or copy the files by hand.'
+        ? 'This panel has no volume import yet: update it, or copy the files by hand.'
         : err instanceof Error ? err.message : String(err);
       put('failed', [message], receipt.items[key]?.importId);
       continue;
