@@ -44,13 +44,14 @@ export function canonicalRegistryHost(host: string): string {
 /**
  * The registry an image ref pulls from, by Docker's rule (lib/imageRef.ts):
  * the first path segment is a host when it contains '.' or ':' or is exactly
- * `localhost`; anything else (`nginx`, `acme/web`) is Docker Hub.
+ * `localhost`, or contains uppercase ASCII; a lowercase namespace
+ * (`nginx`, `acme/web`) is Docker Hub.
  */
 export function registryHostOf(image: string): string {
   const trimmed = image.trim();
   const slash = trimmed.indexOf('/');
   const first = slash === -1 ? '' : trimmed.slice(0, slash);
-  const isHost = first.includes('.') || first.includes(':') || first === 'localhost';
+  const isHost = first.includes('.') || first.includes(':') || first === 'localhost' || /[A-Z]/.test(first);
   return canonicalRegistryHost(isHost ? first : DOCKER_HUB);
 }
 
@@ -213,7 +214,7 @@ export async function registryCredentialFor(
   // unchanged so their login and logout continue to address the same key.
   const parts = service.image.split('/');
   const first = parts.length > 1 ? parts[0]! : '';
-  const isHost = first.includes('.') || first.includes(':') || first === 'localhost';
+  const isHost = first.includes('.') || first.includes(':') || first === 'localhost' || /[A-Z]/.test(first);
   return { username, password, server: first !== '' && isHost && first !== DOCKER_HUB ? first : undefined };
 }
 

@@ -1,0 +1,6 @@
+{"image":"acme/web:v1","exit":0,"observations":[{"image":"docker.io/acme/web","tag":"v1","username":"fixture-hub","serveraddress":"https://index.docker.io/v1/"}]}
+{"image":"LOCALHOST/web:v1","exit":0,"observations":[{"image":"LOCALHOST/web","tag":"v1","username":"fixture-local","serveraddress":"LOCALHOST"}]}
+{"image":"REGISTRY/web:v1","exit":0,"observations":[{"image":"REGISTRY/web","tag":"v1","username":"fixture-registry","serveraddress":"REGISTRY"}]}
+{"image":"Acme/web:v1","exit":0,"observations":[{"image":"Acme/web","tag":"v1","username":"fixture-acme","serveraddress":"Acme"}]}
+{"image":"ghcr.io/acme/web:v1","exit":0,"observations":[{"image":"ghcr.io/acme/web","tag":"v1","username":"fixture-ghcr","serveraddress":"ghcr.io"}]}
+{"image":"UPPERCASE/web","exit":0,"observations":[{"image":"UPPERCASE/web","tag":"latest","username":null,"serveraddress":null}]}

@@ -1,0 +1,69 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ × test/integration/registryImageReference.test.ts > binding and watch classification match native Docker CLI for REGISTRY/web:v1 340ms
+   → expected 'docker.io' to be 'registry' // Object.is equality
+ × test/integration/registryImageReference.test.ts > binding and watch classification match native Docker CLI for LOCALHOST/web:v1 287ms
+   → expected 'docker.io' to be 'localhost' // Object.is equality
+ × test/integration/registryImageReference.test.ts > binding and watch classification match native Docker CLI for Acme/web:Tag 489ms
+   → expected 'docker.io' to be 'acme' // Object.is equality
+ × test/integration/registryImageReference.test.ts > binding and watch classification match native Docker CLI for UPPERCASE/web 327ms
+   → expected 'docker.io' to be 'uppercase' // Object.is equality
+ ✓ test/integration/registryImageReference.test.ts > binding and watch classification match native Docker CLI for ghcr.io/acme/web:v1 288ms
+ ✓ test/integration/registryImageReference.test.ts > binding and watch classification match native Docker CLI for acme/web:v1 293ms
+ × test/integration/registryImageReference.test.ts > binding and watch classification match native Docker CLI for REGISTRY/web@sha256:1111111111111111111111111111111111111111111111111111111111111111 298ms
+   → expected 'docker.io' to be 'registry' // Object.is equality
+ ✓ test/integration/registryImageReference.test.ts > uppercase repository remains refused by native CLI and the watch parser 382ms
+
+ Test Files  1 failed (1)
+      Tests  5 failed | 3 passed (8)
+   Start at  11:12:12
+   Duration  3.33s (tests 84%, import 13%, transform 3%)
+
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 5 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/integration/registryImageReference.test.ts > binding and watch classification match native Docker CLI for REGISTRY/web:v1
+ FAIL  test/integration/registryImageReference.test.ts > binding and watch classification match native Docker CLI for REGISTRY/web@sha256:1111111111111111111111111111111111111111111111111111111111111111
+AssertionError: expected 'docker.io' to be 'registry' // Object.is equality
+
+Expected: "registry"
+Received: "docker.io"
+
+ ❯ test/integration/registryImageReference.test.ts:12:735
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/5]⎯
+
+ FAIL  test/integration/registryImageReference.test.ts > binding and watch classification match native Docker CLI for LOCALHOST/web:v1
+AssertionError: expected 'docker.io' to be 'localhost' // Object.is equality
+
+Expected: "localhost"
+Received: "docker.io"
+
+ ❯ test/integration/registryImageReference.test.ts:12:735
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/5]⎯
+
+ FAIL  test/integration/registryImageReference.test.ts > binding and watch classification match native Docker CLI for Acme/web:Tag
+AssertionError: expected 'docker.io' to be 'acme' // Object.is equality
+
+Expected: "acme"
+Received: "docker.io"
+
+ ❯ test/integration/registryImageReference.test.ts:12:735
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/5]⎯
+
+ FAIL  test/integration/registryImageReference.test.ts > binding and watch classification match native Docker CLI for UPPERCASE/web
+AssertionError: expected 'docker.io' to be 'uppercase' // Object.is equality
+
+Expected: "uppercase"
+Received: "docker.io"
+
+ ❯ test/integration/registryImageReference.test.ts:12:735
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/5]⎯

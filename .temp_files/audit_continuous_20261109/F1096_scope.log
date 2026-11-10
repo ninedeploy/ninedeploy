@@ -1,0 +1,115 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/lib/registryHostClassification.test.ts > routes an accepted explicit host REGISTRY consistently through binding and watch parsing 166ms
+ ✓ test/lib/registryHostClassification.test.ts > routes an accepted explicit host LOCALHOST consistently through binding and watch parsing 159ms
+ ✓ test/lib/registryHostClassification.test.ts > routes an accepted explicit host Acme consistently through binding and watch parsing 174ms
+ ✓ test/lib/registryHostClassification.test.ts > routes an accepted explicit host UPPERCASE consistently through binding and watch parsing 157ms
+ ✓ test/lib/registryHostClassification.test.ts > routes an accepted explicit host registry.example.test consistently through binding and watch parsing 155ms
+ ✓ test/lib/registryHostClassification.test.ts > routes an accepted explicit host REGISTRY:5000 consistently through binding and watch parsing 151ms
+ ✓ test/lib/registryHostClassification.test.ts > lowercase namespace remains Hub rather than a single-label registry 169ms
+ ✓ test/lib/registryHostClassification.test.ts > digest references resolve their registry but remain excluded from tag watching 165ms
+ ✓ test/lib/registryHostClassification.test.ts > an unbound uppercase registry cannot receive the Hub credential 161ms
+ ✓ test/lib/registryHostClassification.test.ts > uppercase repository is still malformed after recognizing its host 188ms
+ ✓ test/tenancyIsolation.test.ts > r510: vault references resolve only for allowed tenants > upgrade seed: grandfathers current non-operator usage once, audits and logs it 349ms
+ ✓ test/tenancyIsolation.test.ts > r510: vault references resolve only for allowed tenants > deploy-time: a member service outside the allowlist cannot read a vault secret; allowed ones can 319ms
+ ✓ test/tenancyIsolation.test.ts > r510: vault references resolve only for allowed tenants > write-time: member gets a clear 403 for a reference on a non-allowed service, project, import and PATCH 431ms
+ ✓ test/tenancyIsolation.test.ts > r510: vault references resolve only for allowed tenants > settings API: GET exposes the allowlist with names, PUT /vault/allowlist replaces it and audits 305ms
+ ✓ test/tenancyIsolation.test.ts > r601: the write-time vault gate also covers the template deploy env > a member cannot plant a reference through a template deploy outside the allowlist; nothing is created 395ms
+ ✓ test/tenancyIsolation.test.ts > r511: PR preview domains cannot claim another tenant's host > a stored pattern without {{pr}}/{{slug}} (the takeover shape) deploys but provisions no domain 430ms
+ ✓ test/tenancyIsolation.test.ts > r511: PR preview domains cannot claim another tenant's host > a token-bearing pattern that still renders onto another service's automatic host is refused 415ms
+ ✓ test/tenancyIsolation.test.ts > r511: PR preview domains cannot claim another tenant's host > the default pattern still provisions the preview host 419ms
+ ✓ test/tenancyIsolation.test.ts > r511: PR preview domains cannot claim another tenant's host > services PATCH/create refuse a changed pattern without the tokens (400), re-sending a stored one is allowed 433ms
+ ✓ test/tenancyIsolation.test.ts > r512: a registry credential is only sent to the host it is bound to > upgrade seed binds each registry source to the hosts its services use today, audited 386ms
+ ✓ test/tenancyIsolation.test.ts > r512: a registry credential is only sent to the host it is bound to > the shared resolver withholds the credential from an unbound host and audits it 356ms
+ ✓ test/tenancyIsolation.test.ts > r512: a registry credential is only sent to the host it is bound to > services PATCH: a member cannot retarget the image to another registry; an operator change binds the host 384ms
+ ✓ test/tenancyIsolation.test.ts > r512: a registry credential is only sent to the host it is bound to > sources API exposes, accepts and clears registryHosts 414ms
+ ✓ test/tenancyIsolation.test.ts > r513: the auto-update sweep applies the owner-privilege gate > skips (logs + audits, no deploy) a member service the owner could not deploy; operator-owned still deploys 383ms
+ ✓ test/tenancyIsolation.test.ts > r513: the auto-update sweep applies the owner-privilege gate > r514: an operator-owned image may probe a LAN registry; a member-owned one is skipped with the reason 385ms
+ ✓ test/tenancyIsolation.test.ts > r513: the auto-update sweep applies the owner-privilege gate > r512: the registry probe never receives a credential for an unbound host 359ms
+ ✓ test/tenancyIsolation.test.ts > storage > the allowlist and the bindings live in the existing settings table (no migration) 337ms
+ ✓ test/lib/autoUpdateEnqueueRace.test.ts > control: eligible unchanged service enqueues scheduled work 161ms
+stdout | test/lib/autoUpdateEnqueueRace.test.ts > disable after probe check but before final enqueue discards stale result
+EXPECTED: 0 enqueued, operator state unchanged; ACTUAL: 0 0 null
+PROBLEM NOT REPRODUCED
+
+ ✓ test/lib/autoUpdateEnqueueRace.test.ts > disable after probe check but before final enqueue discards stale result 169ms
+stdout | test/lib/autoUpdateEnqueueRace.test.ts > stop after probe check but before final enqueue discards stale result
+EXPECTED: 0 enqueued, operator state unchanged; ACTUAL: 0 0 sha256:old
+PROBLEM NOT REPRODUCED
+
+ ✓ test/lib/autoUpdateEnqueueRace.test.ts > stop after probe check but before final enqueue discards stale result 175ms
+stdout | test/lib/autoUpdateEnqueueRace.test.ts > image after probe check but before final enqueue discards stale result
+EXPECTED: 0 enqueued, operator state unchanged; ACTUAL: 0 0 null
+PROBLEM NOT REPRODUCED
+
+ ✓ test/lib/autoUpdateEnqueueRace.test.ts > image after probe check but before final enqueue discards stale result 157ms
+ ✓ test/lib/autoUpdateEnqueueRace.test.ts > manual queued work wins immediately before INSERT 168ms
+ ✓ test/lib/autoUpdateEnqueueRace.test.ts > manual building work wins immediately before INSERT 154ms
+ ✓ test/lib/autoUpdateEnqueueRace.test.ts > manual deploying work wins immediately before INSERT 156ms
+ ✓ test/lib/autoUpdateEnqueueRace.test.ts > overlapping independent sweeps admit one deployment after both saw no in-flight job 164ms
+ ✓ test/lib/registryCredentialLogout.test.ts > image/source-build/push agree on the same Hub session identity: alpine:3.23 179ms
+ ✓ test/lib/registryCredentialLogout.test.ts > image/source-build/push agree on the same Hub session identity: docker.io/library/alpine:3.23 159ms
+ ✓ test/lib/registryCredentialLogout.test.ts > image/source-build/push agree on the same Hub session identity: docker.io/acme/app@sha256:1111111111111111111111111111111111111111111111111111111111111111 151ms
+ ✓ test/lib/registryCredentialLogout.test.ts > non-Hub image/source-build/push keep the same explicit target 151ms
+ ✓ test/lib/registryCredentialLogout.test.ts > revoking the binding still withholds image and source-build credentials 171ms
+ ✓ test/lib/registryCredentialLogout.test.ts > multiple bindings do not guess a source-build or push target 160ms
+ ✓ test/lib/registryCredentialLogout.test.ts > an incomplete credential remains unavailable across all workflows 159ms
+ ✓ test/lib/autoUpdateDigestRace.test.ts > control: unchanged baseline and accepted update publish their digest 170ms
+stdout | test/lib/autoUpdateDigestRace.test.ts > baseline: opt-out committed before digest write remains cleared
+EXPECTED: opt-out digest null; ACTUAL: false null
+PROBLEM NOT REPRODUCED
+
+ ✓ test/lib/autoUpdateDigestRace.test.ts > baseline: opt-out committed before digest write remains cleared 164ms
+stdout | test/lib/autoUpdateDigestRace.test.ts > refused: opt-out committed before digest write remains cleared
+EXPECTED: opt-out digest null; ACTUAL: false null
+PROBLEM NOT REPRODUCED
+
+ ✓ test/lib/autoUpdateDigestRace.test.ts > refused: opt-out committed before digest write remains cleared 162ms
+stdout | test/lib/autoUpdateDigestRace.test.ts > enqueued: opt-out committed before digest write remains cleared
+EXPECTED: opt-out digest null; ACTUAL: false null
+PROBLEM NOT REPRODUCED
+
+ ✓ test/lib/autoUpdateDigestRace.test.ts > enqueued: opt-out committed before digest write remains cleared 152ms
+ ✓ test/lib/autoUpdateDigestRace.test.ts > a stale first-observation writer preserves a newer independent baseline 176ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > reads the manifest digest from a direct anonymous response 14ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > performs the Docker Hub anonymous token dance on 401 1ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > performs the ghcr token dance with its own realm 1ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > refuses to chase realms of registries outside the known table 1ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > reports the registry status when the retry also fails 0ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > rejects a 200 that carries no digest header 0ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > maps network failures to a readable reason 0ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > names timeouts distinctly 0ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > reports a token endpoint failure instead of retrying blindly 0ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > probes private repos with Basic auth when credentials are given 0ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > runs the token dance WITH credentials for private Docker Hub repos 0ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > names rejected credentials when the token endpoint answers 401 0ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > still refuses unknown auth realms for credentialed probes 0ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > reports an unreachable token endpoint 0ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > r514: refuses a registry host that resolves to a private / metadata address, before any request 0ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > r514: never follows a registry redirect (and never with the credential header) 0ms
+ ✓ test/lib/imageWatch.test.ts > fetchImageDigest > rejects a token response that carries no token 0ms
+ ✓ test/lib/autoUpdate.test.ts > sweepAutoUpdates > enqueues a deploy when the digest moved and records the new baseline 4ms
+ ✓ test/lib/autoUpdate.test.ts > sweepAutoUpdates > treats the first observation as a baseline only 1ms
+ ✓ test/lib/autoUpdate.test.ts > sweepAutoUpdates > does nothing when the digest is unchanged 0ms
+ ✓ test/lib/autoUpdate.test.ts > sweepAutoUpdates > skips without storing while a deployment is queued or in flight 0ms
+ ✓ test/lib/autoUpdate.test.ts > sweepAutoUpdates > skips a service whose registry cannot be probed 0ms
+ ✓ test/lib/autoUpdate.test.ts > sweepAutoUpdates > skips digest-pinned images — they can never move 0ms
+ ✓ test/lib/autoUpdate.test.ts > sweepAutoUpdates > also watches remote-node image services — the probe reads the registry, not the node 0ms
+ ✓ test/lib/autoUpdate.test.ts > sweepAutoUpdates > passes the attached registry credential to the probe for private repos 5ms
+ ✓ test/lib/autoUpdate.test.ts > sweepAutoUpdates > only watches running, image-based, opt-in services 0ms
+ ✓ test/lib/imageRef.test.ts > parseImageRef > expands a bare official image to docker.io/library 1ms
+ ✓ test/lib/imageRef.test.ts > parseImageRef > parses user images with explicit tags 0ms
+ ✓ test/lib/imageRef.test.ts > parseImageRef > parses other-registry refs 0ms
+ ✓ test/lib/imageRef.test.ts > parseImageRef > keeps a registry port distinct from the tag 0ms
+ ✓ test/lib/imageRef.test.ts > parseImageRef > refuses digest-pinned refs — they never move 0ms
+ ✓ test/lib/imageRef.test.ts > parseImageRef > refuses malformed input 0ms
+ ✓ test/lib/imageRef.test.ts > parseImageRef > recognizes Docker Hub under its spellings 0ms
+
+ Test Files  8 passed (8)
+      Tests  80 passed (80)
+   Start at  11:12:17
+   Duration  16.04s (tests 78%, import 19%, transform 3%)
+
+    Isolate  8 workers spawned · ~158ms startup each (spawn + environment, per file)
+             at least ~1.10s faster with isolate: false — reuses workers across files instead of one per file

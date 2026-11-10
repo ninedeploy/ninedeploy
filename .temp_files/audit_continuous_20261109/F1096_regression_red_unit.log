@@ -1,0 +1,100 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ × test/lib/registryHostClassification.test.ts > routes an accepted explicit host REGISTRY consistently through binding and watch parsing 167ms
+   → expected 'docker.io' to be 'registry' // Object.is equality
+ × test/lib/registryHostClassification.test.ts > routes an accepted explicit host LOCALHOST consistently through binding and watch parsing 160ms
+   → expected 'docker.io' to be 'localhost' // Object.is equality
+ × test/lib/registryHostClassification.test.ts > routes an accepted explicit host Acme consistently through binding and watch parsing 160ms
+   → expected 'docker.io' to be 'acme' // Object.is equality
+ × test/lib/registryHostClassification.test.ts > routes an accepted explicit host UPPERCASE consistently through binding and watch parsing 159ms
+   → expected 'docker.io' to be 'uppercase' // Object.is equality
+ ✓ test/lib/registryHostClassification.test.ts > routes an accepted explicit host registry.example.test consistently through binding and watch parsing 153ms
+ ✓ test/lib/registryHostClassification.test.ts > routes an accepted explicit host REGISTRY:5000 consistently through binding and watch parsing 157ms
+ ✓ test/lib/registryHostClassification.test.ts > lowercase namespace remains Hub rather than a single-label registry 155ms
+ × test/lib/registryHostClassification.test.ts > digest references resolve their registry but remain excluded from tag watching 150ms
+   → expected 'docker.io' to be 'registry' // Object.is equality
+ × test/lib/registryHostClassification.test.ts > an unbound uppercase registry cannot receive the Hub credential 161ms
+   → expected { username: 'fixture-registry', …(2) } to be undefined
+ ✓ test/lib/registryHostClassification.test.ts > uppercase repository is still malformed after recognizing its host 164ms
+
+ Test Files  1 failed (1)
+      Tests  6 failed | 4 passed (10)
+   Start at  11:12:09
+   Duration  2.19s (tests 76%, import 19%, transform 5%)
+
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 6 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/lib/registryHostClassification.test.ts > routes an accepted explicit host REGISTRY consistently through binding and watch parsing
+AssertionError: expected 'docker.io' to be 'registry' // Object.is equality
+
+Expected: "registry"
+Received: "docker.io"
+
+ ❯ test/lib/registryHostClassification.test.ts:5:405
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/6]⎯
+
+ FAIL  test/lib/registryHostClassification.test.ts > routes an accepted explicit host LOCALHOST consistently through binding and watch parsing
+AssertionError: expected 'docker.io' to be 'localhost' // Object.is equality
+
+Expected: "localhost"
+Received: "docker.io"
+
+ ❯ test/lib/registryHostClassification.test.ts:5:405
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/6]⎯
+
+ FAIL  test/lib/registryHostClassification.test.ts > routes an accepted explicit host Acme consistently through binding and watch parsing
+AssertionError: expected 'docker.io' to be 'acme' // Object.is equality
+
+Expected: "acme"
+Received: "docker.io"
+
+ ❯ test/lib/registryHostClassification.test.ts:5:405
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/6]⎯
+
+ FAIL  test/lib/registryHostClassification.test.ts > routes an accepted explicit host UPPERCASE consistently through binding and watch parsing
+AssertionError: expected 'docker.io' to be 'uppercase' // Object.is equality
+
+Expected: "uppercase"
+Received: "docker.io"
+
+ ❯ test/lib/registryHostClassification.test.ts:5:405
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/6]⎯
+
+ FAIL  test/lib/registryHostClassification.test.ts > digest references resolve their registry but remain excluded from tag watching
+AssertionError: expected 'docker.io' to be 'registry' // Object.is equality
+
+Expected: "registry"
+Received: "docker.io"
+
+ ❯ test/lib/registryHostClassification.test.ts:7:231
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/6]⎯
+
+ FAIL  test/lib/registryHostClassification.test.ts > an unbound uppercase registry cannot receive the Hub credential
+AssertionError: expected { username: 'fixture-registry', …(2) } to be undefined
+
+- Expected:
+undefined
+
++ Received:
+{
+  "password": "invalid-fixture-token",
+  "server": undefined,
+  "username": "fixture-registry",
+}
+
+ ❯ test/lib/registryHostClassification.test.ts:8:210
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/6]⎯

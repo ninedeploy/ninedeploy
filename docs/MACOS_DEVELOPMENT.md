@@ -765,3 +765,24 @@ pnpm --dir apps/server exec vitest run --config vitest.integration.config.ts tes
 
 No native Mac result, real credential compromise, live private pull, fullrelease
 or resolution of the round73 native worker fault is claimed.
+
+Round 78 (F1096) recognizes uppercase letters in an image's first path component
+as an explicit registry, matching Docker CLI even without a dot or port. Binding
+resolution no longer mistakes REGISTRY/web for a Hub namespace, and the watch
+parser accepts the same valid reference. Lowercase namespaces, repository case
+rules and digest-watch exclusion remain covered.
+
+Native Docker29.9.3 accepted the app input and selected that registry's config
+auth through a controlled loopback API. The permanent native suite was seen red
+(five failures,three controls), then passed8/8 three times. Ten independent
+binding/parser cases passed three times; permanent unit was seen red6/10. Nearest
+scope80tests/8files, resource-bound typecheck/build and scoped lint passed.
+
+Mac CLI check with isolated fake credentials and no real daemon:
+
+```bash
+pnpm --dir apps/server exec vitest run --config vitest.integration.config.ts test/integration/registryImageReference.test.ts --coverage=false
+```
+
+No native Mac result, live pull/update, credential-exfiltration verdict, full
+release or resolution of the round73 native worker crash is claimed.

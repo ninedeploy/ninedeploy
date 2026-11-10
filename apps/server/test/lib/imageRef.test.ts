@@ -41,7 +41,7 @@ describe('parseImageRef', () => {
   it('refuses malformed input', () => {
     expect(parseImageRef('')).toBeNull();
     expect(parseImageRef('nginx:')).toBeNull();
-    expect(parseImageRef('UPPERCASE/web')).toBeNull();
+    expect(parseImageRef('UPPERCASE/WEB')).toBeNull();
     expect(parseImageRef('acme/web:bad tag')).toBeNull();
   });
 

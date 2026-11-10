@@ -1,0 +1,16 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/integration/registryImageReference.test.ts > binding and watch classification match native Docker CLI for REGISTRY/web:v1 330ms
+ ✓ test/integration/registryImageReference.test.ts > binding and watch classification match native Docker CLI for LOCALHOST/web:v1 644ms
+ ✓ test/integration/registryImageReference.test.ts > binding and watch classification match native Docker CLI for Acme/web:Tag 552ms
+ ✓ test/integration/registryImageReference.test.ts > binding and watch classification match native Docker CLI for UPPERCASE/web 375ms
+ ✓ test/integration/registryImageReference.test.ts > binding and watch classification match native Docker CLI for ghcr.io/acme/web:v1 457ms
+ ✓ test/integration/registryImageReference.test.ts > binding and watch classification match native Docker CLI for acme/web:v1 457ms
+ ✓ test/integration/registryImageReference.test.ts > binding and watch classification match native Docker CLI for REGISTRY/web@sha256:1111111111111111111111111111111111111111111111111111111111111111 435ms
+ ✓ test/integration/registryImageReference.test.ts > uppercase repository remains refused by native CLI and the watch parser 487ms
+
+ Test Files  1 passed (1)
+      Tests  8 passed (8)
+   Start at  11:14:15
+   Duration  4.36s (tests 88%, import 10%, transform 2%)

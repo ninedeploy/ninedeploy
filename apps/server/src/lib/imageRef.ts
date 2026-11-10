@@ -24,12 +24,12 @@ export function isDockerHub(registry: string): boolean {
 export function parseImageRef(image: string): ImageRef | null {
   const trimmed = image.trim();
   if (!trimmed || trimmed.includes('@')) return null;
-  // Registry is the first path segment only when it looks host-like.
+  // An uppercase first component is an explicit registry even without a dot.
   let rest = trimmed;
   let registry = DEFAULT_REGISTRY;
   const firstSlash = rest.indexOf('/');
   const first = firstSlash === -1 ? '' : rest.slice(0, firstSlash);
-  if (firstSlash !== -1 && (first.includes('.') || first.includes(':') || first === 'localhost')) {
+  if (firstSlash !== -1 && (first.includes('.') || first.includes(':') || first === 'localhost' || /[A-Z]/.test(first))) {
     registry = first;
     rest = rest.slice(firstSlash + 1);
   } else if (firstSlash === -1) {

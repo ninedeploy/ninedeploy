@@ -1,0 +1,21 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1096_registryHost.test.ts > routes an accepted explicit host REGISTRY consistently through binding and watch parsing 170ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1096_registryHost.test.ts > routes an accepted explicit host LOCALHOST consistently through binding and watch parsing 173ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1096_registryHost.test.ts > routes an accepted explicit host Acme consistently through binding and watch parsing 164ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1096_registryHost.test.ts > routes an accepted explicit host UPPERCASE consistently through binding and watch parsing 154ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1096_registryHost.test.ts > routes an accepted explicit host registry.example.test consistently through binding and watch parsing 156ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1096_registryHost.test.ts > routes an accepted explicit host REGISTRY:5000 consistently through binding and watch parsing 160ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1096_registryHost.test.ts > lowercase namespace remains Hub rather than a single-label registry 154ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1096_registryHost.test.ts > digest references resolve their registry but remain excluded from tag watching 152ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1096_registryHost.test.ts > an unbound uppercase registry cannot receive the Hub credential 165ms
+stdout | .temp_files/audit_continuous_20261109/verify_F1096_registryHost.test.ts
+FIX VERIFIED
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1096_registryHost.test.ts > uppercase repository is still malformed after recognizing its host 173ms
+
+ Test Files  1 passed (1)
+      Tests  10 passed (10)
+   Start at  11:10:04
+   Duration  2.26s (tests 76%, import 19%, transform 5%)
