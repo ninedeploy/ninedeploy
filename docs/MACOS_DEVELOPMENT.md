@@ -660,3 +660,10 @@ six controls), then 134 neighboring import/job/wiring tests passed. Ten independ
 MySQL/MariaDB start/cancel/SQL-error/creator controls passed three times with
 explicit gates. No live restore/data loss, auth bypass, multi-process or native
 Mac acceptance was claimed.
+
+Round 71 (F1090) serializes native chunk writes per import and rereads metadata
+inside admission so concurrent retries cannot overwrite acknowledged bytes. Eight
+permanent gated cases were seen red (five races, three controls), then passed;
+eight independent controls passed three times. Different imports remain independent.
+Native SQLite and disposable files were exercised; no live restore, distributed
+locking or native Mac acceptance is claimed.

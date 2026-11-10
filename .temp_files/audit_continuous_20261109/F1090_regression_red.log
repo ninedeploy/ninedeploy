@@ -1,0 +1,60 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ × test/modules/databaseImportChunkRace.test.ts > queued retry preserves winner and advances once final=false identical=false 231ms
+   → expected 2 to be 1 // Object.is equality
+ × test/modules/databaseImportChunkRace.test.ts > queued retry preserves winner and advances once final=false identical=true 166ms
+   → expected 2 to be 1 // Object.is equality
+ × test/modules/databaseImportChunkRace.test.ts > queued retry preserves winner and advances once final=true identical=false 162ms
+   → expected 2 to be 1 // Object.is equality
+ × test/modules/databaseImportChunkRace.test.ts > queued retry preserves winner and advances once final=true identical=true 159ms
+   → expected 2 to be 1 // Object.is equality
+ × test/modules/databaseImportChunkRace.test.ts > next chunk queued behind held first uses fresh offset 164ms
+   → expected 409 to be 200 // Object.is equality
+ ✓ test/modules/databaseImportChunkRace.test.ts > unrelated import completes while another native writer is held 199ms
+ ✓ test/modules/databaseImportChunkRace.test.ts > native write failure closes ownership and permits retry 159ms
+ ✓ test/modules/databaseImportChunkRace.test.ts > validation failure releases admission for valid chunk 174ms
+
+ Test Files  1 failed (1)
+      Tests  5 failed | 3 passed (8)
+   Start at  02:35:30
+   Duration  2.17s (tests 68%, import 24%, transform 8%)
+
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 5 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/modules/databaseImportChunkRace.test.ts > queued retry preserves winner and advances once final=false identical=false
+ FAIL  test/modules/databaseImportChunkRace.test.ts > queued retry preserves winner and advances once final=false identical=true
+ FAIL  test/modules/databaseImportChunkRace.test.ts > queued retry preserves winner and advances once final=true identical=false
+ FAIL  test/modules/databaseImportChunkRace.test.ts > queued retry preserves winner and advances once final=true identical=true
+AssertionError: expected 2 to be 1 // Object.is equality
+
+- Expected
++ Received
+
+- 1
++ 2
+
+ ❯ test/modules/databaseImportChunkRace.test.ts:63:107
+     61|  const first = put(input.id, a); let second: ReturnType<typeof put> | …
+     62|  try { await held.promise; observed.arm(); second = put(input.id, iden…
+     63|   expect((await first).statusCode).toBe(200); expect((await second).st…
+       |                                                                                                           ^
+     64|   const row = (await db.query.databaseImports.findFirst({ where: eq(da…
+     65|   expect(m.audit.mock.calls.filter(call => call[2] === 'database.impor…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/5]⎯
+
+ FAIL  test/modules/databaseImportChunkRace.test.ts > next chunk queued behind held first uses fresh offset
+AssertionError: expected 409 to be 200 // Object.is equality
+
+- Expected
++ Received
+
+- 200
++ 409
+
+ ❯ test/modules/databaseImportChunkRace.test.ts:72:201
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/5]⎯

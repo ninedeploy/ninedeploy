@@ -1,0 +1,23 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1090_importChunk.test.ts > control: sequential duplicate index is a no-op after first acknowledgement 327ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1090_importChunk.test.ts > concurrent duplicate cannot overwrite already acknowledged bytes (final=false)
+EXPECTED acknowledged bytes: SELECT 1;
+ ACTUAL: SELECT 1;
+
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1090_importChunk.test.ts > concurrent duplicate cannot overwrite already acknowledged bytes (final=false) 178ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1090_importChunk.test.ts > concurrent duplicate cannot overwrite already acknowledged bytes (final=true)
+EXPECTED acknowledged bytes: SELECT 1;
+ ACTUAL: SELECT 1;
+
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1090_importChunk.test.ts > concurrent duplicate cannot overwrite already acknowledged bytes (final=true) 170ms
+
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
+   Start at  02:33:49
+   Duration  1.59s (tests 46%, import 38%, transform 16%)

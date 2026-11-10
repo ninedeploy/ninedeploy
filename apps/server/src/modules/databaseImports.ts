@@ -63,6 +63,24 @@ export const databaseImportRoutes: FastifyPluginAsync<DatabaseImportRouteOptions
   const stagingDir = () => opts.stagingDir ?? importStagingDir();
   const maxBytes = () => opts.maxBytes ?? config.importMaxBytes;
 
+  // Own the bytes as well as the metadata: a losing retry must never write over
+  // an acknowledged chunk. Different imports keep independent upload queues.
+  const chunkWrites = new Map<number, Promise<void>>();
+  const inChunkOrder = async <T>(id: number, work: () => Promise<T>): Promise<T> => {
+    const previous = chunkWrites.get(id) ?? Promise.resolve();
+    let release!: () => void;
+    const completed = new Promise<void>((resolve) => { release = resolve; });
+    const tail = previous.then(() => completed);
+    chunkWrites.set(id, tail);
+    await previous;
+    try {
+      return await work();
+    } finally {
+      release();
+      if (chunkWrites.get(id) === tail) chunkWrites.delete(id);
+    }
+  };
+
   if (app.hasContentTypeParser('application/octet-stream')) app.removeContentTypeParser('application/octet-stream');
   app.addContentTypeParser('application/octet-stream', { parseAs: 'buffer' }, (_req, body, done) => done(null, body));
   // Resolved per request: the hook stays a function even on an instance
@@ -189,49 +207,53 @@ export const databaseImportRoutes: FastifyPluginAsync<DatabaseImportRouteOptions
     { bodyLimit: chunkSize + 1024 },
     async (req) => {
       const d = await dbAdmin(req);
-      const row = await loadImport(req, d);
-      assertCreator(req, row);
-      const rawIndex = (req.params as { index: string }).index;
-      if (!INDEX_RE.test(rawIndex)) throw badRequest('Invalid chunk index', 'invalid_index');
-      const index = Number(rawIndex);
-      const body = req.body;
-      if (!Buffer.isBuffer(body)) throw new HttpError(415, 'unsupported_media_type', 'Send each chunk as application/octet-stream');
-      if (row.source !== 'upload' || row.status !== 'uploading' || !row.stagingPath) {
-        // A retry of the chunk that completed the upload is still a success.
-        if (row.status === 'pending' && isLastChunkRetry(row, index, body.length)) return serializeImport(row);
-        throw conflict(`The import is ${row.status}; chunks are accepted only while it is uploading`);
-      }
-      const expected = row.receivedBytes / row.chunkSize;
-      // Idempotent: the chunk before `expected` already landed; a retry is a no-op.
-      if (index === expected - 1 && Number.isInteger(expected) && isLastChunkRetry(row, index, body.length)) return serializeImport(row);
-      if (index !== expected) throw conflict(`Chunks arrive in order: expected chunk ${expected}, got ${index}`);
-      const want = Math.min(row.chunkSize, row.sizeBytes - row.receivedBytes);
-      if (body.length !== want) throw badRequest(`Chunk ${index} must be ${want} bytes, got ${body.length}`, 'chunk_size');
+      const observed = await loadImport(req, d);
+      assertCreator(req, observed);
+      return inChunkOrder(observed.id, async () => {
+        const row = await loadImport(req, d);
+        assertCreator(req, row);
+        const rawIndex = (req.params as { index: string }).index;
+        if (!INDEX_RE.test(rawIndex)) throw badRequest('Invalid chunk index', 'invalid_index');
+        const index = Number(rawIndex);
+        const body = req.body;
+        if (!Buffer.isBuffer(body)) throw new HttpError(415, 'unsupported_media_type', 'Send each chunk as application/octet-stream');
+        if (row.source !== 'upload' || row.status !== 'uploading' || !row.stagingPath) {
+          // A retry of the chunk that completed the upload is still a success.
+          if (row.status === 'pending' && isLastChunkRetry(row, index, body.length)) return serializeImport(row);
+          throw conflict(`The import is ${row.status}; chunks are accepted only while it is uploading`);
+        }
+        const expected = row.receivedBytes / row.chunkSize;
+        // Idempotent: the chunk before `expected` already landed; a retry is a no-op.
+        if (index === expected - 1 && Number.isInteger(expected) && isLastChunkRetry(row, index, body.length)) return serializeImport(row);
+        if (index !== expected) throw conflict(`Chunks arrive in order: expected chunk ${expected}, got ${index}`);
+        const want = Math.min(row.chunkSize, row.sizeBytes - row.receivedBytes);
+        if (body.length !== want) throw badRequest(`Chunk ${index} must be ${want} bytes, got ${body.length}`, 'chunk_size');
 
-      const fh = await open(row.stagingPath, 'r+').catch(() => {
-        throw conflict('The staging file is gone; cancel this import and start again');
+        const fh = await open(row.stagingPath, 'r+').catch(() => {
+          throw conflict('The staging file is gone; cancel this import and start again');
+        });
+        try {
+          await fh.write(body, 0, body.length, index * row.chunkSize);
+        } finally {
+          await fh.close();
+        }
+        const receivedBytes = row.receivedBytes + body.length;
+        const done = receivedBytes === row.sizeBytes;
+        const [updated] = await app.db
+          .update(databaseImports)
+          .set({ receivedBytes, status: done ? 'pending' : 'uploading' })
+          .where(
+            and(eq(databaseImports.id, row.id), eq(databaseImports.status, 'uploading'), eq(databaseImports.receivedBytes, row.receivedBytes)),
+          )
+          .returning();
+        if (!updated) {
+          // A concurrent retry of the same chunk won the race (or a cancel did).
+          return serializeImport((await app.db.query.databaseImports.findFirst({ where: eq(databaseImports.id, row.id) }))!);
+        }
+        // One audit entry per upload, not per chunk.
+        if (done) void audit(app.db, req.user!.id, 'database.import.upload', d.name, importAuditMeta(updated));
+        return serializeImport(updated);
       });
-      try {
-        await fh.write(body, 0, body.length, index * row.chunkSize);
-      } finally {
-        await fh.close();
-      }
-      const receivedBytes = row.receivedBytes + body.length;
-      const done = receivedBytes === row.sizeBytes;
-      const [updated] = await app.db
-        .update(databaseImports)
-        .set({ receivedBytes, status: done ? 'pending' : 'uploading' })
-        .where(
-          and(eq(databaseImports.id, row.id), eq(databaseImports.status, 'uploading'), eq(databaseImports.receivedBytes, row.receivedBytes)),
-        )
-        .returning();
-      if (!updated) {
-        // A concurrent retry of the same chunk won the race (or a cancel did).
-        return serializeImport((await app.db.query.databaseImports.findFirst({ where: eq(databaseImports.id, row.id) }))!);
-      }
-      // One audit entry per upload, not per chunk.
-      if (done) void audit(app.db, req.user!.id, 'database.import.upload', d.name, importAuditMeta(updated));
-      return serializeImport(updated);
     },
   );
 

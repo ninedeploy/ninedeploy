@@ -1,0 +1,26 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+ ✓ .temp_files/audit_continuous_20261109/verify_F1090_importChunk.test.ts > queued retry preserves winner and advances once final=false identical=false 281ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1090_importChunk.test.ts > queued retry preserves winner and advances once final=false identical=true 214ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1090_importChunk.test.ts > queued retry preserves winner and advances once final=true identical=false 186ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1090_importChunk.test.ts > queued retry preserves winner and advances once final=true identical=true 169ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1090_importChunk.test.ts > next chunk queued behind held first uses fresh offset 177ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1090_importChunk.test.ts > unrelated import completes while another native writer is held 219ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1090_importChunk.test.ts > native write failure closes ownership and permits retry 178ms
+ ✓ .temp_files/audit_continuous_20261109/verify_F1090_importChunk.test.ts > validation failure releases admission for valid chunk 179ms
+
+⎯⎯⎯⎯⎯⎯ Failed Suites 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/verify_F1090_importChunk.test.ts [ .temp_files/audit_continuous_20261109/verify_F1090_importChunk.test.ts ]
+FixtureParseError: The 1st argument inside a fixture must use object destructuring pattern, e.g. ({ task } => {}). Instead, received "context". If you used internal "suite" task as the 1st argument previously, access it in the 2nd argument instead.
+ ❯ .temp_files/audit_continuous_20261109/verify_F1090_importChunk.test.ts:87:1
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  8 passed (8)
+   Start at  02:34:24
+   Duration  2.60s (tests 65%, import 26%, transform 10%)

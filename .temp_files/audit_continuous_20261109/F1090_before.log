@@ -1,0 +1,44 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1090_importChunk.test.ts > control: sequential duplicate index is a no-op after first acknowledgement 270ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1090_importChunk.test.ts > concurrent duplicate cannot overwrite already acknowledged bytes (final=false)
+EXPECTED acknowledged bytes: SELECT 1;
+ ACTUAL: SELECT 2;
+
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/prove_F1090_importChunk.test.ts > concurrent duplicate cannot overwrite already acknowledged bytes (final=false) 170ms
+   → expected 'SELECT 2;\n' to be 'SELECT 1;\n' // Object.is equality
+stdout | .temp_files/audit_continuous_20261109/prove_F1090_importChunk.test.ts > concurrent duplicate cannot overwrite already acknowledged bytes (final=true)
+EXPECTED acknowledged bytes: SELECT 1;
+ ACTUAL: SELECT 2;
+
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/prove_F1090_importChunk.test.ts > concurrent duplicate cannot overwrite already acknowledged bytes (final=true) 188ms
+   → expected 'SELECT 2;\n' to be 'SELECT 1;\n' // Object.is equality
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1090_importChunk.test.ts > concurrent duplicate cannot overwrite already acknowledged bytes (final=false)
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1090_importChunk.test.ts > concurrent duplicate cannot overwrite already acknowledged bytes (final=true)
+AssertionError: expected 'SELECT 2;\n' to be 'SELECT 1;\n' // Object.is equality
+
+- Expected
++ Received
+
+- SELECT 1;
++ SELECT 2;
+
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1090_importChunk.test.ts:67:253
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 1 passed (3)
+   Start at  02:30:37
+   Duration  1.68s (tests 43%, import 41%, transform 15%)

@@ -1,0 +1,41 @@
+apps\server\test\modules\databaseImportChunkRace.test.ts:1:10 lint/correctness/noUnusedImports  FIXABLE  ━━━━━━━━━━
+
+  ! Several of these imports are unused.
+
+  > 1 │ import { existsSync, mkdtempSync, rmSync, readFileSync } from 'node:fs';
+      │          ^^^^^^^^^^
+    2 │ import { tmpdir } from 'node:os';
+    3 │ import path from 'node:path';
+
+  i Unused imports might be the result of an incomplete refactoring.
+
+  i Unsafe fix: Remove the unused imports.
+
+    1 │ import·{·existsSync,·mkdtempSync,·rmSync,·readFileSync·}·from·'node:fs';
+      │          ------------
+
+apps\server\test\modules\databaseImportChunkRace.test.ts:17:7 lint/correctness/noUnusedVariables  FIXABLE  ━━━━━━━━━━
+
+  ! This variable full is unused.
+
+    15 │ let db: DB, app: FastifyInstance, root: string, databaseId: number;
+    16 │ const narrow = () => asUser({ id: 2, isOperator: false, role: 'member' });
+  > 17 │ const full = () => asUser({ id: 2, isOperator: true });
+       │       ^^^^
+    18 │ function gate() { let release!: () => void; const promise = new Promise<void>(resolve => { release = resolve; }); return { promise, release }; }
+    19 │ function owned(file: string) { if (!path.resolve(file).startsWith(path.resolve(root) + path.sep)) throw new Error('Unowned fixture path'); return file; }
+
+  i Unused variables are often the result of typos, incomplete refactors, or other sources of bugs.
+
+  i Unsafe fix: If this is intentional, prepend full with an underscore.
+
+    15 15 │   let db: DB, app: FastifyInstance, root: string, databaseId: number;
+    16 16 │   const narrow = () => asUser({ id: 2, isOperator: false, role: 'member' });
+    17    │ - const·full·=·()·=>·asUser({·id:·2,·isOperator:·true·});
+       17 │ + const·_full·=·()·=>·asUser({·id:·2,·isOperator:·true·});
+    18 18 │   function gate() { let release!: () => void; const promise = new Promise<void>(resolve => { release = resolve; }); return { promise, release }; }
+    19 19 │   function owned(file: string) { if (!path.resolve(file).startsWith(path.resolve(root) + path.sep)) throw new Error('Unowned fixture path'); return file; }
+
+
+Checked 2 files in 68ms. No fixes applied.
+Found 2 warnings.
