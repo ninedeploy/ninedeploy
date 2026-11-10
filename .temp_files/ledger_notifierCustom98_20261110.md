@@ -12,3 +12,6 @@ Originalafter6passed/PROBLEM NOT REPRODUCED. Permanent13cases capturedred3failed
 
 ## Publication preflight
 29ownedpaths staged; exactnormalizedexpectedblobs/indexdiff/limitedcredentialpatternscanpassed. No unrelatedstagedwork.
+
+## Native Mac follow-up
+Run42835290267 exact328ba3fbfe3f34993326c6ffea22bf5925250df8 successfulonmacOS26.7.2arm64. Server538/34files,CLI20/4files,MCP4/1file=562passed/39files. Frozeninstall/build/typecheckpassed. Ten diagnosticssource/eventSHAchecked, original+normalized SHA256 recorded in round98_receipt.json. ZIPdigestmetadata notindependentlyverified. Backendidentityunchanged for evidencepublication; fullrootrelease/R73notcertified. Fullserverunitretry next at clean evidencecommit.

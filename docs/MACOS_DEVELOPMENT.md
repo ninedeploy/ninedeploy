@@ -1165,4 +1165,4 @@ The focused Mac lane checks custom notification response semantics in
 `test/lib/notifierCustomResponse.test.ts` (34 server files). Teams text errors,
 Resend JSON errors and Lark application codes remain visible while unused
 response bodies are released. These fixtures make no vendor requests.
-Native custom notification response follow-up: pending the new Mac run.
+Native custom notification response checkpoint: [run 42835290267](https://github.com/ninedeploy/ninedeploy/actions/runs/42835290267) passed at source `328ba3fbfe3f34993326c6ffea22bf5925250df8` on macOS 26.7.2 arm64: 538 server, 20 native CLI and four workspace MCP tests, 562 tests in 39 files. See the [receipt](../.temp_files/audit_continuous_20261109/round98_receipt.json). Full release certification remains outside this focused run.
