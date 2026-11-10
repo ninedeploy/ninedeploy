@@ -1,0 +1,40 @@
+packages\mcp\test\workspaceBin.test.ts:15:14 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+    13 │ function fixture(prebuilt=false){root=mkdtempSync(path.join(tmpdir(),'nd-mcp-workspace-'));const mcp...
+    14 │  const entry="#!/usr/bin/env node\nimport {pathToFileURL} from 'node:url';export function main(){console.error('NINEDEPLOY_TOKEN is required');process.exitCode=1;}if(import.meta.url===pathToFileURL(process.argv[1]).href)main();\n";
+  > 15 │  const build="import fs from 'node:fs';fs.mkdirSync('dist',{recursive:true});fs.writeFileSync('dist/index.js',"+JSON.stringify(entry)+",{mode:0o755});\n";
+       │              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    16 │  writeFileSync(path.join(mcp,'build.mjs'),build);writeFileSync(path.join(mcp,'package.json'),JSON.st...
+    17 │  if(!binTarget.startsWith('./dist/')){const target=path.join(mcp,binTarget);mkdirSync(path.dirname(target),{recursive:true});copyFileSync(path.join(repo,'packages/mcp',binTarget),target);chmodSync(target,0o755);}
+
+  i Unsafe fix: Use a template literal.
+
+    13 13 │   ...nst binTarget=pkg.bin['ninedeploy-mcp'] as string;
+    14 14 │    const entry="#!/usr/bin/env node\nimport {pathToFileURL} from 'node:url';export function main(){console.error('NINEDEPLOY_TOKEN is required');process.exitCode=1;}if(import.meta.url===pathToFileURL(process.argv[1]).href)main();\n";
+    15    │ - ·const·build="import·fs·from·'node:fs';fs.mkdirSync('dist',{recursive:true});fs.writeFileSync('dist/index.js',"+JSON.stringify(entry)+",{mode:0o755});\n";
+       15 │ + ·const·build=`import·fs·from·'node:fs';fs.mkdirSync('dist',{recursive:true});fs.writeFileSync('dist/index.js',${JSON.stringify(entry)},{mode:0o755});\n`;
+    16 16 │   ...'},scripts:{build:'node -e "process.exit(0)"'}}));
+    17 17 │    if(!binTarget.startsWith('./dist/')){const target=path.join(mcp,binTarget);mkdirSync(path.dirname(target),{recursive:true});copyFileSync(path.join(repo,'packages/mcp',binTarget),target);chmodSync(target,0o755);}
+
+
+packages\mcp\test\workspaceBin.test.ts:1:9 lint/correctness/noUnusedImports  FIXABLE  ━━━━━━━━━━━━━━
+
+  ! Several of these imports are unused.
+
+  > 1 │ import {execFileSync,spawnSync} from 'node:child_process';
+      │         ^^^^^^^^^^^^
+    2 │ import {copyFileSync,existsSync,mkdirSync,mkdtempSync,readFileSync,rmSync,writeFileSync,chmodSync} from 'node:fs';
+    3 │ import {tmpdir} from 'node:os';
+
+  i Unused imports might be the result of an incomplete refactoring.
+
+  i Unsafe fix: Remove the unused imports.
+
+    1 │ import·{execFileSync,spawnSync}·from·'node:child_process';
+      │         -------------
+
+Checked 5 files in 17ms. No fixes applied.
+Found 1 warning.
+Found 1 info.

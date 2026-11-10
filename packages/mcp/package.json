@@ -12,6 +12,7 @@
     "access": "public"
   },
   "files": [
+    "bin",
     "dist",
     "src",
     "README.md"
@@ -21,7 +22,7 @@
     "node": "^22.23.4 || ^24.22.1 || ^26.12.1"
   },
   "bin": {
-    "ninedeploy-mcp": "./dist/index.js"
+    "ninedeploy-mcp": "./bin/ninedeploy-mcp.mjs"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

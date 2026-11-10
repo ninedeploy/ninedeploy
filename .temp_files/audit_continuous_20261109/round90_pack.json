@@ -1,0 +1,79 @@
+{
+  "name": "@ninedeploy/mcp",
+  "version": "0.18.26",
+  "filename": "D:\\Codebox\\PROJECTS\\NineDeploy\\.temp_files\\audit_continuous_20261109\\round90_pack_6410b799\\ninedeploy-mcp-0.18.26.tgz",
+  "files": [
+    {
+      "path": "bin/ninedeploy-mcp.mjs"
+    },
+    {
+      "path": "dist/generated/specTools.d.ts"
+    },
+    {
+      "path": "dist/generated/specTools.d.ts.map"
+    },
+    {
+      "path": "dist/generated/specTools.js"
+    },
+    {
+      "path": "dist/generated/specTools.js.map"
+    },
+    {
+      "path": "dist/http.d.ts"
+    },
+    {
+      "path": "dist/http.d.ts.map"
+    },
+    {
+      "path": "dist/http.js"
+    },
+    {
+      "path": "dist/http.js.map"
+    },
+    {
+      "path": "dist/index.d.ts"
+    },
+    {
+      "path": "dist/index.d.ts.map"
+    },
+    {
+      "path": "dist/index.js"
+    },
+    {
+      "path": "dist/index.js.map"
+    },
+    {
+      "path": "dist/tools.d.ts"
+    },
+    {
+      "path": "dist/tools.d.ts.map"
+    },
+    {
+      "path": "dist/tools.js"
+    },
+    {
+      "path": "dist/tools.js.map"
+    },
+    {
+      "path": "LICENSE"
+    },
+    {
+      "path": "package.json"
+    },
+    {
+      "path": "README.md"
+    },
+    {
+      "path": "src/generated/specTools.ts"
+    },
+    {
+      "path": "src/http.ts"
+    },
+    {
+      "path": "src/index.ts"
+    },
+    {
+      "path": "src/tools.ts"
+    }
+  ]
+}

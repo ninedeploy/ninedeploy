@@ -1,0 +1,78 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/packages/mcp
+      Coverage enabled with v8
+
+ ✓ test/workspaceBin.test.ts > a cold workspace links the tracked MCP launcher before dist exists, then runs after build 5187ms
+ ✓ test/workspaceBin.test.ts > control: prebuilt workspace command still reaches the missing-token guard 3184ms
+ ✓ test/workspaceBin.test.ts > a frozen offline reinstall preserves the built launcher and lockfile 6604ms
+ ✓ test/server.test.ts > buildServer > lists all tools with schemas 18ms
+ ✓ test/server.test.ts > buildServer > serves a tool call as JSON text 3ms
+ ✓ test/server.test.ts > buildServer > treats empty scope lists and session markers as unrestricted, like the server does 6ms
+ ✓ test/server.test.ts > buildServer > narrows tools to a scoped token and keeps unscoped tools available 1ms
+ ✓ test/server.test.ts > buildServer > r333: hides unmapped-route tools from fine-grained tokens, whatever scopes they hold 2ms
+ ✓ test/server.test.ts > buildServer > r333: coarse tokens keep unmapped-route tools, gated by the operator flag 4ms
+ ✓ test/server.test.ts > buildServer > r333: list_queue is offered to a read/services token, not a read/deploys one 2ms
+ ✓ test/server.test.ts > buildServer > uses a fail-closed allowlist in read-only mode 2ms
+ ✓ test/server.test.ts > buildServer > rejects invalid arguments with isError 1ms
+ ✓ test/server.test.ts > buildServer > stringifies non-Error handler failures 1ms
+ ✓ test/server.test.ts > buildServer > absent arguments: {} for an all-optional tool, refused when a field is required 1ms
+ ✓ test/server.test.ts > buildServer > surfaces handler failures as isError, not crashes 1ms
+ ✓ test/server.test.ts > main (entrypoint wiring) > exits with an error when NINEDEPLOY_TOKEN is missing 0ms
+ ✓ test/server.test.ts > main (entrypoint wiring) > connects the built server when configured 5ms
+ ✓ test/server.test.ts > main (entrypoint wiring) > falls back to no scope filter when token introspection throws (logs once, keeps going) 1ms
+ ✓ test/server.test.ts > production defaults > DEFAULT_IO.error writes to console.error 0ms
+ ✓ test/server.test.ts > production defaults > DEFAULT_IO.connect wires the server to a stdio transport 0ms
+ ✓ test/server.test.ts > production defaults > isDirectRun only matches when argv[1] resolves to this module 0ms
+ ✓ test/server.test.ts > production defaults > r196: isDirectRun follows the symlink npm installs as the bin 3ms
+ ✓ test/server.test.ts > production defaults > r195: advertises the package version, not a stale literal 1ms
+ ✓ test/server.test.ts > production defaults > staticToken returns a closure yielding the token 0ms
+ ✓ test/server.test.ts > production defaults > DEFAULT_IO.exit terminates the process with the code 0ms
+ ✓ test/server.test.ts > production defaults > runs main automatically when imported as the direct entrypoint 36ms
+ ✓ test/http.test.ts > handleHttpRequest (R4) > serves the tools statelessly and runs them through the given client 80ms
+ ✓ test/http.test.ts > handleHttpRequest (R4) > applies read-only and the token scopes to the tool list 26ms
+ ✓ test/tools.test.ts > MCP tools > exposes 42 hand-written tools plus the generated ones, every name unique 2ms
+ ✓ test/tools.test.ts > MCP tools > r472: list_configs declares no reveal parameter (mask-only over MCP) 0ms
+ ✓ test/tools.test.ts > MCP tools > list_services scopes by project when given 1ms
+ ✓ test/tools.test.ts > MCP tools > id-based tools forward the parsed service id 0ms
+ ✓ test/tools.test.ts > MCP tools > rollback passes both ids 0ms
+ ✓ test/tools.test.ts > MCP tools > cancel passes both ids 0ms
+ ✓ test/tools.test.ts > MCP tools > remove_deploy forwards serviceId+deploymentId and requires a write scope 0ms
+ ✓ test/tools.test.ts > MCP tools > list_queue returns the global in-flight view and requires a read scope 0ms
+ ✓ test/tools.test.ts > MCP tools > activity_log forwards the optional entity filter 0ms
+ ✓ test/tools.test.ts > MCP tools > parameterless tools call their SDK counterpart 0ms
+ ✓ test/tools.test.ts > MCP tools > exercises plugin tools 0ms
+ ✓ test/tools.test.ts > MCP tools > exercises config tools 0ms
+ ✓ test/tools.test.ts > MCP tools > exercises menu tools 0ms
+ ✓ test/tools.test.ts > MCP tools > exercises demo and service update tools 0ms
+ ✓ test/tools.test.ts > MCP tools > exercises workspaces, containers, logDrains, and housekeeping tools 1ms
+ ✓ test/tools.test.ts > MCP tools > input schemas validate and reject malformed inputs 3ms
+ ✓ test/tools.test.ts > MCP tools > list_github_installations > lists every App with its installations, or one App by id 1ms
+ ✓ test/tools.test.ts > MCP tools > list_github_installations > tolerates a non-array App list 0ms
+ ✓ test/tools.test.ts > MCP tools > database network and data access > maps get_database_public_access and list_database_imports onto the SDK 1ms
+ ✓ test/tools.test.ts > MCP tools > generated spec tools > are GET-only through client.api.get and all read-only listed 7ms
+ ✓ test/tools.test.ts > MCP tools > generated spec tools > forward path ids and query filters 1ms
+ ✓ test/tools.test.ts > MCP tools > search_api > is read-only listed and coarse-token only 0ms
+ ✓ test/tools.test.ts > MCP tools > search_api > matches every term case-insensitively, fetching the document once per client 1ms
+ ✓ test/tools.test.ts > MCP tools > search_api > retries after a failed fetch and tolerates a partial document 1ms
+
+ Test Files  4 passed (4)
+      Tests  52 passed (52)
+   Start at  14:35:59
+   Duration  18.18s (tests 88%, transform 6%, import 5%)
+
+ % Coverage report from v8
+---------------|---------|----------|---------|---------|---------------------
+File           | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s
+---------------|---------|----------|---------|---------|---------------------
+All files      |   97.97 |    93.81 |     100 |     100 |
+ src           |   97.53 |    93.81 |     100 |     100 |
+  index.ts     |   94.59 |     92.3 |     100 |     100 | 104,109,116,120,155
+  tools.ts     |     100 |    96.87 |     100 |     100 | 501
+---------------|---------|----------|---------|---------|---------------------
+
+=============================== Coverage summary ===============================
+Statements   : 97.97% ( 194/198 )
+Branches     : 93.81% ( 91/97 )
+Functions    : 100% ( 87/87 )
+Lines        : 100% ( 181/181 )
+================================================================================

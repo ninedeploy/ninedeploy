@@ -45,6 +45,26 @@ reported an optional ssh2 crypto-binding build failure on Node 26's V8 API and a
 pre-build workspace MCP bin-target warning. Native SSH acceleration and the
 post-build MCP executable link were not certified by this focused lane.
 
+### Fresh workspace MCP executable
+
+The MCP package now exposes a tracked `bin/ninedeploy-mcp.mjs` launcher so
+pnpm can create its command link during a fresh install, before TypeScript has
+created `dist/index.js`. Build is still required before starting the server.
+The Mac setup helper verifies the workspace command after its root build.
+
+```sh
+node scripts/check-workspace-mcp.mjs
+```
+
+This read-only smoke removes the API token from child environments. The child
+entrypoints deliberately refuse startup with the required-token message; those
+exit-1 refusals mean the launcher resolved, and the checker itself exits zero.
+No panel or credential is contacted. Cold/prebuilt/offline-reinstall fixtures,
+MCP's full 52-test coverage gate and actual npm-layout packing passed locally.
+The package was packed for inspection, not published.
+
+Fresh MCP native Mac follow-up: pending the new workflow run.
+
 ## Open the same source revision
 
 On a fresh Mac checkout:

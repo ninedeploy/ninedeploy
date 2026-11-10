@@ -1,0 +1,10 @@
+{
+  "platform": "win32",
+  "architecture": "x64",
+  "builtEntryExists": true,
+  "workspaceBinExists": true,
+  "directEntryMissingTokenRefusal": true,
+  "workspaceMissingTokenRefusal": true,
+  "directExit": 1,
+  "workspaceExit": 1
+}

@@ -1,0 +1,23 @@
+import {spawnSync} from 'node:child_process';
+import {copyFileSync,existsSync,mkdirSync,mkdtempSync,readFileSync,rmSync,writeFileSync,chmodSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import path from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {afterEach,expect,it} from 'vitest';
+const repo=fileURLToPath(new URL('../../../',import.meta.url));
+const pkg=JSON.parse(readFileSync(path.join(repo,'packages/mcp/package.json'),'utf8'));
+const packageManager=JSON.parse(readFileSync(path.join(repo,'package.json'),'utf8')).packageManager;
+let root:string|undefined;
+afterEach(()=>{if(!root)return;const absolute=path.resolve(root);if(!absolute.startsWith(path.resolve(tmpdir())+path.sep)||!path.basename(absolute).startsWith('nd-mcp-workspace-'))throw Error('Unowned fixture cleanup');rmSync(absolute,{recursive:true,force:true});root=undefined;});
+function pnpm(args:string[]){const result=process.platform==='win32'?spawnSync('cmd.exe',['/d','/s','/c',['pnpm.cmd',...args].join(' ')],{cwd:root,encoding:'utf8'}):spawnSync('pnpm',args,{cwd:root,encoding:'utf8'});expect(result.status,`${result.stdout}\n${result.stderr}`).toBe(0);return `${result.stdout}${result.stderr}`;}
+function fixture(prebuilt=false){root=mkdtempSync(path.join(tmpdir(),'nd-mcp-workspace-'));const mcp=path.join(root,'packages/mcp'),server=path.join(root,'apps/server');mkdirSync(mcp,{recursive:true});mkdirSync(server,{recursive:true});mkdirSync(path.join(root,'scripts'));copyFileSync(path.join(repo,'scripts/check-workspace-mcp.mjs'),path.join(root,'scripts/check-workspace-mcp.mjs'));writeFileSync(path.join(root,'package.json'),JSON.stringify({name:'workspace-fixture',private:true,packageManager}));writeFileSync(path.join(root,'pnpm-workspace.yaml'),'packages:\n  - packages/*\n  - apps/*\n');copyFileSync(path.join(repo,'.npmrc'),path.join(root,'.npmrc'));const binTarget=pkg.bin['ninedeploy-mcp'] as string;
+ const entry="#!/usr/bin/env node\nimport {pathToFileURL} from 'node:url';import {realpathSync} from 'node:fs';export function main(){console.error('NINEDEPLOY_TOKEN is required');process.exitCode=1;}if(import.meta.url===pathToFileURL(realpathSync(process.argv[1])).href)main();\n";
+ const build=`import fs from 'node:fs';fs.mkdirSync('dist',{recursive:true});fs.writeFileSync('dist/index.js',${JSON.stringify(entry)},{mode:0o755});\n`;
+ writeFileSync(path.join(mcp,'build.mjs'),build);writeFileSync(path.join(mcp,'package.json'),JSON.stringify({name:'@fixture/mcp',version:'0.0.0',type:'module',bin:{'ninedeploy-mcp':binTarget},scripts:{build:'node build.mjs'}}));writeFileSync(path.join(server,'package.json'),JSON.stringify({name:'@fixture/server',version:'0.0.0',private:true,dependencies:{'@fixture/mcp':'workspace:*'},scripts:{build:'node -e "process.exit(0)"'}}));
+ if(!binTarget.startsWith('./dist/')){const target=path.join(mcp,binTarget);mkdirSync(path.dirname(target),{recursive:true});copyFileSync(path.join(repo,'packages/mcp',binTarget),target);chmodSync(target,0o755);}
+ if(prebuilt){mkdirSync(path.join(mcp,'dist'));writeFileSync(path.join(mcp,'dist/index.js'),entry,{mode:0o755});}
+ return{bin:()=>path.join(root!,'apps/server/node_modules/.bin',process.platform==='win32'?'ninedeploy-mcp.cmd':'ninedeploy-mcp'),smoke(){const result=spawnSync(process.execPath,[path.join(root!,'scripts/check-workspace-mcp.mjs')],{cwd:root,encoding:'utf8'});expect(result.status,`${result.stdout}\n${result.stderr}`).toBe(0);const report=JSON.parse(result.stdout);expect(report.directEntryMissingTokenRefusal).toBe(true);expect(report.workspaceMissingTokenRefusal).toBe(true);return report;}};
+}
+it('a cold workspace links the tracked MCP launcher before dist exists, then runs after build',()=>{const f=fixture();const output=pnpm(['install','--offline','--ignore-scripts']);expect(output).not.toContain('Failed to create bin');expect(existsSync(f.bin())).toBe(true);expect(existsSync(path.join(root!,'packages/mcp/dist/index.js'))).toBe(false);pnpm(['--filter','@fixture/server...','build']);f.smoke();},90_000);
+it('control: prebuilt workspace command still reaches the missing-token guard',()=>{const f=fixture(true);pnpm(['install','--offline','--ignore-scripts']);pnpm(['--filter','@fixture/server...','build']);f.smoke();},90_000);
+it('a frozen offline reinstall preserves the built launcher and lockfile',()=>{const f=fixture();pnpm(['install','--offline','--ignore-scripts']);pnpm(['--filter','@fixture/server...','build']);const before=readFileSync(path.join(root!,'pnpm-lock.yaml'));pnpm(['install','--offline','--ignore-scripts','--frozen-lockfile']);expect(readFileSync(path.join(root!,'pnpm-lock.yaml')).equals(before)).toBe(true);f.smoke();f.smoke();},90_000);

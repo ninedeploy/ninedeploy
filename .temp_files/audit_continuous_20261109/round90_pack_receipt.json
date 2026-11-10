@@ -1,0 +1,12 @@
+{
+  "archive": "ninedeploy-mcp-0.18.26.tgz",
+  "sha256": "fd4ccc7dc27d2adb0b42e6c5a3cb80620d5d5e245913101a20512ae38a7a81a5",
+  "version": "0.18.26",
+  "bin": {
+    "ninedeploy-mcp": "./bin/ninedeploy-mcp.mjs"
+  },
+  "launcherIncluded": true,
+  "builtEntrypointIncluded": true,
+  "directMissingTokenRefusalOnce": true,
+  "published": false
+}

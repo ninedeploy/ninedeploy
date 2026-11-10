@@ -1,0 +1,44 @@
+CONTROL prebuilt nativepnpm alias: {
+  prebuilt: true,
+  exit: 0,
+  report: {
+    platform: 'win32',
+    architecture: 'x64',
+    builtEntryExists: true,
+    workspaceBinExists: true,
+    directEntryMissingTokenRefusal: true,
+    workspaceMissingTokenRefusal: true,
+    directExit: 1,
+    workspaceExit: 1
+  },
+  installerWarned: false
+}
+EXPECTED freshpostbuild MCP alias:true ACTUAL: {
+  prebuilt: false,
+  exit: 0,
+  report: {
+    platform: 'win32',
+    architecture: 'x64',
+    builtEntryExists: true,
+    workspaceBinExists: true,
+    directEntryMissingTokenRefusal: true,
+    workspaceMissingTokenRefusal: true,
+    directExit: 1,
+    workspaceExit: 1
+  },
+  installerWarned: false
+}
+PROBLEM NOT REPRODUCED
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/packages/mcp
+
+ ✓ test/workspaceBin.test.ts > a cold workspace links the tracked MCP launcher before dist exists, then runs after build 3590ms
+ ✓ test/workspaceBin.test.ts > control: prebuilt workspace command still reaches the missing-token guard 9611ms
+ ✓ test/workspaceBin.test.ts > a frozen offline reinstall preserves the built launcher and lockfile 11053ms
+
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
+   Start at  14:43:44
+   Duration  24.37s (tests 100%)
+
+FIX VERIFIED

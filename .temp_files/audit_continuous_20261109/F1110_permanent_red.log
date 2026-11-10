@@ -1,0 +1,77 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/packages/mcp
+
+ × test/workspaceBin.test.ts > a cold workspace links the tracked MCP launcher before dist exists, then runs after build 699ms
+   → expected 'Scope: all 3 workspace projects\nAlre…' not to contain 'Failed to create bin'
+ ✓ test/workspaceBin.test.ts > control: prebuilt workspace command still reaches the missing-token guard 2785ms
+ × test/workspaceBin.test.ts > a frozen offline reinstall preserves the built launcher and lockfile 4473ms
+   → {
+  "platform": "win32",
+  "architecture": "x64",
+  "builtEntryExists": true,
+  "workspaceBinExists": false,
+  "directEntryMissingTokenRefusal": true,
+  "workspaceMissingTokenRefusal": false,
+  "directExit": 1,
+  "workspaceExit": 1
+}
+
+Workspace MCP launcher is unavailable after build. See docs/MACOS_DEVELOPMENT.md.
+: expected 1 to be +0 // Object.is equality
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 1 passed (3)
+   Start at  14:34:22
+   Duration  8.17s (tests 100%)
+
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/workspaceBin.test.ts > a cold workspace links the tracked MCP launcher before dist exists, then runs after build
+AssertionError: expected 'Scope: all 3 workspace projects\nAlre…' not to contain 'Failed to create bin'
+
+- Expected
++ Received
+
+- Failed to create bin
++ Scope: all 3 workspace projects
++ Already up to date
++ [WARN] Failed to create bin at C:\Users\ersin\AppData\Local\Temp\nd-mcp-workspace-c7Gvhv\apps\server\node_modules\.bin\ninedeploy-mcp. ENOENT: no such file or directory, stat 'C:\Users\ersin\AppData\Local\Temp\nd-mcp-workspace-c7Gvhv\packages\mcp\dist\index.js.EXE'
++
++ Done in 101ms using pnpm v11.23.0
++
+
+ ❯ test/workspaceBin.test.ts:21:200
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  test/workspaceBin.test.ts > a frozen offline reinstall preserves the built launcher and lockfile
+AssertionError: {
+  "platform": "win32",
+  "architecture": "x64",
+  "builtEntryExists": true,
+  "workspaceBinExists": false,
+  "directEntryMissingTokenRefusal": true,
+  "workspaceMissingTokenRefusal": false,
+  "directExit": 1,
+  "workspaceExit": 1
+}
+
+Workspace MCP launcher is unavailable after build. See docs/MACOS_DEVELOPMENT.md.
+: expected 1 to be +0 // Object.is equality
+
+- Expected
++ Received
+
+- 0
++ 1
+
+ ❯ Object.smoke test/workspaceBin.test.ts:19:319
+
+ ❯ test/workspaceBin.test.ts:23:409
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+EXIT 1

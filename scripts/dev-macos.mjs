@@ -61,6 +61,7 @@ console.log(`macOS prerequisites passed (${process.arch}, Node ${process.version
 if (args.includes('--install')) {
   run('pnpm', ['install', '--frozen-lockfile']);
   run('pnpm', ['build']);
+  run(process.execPath, [resolve(root, 'scripts/check-workspace-mcp.mjs')]);
   const desktop = resolve(root, 'desktop');
   run('pnpm', ['install', '--frozen-lockfile'], desktop);
   run('pnpm', ['typecheck'], desktop);

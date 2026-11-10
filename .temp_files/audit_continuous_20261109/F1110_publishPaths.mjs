@@ -1,0 +1,1 @@
+import fs from 'node:fs';const file='.temp_files/audit_continuous_20261109/commit-F1110-owned.mjs';let s=fs.readFileSync(file,'utf8').replaceAll('audit_continuous_20261110/','audit_continuous_20261109/').replaceAll('audit_seven_20261110/','audit_seven_20261109/');s=s.replaceAll('log|ts|mjs)','log|ts|mjs|json|sh)');fs.writeFileSync(file,s);

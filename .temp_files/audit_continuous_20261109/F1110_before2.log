@@ -1,0 +1,31 @@
+CONTROL prebuilt nativepnpm alias: {
+  prebuilt: true,
+  exit: 0,
+  report: {
+    platform: 'win32',
+    architecture: 'x64',
+    builtEntryExists: true,
+    workspaceBinExists: true,
+    directEntryMissingTokenRefusal: true,
+    workspaceMissingTokenRefusal: true,
+    directExit: 1,
+    workspaceExit: 1
+  },
+  installerWarned: false
+}
+EXPECTED freshpostbuild MCP alias:true ACTUAL: {
+  prebuilt: false,
+  exit: 1,
+  report: {
+    platform: 'win32',
+    architecture: 'x64',
+    builtEntryExists: true,
+    workspaceBinExists: false,
+    directEntryMissingTokenRefusal: true,
+    workspaceMissingTokenRefusal: false,
+    directExit: 1,
+    workspaceExit: 1
+  },
+  installerWarned: true
+}
+PROBLEM CONFIRMED
