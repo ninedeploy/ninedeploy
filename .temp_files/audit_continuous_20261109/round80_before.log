@@ -1,0 +1,130 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1100_imageName.test.ts > rejects repository path256 before a watch probe
+EXPECTED null/no probe ACTUAL length: 256 urls: 1
+PROBLEM CONFIRMED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1100_imageName.test.ts > control: native Engine and CLI accept repository path255 18ms
+ × .temp_files/audit_continuous_20261109/prove_F1100_imageName.test.ts > rejects repository path256 before a watch probe 4ms
+   → expected { registry: 'ghcr.io', …(2) } to be null
+stdout | .temp_files/audit_continuous_20261109/prove_F1099_imageHost.test.ts > rejects native-invalid registry text ghcr.io?fixture=1 before probing
+EXPECTED null/no probe ACTUAL: {
+  parsed: { registry: 'ghcr.io?fixture=1', repository: 'web', tag: 'v1' },
+  urls: [ 'https://ghcr.io/?fixture=1/v2/web/manifests/v1' ],
+  probeError: undefined,
+  lookups: 1,
+  native: undefined
+}
+PROBLEM CONFIRMED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1099_imageHost.test.ts > control: ordinary explicit host keeps its v2 manifest path 17ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1099_imageHost.test.ts > rejects native-invalid registry text ghcr.io#fixture before probing
+EXPECTED null/no probe ACTUAL: {
+  parsed: { registry: 'ghcr.io#fixture', repository: 'web', tag: 'v1' },
+  urls: [ 'https://ghcr.io/#fixture/v2/web/manifests/v1' ],
+  probeError: undefined,
+  lookups: 1,
+  native: undefined
+}
+PROBLEM CONFIRMED
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1099_imageHost.test.ts > rejects native-invalid registry text ghcr.io\extra before probing
+EXPECTED null/no probe ACTUAL: {
+  parsed: { registry: 'ghcr.io\\extra', repository: 'web', tag: 'v1' },
+  urls: [ 'https://ghcr.io/extra/v2/web/manifests/v1' ],
+  probeError: undefined,
+  lookups: 1,
+  native: undefined
+}
+PROBLEM CONFIRMED
+
+ × .temp_files/audit_continuous_20261109/prove_F1099_imageHost.test.ts > rejects native-invalid registry text ghcr.io?fixture=1 before probing 315ms
+   → expected { registry: 'ghcr.io?fixture=1', …(2) } to be null
+ × .temp_files/audit_continuous_20261109/prove_F1099_imageHost.test.ts > rejects native-invalid registry text ghcr.io#fixture before probing 1ms
+   → expected { registry: 'ghcr.io#fixture', …(2) } to be null
+ × .temp_files/audit_continuous_20261109/prove_F1099_imageHost.test.ts > rejects native-invalid registry text ghcr.io\extra before probing 2ms
+   → expected { registry: 'ghcr.io\extra', …(2) } to be null
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1099_imageHost.test.ts > rejects native-invalid registry text ghcr.io?fixture=1 before probing
+AssertionError: expected { registry: 'ghcr.io?fixture=1', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "ghcr.io?fixture=1",
+  "repository": "web",
+  "tag": "v1",
+}
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1099_imageHost.test.ts:3:380
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1099_imageHost.test.ts > rejects native-invalid registry text ghcr.io#fixture before probing
+AssertionError: expected { registry: 'ghcr.io#fixture', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "ghcr.io#fixture",
+  "repository": "web",
+  "tag": "v1",
+}
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1099_imageHost.test.ts:3:380
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1099_imageHost.test.ts > rejects native-invalid registry text ghcr.io\extra before probing
+AssertionError: expected { registry: 'ghcr.io\extra', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "ghcr.io\\extra",
+  "repository": "web",
+  "tag": "v1",
+}
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1099_imageHost.test.ts:3:380
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+
+ FAIL  .temp_files/audit_continuous_20261109/prove_F1100_imageName.test.ts > rejects repository path256 before a watch probe
+AssertionError: expected { registry: 'ghcr.io', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "ghcr.io",
+  "repository": "acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "tag": "v1",
+}
+
+ ❯ .temp_files/audit_continuous_20261109/prove_F1100_imageName.test.ts:4:474
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/4]⎯
+
+
+ Test Files  2 failed (2)
+      Tests  4 failed | 2 passed (6)
+   Start at  11:47:45
+   Duration  2.12s (tests 46%, import 38%, transform 14%, worker 1%)
+
+    Isolate  2 workers spawned · ~373ms startup each (spawn + environment, per file)
+             at least ~373ms faster with isolate: false — reuses workers across files instead of one per file

@@ -36,6 +36,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Watch parsing now rejects malformed registry host text before it can alter manifest probe URI path, query, or fragment semantics (F1099).
+- Watch parsing now enforces the native 255-character repository-path limit with official Hub namespace normalization, while preserving registry and tag compatibility (F1100).
 - Watch parsing now rejects malformed image repository components before dispatching registry manifest probes, including empty and dot path segments (F1097).
 - Watch parsing now enforces Docker tag start syntax and the 128-character limit before dispatching a manifest probe (F1098).
 - Image registry classification now recognizes uppercase single-label hosts accepted by Docker CLI, preserving their bound credentials and watch parsing instead of treating them as Hub namespaces (F1096).

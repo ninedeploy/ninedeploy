@@ -1,0 +1,21 @@
+apps\server\test\lib\imageRefHostValidation.test.ts:221:107 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+    219 │ for(const row of cases)it(`native-verified ${row.valid?'accepted':'refused'} ${row.image}`,async()=>{const actual=await inspect(row.image,!row.valid);if(row.valid)expect(actual.parsed).not.toBeNull();else{expect(actual.parsed).toBeNull();expect(actual.urls).toEqual([]);expect(actual.lookups).toBe(0);expect(actual.probeError).toBeUndefined();}});
+    220 │ it('valid ordinary host still probes the exact v2 manifest path',async()=>{const actual=await inspect('ghcr.io/web:v1');expect(actual.urls).toEqual(['https://ghcr.io/v2/web/manifests/v1']);expect(actual.probeError).toBeUndefined();});
+  > 221 │ it('valid repository255 remains probeable even though the full name is longer',async()=>{const repository='acme/'+'a'.repeat(250);const actual=await inspect(`ghcr.io/${repository}:v1`);expect(actual.parsed?.repository).toHaveLength(255);expect(actual.urls).toEqual([`https://ghcr.io/v2/${repository}/manifests/v1`]);expect(actual.probeError).toBeUndefined();});
+        │                                                                                                           ^^^^^^^^^^^^^^^^^^^^^^^
+    222 │
+
+  i Unsafe fix: Use a template literal.
+
+    219 219 │   for(const row of cases)it(`native-verified ${row.valid?'accepted':'refused'} ${row.image}`,async()=>{const actual=await inspect(row.image,!row.valid);if(row.valid)expect(actual.parsed).not.toBeNull();else{expect(actual.parsed).toBeNull();expect(actual.urls).toEqual([]);expect(actual.lookups).toBe(0);expect(actual.probeError).toBeUndefined();}});
+    220 220 │   it('valid ordinary host still probes the exact v2 manifest path',async()=>{const actual=await inspect('ghcr.io/web:v1');expect(actual.urls).toEqual(['https://ghcr.io/v2/web/manifests/v1']);expect(actual.probeError).toBeUndefined();});
+    221     │ - it('valid·repository255·remains·probeable·even·though·the·full·name·is·longer',async()=>{const·repository='acme/'+'a'.repeat(250);const·actual=await·inspect(`ghcr.io/${repository}:v1`);expect(actual.parsed?.repository).toHaveLength(255);expect(actual.urls).toEqual([`https://ghcr.io/v2/${repository}/manifests/v1`]);expect(actual.probeError).toBeUndefined();});
+        221 │ + it('valid·repository255·remains·probeable·even·though·the·full·name·is·longer',async()=>{const·repository=`acme/${'a'.repeat(250)}`;const·actual=await·inspect(`ghcr.io/${repository}:v1`);expect(actual.parsed?.repository).toHaveLength(255);expect(actual.urls).toEqual([`https://ghcr.io/v2/${repository}/manifests/v1`]);expect(actual.probeError).toBeUndefined();});
+    222 222 │
+
+
+Checked 3 files in 131ms. No fixes applied.
+Found 1 info.

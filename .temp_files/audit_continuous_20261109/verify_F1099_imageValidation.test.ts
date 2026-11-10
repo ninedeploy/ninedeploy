@@ -1,0 +1,3 @@
+import {afterAll,afterEach,expect,it} from 'vitest';import {inspect} from './round80_imageProofKit.js';import {cases} from './round80_verifiedCases.js';let failed=false;afterEach(({task})=>{if(task.result?.errors?.length)failed=true;});
+for(const row of cases.filter(row=>row.kind==='host'))it(`native-verified ${row.valid?'accepted':'refused'} ${row.image}`,async()=>{const actual=await inspect(row.image,row.valid,!row.valid);if(row.valid)expect(actual.parsed).not.toBeNull();else{expect(actual.parsed).toBeNull();expect(actual.urls).toEqual([]);expect(actual.lookups).toBe(0);expect(actual.probeError).toBeUndefined();}});
+afterAll(()=>{if(!failed)console.log('FIX VERIFIED');});

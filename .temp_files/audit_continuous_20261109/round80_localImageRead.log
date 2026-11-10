@@ -1,0 +1,7 @@
+Local Docker Engine version: 29.9.3
+{"repositoryLength":245,"inputLength":256,"exit":1,"stderr":"Error response from daemon: No such image: ghcr.io/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1"}
+{"repositoryLength":252,"inputLength":263,"exit":1,"stderr":"Error response from daemon: No such image: ghcr.io/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1"}
+{"repositoryLength":253,"inputLength":264,"exit":1,"stderr":"Error response from daemon: No such image: ghcr.io/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1"}
+{"repositoryLength":260,"inputLength":271,"exit":1,"stderr":"Error response from daemon: repository name must not be more than 255 characters"}
+{"repositoryLength":261,"inputLength":272,"exit":1,"stderr":"Error response from daemon: repository name must not be more than 255 characters"}
+{"repositoryLength":305,"inputLength":316,"exit":1,"stderr":"Error response from daemon: repository name must not be more than 255 characters"}

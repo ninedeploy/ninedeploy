@@ -1,0 +1,538 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/integration/imageReferenceHostValidation.test.ts > parser matches native CLI host/name acceptance for ghcr.io/web:v1 176ms
+ ✓ test/integration/imageReferenceHostValidation.test.ts > parser matches native CLI host/name acceptance for REGISTRY/web:v1 604ms
+ ✓ test/integration/imageReferenceHostValidation.test.ts > parser matches native CLI host/name acceptance for localhost:5000/web:v1 185ms
+ ✓ test/integration/imageReferenceHostValidation.test.ts > parser matches native CLI host/name acceptance for REGISTRY:5000/web:v1 155ms
+ ✓ test/integration/imageReferenceHostValidation.test.ts > parser matches native CLI host/name acceptance for [2001:4860:4860::8888]:5000/web:v1 371ms
+ ✓ test/integration/imageReferenceHostValidation.test.ts > parser matches native CLI host/name acceptance for registry.example.test:99999/web:v1 182ms
+ × test/integration/imageReferenceHostValidation.test.ts > parser matches native CLI host/name acceptance for ghcr.io?fixture=1/web:v1 196ms
+   → expected { registry: 'ghcr.io?fixture=1', …(2) } to be null
+ × test/integration/imageReferenceHostValidation.test.ts > parser matches native CLI host/name acceptance for ghcr.io#fixture/web:v1 151ms
+   → expected { registry: 'ghcr.io#fixture', …(2) } to be null
+ × test/integration/imageReferenceHostValidation.test.ts > parser matches native CLI host/name acceptance for ghcr.io\extra/web:v1 164ms
+   → expected { registry: 'ghcr.io\extra', …(2) } to be null
+ × test/integration/imageReferenceHostValidation.test.ts > parser matches native CLI host/name acceptance for ghcr..io/web:v1 343ms
+   → expected { registry: 'ghcr..io', …(2) } to be null
+ × test/integration/imageReferenceHostValidation.test.ts > parser matches native CLI host/name acceptance for -registry.example/web:v1 159ms
+   → expected { registry: '-registry.example', …(2) } to be null
+ × test/integration/imageReferenceHostValidation.test.ts > parser matches native CLI host/name acceptance for registry_.example/web:v1 158ms
+   → expected { registry: 'registry_.example', …(2) } to be null
+ × test/integration/imageReferenceHostValidation.test.ts > parser matches native CLI host/name acceptance for ghcr.io:bad/web:v1 139ms
+   → expected { registry: 'ghcr.io:bad', …(2) } to be null
+ × test/integration/imageReferenceHostValidation.test.ts > parser matches native CLI host/name acceptance for [::1/web:v1 135ms
+   → expected { registry: '[::1', …(2) } to be null
+ × test/integration/imageReferenceHostValidation.test.ts > parser matches native CLI host/name acceptance for bad%host.example/web:v1 149ms
+   → expected { registry: 'bad%host.example', …(2) } to be null
+ ✓ test/integration/imageReferenceHostValidation.test.ts > parser matches native CLI host/name acceptance for ghcr.io/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 206ms
+ × test/integration/imageReferenceHostValidation.test.ts > parser matches native CLI host/name acceptance for ghcr.io/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 426ms
+   → expected { registry: 'ghcr.io', …(2) } to be null
+ ✓ test/integration/imageReferenceHostValidation.test.ts > parser matches native CLI host/name acceptance for docker.io/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 176ms
+ × test/integration/imageReferenceHostValidation.test.ts > parser matches native CLI host/name acceptance for docker.io/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 156ms
+   → expected { registry: 'docker.io', …(2) } to be null
+ ✓ test/integration/imageReferenceHostValidation.test.ts > parser matches native CLI host/name acceptance for index.docker.io/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 135ms
+ × test/integration/imageReferenceHostValidation.test.ts > parser matches native CLI host/name acceptance for index.docker.io/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 179ms
+   → expected { registry: 'index.docker.io', …(2) } to be null
+ ✓ test/integration/imageReferenceHostValidation.test.ts > parser matches native CLI host/name acceptance for registry-1.docker.io/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 319ms
+ × test/integration/imageReferenceHostValidation.test.ts > parser matches native CLI host/name acceptance for registry-1.docker.io/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 179ms
+   → expected { …(3) } to be null
+ ✓ test/integration/imageReferenceHostValidation.test.ts > parser matches native CLI host/name acceptance for REGISTRY/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 172ms
+ × test/integration/imageReferenceHostValidation.test.ts > parser matches native CLI host/name acceptance for REGISTRY/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 298ms
+   → expected { registry: 'REGISTRY', …(2) } to be null
+ ✓ test/integration/imageReferenceHostValidation.test.ts > parser matches native CLI host/name acceptance for [2001:4860:4860::8888]:5000/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 177ms
+ × test/integration/imageReferenceHostValidation.test.ts > parser matches native CLI host/name acceptance for [2001:4860:4860::8888]:5000/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 168ms
+   → expected { …(3) } to be null
+ ✓ test/integration/imageReferenceHostValidation.test.ts > parser matches native CLI host/name acceptance for aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 132ms
+ × test/integration/imageReferenceHostValidation.test.ts > parser matches native CLI host/name acceptance for aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 442ms
+   → expected { registry: 'index.docker.io', …(2) } to be null
+ ✓ test/integration/imageReferenceHostValidation.test.ts > parser matches native CLI host/name acceptance for reg--istry.example:0005000/web:v1 138ms
+ × test/integration/imageReferenceHostValidation.test.ts > parser matches native CLI host/name acceptance for [::ffff:192.0.2.1]:5000/web:v1 363ms
+   → expected { …(3) } to be null
+ × test/integration/imageReferenceHostValidation.test.ts > parser matches native CLI host/name acceptance for example.test./web:v1 154ms
+   → expected { registry: 'example.test.', …(2) } to be null
+ ✓ test/integration/imageReferenceHostValidation.test.ts > parser matches native CLI host/name acceptance for foo_bar.example/web:v1 185ms
+ ✓ test/integration/imageReferenceHostValidation.test.ts > parser matches native CLI host/name acceptance for [:::]:5000/web:v1 445ms
+ × test/integration/imageReferenceHostValidation.test.ts > parser matches native CLI host/name acceptance for [::1%25eth0]:5000/web:v1 173ms
+   → expected { registry: '[::1%25eth0]:5000', …(2) } to be null
+ ✓ test/integration/imageReferenceHostValidation.test.ts > parser matches native CLI host/name acceptance for REGISTRY.EXAMPLE/web:v1 541ms
+ ✓ test/integration/imageReferenceHostValidation.test.ts > parser matches native CLI host/name acceptance for docker.io/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 150ms
+ × test/integration/imageReferenceHostValidation.test.ts > parser matches native CLI host/name acceptance for docker.io/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 385ms
+   → expected { registry: 'docker.io', …(2) } to be null
+ ✓ test/integration/imageReferenceHostValidation.test.ts > parser matches native CLI host/name acceptance for index.docker.io/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 164ms
+ × test/integration/imageReferenceHostValidation.test.ts > parser matches native CLI host/name acceptance for index.docker.io/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 402ms
+   → expected { registry: 'index.docker.io', …(2) } to be null
+ ✓ test/integration/imageReferenceHostValidation.test.ts > parser matches native CLI host/name acceptance for registry-1.docker.io/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 142ms
+ × test/integration/imageReferenceHostValidation.test.ts > parser matches native CLI host/name acceptance for registry-1.docker.io/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 200ms
+   → expected { …(3) } to be null
+
+ Test Files  1 failed (1)
+      Tests  22 failed | 20 passed (42)
+   Start at  12:02:41
+   Duration  10.35s (tests 97%, import 2%, transform 1%)
+
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 22 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/integration/imageReferenceHostValidation.test.ts > parser matches native CLI host/name acceptance for ghcr.io?fixture=1/web:v1
+AssertionError: expected { registry: 'ghcr.io?fixture=1', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "ghcr.io?fixture=1",
+  "repository": "web",
+  "tag": "v1",
+}
+
+ ❯ test/integration/imageReferenceHostValidation.test.ts:228:63
+    226|  // the input's native repository length before that HTTP representati…
+    227|  const watched=actual.image!.startsWith('registry-1.docker.io/')&&!rep…
+    228|  }else{expect(result.observations).toEqual([]);expect(parsed).toBeNull…
+       |                                                               ^
+    229|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/22]⎯
+
+ FAIL  test/integration/imageReferenceHostValidation.test.ts > parser matches native CLI host/name acceptance for ghcr.io#fixture/web:v1
+AssertionError: expected { registry: 'ghcr.io#fixture', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "ghcr.io#fixture",
+  "repository": "web",
+  "tag": "v1",
+}
+
+ ❯ test/integration/imageReferenceHostValidation.test.ts:228:63
+    226|  // the input's native repository length before that HTTP representati…
+    227|  const watched=actual.image!.startsWith('registry-1.docker.io/')&&!rep…
+    228|  }else{expect(result.observations).toEqual([]);expect(parsed).toBeNull…
+       |                                                               ^
+    229|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/22]⎯
+
+ FAIL  test/integration/imageReferenceHostValidation.test.ts > parser matches native CLI host/name acceptance for ghcr.io\extra/web:v1
+AssertionError: expected { registry: 'ghcr.io\extra', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "ghcr.io\\extra",
+  "repository": "web",
+  "tag": "v1",
+}
+
+ ❯ test/integration/imageReferenceHostValidation.test.ts:228:63
+    226|  // the input's native repository length before that HTTP representati…
+    227|  const watched=actual.image!.startsWith('registry-1.docker.io/')&&!rep…
+    228|  }else{expect(result.observations).toEqual([]);expect(parsed).toBeNull…
+       |                                                               ^
+    229|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/22]⎯
+
+ FAIL  test/integration/imageReferenceHostValidation.test.ts > parser matches native CLI host/name acceptance for ghcr..io/web:v1
+AssertionError: expected { registry: 'ghcr..io', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "ghcr..io",
+  "repository": "web",
+  "tag": "v1",
+}
+
+ ❯ test/integration/imageReferenceHostValidation.test.ts:228:63
+    226|  // the input's native repository length before that HTTP representati…
+    227|  const watched=actual.image!.startsWith('registry-1.docker.io/')&&!rep…
+    228|  }else{expect(result.observations).toEqual([]);expect(parsed).toBeNull…
+       |                                                               ^
+    229|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/22]⎯
+
+ FAIL  test/integration/imageReferenceHostValidation.test.ts > parser matches native CLI host/name acceptance for -registry.example/web:v1
+AssertionError: expected { registry: '-registry.example', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "-registry.example",
+  "repository": "web",
+  "tag": "v1",
+}
+
+ ❯ test/integration/imageReferenceHostValidation.test.ts:228:63
+    226|  // the input's native repository length before that HTTP representati…
+    227|  const watched=actual.image!.startsWith('registry-1.docker.io/')&&!rep…
+    228|  }else{expect(result.observations).toEqual([]);expect(parsed).toBeNull…
+       |                                                               ^
+    229|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/22]⎯
+
+ FAIL  test/integration/imageReferenceHostValidation.test.ts > parser matches native CLI host/name acceptance for registry_.example/web:v1
+AssertionError: expected { registry: 'registry_.example', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "registry_.example",
+  "repository": "web",
+  "tag": "v1",
+}
+
+ ❯ test/integration/imageReferenceHostValidation.test.ts:228:63
+    226|  // the input's native repository length before that HTTP representati…
+    227|  const watched=actual.image!.startsWith('registry-1.docker.io/')&&!rep…
+    228|  }else{expect(result.observations).toEqual([]);expect(parsed).toBeNull…
+       |                                                               ^
+    229|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/22]⎯
+
+ FAIL  test/integration/imageReferenceHostValidation.test.ts > parser matches native CLI host/name acceptance for ghcr.io:bad/web:v1
+AssertionError: expected { registry: 'ghcr.io:bad', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "ghcr.io:bad",
+  "repository": "web",
+  "tag": "v1",
+}
+
+ ❯ test/integration/imageReferenceHostValidation.test.ts:228:63
+    226|  // the input's native repository length before that HTTP representati…
+    227|  const watched=actual.image!.startsWith('registry-1.docker.io/')&&!rep…
+    228|  }else{expect(result.observations).toEqual([]);expect(parsed).toBeNull…
+       |                                                               ^
+    229|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/22]⎯
+
+ FAIL  test/integration/imageReferenceHostValidation.test.ts > parser matches native CLI host/name acceptance for [::1/web:v1
+AssertionError: expected { registry: '[::1', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "[::1",
+  "repository": "web",
+  "tag": "v1",
+}
+
+ ❯ test/integration/imageReferenceHostValidation.test.ts:228:63
+    226|  // the input's native repository length before that HTTP representati…
+    227|  const watched=actual.image!.startsWith('registry-1.docker.io/')&&!rep…
+    228|  }else{expect(result.observations).toEqual([]);expect(parsed).toBeNull…
+       |                                                               ^
+    229|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/22]⎯
+
+ FAIL  test/integration/imageReferenceHostValidation.test.ts > parser matches native CLI host/name acceptance for bad%host.example/web:v1
+AssertionError: expected { registry: 'bad%host.example', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "bad%host.example",
+  "repository": "web",
+  "tag": "v1",
+}
+
+ ❯ test/integration/imageReferenceHostValidation.test.ts:228:63
+    226|  // the input's native repository length before that HTTP representati…
+    227|  const watched=actual.image!.startsWith('registry-1.docker.io/')&&!rep…
+    228|  }else{expect(result.observations).toEqual([]);expect(parsed).toBeNull…
+       |                                                               ^
+    229|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/22]⎯
+
+ FAIL  test/integration/imageReferenceHostValidation.test.ts > parser matches native CLI host/name acceptance for ghcr.io/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1
+AssertionError: expected { registry: 'ghcr.io', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "ghcr.io",
+  "repository": "acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "tag": "v1",
+}
+
+ ❯ test/integration/imageReferenceHostValidation.test.ts:228:63
+    226|  // the input's native repository length before that HTTP representati…
+    227|  const watched=actual.image!.startsWith('registry-1.docker.io/')&&!rep…
+    228|  }else{expect(result.observations).toEqual([]);expect(parsed).toBeNull…
+       |                                                               ^
+    229|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/22]⎯
+
+ FAIL  test/integration/imageReferenceHostValidation.test.ts > parser matches native CLI host/name acceptance for docker.io/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1
+AssertionError: expected { registry: 'docker.io', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "docker.io",
+  "repository": "acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "tag": "v1",
+}
+
+ ❯ test/integration/imageReferenceHostValidation.test.ts:228:63
+    226|  // the input's native repository length before that HTTP representati…
+    227|  const watched=actual.image!.startsWith('registry-1.docker.io/')&&!rep…
+    228|  }else{expect(result.observations).toEqual([]);expect(parsed).toBeNull…
+       |                                                               ^
+    229|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[11/22]⎯
+
+ FAIL  test/integration/imageReferenceHostValidation.test.ts > parser matches native CLI host/name acceptance for index.docker.io/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1
+AssertionError: expected { registry: 'index.docker.io', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "index.docker.io",
+  "repository": "acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "tag": "v1",
+}
+
+ ❯ test/integration/imageReferenceHostValidation.test.ts:228:63
+    226|  // the input's native repository length before that HTTP representati…
+    227|  const watched=actual.image!.startsWith('registry-1.docker.io/')&&!rep…
+    228|  }else{expect(result.observations).toEqual([]);expect(parsed).toBeNull…
+       |                                                               ^
+    229|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[12/22]⎯
+
+ FAIL  test/integration/imageReferenceHostValidation.test.ts > parser matches native CLI host/name acceptance for registry-1.docker.io/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1
+AssertionError: expected { …(3) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "registry-1.docker.io",
+  "repository": "acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "tag": "v1",
+}
+
+ ❯ test/integration/imageReferenceHostValidation.test.ts:228:63
+    226|  // the input's native repository length before that HTTP representati…
+    227|  const watched=actual.image!.startsWith('registry-1.docker.io/')&&!rep…
+    228|  }else{expect(result.observations).toEqual([]);expect(parsed).toBeNull…
+       |                                                               ^
+    229|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[13/22]⎯
+
+ FAIL  test/integration/imageReferenceHostValidation.test.ts > parser matches native CLI host/name acceptance for REGISTRY/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1
+AssertionError: expected { registry: 'REGISTRY', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "REGISTRY",
+  "repository": "acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "tag": "v1",
+}
+
+ ❯ test/integration/imageReferenceHostValidation.test.ts:228:63
+    226|  // the input's native repository length before that HTTP representati…
+    227|  const watched=actual.image!.startsWith('registry-1.docker.io/')&&!rep…
+    228|  }else{expect(result.observations).toEqual([]);expect(parsed).toBeNull…
+       |                                                               ^
+    229|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[14/22]⎯
+
+ FAIL  test/integration/imageReferenceHostValidation.test.ts > parser matches native CLI host/name acceptance for [2001:4860:4860::8888]:5000/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1
+AssertionError: expected { …(3) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "[2001:4860:4860::8888]:5000",
+  "repository": "acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "tag": "v1",
+}
+
+ ❯ test/integration/imageReferenceHostValidation.test.ts:228:63
+    226|  // the input's native repository length before that HTTP representati…
+    227|  const watched=actual.image!.startsWith('registry-1.docker.io/')&&!rep…
+    228|  }else{expect(result.observations).toEqual([]);expect(parsed).toBeNull…
+       |                                                               ^
+    229|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[15/22]⎯
+
+ FAIL  test/integration/imageReferenceHostValidation.test.ts > parser matches native CLI host/name acceptance for aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1
+ FAIL  test/integration/imageReferenceHostValidation.test.ts > parser matches native CLI host/name acceptance for index.docker.io/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1
+AssertionError: expected { registry: 'index.docker.io', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "index.docker.io",
+  "repository": "library/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "tag": "v1",
+}
+
+ ❯ test/integration/imageReferenceHostValidation.test.ts:228:63
+    226|  // the input's native repository length before that HTTP representati…
+    227|  const watched=actual.image!.startsWith('registry-1.docker.io/')&&!rep…
+    228|  }else{expect(result.observations).toEqual([]);expect(parsed).toBeNull…
+       |                                                               ^
+    229|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[16/22]⎯
+
+ FAIL  test/integration/imageReferenceHostValidation.test.ts > parser matches native CLI host/name acceptance for [::ffff:192.0.2.1]:5000/web:v1
+AssertionError: expected { …(3) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "[::ffff:192.0.2.1]:5000",
+  "repository": "web",
+  "tag": "v1",
+}
+
+ ❯ test/integration/imageReferenceHostValidation.test.ts:228:63
+    226|  // the input's native repository length before that HTTP representati…
+    227|  const watched=actual.image!.startsWith('registry-1.docker.io/')&&!rep…
+    228|  }else{expect(result.observations).toEqual([]);expect(parsed).toBeNull…
+       |                                                               ^
+    229|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[17/22]⎯
+
+ FAIL  test/integration/imageReferenceHostValidation.test.ts > parser matches native CLI host/name acceptance for example.test./web:v1
+AssertionError: expected { registry: 'example.test.', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "example.test.",
+  "repository": "web",
+  "tag": "v1",
+}
+
+ ❯ test/integration/imageReferenceHostValidation.test.ts:228:63
+    226|  // the input's native repository length before that HTTP representati…
+    227|  const watched=actual.image!.startsWith('registry-1.docker.io/')&&!rep…
+    228|  }else{expect(result.observations).toEqual([]);expect(parsed).toBeNull…
+       |                                                               ^
+    229|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[18/22]⎯
+
+ FAIL  test/integration/imageReferenceHostValidation.test.ts > parser matches native CLI host/name acceptance for [::1%25eth0]:5000/web:v1
+AssertionError: expected { registry: '[::1%25eth0]:5000', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "[::1%25eth0]:5000",
+  "repository": "web",
+  "tag": "v1",
+}
+
+ ❯ test/integration/imageReferenceHostValidation.test.ts:228:63
+    226|  // the input's native repository length before that HTTP representati…
+    227|  const watched=actual.image!.startsWith('registry-1.docker.io/')&&!rep…
+    228|  }else{expect(result.observations).toEqual([]);expect(parsed).toBeNull…
+       |                                                               ^
+    229|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[19/22]⎯
+
+ FAIL  test/integration/imageReferenceHostValidation.test.ts > parser matches native CLI host/name acceptance for docker.io/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1
+AssertionError: expected { registry: 'docker.io', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "docker.io",
+  "repository": "library/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "tag": "v1",
+}
+
+ ❯ test/integration/imageReferenceHostValidation.test.ts:228:63
+    226|  // the input's native repository length before that HTTP representati…
+    227|  const watched=actual.image!.startsWith('registry-1.docker.io/')&&!rep…
+    228|  }else{expect(result.observations).toEqual([]);expect(parsed).toBeNull…
+       |                                                               ^
+    229|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[20/22]⎯
+
+ FAIL  test/integration/imageReferenceHostValidation.test.ts > parser matches native CLI host/name acceptance for registry-1.docker.io/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1
+AssertionError: expected { …(3) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "registry-1.docker.io",
+  "repository": "library/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "tag": "v1",
+}
+
+ ❯ test/integration/imageReferenceHostValidation.test.ts:228:63
+    226|  // the input's native repository length before that HTTP representati…
+    227|  const watched=actual.image!.startsWith('registry-1.docker.io/')&&!rep…
+    228|  }else{expect(result.observations).toEqual([]);expect(parsed).toBeNull…
+       |                                                               ^
+    229|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[21/22]⎯

@@ -1,0 +1,456 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy/apps/server
+
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified accepted ghcr.io/web:v1 3ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified accepted REGISTRY/web:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified accepted localhost:5000/web:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified accepted REGISTRY:5000/web:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified accepted [2001:4860:4860::8888]:5000/web:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified accepted registry.example.test:99999/web:v1 0ms
+ × test/lib/imageRefHostValidation.test.ts > native-verified refused ghcr.io?fixture=1/web:v1 16ms
+   → expected { registry: 'ghcr.io?fixture=1', …(2) } to be null
+ × test/lib/imageRefHostValidation.test.ts > native-verified refused ghcr.io#fixture/web:v1 1ms
+   → expected { registry: 'ghcr.io#fixture', …(2) } to be null
+ × test/lib/imageRefHostValidation.test.ts > native-verified refused ghcr.io\extra/web:v1 1ms
+   → expected { registry: 'ghcr.io\extra', …(2) } to be null
+ × test/lib/imageRefHostValidation.test.ts > native-verified refused ghcr..io/web:v1 0ms
+   → expected { registry: 'ghcr..io', …(2) } to be null
+ × test/lib/imageRefHostValidation.test.ts > native-verified refused -registry.example/web:v1 0ms
+   → expected { registry: '-registry.example', …(2) } to be null
+ × test/lib/imageRefHostValidation.test.ts > native-verified refused registry_.example/web:v1 0ms
+   → expected { registry: 'registry_.example', …(2) } to be null
+ × test/lib/imageRefHostValidation.test.ts > native-verified refused ghcr.io:bad/web:v1 0ms
+   → expected { registry: 'ghcr.io:bad', …(2) } to be null
+ × test/lib/imageRefHostValidation.test.ts > native-verified refused [::1/web:v1 0ms
+   → expected { registry: '[::1', …(2) } to be null
+ × test/lib/imageRefHostValidation.test.ts > native-verified refused bad%host.example/web:v1 0ms
+   → expected { registry: 'bad%host.example', …(2) } to be null
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified accepted ghcr.io/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 0ms
+ × test/lib/imageRefHostValidation.test.ts > native-verified refused ghcr.io/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 0ms
+   → expected { registry: 'ghcr.io', …(2) } to be null
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified accepted docker.io/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 0ms
+ × test/lib/imageRefHostValidation.test.ts > native-verified refused docker.io/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 0ms
+   → expected { registry: 'docker.io', …(2) } to be null
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified accepted index.docker.io/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 0ms
+ × test/lib/imageRefHostValidation.test.ts > native-verified refused index.docker.io/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 1ms
+   → expected { registry: 'index.docker.io', …(2) } to be null
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified accepted registry-1.docker.io/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 0ms
+ × test/lib/imageRefHostValidation.test.ts > native-verified refused registry-1.docker.io/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 0ms
+   → expected { …(3) } to be null
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified accepted REGISTRY/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 0ms
+ × test/lib/imageRefHostValidation.test.ts > native-verified refused REGISTRY/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 0ms
+   → expected { registry: 'REGISTRY', …(2) } to be null
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified accepted [2001:4860:4860::8888]:5000/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 0ms
+ × test/lib/imageRefHostValidation.test.ts > native-verified refused [2001:4860:4860::8888]:5000/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 5ms
+   → expected { …(3) } to be null
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified accepted aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 0ms
+ × test/lib/imageRefHostValidation.test.ts > native-verified refused aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 0ms
+   → expected { registry: 'index.docker.io', …(2) } to be null
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified accepted reg--istry.example:0005000/web:v1 0ms
+ × test/lib/imageRefHostValidation.test.ts > native-verified refused [::ffff:192.0.2.1]:5000/web:v1 0ms
+   → expected { …(3) } to be null
+ × test/lib/imageRefHostValidation.test.ts > native-verified refused example.test./web:v1 0ms
+   → expected { registry: 'example.test.', …(2) } to be null
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified accepted foo_bar.example/web:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified accepted [:::]:5000/web:v1 0ms
+ × test/lib/imageRefHostValidation.test.ts > native-verified refused [::1%25eth0]:5000/web:v1 0ms
+   → expected { registry: '[::1%25eth0]:5000', …(2) } to be null
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified accepted REGISTRY.EXAMPLE/web:v1 0ms
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified accepted docker.io/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 0ms
+ × test/lib/imageRefHostValidation.test.ts > native-verified refused docker.io/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 0ms
+   → expected { registry: 'docker.io', …(2) } to be null
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified accepted index.docker.io/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 0ms
+ × test/lib/imageRefHostValidation.test.ts > native-verified refused index.docker.io/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 0ms
+   → expected { registry: 'index.docker.io', …(2) } to be null
+ ✓ test/lib/imageRefHostValidation.test.ts > native-verified accepted registry-1.docker.io/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 0ms
+ × test/lib/imageRefHostValidation.test.ts > native-verified refused registry-1.docker.io/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1 0ms
+   → expected { …(3) } to be null
+ ✓ test/lib/imageRefHostValidation.test.ts > valid ordinary host still probes the exact v2 manifest path 1ms
+ ✓ test/lib/imageRefHostValidation.test.ts > valid repository255 remains probeable even though the full name is longer 1ms
+
+ Test Files  1 failed (1)
+      Tests  22 failed | 22 passed (44)
+   Start at  12:02:38
+   Duration  564ms (import 54%, transform 29%, tests 16%, worker 1%)
+
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 22 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/lib/imageRefHostValidation.test.ts > native-verified refused ghcr.io?fixture=1/web:v1
+AssertionError: expected { registry: 'ghcr.io?fixture=1', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "ghcr.io?fixture=1",
+  "repository": "web",
+  "tag": "v1",
+}
+
+ ❯ test/lib/imageRefHostValidation.test.ts:219:228
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/22]⎯
+
+ FAIL  test/lib/imageRefHostValidation.test.ts > native-verified refused ghcr.io#fixture/web:v1
+AssertionError: expected { registry: 'ghcr.io#fixture', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "ghcr.io#fixture",
+  "repository": "web",
+  "tag": "v1",
+}
+
+ ❯ test/lib/imageRefHostValidation.test.ts:219:228
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/22]⎯
+
+ FAIL  test/lib/imageRefHostValidation.test.ts > native-verified refused ghcr.io\extra/web:v1
+AssertionError: expected { registry: 'ghcr.io\extra', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "ghcr.io\\extra",
+  "repository": "web",
+  "tag": "v1",
+}
+
+ ❯ test/lib/imageRefHostValidation.test.ts:219:228
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/22]⎯
+
+ FAIL  test/lib/imageRefHostValidation.test.ts > native-verified refused ghcr..io/web:v1
+AssertionError: expected { registry: 'ghcr..io', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "ghcr..io",
+  "repository": "web",
+  "tag": "v1",
+}
+
+ ❯ test/lib/imageRefHostValidation.test.ts:219:228
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/22]⎯
+
+ FAIL  test/lib/imageRefHostValidation.test.ts > native-verified refused -registry.example/web:v1
+AssertionError: expected { registry: '-registry.example', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "-registry.example",
+  "repository": "web",
+  "tag": "v1",
+}
+
+ ❯ test/lib/imageRefHostValidation.test.ts:219:228
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/22]⎯
+
+ FAIL  test/lib/imageRefHostValidation.test.ts > native-verified refused registry_.example/web:v1
+AssertionError: expected { registry: 'registry_.example', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "registry_.example",
+  "repository": "web",
+  "tag": "v1",
+}
+
+ ❯ test/lib/imageRefHostValidation.test.ts:219:228
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/22]⎯
+
+ FAIL  test/lib/imageRefHostValidation.test.ts > native-verified refused ghcr.io:bad/web:v1
+AssertionError: expected { registry: 'ghcr.io:bad', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "ghcr.io:bad",
+  "repository": "web",
+  "tag": "v1",
+}
+
+ ❯ test/lib/imageRefHostValidation.test.ts:219:228
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/22]⎯
+
+ FAIL  test/lib/imageRefHostValidation.test.ts > native-verified refused [::1/web:v1
+AssertionError: expected { registry: '[::1', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "[::1",
+  "repository": "web",
+  "tag": "v1",
+}
+
+ ❯ test/lib/imageRefHostValidation.test.ts:219:228
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/22]⎯
+
+ FAIL  test/lib/imageRefHostValidation.test.ts > native-verified refused bad%host.example/web:v1
+AssertionError: expected { registry: 'bad%host.example', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "bad%host.example",
+  "repository": "web",
+  "tag": "v1",
+}
+
+ ❯ test/lib/imageRefHostValidation.test.ts:219:228
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/22]⎯
+
+ FAIL  test/lib/imageRefHostValidation.test.ts > native-verified refused ghcr.io/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1
+AssertionError: expected { registry: 'ghcr.io', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "ghcr.io",
+  "repository": "acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "tag": "v1",
+}
+
+ ❯ test/lib/imageRefHostValidation.test.ts:219:228
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/22]⎯
+
+ FAIL  test/lib/imageRefHostValidation.test.ts > native-verified refused docker.io/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1
+AssertionError: expected { registry: 'docker.io', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "docker.io",
+  "repository": "acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "tag": "v1",
+}
+
+ ❯ test/lib/imageRefHostValidation.test.ts:219:228
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[11/22]⎯
+
+ FAIL  test/lib/imageRefHostValidation.test.ts > native-verified refused index.docker.io/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1
+AssertionError: expected { registry: 'index.docker.io', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "index.docker.io",
+  "repository": "acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "tag": "v1",
+}
+
+ ❯ test/lib/imageRefHostValidation.test.ts:219:228
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[12/22]⎯
+
+ FAIL  test/lib/imageRefHostValidation.test.ts > native-verified refused registry-1.docker.io/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1
+AssertionError: expected { …(3) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "registry-1.docker.io",
+  "repository": "acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "tag": "v1",
+}
+
+ ❯ test/lib/imageRefHostValidation.test.ts:219:228
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[13/22]⎯
+
+ FAIL  test/lib/imageRefHostValidation.test.ts > native-verified refused REGISTRY/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1
+AssertionError: expected { registry: 'REGISTRY', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "REGISTRY",
+  "repository": "acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "tag": "v1",
+}
+
+ ❯ test/lib/imageRefHostValidation.test.ts:219:228
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[14/22]⎯
+
+ FAIL  test/lib/imageRefHostValidation.test.ts > native-verified refused [2001:4860:4860::8888]:5000/acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1
+AssertionError: expected { …(3) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "[2001:4860:4860::8888]:5000",
+  "repository": "acme/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "tag": "v1",
+}
+
+ ❯ test/lib/imageRefHostValidation.test.ts:219:228
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[15/22]⎯
+
+ FAIL  test/lib/imageRefHostValidation.test.ts > native-verified refused aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1
+ FAIL  test/lib/imageRefHostValidation.test.ts > native-verified refused index.docker.io/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1
+AssertionError: expected { registry: 'index.docker.io', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "index.docker.io",
+  "repository": "library/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "tag": "v1",
+}
+
+ ❯ test/lib/imageRefHostValidation.test.ts:219:228
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[16/22]⎯
+
+ FAIL  test/lib/imageRefHostValidation.test.ts > native-verified refused [::ffff:192.0.2.1]:5000/web:v1
+AssertionError: expected { …(3) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "[::ffff:192.0.2.1]:5000",
+  "repository": "web",
+  "tag": "v1",
+}
+
+ ❯ test/lib/imageRefHostValidation.test.ts:219:228
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[17/22]⎯
+
+ FAIL  test/lib/imageRefHostValidation.test.ts > native-verified refused example.test./web:v1
+AssertionError: expected { registry: 'example.test.', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "example.test.",
+  "repository": "web",
+  "tag": "v1",
+}
+
+ ❯ test/lib/imageRefHostValidation.test.ts:219:228
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[18/22]⎯
+
+ FAIL  test/lib/imageRefHostValidation.test.ts > native-verified refused [::1%25eth0]:5000/web:v1
+AssertionError: expected { registry: '[::1%25eth0]:5000', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "[::1%25eth0]:5000",
+  "repository": "web",
+  "tag": "v1",
+}
+
+ ❯ test/lib/imageRefHostValidation.test.ts:219:228
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[19/22]⎯
+
+ FAIL  test/lib/imageRefHostValidation.test.ts > native-verified refused docker.io/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1
+AssertionError: expected { registry: 'docker.io', …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "docker.io",
+  "repository": "library/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "tag": "v1",
+}
+
+ ❯ test/lib/imageRefHostValidation.test.ts:219:228
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[20/22]⎯
+
+ FAIL  test/lib/imageRefHostValidation.test.ts > native-verified refused registry-1.docker.io/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:v1
+AssertionError: expected { …(3) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "registry": "registry-1.docker.io",
+  "repository": "library/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "tag": "v1",
+}
+
+ ❯ test/lib/imageRefHostValidation.test.ts:219:228
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[21/22]⎯

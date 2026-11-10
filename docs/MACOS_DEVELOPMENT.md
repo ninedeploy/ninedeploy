@@ -806,3 +806,28 @@ pnpm --dir apps/server exec vitest run --config vitest.integration.config.ts tes
 
 The round73 native worker fault and full release/coverage acceptance remain
 unresolved; no native Mac or live pull result is implied.
+
+Round 80 (F1099/F1100, Low input handling) validates watch registry text before
+it can alter probe URI semantics, and enforces Docker's normalized repository
+path limit of255 characters. The registry domain and tag do not count toward
+that limit. Official Hub library normalization counts; existing HTTP alias
+expansion is retained. Native-compatible internal underscores, numeric port
+syntax and bracketed hex/colon syntax remain accepted; address/port reachability
+is still checked by the probe rather than this format parser.
+
+The initial total-name255 hypothesis was dropped. Actual local Docker Engine
+29.9.3 read-only image metadata inspections distinguished valid missing names at
+repository255 from format errors at256; no images/containers/config were changed.
+Forty-two native CLI corpus cases passed three verifier runs after a compatibility
+refinement. Permanent unit was seen red22/44 and native CLI22/42; nearest scope
+150tests/10files and resource-bound server typecheck/build passed.
+
+Mac format check with private fake configs and a loopback mock daemon:
+
+```bash
+pnpm --dir apps/server exec vitest run --config vitest.integration.config.ts test/integration/imageReferenceHostValidation.test.ts --coverage=false
+```
+
+This is syntax and input-bound evidence, not live pull/update, DNS/IP validation,
+network escape or native Mac certification. Round73's native worker fault and
+full release/coverage acceptance remain unresolved.

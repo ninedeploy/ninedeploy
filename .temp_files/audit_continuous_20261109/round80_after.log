@@ -1,0 +1,51 @@
+
+ RUN  v5.0.5 D:/Codebox/PROJECTS/NineDeploy
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1099_imageHost.test.ts > rejects native-invalid registry text ghcr.io?fixture=1 before probing
+EXPECTED null/no probe ACTUAL: {
+  parsed: null,
+  urls: [],
+  probeError: undefined,
+  lookups: 0,
+  native: undefined
+}
+PROBLEM NOT REPRODUCED
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1099_imageHost.test.ts > rejects native-invalid registry text ghcr.io#fixture before probing
+EXPECTED null/no probe ACTUAL: {
+  parsed: null,
+  urls: [],
+  probeError: undefined,
+  lookups: 0,
+  native: undefined
+}
+PROBLEM NOT REPRODUCED
+
+stdout | .temp_files/audit_continuous_20261109/prove_F1099_imageHost.test.ts > rejects native-invalid registry text ghcr.io\extra before probing
+EXPECTED null/no probe ACTUAL: {
+  parsed: null,
+  urls: [],
+  probeError: undefined,
+  lookups: 0,
+  native: undefined
+}
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1099_imageHost.test.ts > control: ordinary explicit host keeps its v2 manifest path 17ms
+ ✓ .temp_files/audit_continuous_20261109/prove_F1099_imageHost.test.ts > rejects native-invalid registry text ghcr.io?fixture=1 before probing 2ms
+ ✓ .temp_files/audit_continuous_20261109/prove_F1099_imageHost.test.ts > rejects native-invalid registry text ghcr.io#fixture before probing 1ms
+ ✓ .temp_files/audit_continuous_20261109/prove_F1099_imageHost.test.ts > rejects native-invalid registry text ghcr.io\extra before probing 1ms
+stdout | .temp_files/audit_continuous_20261109/prove_F1100_imageName.test.ts > rejects repository path256 before a watch probe
+EXPECTED null/no probe ACTUAL length: undefined urls: 0
+PROBLEM NOT REPRODUCED
+
+ ✓ .temp_files/audit_continuous_20261109/prove_F1100_imageName.test.ts > control: native Engine and CLI accept repository path255 18ms
+ ✓ .temp_files/audit_continuous_20261109/prove_F1100_imageName.test.ts > rejects repository path256 before a watch probe 1ms
+
+ Test Files  2 passed (2)
+      Tests  6 passed (6)
+   Start at  11:49:47
+   Duration  1.33s (import 64%, transform 23%, tests 11%, worker 2%)
+
+    Isolate  2 workers spawned · ~465ms startup each (spawn + environment, per file)
+             at least ~465ms faster with isolate: false — reuses workers across files instead of one per file

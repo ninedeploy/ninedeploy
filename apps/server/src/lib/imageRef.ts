@@ -9,6 +9,9 @@ export interface ImageRef {
 export const DEFAULT_REGISTRY = 'index.docker.io';
 const OFFICIAL_SOURCE = 'docker.io';
 const HUB_API_HOST = 'registry-1.docker.io';
+// Match reference syntax; address and port reachability stay at probe time.
+const REGISTRY_DOMAIN = /^[A-Za-z0-9](?:[A-Za-z0-9_-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9_-]*[A-Za-z0-9])?)*(?::[0-9]+)?$/;
+const REGISTRY_IPV6 = /^\[[A-Fa-f0-9:]+\](?::[0-9]+)?$/;
 
 /** True when the ref points at Docker Hub (any of its accepted spellings). */
 export function isDockerHub(registry: string): boolean {
@@ -36,6 +39,7 @@ export function parseImageRef(image: string): ImageRef | null {
     // `nginx` alone is docker.io/library/nginx.
     rest = ['library', trimmed].join('/');
   }
+  if (!REGISTRY_DOMAIN.test(registry) && !REGISTRY_IPV6.test(registry)) return null;
   // The tag is the segment after the LAST colon that comes after the last
   // slash — registry ports (`localhost:5000/repo`) must not read as tags.
   const lastSlash = rest.lastIndexOf('/');
@@ -48,6 +52,11 @@ export function parseImageRef(image: string): ImageRef | null {
   if (!rest || !tag) return null;
   const component = /^[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*$/;
   if (rest.split('/').some((part) => !component.test(part)) || !/^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$/.test(tag)) return null;
+  // The reference limit counts repository path, including an official Hub's
+  // implicit library namespace, not its registry domain or tag.
+  const referenceRepository = (registry === DEFAULT_REGISTRY || registry === OFFICIAL_SOURCE) && !rest.includes('/')
+    ? `library/${rest}` : rest;
+  if (referenceRepository.length > 255) return null;
   if (isDockerHub(registry) && !rest.includes('/')) rest = `library/${rest}`;
   return { registry, repository: rest, tag };
 }

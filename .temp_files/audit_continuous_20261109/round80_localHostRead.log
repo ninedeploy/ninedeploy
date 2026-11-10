@@ -1,0 +1,6 @@
+Local Docker Engine version: 29.9.3
+{"image":"foo_bar.example/web:v1","inputLength":22,"exit":1,"stderr":"Error response from daemon: No such image: foo_bar.example/web:v1"}
+{"image":"REGISTRY/web:v1","inputLength":15,"exit":1,"stderr":"Error response from daemon: No such image: REGISTRY/web:v1"}
+{"image":"[:::]:5000/web:v1","inputLength":17,"exit":1,"stderr":"Error response from daemon: No such image: [:::]:5000/web:v1"}
+{"image":"registry_.example/web:v1","inputLength":24,"exit":1,"stderr":"Error response from daemon: invalid reference format"}
+{"image":"[::ffff:192.0.2.1]:5000/web:v1","inputLength":30,"exit":1,"stderr":"Error response from daemon: invalid reference format"}
