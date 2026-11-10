@@ -5,9 +5,9 @@
  * path the service was created with (`create.volumeMount`), which NineDeploy
  * keeps in `nd-svc-<slug>-data`.
  *
- * - The command printed for the source host reads the volume through the
- *   stopped source container (`--volumes-from`, read-only), so it needs no
- *   volume name and works for a named volume and a bind mount alike, and
+ * - The command printed for the source host mounts a named volume by its
+ *   name, read-only (no container needed: a Swarm service scaled to 0 has
+ *   none); a bind mount is read through the source container instead. It
  *   writes a gzipped tar with numeric owners, the format the panel restores.
  * - The archive goes through the panel's chunked volume import with its
  *   sha256, which the panel checks before the volume is touched. The panel
@@ -19,7 +19,7 @@ import path from 'node:path';
 import type { VolumeImport } from '@ninedeploy/schemas';
 import type { NineDeployClient } from '../client.js';
 import type { ImportPlan, PlanService } from '../lib/importers/plan.js';
-import { fileBase, flagArg, shellQuote, sourceTarget } from '../lib/importers/shell.js';
+import { fileBase, flagArg, isPlainName, shellQuote, sourceTarget } from '../lib/importers/shell.js';
 import type { ImportReceipt } from './importApply.js';
 
 /** The panel calls the volume half makes; NineDeployClient satisfies it. */
@@ -44,11 +44,20 @@ export function volumeCommand(s: PlanService): { command: string; file: string; 
   const v = s.volumes.find((x) => x.mountPath === mount);
   if (v?.source === 'file') return { manual: `${mount} is a file mount on the source; recreate it under Service → File mounts` };
   const notes: string[] = [];
-  const { target, note } = sourceTarget(s.runtime, `${s.name}'s container`, true);
-  if (note) notes.push(note);
   const others = s.volumes.filter((x) => x.mountPath !== mount && x.source !== 'file');
   if (others.length) notes.push(`Only ${mount} moves; copy ${others.map((x) => x.mountPath).join(', ')} by hand.`);
   const file = `${fileBase(s.name)}.volume.tar.gz`;
+  // A named volume is mounted by its name: that needs no container, and a
+  // Swarm service scaled to 0 has none left (checked live on CapRover 1.16,
+  // which names the Docker volume exactly as the app's volumeName).
+  if (v?.source === 'volume' && v.name && isPlainName(v.name)) {
+    return { command: `docker run --rm -v ${v.name}:/v:ro ${TAR_IMAGE} tar -czf - --numeric-owner -C /v . > ${file}`, file, notes };
+  }
+  // A bind mount, or a volume whose name the plan does not hold: borrow the
+  // source container's mounts, which works only while it still exists.
+  const { target, note } = sourceTarget(s.runtime, `${s.name}'s container`, true);
+  if (note) notes.push(note);
+  notes.push('This reads the mount through the source container, so stop the app without removing its container (a Swarm service scaled to 0 has none left); or archive the host directory yourself with tar -czf - --numeric-owner -C <dir> .');
   return {
     command: `docker run --rm --volumes-from ${target}:ro ${TAR_IMAGE} tar -czf - --numeric-owner -C ${shellQuote(mount)} . > ${file}`,
     file,

@@ -40,6 +40,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Every other match is listed with the reason, for a person to change: another scheme spelling, options, a Redis database index, Mongo, a host-only variable, or the old platform's own host (NineDeploy can still reach it, so the app would quietly keep using the old database).
   - Only variable, database and host names reach the output and the receipt. A rerun attaches nothing twice and counts an attachment made by hand. A variable another database already sets is refused. The panel attaches a database to a service under one variable, so when two variables name the same database (Prisma's `DATABASE_URL` and `DIRECT_URL`), the second is listed for a person instead of recorded as attached.
   - Checked live: after apply and a deploy, the container's `DATABASE_URL` named the new database, and the two listed variables kept their copied values.
+- **Service volume import, and `ninedeploy import data --volume`.** A gzipped tar of another host's volume can now be restored into a service's data volume through the panel (`POST /v1/services/:id/volume-imports`; SDK `volumeImports`).
+  - The archive is uploaded in chunks with its sha256, which the panel checks before the volume is touched. A file that is not a gzipped tar is refused.
+  - The import is refused while the service runs or deploys. A volume that already exists is first snapshotted as a `pre-import` volume backup.
+  - It restores through the same staged swap as a volume backup restore, so owners, modes and symlinks are kept, and a bad archive leaves the volume as it was.
+  - It is for operators, and for Docker services on the panel host with a volume mount. Swarm services, compose stacks, node services and services spread over several hosts are refused.
+  - `import data` prints the command to run on the source host. A named volume is mounted read-only by name, which works after the app is scaled to 0. Then `--volume <service>=<file> --yes` imports it with a resumable receipt and never imports twice.
+  - Checked live: a CapRover v1.16.0 app volume arrived in the deployed service with the same files, owners, modes, symlink and checksums.
+  - New table `volume_imports` (migration 0124, additive). Stale uploads expire after 24 hours, and finished rows are pruned after 90 days.
+- `ninedeploy import data` keeps names that came from the source platform out of the commands it prints unless they are plain Docker names. A name with shell syntax becomes a placeholder to fill in by hand, so pasting a command cannot run anything hidden in an app's name.
 - **`ninedeploy import cutover`: add the imported domains once DNS points at NineDeploy.** Without `--yes` it reports, host by host, what is ready; with `--yes` it adds the domains that pass two checks.
   - The service is running and its latest deploy succeeded. The command never deploys.
   - Every A and AAAA of the hostname already resolves to this panel: a direct DNS query (`--resolver` picks the server, the output names it), compared with `--expect` or Settings → DNS records. A leftover record that still names the old host holds it back and is named. A host that fails waits, so no certificate is requested while DNS still points at the old platform.
@@ -49,6 +58,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Volume backup restores (and volume imports) no longer drop symlinks. The staged swap moved entries only when `[ -e ]` was true, which follows links. A link whose target was elsewhere, or not yet moved (`link.html -> index.html`), was silently left behind and deleted with the staging directory. Found by the volume import's live proof, and covered by a real-Docker test that fails without the fix.
 - `ninedeploy import data` now prints a MySQL/MariaDB dump command without `--databases`. That flag writes `CREATE DATABASE` and `USE` into the dump, and the panel restores the file as written. For an admin the import reported success but put every row in a second database beside the managed `app` database, which the app's connection string names; anyone else was refused. Checked live with MySQL 8.4: the old form put 500 rows into `shopdb` and left `app` empty, while the new form put them into `app` with the same checksum. Dumps taken with the earlier command should be taken again.
 - Swarm deployment regression tests now await database readiness and close their native database clients after every case (F1133).
 - CloudWatch log drains retain captured batches when HTTP 200 acknowledges rejected log events, preserving accepted-event and rejection-boundary handling (F1126).

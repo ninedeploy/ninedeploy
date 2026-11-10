@@ -41,15 +41,21 @@ const deps = (client: VolumeClient, r: ImportReceipt) => {
 };
 
 describe('volumeCommand', () => {
-  it('reads the volume through the stopped source container, read-only, as a gzipped tar with numeric owners', () => {
+  it('mounts a named volume by its name, read-only, as a gzipped tar with numeric owners (no container needed)', () => {
     expect(volumeCommand(svc())).toEqual({
-      command: "docker run --rm --volumes-from $(docker ps -aq --filter label=com.docker.swarm.service.name=blog | head -n 1):ro alpine:3.21 tar -czf - --numeric-owner -C '/var/lib/ghost/content' . > blog.volume.tar.gz",
+      command: 'docker run --rm -v blog-content:/v:ro alpine:3.21 tar -czf - --numeric-owner -C /v . > blog.volume.tar.gz',
       file: 'blog.volume.tar.gz', notes: [],
     });
-    expect(volumeCommand(svc({ runtime: { kind: 'container', name: 'abc' } }))!).toMatchObject({ command: expect.stringContaining('--volumes-from abc:ro ') });
+  });
+
+  it('reads a bind mount, or a volume without a usable name, through the source container', () => {
+    const fromSwarm = volumeCommand(svc({ volumes: [{ mountPath: '/var/lib/ghost/content', source: 'bind' }] })) as { command: string; notes: string[] };
+    expect(fromSwarm.command).toBe("docker run --rm --volumes-from $(docker ps -aq --filter label=com.docker.swarm.service.name=blog | head -n 1):ro alpine:3.21 tar -czf - --numeric-owner -C '/var/lib/ghost/content' . > blog.volume.tar.gz");
+    expect(fromSwarm.notes).toEqual([expect.stringMatching(/stop the app without removing its container/)]);
+    expect(volumeCommand(svc({ runtime: { kind: 'container', name: 'abc' }, volumes: [{ mountPath: '/var/lib/ghost/content', source: 'volume', name: 'a b' }] }))!).toMatchObject({ command: expect.stringContaining('--volumes-from abc:ro ') });
     const unknown = volumeCommand(svc({ runtime: undefined, volumes: [{ mountPath: '/var/lib/ghost/content', source: 'bind' }, { mountPath: '/logs', source: 'volume' }, { mountPath: '/etc/x.conf', source: 'file' }] })) as { command: string; notes: string[] };
     expect(unknown.command).toContain('--volumes-from <container>:ro');
-    expect(unknown.notes).toEqual([expect.stringMatching(/Replace <container>/), 'Only /var/lib/ghost/content moves; copy /logs by hand.']);
+    expect(unknown.notes).toEqual(['Only /var/lib/ghost/content moves; copy /logs by hand.', expect.stringMatching(/Replace <container>/), expect.stringMatching(/without removing/)]);
     expect(volumeCommand(svc({ create: { name: 'x', volumeMount: "/it's" } as never, volumes: [] }) as never)).toMatchObject({ command: expect.stringContaining("-C '/it'\\''s' .") });
     expect(volumeCommand(svc({ create: { name: 'x' } as never }))).toBeNull();
     expect(volumeCommand(svc({ volumes: [{ mountPath: '/var/lib/ghost/content', source: 'file' }] }))).toEqual({ manual: expect.stringMatching(/file mount/) });

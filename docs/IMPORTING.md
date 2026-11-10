@@ -6,7 +6,7 @@
 |---|---|---|
 | 1. Plan | Read the source and list each service, domain, environment variable name, volume and database, with every unsupported option | Available (CLI) |
 | 2. Apply | Create the planned services and databases in NineDeploy, resumably, with a receipt per item, and leave the source untouched | Available (CLI) |
-| 3. Data | Move database contents, checksummed; then deploy, switch DNS and add the domains as the last step | Databases and the domain cutover available (CLI); volumes by hand for now |
+| 3. Data | Move database contents, checksummed; then deploy, switch DNS and add the domains as the last step | Databases, service volumes and the domain cutover available (CLI) |
 
 ## Run a plan
 
@@ -60,6 +60,7 @@ ninedeploy import apply plan.json --yes --project 3 --dotenv blog=./blog.env   #
 ```bash
 ninedeploy import data plan.json                                  # the order, and a dump command per database
 ninedeploy import data plan.json --dump pgreal=pgreal.dump --yes  # imports it
+ninedeploy import data plan.json --volume files=files.volume.tar.gz --yes  # restores a service's data volume
 ```
 
 Without `--yes`, `import data` prints the order that loses no writes, and the dump command to run on the source host for each database:
@@ -86,6 +87,30 @@ Without `--yes`, `import data` prints the order that loses no writes, and the du
 - A database whose data is already in is not imported again. The same file is skipped, and a different file is refused; use `ninedeploy databases import` directly if you mean it.
 - ClickHouse has no dump import, so move its data by hand.
 
+## Move the volumes
+
+`import data` also moves each service's data volume: the one mounted at the path the service was created with. In NineDeploy that is the service's `nd-svc-<name>-data` volume.
+
+1. Stop the app on the source so its files do not change while they are copied. On CapRover, set it to 0 instances.
+2. Run the command the preview prints on the source host. For a named volume it mounts the volume read-only by name, so the app's container does not need to exist, and it writes a gzipped tar with numeric owners:
+   `docker run --rm -v files-html:/v:ro alpine:3.21 tar -czf - --numeric-owner -C /v . > files.volume.tar.gz`
+3. Import it: `ninedeploy import data plan.json --volume files=files.volume.tar.gz --yes`.
+
+**What the panel does with the archive**
+- It uploads in chunks with the archive's sha256 and checks the hash before the volume is touched. It also refuses a file that is not a gzipped tar.
+- It refuses the import while the service is running or deploying. Stop the service in NineDeploy first; a service `import apply` just created has never run.
+- If the volume already exists, the panel first snapshots it as a `pre-import` volume backup, so an import can be undone with an ordinary restore.
+- It restores through the same staged swap a volume backup restore uses. The archive is extracted beside the current contents and swapped in only once the extraction is complete, so a corrupt archive or a full disk leaves the volume as it was.
+- Files keep their owners, modes and symlinks.
+
+**What it covers**
+- Docker services on the panel host that have a volume mount. Swarm services, compose stacks, services on a node and services spread over several hosts are refused. Restoring an archive needs an operator, the same as a volume backup restore.
+- Only the volume at the service's volume mount. The preview lists any other volumes, to be copied by hand.
+- A bind mount, or a volume whose name the plan does not hold, is read through the source container instead (`--volumes-from`). That works only while the container still exists: a Swarm service scaled to 0 has none left. Otherwise archive the host directory yourself with `tar -czf - --numeric-owner -C <dir> .`.
+- The receipt records the import id, sha256 and size. A stopped upload resumes. A volume that is already imported is not imported again, and a different archive is refused.
+
+**Checked live** on CapRover v1.16.0, which names an app's Docker volume exactly as its volume name. A volume holding a nested file, a file owned by uid 1234 with mode 640, and a symlink arrived in the deployed NineDeploy service with the same listing, owners and checksums, and nginx served the page through the symlink. A second run made no second import. While the service ran, the start was refused; after stopping it, the same import snapshotted the volume first. The Coolify and Dokploy volume commands follow their source code.
+
 ## Cut over the domains
 
 ```bash
@@ -105,7 +130,6 @@ The DNS check is strict on purpose. Adding a domain makes Traefik ask Let's Encr
 - **The panel is the truth.** Each run lists the service's domains first. A domain that is already there, added by hand or by an earlier run, counts as done and is not added again.
 - **Ownership proof.** If you are not an operator and the host is outside this instance's zone, the panel adds it as `pending`. The command prints the TXT record to publish; the next run verifies it. The value is printed, never written to the receipt.
 
-**Volumes** are not moved yet. Copy their files from the source host, then upload them in the service's Volumes & Storage tab.
 
 ## What a plan contains
 

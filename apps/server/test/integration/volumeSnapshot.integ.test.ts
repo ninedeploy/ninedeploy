@@ -60,6 +60,19 @@ describe.skipIf(!ENABLED)('managed volume snapshot/restore (real Docker)', () =>
     expect(listing).not.toContain('.nd-restore');
   }, 180_000);
 
+  it('restores symlinks, including one to a sibling moved before it and a dangling one', async () => {
+    // `[ -e ]` follows links: link.html -> index.html looked dangling once
+    // index.html had left staging, and the swap dropped it (found by the A1
+    // volume import proof). A dangling link in the old contents must not
+    // survive into the restored state either.
+    await inVolume('rm -rf /v/* /v/.[!.]*; echo -n PAGE > /v/index.html; ln -s index.html /v/link.html; ln -s /nowhere/x /v/dangling');
+    await backupVolume(VOLUME, backupFile, log);
+    await inVolume('rm /v/link.html /v/dangling; ln -s /gone /v/stale-link');
+    await restoreVolume(VOLUME, backupFile, log);
+    expect(await inVolume('readlink /v/link.html; readlink /v/dangling; cat /v/link.html')).toBe('index.html\n/nowhere/x\nPAGE');
+    expect(await inVolume('ls -A /v')).not.toContain('stale-link');
+  }, 180_000);
+
   it('still restores a legacy plaintext archive written before encryption', async () => {
     // Pre-encryption snapshots on disk are plain tar.gz files; they must
     // keep restoring unchanged. The archive is written by a container
