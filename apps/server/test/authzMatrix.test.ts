@@ -1367,6 +1367,20 @@ export const MATRIX: Record<string, Rule> = {
   }),
   'GET /v1/backup-destinations/:id/objects': OP,
   // ── end 0.14 T4 ──
+  // ── A1 service volume import (operator: a volume restore's floor) ──
+  'GET /v1/services/:id/volume-imports': OP,
+  'POST /v1/services/:id/volume-imports': R('operator', {
+    body: () => ({ sizeBytes: 10, sha256: 'a'.repeat(64) }),
+    noPositive: 'an accepted create writes a staging file under the backups directory; the operator-only floor, refusals, chunks and start are covered by test/modules/volumeImports.test.ts',
+  }),
+  'GET /v1/services/:id/volume-imports/:importId': R('operator', { allow404: 'no import row is seeded' }),
+  'DELETE /v1/services/:id/volume-imports/:importId': R('operator', { allow404: 'no import row is seeded' }),
+  'PUT /v1/services/:id/volume-imports/:importId/chunks/:index': R('operator', {
+    allow404: 'no import row is seeded; chunk order, size and the creator check are covered by test/modules/volumeImports.test.ts',
+  }),
+  'POST /v1/services/:id/volume-imports/:importId/start': R('operator', {
+    allow404: 'no import row is seeded; the creator check and refusals are covered by test/modules/volumeImports.test.ts',
+  }),
   // ── 0.14 T5 secret providers ──
   // Operator only (own authenticate + requireAdmin hooks). The at-floor PUT
   // sends `{}` (a 400, nothing saved), so the test route then finds no

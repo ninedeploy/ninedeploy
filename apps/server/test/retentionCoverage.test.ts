@@ -67,6 +67,8 @@ const RETENTION: Record<string, Retention> = {
   ci_runners: { config: 'operator configuration: one row per runner an operator enrolled; a revoked runner stays listed for its attempts' },
   // R3 (migration 0123)
   pitr_recoveries: { swept: 'pitr-recoveries' },
+  // A1 (migration 0124)
+  volume_imports: { config: "swept by the import plugin (plugins/databaseImports.ts step 'volume-retention'): finished rows go after 90 days, idle uploads expire after 24h; cascades with the service" },
 };
 
 /** The tables of v0.14.0 (migrations through 0070), frozen. */

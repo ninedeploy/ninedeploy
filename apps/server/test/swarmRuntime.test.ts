@@ -352,6 +352,7 @@ const READERS: Record<string, { branch: true } | { exempt: string }> = {
   'modules/serviceVolumes.ts': { exempt: 'volumes are refused for Swarm' },
   'modules/topology.ts': { exempt: 'display only' },
   'modules/volumeBackups.ts': { exempt: 'volumes are refused for Swarm' },
+  'modules/volumeImports.ts': { exempt: 'a volume import is refused for Swarm services (volumeImportRefusal)' },
   'openapi/specs/services.ts': { exempt: 'documentation' },
   'plugins/worker.ts': { exempt: 'crash recovery removes containers by their deployment label; Swarm task containers carry none' },
   // Release notes moved to changelog.json (not scanned: the walk reads .ts only).
