@@ -25,14 +25,14 @@ describe('Procfile and app.json', () => {
     expect(parseProcfile('web:   node index.js  \r\n')).toEqual([{ type: 'web', command: 'node index.js' }]);
   });
 
-  it('maps each process to a Nixpacks service with its start command; release runs before the web deploy', () => {
+  it('maps each process to a Nixpacks service with its start command; release is left to a person', () => {
     const plan = planFromHeroku(files, opts);
     expect(plan.source).toMatchObject({ kind: 'heroku', url: REPO });
     expect(plan.services.map((s) => [s.ref, s.name])).toEqual([['web', 'shop-app'], ['worker', 'shop-app-worker'], ['clock', 'shop-app-clock']]);
     const [web, worker, clock] = plan.services;
     expect(web!.create).toEqual({
       name: 'shop-app', type: 'docker', repoUrl: REPO, branch: 'main', port: 5000, replicas: 2,
-      build: { buildPack: 'nixpacks', startCmd: 'bundle exec puma -p $PORT', preDeployCmd: 'bin/rails db:migrate' },
+      build: { buildPack: 'nixpacks', startCmd: 'bundle exec puma -p $PORT' },
     });
     expect(web!.settings).toBeUndefined();
     expect(worker!.create.build).toEqual({ buildPack: 'nixpacks', startCmd: 'bundle exec sidekiq' });
@@ -43,6 +43,8 @@ describe('Procfile and app.json', () => {
     expect(worker!.issues.find((i) => i.option === 'formation')!.detail).toMatch(/Scaled to 0/);
     expect(web!.issues.map((i) => i.option)).toEqual(expect.arrayContaining(['PORT', 'release', 'size', 'buildpacks', 'postdeploy', 'addon', 'env']));
     expect(web!.domains).toEqual([]);
+    expect(web!.issues.find((i) => i.option === 'release')).toMatchObject({ level: 'manual', detail: expect.stringMatching(/Nixpacks runs the Procfile's release line \("bin\/rails db:migrate"\) as a build step of every service/) });
+    expect(planFromHeroku({ procfile: 'web: echo "port: $PORT"' }, opts).services[0]!.issues.find((i) => i.option === 'Procfile')!.detail).toMatch(/reads the Procfile as YAML/);
   });
 
   it('turns the Postgres and Redis add-ons into attached databases, once each, and lists the rest', () => {
@@ -78,7 +80,6 @@ describe('Procfile and app.json', () => {
     await expect(buildImportPlan('heroku', REPO, { readFile: () => undefined })).rejects.toThrow(/Neither app.json nor a Procfile/);
     const text = renderImportPlan(plan);
     expect(text).toContain('      start: bundle exec puma -p $PORT');
-    expect(text).toContain('      before each deploy: bin/rails db:migrate');
     expect(text).toContain('      health check: running');
     expect(text).toContain('      attaches: shop-app-postgres as DATABASE_URL, shop-app-redis as REDIS_URL');
   });

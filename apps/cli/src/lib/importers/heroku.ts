@@ -12,7 +12,13 @@
  *   Dockerfile builds ignore the start command).
  * - A process other than `web` gets the `running` health check (it answers
  *   no HTTP), no port routing and no domain.
- * - `release` becomes the web service's pre-deploy command.
+ * - `release` is not mapped to NineDeploy's pre-deploy hook, which runs in
+ *   the panel's own container before the build, without a shell (checked
+ *   live). Nixpacks itself runs the Procfile's release line as a build step
+ *   of every service built from the repository, with the attached
+ *   DATABASE_URL (checked live), so it is flagged with what that means.
+ * - Nixpacks reads the Procfile itself, as YAML: a line with `: ` inside its
+ *   command fails the build (checked live), so such lines are flagged.
  * - `heroku-postgresql` and `heroku-redis` add-ons become databases attached
  *   to every service under DATABASE_URL / REDIS_URL, as Heroku sets them.
  * - Config var names come from app.json `env`; values only ever come from a
@@ -140,10 +146,12 @@ export function planFromHeroku(files: HerokuFiles, opts: HerokuOptions): ImportP
     if (isWeb) {
       create.port = 5000;
       issues.push({ level: 'info', option: 'PORT', detail: 'NineDeploy sets PORT to the service port (5000) for a Nixpacks build, as Heroku sets $PORT.' });
-      if (release) create.build!.preDeployCmd = release.command;
-      if (release && runnable.length > 1) issues.push({ level: 'info', option: 'release', detail: 'The release command runs before each deploy of this service; the other processes may start before it finishes.' });
+      if (release) {
+        issues.push({ level: 'manual', option: 'release', detail: `Nixpacks runs the Procfile's release line ("${release.command}") as a build step of every service built from this repository, with the attached DATABASE_URL, so it runs before each deploy of each of them, not once. Make sure that is safe (a migration usually is), or take it out of the Procfile and run it by hand. A $VARIABLE in it is written, with its value, into the build log and the image.` });
+      }
     }
     if (!p.command) issues.push({ level: 'info', option: 'Procfile', detail: 'No Procfile: Nixpacks picks the start command.' });
+    if (/: /.test(p.command)) issues.push({ level: 'manual', option: 'Procfile', detail: 'Nixpacks reads the Procfile as YAML, and ": " inside this command breaks it: quote the command in the Procfile, or the build fails.' });
     const q = Number(obj(formation[p.type])['quantity']);
     if (Number.isInteger(q) && q > 1) create.replicas = Math.min(q, 10);
     if (Number.isInteger(q) && q > 10) issues.push({ level: 'manual', option: 'formation', detail: `${q} dynos; NineDeploy runs at most 10 replicas of a service.` });

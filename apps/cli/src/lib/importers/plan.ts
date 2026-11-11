@@ -27,7 +27,7 @@ export interface PlanIssue {
 /** The createService fields a step-2 apply would send (subset, never secrets). */
 export type ServiceCreateFields = Pick<CreateService, 'name' | 'type'> &
   Partial<Pick<CreateService, 'image' | 'repoUrl' | 'branch' | 'port' | 'publishedPort' | 'replicas' | 'cpuLimitMilli' | 'memLimitMb' | 'healthPath' | 'volumeMount'>> & {
-    build?: { buildPack?: NonNullable<CreateService['build']>['buildPack']; baseDir?: string; dockerfilePath?: string; outputDir?: string; startCmd?: string; preDeployCmd?: string };
+    build?: { buildPack?: NonNullable<CreateService['build']>['buildPack']; baseDir?: string; dockerfilePath?: string; outputDir?: string; startCmd?: string };
   };
 
 /**

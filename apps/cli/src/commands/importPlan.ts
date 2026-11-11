@@ -100,7 +100,6 @@ export function renderImportPlan(plan: ImportPlan): string {
     if (svc.env.length) lines.push(`      env: ${svc.env.length} variable(s): ${svc.env.map((e) => e.key).join(', ')} (names only)`);
     if (svc.volumes.length) lines.push(`      volumes: ${svc.volumes.map((v) => v.mountPath).join(', ')}`);
     if (svc.create.build?.startCmd) lines.push(`      start: ${svc.create.build.startCmd}`);
-    if (svc.create.build?.preDeployCmd) lines.push(`      before each deploy: ${svc.create.build.preDeployCmd}`);
     if (svc.settings?.healthCheck) lines.push(`      health check: ${svc.settings.healthCheck}`);
     if (svc.attachments?.length) lines.push(`      attaches: ${svc.attachments.map((a) => `${a.database} as ${a.envAlias}`).join(', ')}`);
     for (const i of svc.issues) lines.push(`      ${i.level === 'unsupported' ? '✗' : i.level === 'manual' ? '!' : '·'} ${i.option}: ${i.detail}`);

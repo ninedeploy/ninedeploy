@@ -42,7 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Checked live: after apply and a deploy, the container's `DATABASE_URL` named the new database, and the two listed variables kept their copied values.
 - **`ninedeploy import plan heroku`: a plan from a Heroku app's `app.json` and `Procfile`.** It needs no credential and reads no Heroku API.
   - Each Procfile process becomes a service built from the repository with Nixpacks, with that process's line as its start command. Checked live on a panel: Nixpacks runs the command through a shell, so `$PORT` expands, and sets `PORT` to the service port.
-  - Workers get the `running` health check and no domain. `release` runs before each deploy of the web service. `formation` quantities become replicas.
+  - Workers get the `running` health check and no domain. `release` is not mapped to the panel's pre-deploy hook, which runs in the panel's container: Nixpacks runs the Procfile's release line as a build step of each service, which the plan explains. `formation` quantities become replicas.
   - The `heroku-postgresql` and `heroku-redis` add-ons become databases, attached to every service as `DATABASE_URL` and `REDIS_URL`. `import apply` creates those attachments and sets the worker health check. `import data` prints the `heroku pg:backups` download for Postgres.
   - Config var values come from `heroku config --shell` through `--dotenv`. `scripts.postdeploy`, `heroku.yml`, custom buildpacks, other add-ons and dyno sizes are listed for a person.
   - Plans gain optional `settings`, `attachments` and a `heroku-app` runtime; they stay planVersion 1.
