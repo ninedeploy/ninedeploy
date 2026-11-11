@@ -89,6 +89,8 @@ export const MULTI_NODE_CAPABILITIES = [
   'wake.catcher.prepare',
   'wake.catcher.retire',
   'wake.catcher.inventory',
+  // P2: maintenance mode and custom error pages served on the node (agentOps/nodePages.ts)
+  'proxy.pages',
 ] as const;
 export const multiNodeCapability = z.enum(MULTI_NODE_CAPABILITIES);
 export type MultiNodeCapability = z.infer<typeof multiNodeCapability>;

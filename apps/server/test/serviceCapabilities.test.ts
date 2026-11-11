@@ -56,7 +56,11 @@ describe('evaluation', () => {
     expect(runtimeOf(await load(5))).toBe('node-docker');
     expect(runtimeOf(await load(7))).toBe('swarm-docker');
     expect((await caps(1)).maintenance).toEqual({ status: 'available', reason: null });
-    expect((await caps(5)).maintenance).toMatchObject({ status: 'unavailable', reason: expect.stringMatching(/panel host/) });
+    // P2: a node serves the pages itself; its agent is checked when the setting is saved.
+    expect((await caps(5)).maintenance).toMatchObject({ status: 'limited', reason: expect.stringMatching(/agent serves the pages itself: it must be v0\.18\.27/) });
+    expect((await caps(5)).errorPages.status).toBe('limited');
+    expect((await caps(5)).forwardAuth).toMatchObject({ status: 'unavailable', reason: expect.stringMatching(/panel host/) });
+    expect((await caps(8)).maintenance).toMatchObject({ status: 'unavailable', reason: expect.stringMatching(/also runs on nodes/) });
     expect((await caps(8)).forwardAuth).toMatchObject({ status: 'unavailable', reason: expect.stringMatching(/also runs on nodes/) });
     expect((await caps(2)).inlineDockerfile.status).toBe('unavailable');
     expect((await caps(7)).restartLimit.status).toBe('unavailable');

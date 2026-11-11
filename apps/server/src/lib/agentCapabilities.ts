@@ -399,6 +399,8 @@ export const AGENT_CAPABILITY_VERSION: Readonly<Record<MultiNodeCapability, stri
   'wake.catcher': '0.19.0',
   'wake.catcher.prepare': '0.19.0',
   'wake.catcher.inventory': '0.19.0',
+  // P2: the node serves maintenance and error pages itself (agentOps/nodePages.ts).
+  'proxy.pages': '0.18.27',
   'wake.catcher.retire': '0.19.0',
   // G4.2 OS security updates
   'host.packages': '0.18.6',
@@ -446,6 +448,7 @@ export const CAPABILITY_SWITCH: Readonly<Partial<Record<MultiNodeCapability, str
   'wake.catcher.inventory': 'NINEDEPLOY_AGENT_PROXY_TRAFFIC',
   'wake.catcher.retire': 'NINEDEPLOY_AGENT_PROXY_TRAFFIC',
   'proxy.orderedWrite': 'NINEDEPLOY_AGENT_ORDERED_PROXY',
+  'proxy.pages': 'NINEDEPLOY_AGENT_NODE_PAGES',
   'docker.containerTools': 'NINEDEPLOY_AGENT_CONTAINER_TOOLS',
   'volume.files': 'NINEDEPLOY_AGENT_VOLUME_FILES',
   'db.client': 'NINEDEPLOY_AGENT_DATABASE_CLIENTS',

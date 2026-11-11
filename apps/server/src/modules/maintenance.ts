@@ -4,9 +4,12 @@ import { domains } from '@ninedeploy/db';
 import { ERROR_PAGE_STATUSES, errorPagesInput, maintenanceInput, type ErrorPageStatus } from '@ninedeploy/schemas';
 import { ERROR_PAGE_PREFIX, MAINTENANCE_PREFIX, writeDynamicConfig } from '../engine/proxy.js';
 import { audit } from '../lib/audit.js';
-import { badRequest, parseId } from '../lib/errors.js';
+import { badRequest, HttpError, parseId } from '../lib/errors.js';
+import { assertNodeCapability } from '../lib/agentCapabilities.js';
+import { nodePagesOutcome } from '../lib/nodePagesSync.js';
 import { assertServiceCapability } from '../lib/serviceCapabilities.js';
 import { getErrorPages, getMaintenance, maintenanceView, setErrorPages, setMaintenance } from '../lib/maintenance.js';
+import { DEFAULT_ERROR, hostMatches, maintenanceAnswer, page } from '../lib/maintenancePages.js';
 import { wakeUnreachableReason } from '../lib/panelUpstream.js';
 import { assertServiceRole, loadServiceForUser } from '../lib/resourceAccess.js';
 import { getSettingString } from '../lib/settings.js';
@@ -25,32 +28,13 @@ import { getSettingString } from '../lib/settings.js';
  * own, so a custom page's HTML never runs on another origin.
  */
 
-const escapeHtml = (s: string): string => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
-
-function page(title: string, text: string): string {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${escapeHtml(title)}</title>
-<style>:root{color-scheme:light dark}body{margin:0;min-height:100vh;display:grid;place-items:center;font:16px/1.5 system-ui,sans-serif;background:#f7f7f8;color:#1f2328}
-@media (prefers-color-scheme:dark){body{background:#0d1117;color:#e6edf3}}main{max-width:32rem;padding:1.5rem;text-align:center}h1{font-size:1.25rem;margin:0 0 .5rem}p{margin:0;opacity:.75;white-space:pre-line}</style>
-</head><body><main><h1>${escapeHtml(title)}</h1>${text ? `<p>${escapeHtml(text)}</p>` : ''}</main></body></html>`;
-}
-
-const DEFAULT_ERROR: Record<ErrorPageStatus, [string, string]> = {
-  '502': ['Bad gateway', 'The app did not answer properly. Try again in a moment.'],
-  '503': ['Service unavailable', 'The app is not available right now. Try again in a moment.'],
-  '504': ['Gateway timeout', 'The app took too long to answer. Try again in a moment.'],
-};
-
 /** Whether `host` is one of the service's active domains (exact, or under a `*.` wildcard) and not the panel's own host. */
 async function hostBelongsTo(db: Parameters<FastifyPluginAsync>[0]['db'], serviceId: number, host: string): Promise<boolean> {
   if (!host) return false;
   const panel = String((await getSettingString(db, 'panel_domain', null)) ?? process.env['NINEDEPLOY_DOMAIN'] ?? '').trim().toLowerCase();
   if (panel && host === panel) return false;
   const rows = await db.select({ hostname: domains.hostname }).from(domains).where(and(eq(domains.serviceId, serviceId), eq(domains.status, 'active')));
-  return rows.some((d) => {
-    const h = String(d.hostname ?? '').trim().toLowerCase();
-    return h === host || (h.startsWith('*.') && host.endsWith(h.slice(1)) && host.split('.').length === h.split('.').length);
-  });
+  return rows.some((d) => hostMatches(String(d.hostname ?? '').trim().toLowerCase(), host));
 }
 
 const hostOf = (req: FastifyRequest) => String(req.headers.host ?? '').replace(/:\d+$/, '').toLowerCase();
@@ -68,13 +52,10 @@ export const maintenancePageRoutes: FastifyPluginAsync = async (app) => {
     const id = Number((req.params as { serviceId: string }).serviceId);
     if (!Number.isSafeInteger(id) || id < 1 || !(await hostBelongsTo(app.db, id, hostOf(req)))) return notFound(reply);
     const m = await getMaintenance(app.db, id);
-    // Switched off a moment ago: the routes are on their way back to the app.
-    const title = m?.title ?? 'Back in a moment';
-    const message = m ? m.message : 'This page reloads shortly.';
-    const retry = m?.retryAfterSeconds ?? 5;
-    reply.code(503).header('retry-after', String(retry));
+    const answer = maintenanceAnswer(m);
+    reply.code(503).header('retry-after', String(m?.retryAfterSeconds ?? 5));
     const html = /text\/html/.test(String(req.headers.accept ?? ''));
-    return html ? reply.type('text/html; charset=utf-8').send(page(title, message)) : reply.type('text/plain; charset=utf-8').send(`${title}. ${message}\n`);
+    return html ? reply.type('text/html; charset=utf-8').send(answer.html) : reply.type('text/plain; charset=utf-8').send(answer.text);
   };
   app.route({ method: [...methods], url: `${MAINTENANCE_PREFIX}/:serviceId`, handler: maintenance });
   app.route({ method: [...methods], url: `${MAINTENANCE_PREFIX}/:serviceId/*`, handler: maintenance });
@@ -102,6 +83,32 @@ export const serviceMaintenanceRoutes: FastifyPluginAsync = async (app) => {
   const rerender = (log: (msg: string) => void) =>
     writeDynamicConfig(app.db).catch((err: unknown) => log(`proxy re-render failed: ${err instanceof Error ? err.message : String(err)}`));
 
+  /**
+   * Who serves the pages must be able to: on the panel host, Traefik must reach
+   * the panel; on a node (P2), the node's agent must serve them itself.
+   */
+  const assertPagesReachable = async (svc: { serverId: number | null }, what: string, code: string) => {
+    if (svc.serverId != null) {
+      await assertNodeCapability(app.db, svc.serverId, { cap: 'proxy.pages', feature: 'serve maintenance and error pages', sealedRequired: true });
+      return;
+    }
+    const unreachable = await wakeUnreachableReason();
+    if (unreachable) throw badRequest(`${what}: ${unreachable}`, code);
+  };
+  /**
+   * P2: the re-render synced the node, pages first. When its page server could
+   * not take them, the node keeps routing to the app: say so rather than report
+   * a maintenance mode no visitor sees. The setting stays; the next routing
+   * change retries.
+   */
+  const assertNodeApplied = (svc: { id: number; serverId: number | null }, what: string) => {
+    if (svc.serverId == null) return;
+    const outcome = nodePagesOutcome(svc.serverId);
+    if (outcome && !outcome.ok) {
+      throw new HttpError(502, 'node_pages_unapplied', `${what} is saved, but node #${svc.serverId} could not serve it yet: ${outcome.reason ?? 'unknown error'}. Its domains still reach the app; the node retries with the next routing change.`);
+    }
+  };
+
   app.get('/:id/maintenance', async (req) => {
     const svc = await loadServiceForUser(app.db, parseId((req.params as { id: string }).id), req.user!);
     return maintenanceView(await getMaintenance(app.db, svc.id));
@@ -112,14 +119,13 @@ export const serviceMaintenanceRoutes: FastifyPluginAsync = async (app) => {
     await assertServiceRole(app.db, svc, req.user!, 'member');
     const { maintenance } = maintenanceInput.parse(req.body ?? {});
     if (maintenance) {
-      // C1: panel host only; the proxies of its fan-out nodes would keep routing to the app.
+      // C1: not for fan-out; the proxies of its other hosts would keep routing to the app.
       await assertServiceCapability(app.db, svc, 'maintenance');
-      // The page is served by the panel: Traefik must be able to reach it.
-      const unreachable = await wakeUnreachableReason();
-      if (unreachable) throw badRequest(`Cannot turn maintenance on: ${unreachable}`, 'maintenance_unreachable');
+      await assertPagesReachable(svc, 'Cannot turn maintenance on', 'maintenance_unreachable');
     }
     await setMaintenance(app.db, svc.id, maintenance);
     await rerender((m) => req.log.warn(m));
+    if (maintenance) assertNodeApplied(svc, 'Maintenance mode');
     void audit(app.db, req.user!.id, maintenance ? 'service.maintenance.on' : 'service.maintenance.off', `${svc.name} #${svc.id}`, {
       serviceId: svc.id,
       ...(maintenance && { bypass: maintenance.bypass.length }),
@@ -139,11 +145,11 @@ export const serviceMaintenanceRoutes: FastifyPluginAsync = async (app) => {
     const any = Object.values(pages).some((html) => typeof html === 'string' && html.trim() !== '');
     if (any) {
       await assertServiceCapability(app.db, svc, 'errorPages');
-      const unreachable = await wakeUnreachableReason();
-      if (unreachable) throw badRequest(`Cannot use custom error pages: ${unreachable}`, 'error_pages_unreachable');
+      await assertPagesReachable(svc, 'Cannot use custom error pages', 'error_pages_unreachable');
     }
     await setErrorPages(app.db, svc.id, pages);
     await rerender((m) => req.log.warn(m));
+    if (any) assertNodeApplied(svc, 'The custom error pages');
     void audit(app.db, req.user!.id, 'service.error_pages.set', `${svc.name} #${svc.id}`, {
       serviceId: svc.id,
       statuses: Object.keys(pages).filter((k) => (pages as Record<string, string | undefined>)[k]?.trim()),

@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm';
 import { serviceTargets, type DB, type Service } from '@ninedeploy/db';
 import { SERVICE_CAPABILITY_IDS, type ServiceCapability, type ServiceCapabilityId } from '@ninedeploy/schemas';
 import { nodeRpsAutoscalingAccepted } from './autoscaler.js';
+import { AGENT_CAPABILITY_VERSION } from './agentCapabilities.js';
 import { badRequest } from './errors.js';
 import { restartLimitSupported } from './restartLimit.js';
 import { FILE_MOUNTS_UNSUPPORTED, fileMountsSupported } from './serviceFiles.js';
@@ -53,6 +54,11 @@ const REFUSAL: Record<ServiceCapabilityId, { code: string; node: string; fanout?
   canary: { code: 'bad_request', node: 'Canary releases apply to docker services only' },
 };
 
+/** P2: what a node needs to serve maintenance and error pages (lib/nodePages.ts). */
+const NODE_PAGES_REASON =
+  `On a node, the node's agent serves the pages itself: it must be v${AGENT_CAPABILITY_VERSION['proxy.pages']} or newer and run as the ninedeploy-agent container, ` +
+  'and its owner must not have turned it off (NINEDEPLOY_AGENT_NODE_PAGES=off)';
+
 const ok: ServiceCapability = { status: 'available', reason: null };
 const no = (reason: string): ServiceCapability => ({ status: 'unavailable', reason });
 
@@ -61,6 +67,10 @@ function evaluate(id: ServiceCapabilityId, svc: CapabilityService, f: Facts): Se
   switch (id) {
     case 'maintenance':
     case 'errorPages':
+      // P2: a node serves the pages itself; the save checks its agent live.
+      if (f.fanout) return no(r.fanout!);
+      if (f.onNode) return { status: 'limited', reason: NODE_PAGES_REASON };
+      return ok;
     case 'forwardAuth':
       if (f.onNode) return no(r.node);
       if (f.fanout) return no(r.fanout!);

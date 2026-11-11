@@ -154,6 +154,8 @@ export async function applyPortableServiceSettings(db: DB, target: Target, raw: 
   const report: PortableReport = { applied: [], skipped: [] };
   const s = parseServiceSettings(raw, report);
   const panelHost = target.serverId == null && target.orchestrator !== 'swarm';
+  // P2: a node serves these pages only once its agent is checked, which an import does not do.
+  const pagesRefusal = panelHost ? null : target.orchestrator === 'swarm' ? 'not for Swarm services' : 'not carried to a node service by an import: turn it on under Service → Settings, which checks the node';
   const step = async (setting: string, present: boolean, fn: () => Promise<void>, refusal: string | null = null) => {
     if (!present) return;
     if (refusal) {
@@ -172,9 +174,9 @@ export async function applyPortableServiceSettings(db: DB, target: Target, raw: 
     'maintenance mode',
     !!s.maintenance,
     () => setMaintenance(db, target.id, s.maintenance!),
-    opts.kind === 'clone' ? 'a new copy starts outside maintenance mode' : panelHost ? null : 'only for services on the panel host',
+    opts.kind === 'clone' ? 'a new copy starts outside maintenance mode' : pagesRefusal,
   );
-  await step('error pages', !!s.errorPages && Object.keys(s.errorPages).length > 0, () => setErrorPages(db, target.id, s.errorPages!), panelHost ? null : 'only for services on the panel host');
+  await step('error pages', !!s.errorPages && Object.keys(s.errorPages).length > 0, () => setErrorPages(db, target.id, s.errorPages!), pagesRefusal);
   await step('inline Dockerfile', !!s.inlineDockerfile, () => setInlineDockerfile(db, target.id, s.inlineDockerfile!));
   await step('commit statuses', s.commitStatus?.enabled === true, () => setCommitStatusSetting(db, target.id, { enabled: true }));
   await step('CI pipeline', !!s.ciPipeline, () => setPipeline(db, target.id, s.ciPipeline!));

@@ -5,6 +5,7 @@ import { proxyTrafficOps } from './proxyTraffic.js';
 import { servingTrafficOps } from './servingTraffic.js';
 import { idleWatchOps } from './idleWatch.js';
 import { wakeCatcherOps } from './wakeCatcher.js';
+import { nodePagesOps } from './nodePages.js';
 import { containerReadinessOps } from './containerReadiness.js';
 import { containerMetricsOps } from './containerMetrics.js';
 import { containerLifecycleOps } from './containerLifecycle.js';
@@ -130,6 +131,8 @@ export const AGENT_OP_MODULES: readonly AgentOpModule[] = [
   publicAccessOps,
   // ROADMAP item 10: PgBouncer for node databases (agentOps/pgbouncer.ts)
   pgbouncerOps,
+  // P2 maintenance mode and error pages served on the node (agentOps/nodePages.ts)
+  nodePagesOps,
 ];
 
 /**
@@ -159,6 +162,8 @@ export const AGENT_KILL_SWITCHES: Readonly<Partial<Record<MultiNodeCapability, r
   'wake.catcher.prepare': ['NINEDEPLOY_AGENT_PROXY_TRAFFIC', 'NINEDEPLOY_AGENT_CONTAINER_MUTATIONS'],
   'wake.catcher.inventory': ['NINEDEPLOY_AGENT_PROXY_TRAFFIC', 'NINEDEPLOY_AGENT_CONTAINER_MUTATIONS'],
   'wake.catcher.retire': ['NINEDEPLOY_AGENT_PROXY_TRAFFIC', 'NINEDEPLOY_AGENT_CONTAINER_MUTATIONS', 'NINEDEPLOY_AGENT_ORDERED_PROXY'],
+  // P2: the page server is a container the agent starts, like the wake catcher.
+  'proxy.pages': ['NINEDEPLOY_AGENT_NODE_PAGES', 'NINEDEPLOY_AGENT_CONTAINER_MUTATIONS'],
   'db.studio': ['NINEDEPLOY_AGENT_DATABASES', 'NINEDEPLOY_AGENT_DATABASE_STUDIOS'],
   'db.client': ['NINEDEPLOY_AGENT_DATABASES', 'NINEDEPLOY_AGENT_DATABASE_CLIENTS'],
   'db.publicAccess': ['NINEDEPLOY_AGENT_DATABASES', 'NINEDEPLOY_AGENT_PUBLIC_DATABASES'],

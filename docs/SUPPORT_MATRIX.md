@@ -8,36 +8,35 @@ Which service features work where. The panel reads the same evaluation from `GET
 
 | Feature | Docker (panel host) | Docker from an image (panel host) | Compose (panel host) | PM2 (panel host) | Docker (node) | Compose (node) | Docker (Swarm) | Docker (panel host + node fan-out) |
 |---|---|---|---|---|---|---|---|---|
-| Maintenance mode | ✅ | ✅ | ✅ | ✅ | — [1] | — [1] | ✅ | — [2] |
-| Custom error pages | ✅ | ✅ | ✅ | ✅ | — [3] | — [3] | ✅ | — [4] |
-| Panel sign-in on a domain (forward auth) | ✅ | ✅ | ✅ | ✅ | — [5] | — [5] | ✅ | — [6] |
-| Restart-loop limit | ✅ | ✅ | — [7] | ✅ | — [7] | — [7] | — [7] | ✅ |
-| Inline Dockerfile | ✅ | — [8] | — [8] | — [8] | 🟡 [9] | — [8] | — [8] | ✅ |
-| File mounts | ✅ | ✅ | — [10] | — [10] | ✅ | — [10] | ✅ | ✅ |
-| Autoscaling | ✅ | ✅ | — [11] | — [11] | 🟡 [12] | — [11] | 🟡 [13] | ✅ |
-| Scale to zero | ✅ | ✅ | — [14] | — [14] | 🚧 [15] | — [14] | 🟡 [16] | ✅ |
-| Canary releases | ✅ | ✅ | — [17] | — [17] | 🟡 [18] | — [17] | 🟡 [19] | ✅ |
+| Maintenance mode | ✅ | ✅ | ✅ | ✅ | 🟡 [1] | 🟡 [1] | ✅ | — [2] |
+| Custom error pages | ✅ | ✅ | ✅ | ✅ | 🟡 [1] | 🟡 [1] | ✅ | — [3] |
+| Panel sign-in on a domain (forward auth) | ✅ | ✅ | ✅ | ✅ | — [4] | — [4] | ✅ | — [5] |
+| Restart-loop limit | ✅ | ✅ | — [6] | ✅ | — [6] | — [6] | — [6] | ✅ |
+| Inline Dockerfile | ✅ | — [7] | — [7] | — [7] | 🟡 [8] | — [7] | — [7] | ✅ |
+| File mounts | ✅ | ✅ | — [9] | — [9] | ✅ | — [9] | ✅ | ✅ |
+| Autoscaling | ✅ | ✅ | — [10] | — [10] | 🟡 [11] | — [10] | 🟡 [12] | ✅ |
+| Scale to zero | ✅ | ✅ | — [13] | — [13] | 🚧 [14] | — [13] | 🟡 [15] | ✅ |
+| Canary releases | ✅ | ✅ | — [16] | — [16] | 🟡 [17] | — [16] | 🟡 [18] | ✅ |
 
 ## Notes
 
-1. Maintenance mode is for services on the panel host for now
+1. On a node, the node's agent serves the pages itself: it must be v0.18.27 or newer and run as the ninedeploy-agent container, and its owner must not have turned it off (NINEDEPLOY_AGENT_NODE_PAGES=off)
 2. Maintenance mode is not available for a service that also runs on nodes
-3. Custom error pages are for services on the panel host for now
-4. Custom error pages are not available for a service that also runs on nodes
-5. Panel sign-in is for domains of services on the panel host for now
-6. Panel sign-in is not available for a service that also runs on nodes
-7. The restart-loop limit is for docker services on the panel host and PM2 services, not Swarm
-8. An inline Dockerfile is for docker services that build from source, not from an image or a compose file
-9. On a node, the service must build on the panel host (Service → Settings → Build on: panel); a build on a node or a build server would not have the file
-10. File mounts work for docker services only (on the panel host, a node or Swarm), not for compose or PM2 services; remove the files (Service → Volumes → Files) to deploy it.
-11. Autoscaling applies to docker services only
-12. On a node, requests-per-second scaling needs an agent with proxy traffic observation turned on (NINEDEPLOY_AGENT_PROXY_TRAFFIC=on)
-13. Swarm services are not autoscaled: they run the replica count set on the service
-14. Scale to zero applies to docker services only
-15. Scale to zero on nodes is being built (R2); until it is accepted, a node service does not sleep
-16. Scale to zero does not apply to Swarm services; the setting is kept but nothing sleeps
-17. Canary releases apply to docker services only
-18. On a node, a canary needs a single replica, the strict HTTP healthcheck and an agent with proxy traffic observation
-19. Swarm services skip the canary and use Docker’s native rolling update
+3. Custom error pages are not available for a service that also runs on nodes
+4. Panel sign-in is for domains of services on the panel host for now
+5. Panel sign-in is not available for a service that also runs on nodes
+6. The restart-loop limit is for docker services on the panel host and PM2 services, not Swarm
+7. An inline Dockerfile is for docker services that build from source, not from an image or a compose file
+8. On a node, the service must build on the panel host (Service → Settings → Build on: panel); a build on a node or a build server would not have the file
+9. File mounts work for docker services only (on the panel host, a node or Swarm), not for compose or PM2 services; remove the files (Service → Volumes → Files) to deploy it.
+10. Autoscaling applies to docker services only
+11. On a node, requests-per-second scaling needs an agent with proxy traffic observation turned on (NINEDEPLOY_AGENT_PROXY_TRAFFIC=on)
+12. Swarm services are not autoscaled: they run the replica count set on the service
+13. Scale to zero applies to docker services only
+14. Scale to zero on nodes is being built (R2); until it is accepted, a node service does not sleep
+15. Scale to zero does not apply to Swarm services; the setting is kept but nothing sleeps
+16. Canary releases apply to docker services only
+17. On a node, a canary needs a single replica, the strict HTTP healthcheck and an agent with proxy traffic observation
+18. Swarm services skip the canary and use Docker’s native rolling update
 
 Checks of the live environment are not in this table. They run when you save or deploy. Examples: whether Traefik can reach the panel for maintenance pages and forward auth, and whether a node agent advertises an operation.

@@ -8,11 +8,13 @@ const h = vi.hoisted(() => ({
   getDnsConfig: vi.fn(async () => ({ provider: null, token: null, wildcardApex: null })),
   renderStaticConfig: vi.fn(() => 'entryPoints: {}'),
   renderDynamicConfig: vi.fn(async () => 'http: {}'),
+  syncNodePages: vi.fn(async () => false),
 }));
 
 vi.mock('../../src/lib/agentClient.js', () => ({ agentOp: h.agentOp, agentTransportSealed: h.agentTransportSealed }));
 vi.mock('../../src/lib/nodeProxyAuthority.js', () => ({ reserveNodeProxyWrite: vi.fn(async () => null),
   checkpointNodeProxyWrite: vi.fn(), bindNodeProxyWrite: vi.fn() }));
+vi.mock('../../src/lib/nodePagesSync.js', () => ({ syncNodePages: h.syncNodePages }));
 vi.mock('../../src/engine/proxy.js', () => ({
   getAcmeEmail: h.getAcmeEmail,
   getDnsConfig: h.getDnsConfig,
@@ -80,12 +82,38 @@ describe('syncNodeProxy', () => {
     // Scoping is load-bearing: a router's upstream is a container name resolved
     // over the LOCAL docker network, so a node must never be handed another
     // machine's services — every one of them would answer 502.
-    expect(h.renderDynamicConfig).toHaveBeenCalledWith(db, { serverId: 4 });
+    expect(h.renderDynamicConfig).toHaveBeenCalledWith(db, { serverId: 4, pages: false });
 
     const writes = h.agentOp.mock.calls.filter((c) => (c as unknown[])[2] === 'proxy.writeConfig');
     expect(writes.map((c) => ((c as unknown[])[3] as { kind: string }).kind)).toEqual(['static', 'dynamic']);
     expect(((writes[0] as unknown[])[3] as { content: string }).content).toBe('entryPoints: {}');
     expect(((writes[1] as unknown[])[3] as { content: string }).content).toBe('http: {}');
+  });
+
+  it('P2: ships the node pages before any config, and routes them only when the node took them', async () => {
+    h.agentOp.mockReset();
+    agentSteady();
+    h.renderDynamicConfig.mockClear();
+    h.syncNodePages.mockClear();
+    h.syncNodePages.mockImplementationOnce(async () => {
+      // Nothing of the proxy has been touched yet: a config routing to a page
+      // server that does not answer would turn maintenance into a bare 502.
+      expect(opsIssued()).not.toContain('proxy.writeConfig');
+      return true;
+    });
+    await expect(syncNodeProxy(db, 4)).resolves.toEqual({ ok: true });
+    expect(h.syncNodePages).toHaveBeenCalledWith(db, 4, expect.any(Function), expect.any(Function));
+    expect(h.renderDynamicConfig).toHaveBeenCalledWith(db, { serverId: 4, pages: true });
+    expect(h.syncNodePages.mock.invocationCallOrder[0]!).toBeLessThan(h.renderDynamicConfig.mock.invocationCallOrder[0]!);
+
+    // The pages go through the same agent channel as the config.
+    h.agentOp.mockClear();
+    h.syncNodePages.mockImplementationOnce(async (_db: unknown, _id: unknown, call: (op: string, p: Record<string, unknown>, s: (l: string) => void) => Promise<unknown>) => {
+      await call('proxy.pages.ensure', {}, () => undefined);
+      return true;
+    });
+    await syncNodeProxy(db, 4);
+    expect(opsIssued()[0]).toBe('proxy.pages.ensure');
   });
 
   it('leaves a healthy proxy alone when only the routing changed', async () => {

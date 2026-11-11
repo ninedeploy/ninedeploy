@@ -1003,7 +1003,11 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     // G2.2/G2.3: maintenance mode, custom error pages and panel sign-in work on the panel host only.
     if (moving && patch.serverId != null) {
       const { panelHostOnlyRefusal } = await import('../lib/maintenance.js');
-      const refusal = await panelHostOnlyRefusal(app.db, existing.id);
+      const target = patch.serverId;
+      const refusal = await panelHostOnlyRefusal(app.db, existing.id, async () => {
+        const { assertNodeCapability } = await import('../lib/agentCapabilities.js');
+        return assertNodeCapability(app.db, target, { cap: 'proxy.pages', feature: 'serve maintenance and error pages', sealedRequired: true }).then(() => true, () => false);
+      });
       if (refusal) throw badRequest(refusal, 'move_panel_host_only');
       // G1.3: nodes are not sampled; the limit would sit unseen there (its card is hidden).
       const { getRestartLimit } = await import('../lib/restartLimit.js');

@@ -98,7 +98,7 @@ Every domain of a compose stack routes to the stack's main service unless it nam
 
 ### Maintenance mode and custom error pages (G2.2)
 
-Both live under **Service → Settings → Maintenance mode**, or in the API as `PUT /v1/services/:id/maintenance` and `PUT /v1/services/:id/error-pages`. They work for services on the panel host that have no fan-out nodes. While either one is on, the service cannot move to a node or gain a fan-out node (`move_panel_host_only`); turn it off first.
+Both live under **Service → Settings → Maintenance mode**, or in the API as `PUT /v1/services/:id/maintenance` and `PUT /v1/services/:id/error-pages`. They work for services on the panel host and for services on a node (see **On a node** below), but not for a service with fan-out nodes. While either one is on, the service cannot gain a fan-out node, and it can move only to a node that serves the pages itself (`move_panel_host_only` otherwise).
 
 **Maintenance mode**
 - While it is on, every domain of the service answers a 503 page with `Retry-After`, served by the panel. The page shows the title and message you set.
@@ -114,8 +114,25 @@ Both live under **Service → Settings → Maintenance mode**, or in the API as 
 
 **Shared rules**
 - The panel serves a page only when the request's Host header is one of the service's active domains, and never on the panel's own domain. Custom HTML never runs on another origin.
-- Both need Traefik to reach the panel, the same check scale-to-zero uses.
+- On the panel host, both need Traefik to reach the panel, the same check scale-to-zero uses.
 - No migration is needed: they are settings rows, `maintenance:<id>` and `error_pages:<id>`.
+
+**On a node (P2)**
+- A node's proxy cannot reach the panel, so the node serves the pages itself. The agent runs a small page server, `ninedeploy-pages`, from its own image, on the node proxy's network. It runs read-only, as nobody, without a published port.
+- The panel renders every page and sends it to the agent, one file per service under `.agent-proxy/pages/` next to the node proxy's config. The page server mounts that directory read-only.
+- On each sync, the panel writes the pages and then makes sure the page server answers. Only after that does it give the node's proxy a config that routes to the page server. When that fails, the node keeps routing the service to the app, the sync logs why, and the save answers `502 node_pages_unapplied`. The setting stays, and the next routing change tries again.
+- The page server applies the same Host rule as the panel. One server holds the pages of every service on the node, so a service's page is never served on another service's domain.
+- Maintenance wins over scale to zero: a sleeping node service in maintenance answers the maintenance page and is not woken. A bypass address still reaches it through the wake catcher, which wakes it.
+- The node's agent must be v0.18.27 or newer and run as the `ninedeploy-agent` container. `NINEDEPLOY_AGENT_NODE_PAGES=off` (or `NINEDEPLOY_AGENT_CONTAINER_MUTATIONS=off`) turns it off. Otherwise saving answers `422 node_agent_outdated` or `403 node_feature_disabled`, and nothing is saved.
+- A node with no page to serve gets no page server, and its sync makes no extra agent call.
+- Checked live on a node DinD running the agent the documented way:
+  - maintenance answered 503 with the message and `Retry-After` through the node's proxy;
+  - a bypass address reached the app;
+  - with the app container stopped, the custom 502 page was served;
+  - the page server answered 404 for a foreign Host;
+  - switching maintenance off brought the app back;
+  - a removed page server was started again at the next change;
+  - with the node's switch off, the save was refused and nothing was saved.
 
 Checked on Traefik 3:
 - The error page request keeps the visitor's Host and the original 502.

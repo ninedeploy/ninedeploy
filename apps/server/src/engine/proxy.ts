@@ -39,6 +39,8 @@ import { FA_PREFIX, forwardAuthDomains } from '../lib/forwardAuth.js';
 import { confirmProxyRouting, ProxyRoutingUnconfirmed, withRoutingAck } from '../lib/proxyRoutingAck.js';
 import { nodeWakeKey } from '../lib/nodeWakeKey.js';
 import { WAKE_CATCHER_PORT, WAKE_KEY_HEADER } from '../wakeCatcher.js';
+import { PAGE_SERVER_PORT } from '../pageServer.js';
+import { NODE_PAGES_CONTAINER } from '../lib/nodePages.js';
 import { checkNodeWakeRoutePromotion, confirmNodeWakeRoutePromotion, type NodeWakeRoutePromotion } from '../lib/nodeWakeRoutePromotion.js';
 import { checkNodeCatcherRoutePromotion, confirmNodeCatcherRoutePromotion, type NodeCatcherRoutePromotion } from '../lib/nodeCatcherRoutePromotion.js';
 import { validNodeCatcherName } from '../lib/nodeCatcherIdentity.js';
@@ -50,6 +52,8 @@ export const MAINTENANCE_PREFIX = '/_nd/maintenance';
 export const ERROR_PAGE_PREFIX = '/_nd/errors';
 const WAKE_MW = 'mw_ninedeploy_wake';
 const WAKE_SVC = 'svc_ninedeploy_wake';
+/** P2: the node's page server (lib/nodePages.ts), on the node proxy's network. */
+const PAGES_SVC = 'svc_ninedeploy_pages';
 import { MAX_REPLICAS, NETWORK, replicaNames, TRAEFIK_CONTAINER, TRAEFIK_IMAGE } from './dockerNames.js';
 
 // Defined in a leaf module and re-exported here: `proxy` and `serviceBridge`
@@ -1096,7 +1100,11 @@ async function refreshNodeProxies(db: DB, requireNode?: number, confirmNode?: nu
 export type AutoscaleRoutePromotion = { serviceId: number; workerToken: string; ownerEpoch: number; requestId: string };
 export async function renderDynamicConfig(
   db: DB,
-  opts: { serverId: number | null; autoscalePromotion?: AutoscaleRoutePromotion; wakePromotion?: NodeWakeRoutePromotion; catcherPromotion?: NodeCatcherRoutePromotion } = { serverId: null },
+  opts: {
+    serverId: number | null; autoscalePromotion?: AutoscaleRoutePromotion; wakePromotion?: NodeWakeRoutePromotion; catcherPromotion?: NodeCatcherRoutePromotion;
+    /** P2: the node's page server holds this sync's pages and answers (lib/nodePagesSync.ts). */
+    pages?: boolean;
+  } = { serverId: null },
 ): Promise<string> {
   const forNode = opts.serverId != null;
   const all = await db.select().from(domains);
@@ -1108,15 +1116,24 @@ export async function renderDynamicConfig(
   const targetRuntimeByService = new Map(
     targetsOnNode.filter((t) => t.runtimeId).map((t) => [t.serviceId, t.runtimeId as string]),
   );
-  // G2.2: maintenance mode and custom error pages are served by the panel, so
-  // only the panel host's proxy routes them (a node cannot reach the panel).
+  // G2.2: maintenance mode and custom error pages. The panel serves them for
+  // its own proxy; a node cannot reach the panel, so (P2) the node's page
+  // server serves them there, routed only when this sync confirmed it holds
+  // the pages and answers. Compose routes apply everywhere.
   const overrides = await routingOverrides(db);
-  // The panel-served pages are for the panel host's proxy only; compose routes apply everywhere.
-  if (forNode) {
-    overrides.maintenance.clear();
-    overrides.errorPages.clear();
-  }
   const allServices = await db.select().from(services);
+  if (forNode) {
+    // Only the node's own services, never a fan-out one: the other hosts of a
+    // fan-out service would keep serving the app.
+    const fanout = opts.pages && (overrides.maintenance.size || overrides.errorPages.size)
+      ? new Set((await db.select({ serviceId: serviceTargets.serviceId }).from(serviceTargets)).map((t) => t.serviceId))
+      : new Set<number>();
+    const served = (id: number) => opts.pages === true && !fanout.has(id) && allServices.some((s) => s.id === id && s.serverId === opts.serverId);
+    for (const id of [...overrides.maintenance.keys()]) if (!served(id)) overrides.maintenance.delete(id);
+    for (const id of [...overrides.errorPages.keys()]) if (!served(id)) overrides.errorPages.delete(id);
+  }
+  /** P2: some node service routes to the node's page server. */
+  let pagesUsed = false;
   // Retain the catcher even after explicit ownership supersession until a
   // readiness-confirmed publisher clears the same-generation fallback.
   const sleepTransitions = forNode ? await db.select().from(nodeSleepTransitions).where(eq(nodeSleepTransitions.serverId, opts.serverId!)) : [];
@@ -1382,6 +1399,7 @@ export async function renderDynamicConfig(
     const asleep = !forNode && svc.type === 'docker' && svc.asleepAt != null;
     const nodeSleep = forNode && svc.type === 'docker' && svc.orchestrator !== 'swarm' && !targetRuntimeByService.has(svc.id) && svc.id !== wakePromoted ? sleepRouting.get(svc.id) : undefined;
     if (forNode && svc.asleepAt != null && !nodeSleep && svc.id !== wakePromoted) throw new Error('Sleeping node service has no confirmed fallback route');
+    const nodeBackend = nodeSleep ? (nodeSleep.catcherName === 'ninedeploy-wake' ? 'svc_ninedeploy_node_wake' : `svc_ninedeploy_node_wake_${nodeSleep.catcherName.slice(18)}`) : null;
     if (nodeSleep) {
       const prefix = `mw_${key}_node_wake`, credential = 'mw_ninedeploy_node_wake_key';
       mwList.push(prefix, credential);
@@ -1403,14 +1421,17 @@ export async function renderDynamicConfig(
     // G2.2: custom 502/503/504 pages, fetched from the panel by Traefik's
     // `errors` middleware when the app answers one of those (or is down).
     const errorStatuses: string[] | undefined = overrides.errorPages.get(svc.id);
+    // P2: on a node the pages come from the node's page server, not the panel.
+    const pageSvc = forNode ? PAGES_SVC : WAKE_SVC;
     if (errorStatuses && !maint) {
       const mw = `mw_ninedeploy_errors_${svc.id}`;
       mwList.push(mw);
-      wakeUsed = true;
+      if (forNode) pagesUsed = true;
+      else wakeUsed = true;
       if (!overrideMws.has(mw)) {
         overrideMws.add(mw);
         const statusLines = errorStatuses.map((s) => `          - "${s}"`).join('\n');
-        middlewares.push(`    ${mw}:\n      errors:\n        status:\n${statusLines}\n        service: ${WAKE_SVC}\n        query: "${ERROR_PAGE_PREFIX}/${svc.id}/{status}"\n`);
+        middlewares.push(`    ${mw}:\n      errors:\n        status:\n${statusLines}\n        service: ${pageSvc}\n        query: "${ERROR_PAGE_PREFIX}/${svc.id}/{status}"\n`);
       }
     }
     // G2.2 maintenance: the domain answers the panel's maintenance page. The
@@ -1422,7 +1443,8 @@ export async function renderDynamicConfig(
         routers.push(
           `    ${key}_bypass:\n` +
             `      rule: "${yamlDoubleQuoted(bypassRule)}"\n` +
-            `      service: ${asleep ? WAKE_SVC : `svc_${key}`}\n` +
+            // A sleeping node service's bypass still wakes it, through the catcher and its middlewares.
+            `      service: ${nodeBackend ?? (asleep ? WAKE_SVC : `svc_${key}`)}\n` +
             (priority ? `      priority: ${EXACT_OVER_WILDCARD_PRIORITY + bypassRule.length}\n` : '') +
             ((asleep ? [...mwList, WAKE_MW] : mwList).length ? `      middlewares:\n${(asleep ? [...mwList, WAKE_MW] : mwList).map((m) => `        - ${m}`).join('\n')}\n` : '') +
             `      entryPoints:\n        - ${entry}` +
@@ -1431,8 +1453,12 @@ export async function renderDynamicConfig(
         if (asleep) wakeUsed = true;
       }
       const mw = `mw_ninedeploy_maint_${svc.id}`;
+      // P2: maintenance wins over a sleeping node service: nothing wakes it,
+      // and the wake middlewares (and the node's wake key) never reach the page server.
+      if (nodeSleep) mwList.splice(mwList.indexOf(`mw_${key}_node_wake`), 2);
       mwList.push(mw);
-      wakeUsed = true;
+      if (forNode) pagesUsed = true;
+      else wakeUsed = true;
       if (!overrideMws.has(mw)) {
         overrideMws.add(mw);
         middlewares.push(`    ${mw}:\n      addPrefix:\n        prefix: "${MAINTENANCE_PREFIX}/${svc.id}"\n`);
@@ -1442,7 +1468,7 @@ export async function renderDynamicConfig(
     routers.push(
       `    ${key}:\n` +
         `      rule: "${yamlDoubleQuoted(fullRule)}"\n` +
-        `      service: ${nodeSleep ? nodeSleep.catcherName === 'ninedeploy-wake' ? 'svc_ninedeploy_node_wake' : `svc_ninedeploy_node_wake_${nodeSleep.catcherName.slice(18)}` : toPanel ? WAKE_SVC : `svc_${key}`}\n` +
+        `      service: ${maint && forNode ? PAGES_SVC : nodeBackend ?? (toPanel ? WAKE_SVC : `svc_${key}`)}\n` +
         priority +
         (mwList.length ? `      middlewares:\n${mwList.map((m) => `        - ${m}`).join('\n')}\n` : '') +
         `      entryPoints:\n        - ${entry}` +
@@ -1685,6 +1711,9 @@ export async function renderDynamicConfig(
 
   if (httpsRedirectUsed) {
     middlewares.push(`    ${HTTPS_REDIRECT_MW}:\n      redirectScheme:\n        scheme: https\n        permanent: false\n`);
+  }
+  if (pagesUsed) {
+    svcBlocks.push(`    ${PAGES_SVC}:\n      loadBalancer:\n        servers:\n          - url: "http://${NODE_PAGES_CONTAINER}:${PAGE_SERVER_PORT}"`);
   }
   if (wakeUsed) {
     middlewares.push(`    ${WAKE_MW}:\n      addPrefix:\n        prefix: "${WAKE_PREFIX}"\n`);

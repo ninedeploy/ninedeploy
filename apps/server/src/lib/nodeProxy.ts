@@ -5,6 +5,7 @@ import { capabilityRefusal } from './agentCapabilities.js';
 import { getAcmeEmail, getDnsConfig, renderDynamicConfig, renderStaticConfig, type AutoscaleRoutePromotion } from '../engine/proxy.js';
 import { NODE_DYNAMIC_WARN_BYTES } from './customCertificates.js';
 import { withRoutingAck } from './proxyRoutingAck.js';
+import { syncNodePages } from './nodePagesSync.js';
 import { nodeCanaryRoutingActive } from '../engine/canaryState.js';
 import { bindNodeProxyWrite, checkpointNodeProxyWrite, reserveNodeProxyWrite } from './nodeProxyAuthority.js';
 import { z } from 'zod';
@@ -105,9 +106,11 @@ export async function syncNodeProxy(
         { cap: 'proxy.routingAck', feature: 'confirm loaded HTTP/TLS routing', sealedRequired: true });
       if (refusal) throw new Error(refusal.message);
     }
+    // P2: pages first, then the server, and only then a config that routes to it.
+    const pages = await syncNodePages(db, serverId, call, log);
     const [acmeEmail, dns] = await Promise.all([getAcmeEmail(db), getDnsConfig(db)]);
     const staticConfig = renderStaticConfig(acmeEmail, dns);
-    const dynamicConfig = await renderDynamicConfig(db, { serverId, ...(opts.autoscalePromotion ? { autoscalePromotion: opts.autoscalePromotion } : {}), ...(opts.wakePromotion ? { wakePromotion: opts.wakePromotion } : {}), ...(opts.catcherPromotion ? { catcherPromotion: opts.catcherPromotion } : {}) });
+    const dynamicConfig = await renderDynamicConfig(db, { serverId, pages, ...(opts.autoscalePromotion ? { autoscalePromotion: opts.autoscalePromotion } : {}), ...(opts.wakePromotion ? { wakePromotion: opts.wakePromotion } : {}), ...(opts.catcherPromotion ? { catcherPromotion: opts.catcherPromotion } : {}) });
     const writtenDynamic = confirmRouting ? withRoutingAck(dynamicConfig) : dynamicConfig;
     if (authority) authority = await bindNodeProxyWrite(db, authority, writtenDynamic);
 

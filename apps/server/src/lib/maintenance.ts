@@ -72,14 +72,25 @@ export async function setErrorPages(db: DB, serviceId: number, pages: Partial<Re
 
 /**
  * Why a service may not run on a node yet (a move or a fan-out target), or
- * null. Node proxies do not route what the panel serves: a node would keep
- * serving the app through maintenance, the setting would sit unseen after a
- * move (its card is hidden for node services) and come back on a move back,
- * and a domain behind panel sign-in (G2.3) would not be routed there.
+ * null. A node's proxy cannot reach the panel: a domain behind panel sign-in
+ * (G2.3) would not be routed there. Maintenance and error pages (P2) move
+ * with the service only to ONE node whose agent serves them itself; a
+ * fan-out target would keep serving the app through maintenance.
  */
-export async function panelHostOnlyRefusal(db: DB, serviceId: number): Promise<string | null> {
-  if (await getMaintenance(db, serviceId)) return 'Turn maintenance mode off before the service runs on a node';
-  if (Object.keys((await getErrorPages(db, serviceId)).pages).length) return 'Remove the custom error pages before the service runs on a node';
+export async function panelHostOnlyRefusal(
+  db: DB,
+  serviceId: number,
+  /** P2: a move to ONE node whose agent serves the pages itself (never a fan-out target). */
+  nodeServesPages?: () => Promise<boolean>,
+): Promise<string | null> {
+  const inMaintenance = !!(await getMaintenance(db, serviceId));
+  const pages = Object.keys((await getErrorPages(db, serviceId)).pages).length > 0;
+  if ((inMaintenance || pages) && !(nodeServesPages && (await nodeServesPages()))) {
+    const hint = nodeServesPages ? ", or update the node's agent so it serves the pages itself," : '';
+    return inMaintenance
+      ? `Turn maintenance mode off${hint} before the service runs on a node`
+      : `Remove the custom error pages${hint} before the service runs on a node`;
+  }
   const signIn = await forwardAuthDomains(db);
   if (signIn.size) {
     const own = await db.select({ id: domains.id }).from(domains).where(eq(domains.serviceId, serviceId));

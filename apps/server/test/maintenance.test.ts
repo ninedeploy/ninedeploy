@@ -19,6 +19,17 @@ vi.mock('../src/engine/proxy.js', async (importOriginal) => ({
   writeDynamicConfig: rerender.writeDynamicConfig,
 }));
 
+// P2: the node's agent is asked through these; the tests answer for it.
+const nodeCap = vi.hoisted(() => ({ assert: vi.fn(async () => undefined) }));
+vi.mock('../src/lib/agentCapabilities.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/lib/agentCapabilities.js')>()),
+  assertNodeCapability: nodeCap.assert,
+}));
+vi.mock('../src/lib/agentClient.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/lib/agentClient.js')>()),
+  agentTransportSealed: vi.fn(async () => true),
+}));
+
 const { maintenancePageRoutes, serviceMaintenanceRoutes } = await import('../src/modules/maintenance.js');
 const { renderDynamicConfig } = await import('../src/engine/proxy.js');
 const { buildTestApp, asUser } = await import('./helpers.js');
@@ -177,5 +188,142 @@ describe('rendered routing', () => {
     const doc = load(await renderDynamicConfig(db, { serverId: null })) as Doc;
     expect(doc.http.routers['shop_1']).toMatchObject({ service: 'svc_shop_1', middlewares: ['mw_ninedeploy_errors_5'] });
     expect(doc.http.middlewares['mw_ninedeploy_errors_5']).toEqual({ errors: { status: ['502', '503'], service: 'svc_ninedeploy_wake', query: '/_nd/errors/5/{status}' } });
+  });
+});
+
+describe('P2: on a node, the node serves the pages', () => {
+  type Doc = { http: { routers: Record<string, { rule: string; service: string; middlewares?: string[] }>; middlewares: Record<string, Record<string, unknown>>; services: Record<string, { loadBalancer: { servers: Array<{ url: string }> } }> } };
+  const onNode = async () => {
+    const { encrypt } = await import('../src/lib/crypto.js');
+    await db.insert(servers).values({ id: 7, name: 'edge', host: 'edge.example.test', tokenEncrypted: encrypt('fixture-node-token') } as never);
+    await db.update(services).set({ serverId: 7 }).where((await import('drizzle-orm')).eq(services.id, 5));
+  };
+  /** A fake agent: answers the ping with `caps`, records every op, and answers each pages op. */
+  const agent = (caps: string[], failOp?: string) => {
+    const ops: Array<{ op: string; params: Record<string, unknown> }> = [];
+    const call = async (op: string, params: Record<string, unknown>, sink: (l: string) => void) => {
+      ops.push({ op, params });
+      if (op === 'agent.ping') return { exitCode: 0, lines: [`ND-AGENT ${JSON.stringify({ version: '0.18.27', caps })}`] };
+      if (op === failOp) {
+        sink(`ND-PAGES ${JSON.stringify({ error: { status: 409, code: 'node_pages_unsupported', message: 'The page server needs the agent to run as the ninedeploy-agent container' } })}`);
+        throw new Error(`Node proxy operation ${op} failed`);
+      }
+      const line = `ND-PAGES ${JSON.stringify({ ok: true })}`;
+      sink(line);
+      return { exitCode: 0, lines: [line] };
+    };
+    return { ops, call };
+  };
+
+  it('saves maintenance for a node service once its agent can serve the pages, without asking whether Traefik reaches the panel', async () => {
+    await onNode();
+    reach.reason = 'Traefik cannot reach the panel';
+    const a = await app();
+    const on = await a.inject({ method: 'PUT', url: '/services/5/maintenance', headers: asUser(1), payload: { maintenance: { title: 'Down' } } });
+    expect(on.statusCode, on.body).toBe(200);
+    expect(nodeCap.assert).toHaveBeenCalledWith(db, 7, { cap: 'proxy.pages', feature: 'serve maintenance and error pages', sealedRequired: true });
+    expect((await a.inject({ method: 'PUT', url: '/services/5/error-pages', headers: asUser(1), payload: { pages: { '502': '<h1>Oops</h1>' } } })).statusCode).toBe(200);
+    await a.close();
+  });
+
+  it('refuses with the agent answer when the node cannot, and saves nothing', async () => {
+    await onNode();
+    const { HttpError } = await import('../src/lib/errors.js');
+    nodeCap.assert.mockRejectedValueOnce(new HttpError(422, 'node_agent_outdated', 'The agent on node edge (version 0.18.26) cannot serve maintenance and error pages. Update the node agent to v0.18.27 or newer'));
+    const a = await app();
+    const refused = await a.inject({ method: 'PUT', url: '/services/5/maintenance', headers: asUser(1), payload: { maintenance: {} } });
+    expect(refused.statusCode).toBe(422);
+    expect(refused.json().error).toMatchObject({ code: 'node_agent_outdated', message: expect.stringContaining('v0.18.27') });
+    expect((await a.inject({ method: 'GET', url: '/services/5/maintenance', headers: asUser(1) })).json()).toEqual({ maintenance: null, since: null });
+    await a.close();
+  });
+
+  it('says so when the node could not take the pages at the re-render, keeping the setting', async () => {
+    await onNode();
+    const { syncNodePages, resetNodePagesOutcomes } = await import('../src/lib/nodePagesSync.js');
+    resetNodePagesOutcomes();
+    const fake = agent(['proxy.pages'], 'proxy.pages.ensure');
+    rerender.writeDynamicConfig.mockImplementationOnce(async () => { await syncNodePages(db, 7, fake.call, () => undefined); });
+    const a = await app();
+    const res = await a.inject({ method: 'PUT', url: '/services/5/maintenance', headers: asUser(1), payload: { maintenance: {} } });
+    expect(res.statusCode).toBe(502);
+    expect(res.json().error).toMatchObject({ code: 'node_pages_unapplied', message: expect.stringContaining('ninedeploy-agent container') });
+    expect((await a.inject({ method: 'GET', url: '/services/5/maintenance', headers: asUser(1) })).json().maintenance).not.toBeNull();
+    await a.close();
+    resetNodePagesOutcomes();
+  });
+
+  it('builds each node service pages: its own active hosts, the rendered maintenance page, custom errors only', async () => {
+    await onNode();
+    const { setErrorPages, setMaintenance } = await import('../src/lib/maintenance.js');
+    const { nodePagesPayload } = await import('../src/lib/nodePagesSync.js');
+    expect(await nodePagesPayload(db, 7)).toEqual([]);
+    await db.insert(domains).values({ id: 4, serviceId: 5, hostname: 'Panel.Example.com', path: '/', ssl: true, status: 'active' } as never);
+    await setMaintenance(db, 5, { title: 'Up<grading>', message: 'Soon', retryAfterSeconds: 90, bypass: [] });
+    await setErrorPages(db, 5, { '503': '<h1>Busy</h1>' });
+    const [p] = await nodePagesPayload(db, 7);
+    expect(p).toMatchObject({ serviceId: 5, hosts: ['shop.example.com', '*.stores.example.com'], errors: { '503': '<h1>Busy</h1>' } });
+    expect(p!.maintenance).toMatchObject({ retryAfter: 90, text: 'Up<grading>. Soon\n', html: expect.stringContaining('Up&#60;grading&#62;') });
+    // Another node, or a fan-out service, gets nothing.
+    expect(await nodePagesPayload(db, 8)).toEqual([]);
+    await db.insert(servers).values({ id: 8, name: 'edge2', host: 'edge2.example.test', tokenEncrypted: 'x' } as never);
+    await db.insert(serviceTargets).values({ serviceId: 5, serverId: 8, status: 'idle' } as never);
+    expect(await nodePagesPayload(db, 7)).toEqual([]);
+  });
+
+  it('writes every page, prunes the rest and ensures the server before saying yes; costs nothing without pages', async () => {
+    await onNode();
+    const { syncNodePages, nodePagesOutcome } = await import('../src/lib/nodePagesSync.js');
+    const idle = agent(['proxy.pages']);
+    expect(await syncNodePages(db, 7, idle.call, () => undefined)).toBe(false);
+    expect(idle.ops).toEqual([]);
+
+    const { setMaintenance } = await import('../src/lib/maintenance.js');
+    await setMaintenance(db, 5, { title: 'Down', message: '', retryAfterSeconds: 60, bypass: [] });
+    const busy = agent(['proxy.pages']);
+    expect(await syncNodePages(db, 7, busy.call, () => undefined)).toBe(true);
+    expect(busy.ops.map((o) => o.op)).toEqual(['agent.ping', 'proxy.pages.write', 'proxy.pages.prune', 'proxy.pages.ensure']);
+    expect(busy.ops[2]!.params).toEqual({ keep: [5] });
+    expect(nodePagesOutcome(7)).toEqual({ ok: true, reason: null, serviceIds: [5] });
+
+    // An older agent: no pages op is sent, and the caller is told no.
+    const old = agent([]);
+    const lines: string[] = [];
+    expect(await syncNodePages(db, 7, old.call, (l) => lines.push(l))).toBe(false);
+    expect(old.ops.map((o) => o.op)).toEqual(['agent.ping']);
+    expect(lines.join('\n')).toMatch(/keep routing to the app/);
+    expect(nodePagesOutcome(7)).toMatchObject({ ok: false, reason: expect.stringContaining('0.18.27') });
+  });
+
+  it('routes the node service to its page server only when the sync confirmed it; maintenance wins and errors use it too', async () => {
+    await onNode();
+    const { setErrorPages, setMaintenance } = await import('../src/lib/maintenance.js');
+    await setMaintenance(db, 5, { title: 'Down', message: '', retryAfterSeconds: 60, bypass: ['203.0.113.7'] });
+    const without = load(await renderDynamicConfig(db, { serverId: 7 })) as Doc;
+    expect(without.http.routers['shop_1']).toMatchObject({ service: 'svc_shop_1' });
+    expect(without.http.routers['shop_1_bypass']).toBeUndefined();
+
+    const doc = load(await renderDynamicConfig(db, { serverId: 7, pages: true })) as Doc;
+    expect(doc.http.routers['shop_1']).toMatchObject({ service: 'svc_ninedeploy_pages', middlewares: ['mw_ninedeploy_maint_5'] });
+    expect(doc.http.routers['shop_1_bypass']).toMatchObject({ service: 'svc_shop_1' });
+    expect(doc.http.services['svc_ninedeploy_pages']).toEqual({ loadBalancer: { servers: [{ url: 'http://ninedeploy-pages:8080' }] } });
+    // Never the panel: a node cannot reach it.
+    expect(doc.http.services['svc_ninedeploy_wake']).toBeUndefined();
+
+    await setMaintenance(db, 5, null);
+    await setErrorPages(db, 5, { '502': '<p>x</p>' });
+    const errors = load(await renderDynamicConfig(db, { serverId: 7, pages: true })) as Doc;
+    expect(errors.http.routers['shop_1']).toMatchObject({ service: 'svc_shop_1', middlewares: ['mw_ninedeploy_errors_5'] });
+    expect(errors.http.middlewares['mw_ninedeploy_errors_5']).toEqual({ errors: { status: ['502'], service: 'svc_ninedeploy_pages', query: '/_nd/errors/5/{status}' } });
+    // The panel's own proxy no longer routes the node service at all.
+    expect((load(await renderDynamicConfig(db, { serverId: null })) as Doc | undefined)?.http?.routers?.['shop_1']).toBeUndefined();
+  });
+
+  it('lets a service in maintenance move to ONE node whose agent serves the pages, never to a fan-out target', async () => {
+    const { panelHostOnlyRefusal, setMaintenance } = await import('../src/lib/maintenance.js');
+    await setMaintenance(db, 5, { title: 'Down', message: '', retryAfterSeconds: 60, bypass: [] });
+    expect(await panelHostOnlyRefusal(db, 5, async () => true)).toBeNull();
+    expect(await panelHostOnlyRefusal(db, 5, async () => false)).toMatch(/update the node's agent/);
+    expect(await panelHostOnlyRefusal(db, 5)).toBe('Turn maintenance mode off before the service runs on a node');
   });
 });

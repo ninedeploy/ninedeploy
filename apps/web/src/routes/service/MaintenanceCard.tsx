@@ -15,7 +15,8 @@ type Status = (typeof STATUSES)[number];
 /**
  * Service → Settings (G2.2): maintenance mode, which sends the service's
  * domains to a panel-served 503 page (the bypass addresses still reach the
- * app), and custom 502/503/504 pages. Services on the panel host.
+ * app), and custom 502/503/504 pages. Services on the panel host, and (P2)
+ * on a node whose agent serves the pages itself.
  */
 export function MaintenanceCard({ svc }: { svc: ServiceDetail }) {
   const t = useT();
