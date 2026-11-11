@@ -5614,8 +5614,8 @@ export const TR: Readonly<Record<string, string>> = {
   'Restart-loop limit saved': 'Yeniden başlatma döngüsü sınırı kaydedildi',
   'Restart-loop limit turned off': 'Yeniden başlatma döngüsü sınırı kapatıldı',
   'Restarts': 'Yeniden başlatmalar',
-  'Stops the service, as the Stop button does, when its containers or PM2 processes restart this many times within the window, and notifies. A deploy in progress is left alone. Docker services on the panel host and PM2 services.':
-    'Container\'ları ya da PM2 süreçleri bu süre içinde bu kadar yeniden başlarsa servisi Durdur düğmesinin yaptığı gibi durdurur ve bildirim gönderir. Süren bir deploy\'a dokunulmaz. Panel sunucusundaki Docker servisleri ve PM2 servisleri için.',
+  'Stops the service, as the Stop button does, when its containers or PM2 processes restart this many times within the window, and notifies. A deploy in progress is left alone. Docker services, and PM2 services on the panel host. On a node, its agent counts the restarts.':
+    'Container\'ları ya da PM2 süreçleri bu süre içinde bu kadar yeniden başlarsa servisi Durdur düğmesinin yaptığı gibi durdurur ve bildirim gönderir. Süren bir deploy\'a dokunulmaz. Docker servisleri ve panel sunucusundaki PM2 servisleri için. Node\'da yeniden başlatmaları node\'un agent\'ı sayar.',
   'Within (minutes)': 'Süre (dakika)',
   'last stopped by the limit {time}': 'sınır en son {time} tarihinde durdurdu',
   '{n} restarts in the window now': 'şu an pencerede {n} yeniden başlatma',

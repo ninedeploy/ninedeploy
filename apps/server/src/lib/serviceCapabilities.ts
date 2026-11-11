@@ -46,7 +46,11 @@ const REFUSAL: Record<ServiceCapabilityId, { code: string; node: string; fanout?
     node: 'Panel sign-in is for domains of services on the panel host for now',
     fanout: 'Panel sign-in is not available for a service that also runs on nodes',
   },
-  restartLimit: { code: 'restart_limit_unsupported', node: 'The restart-loop limit is for docker services on the panel host and PM2 services, not Swarm' },
+  restartLimit: {
+    code: 'restart_limit_unsupported',
+    node: 'The restart-loop limit is for docker services and for PM2 services on the panel host, not Swarm',
+    fanout: 'The restart-loop limit is not available for a node service that also runs on other nodes',
+  },
   inlineDockerfile: { code: 'inline_dockerfile_unsupported', node: 'An inline Dockerfile is for docker services that build from source, not from an image or a compose file' },
   fileMounts: { code: 'file_mounts_unsupported', node: FILE_MOUNTS_UNSUPPORTED },
   autoscale: { code: 'bad_request', node: 'Autoscaling applies to docker services only' },
@@ -58,6 +62,11 @@ const REFUSAL: Record<ServiceCapabilityId, { code: string; node: string; fanout?
 const NODE_PAGES_REASON =
   `On a node, the node's agent serves the pages itself: it must be v${AGENT_CAPABILITY_VERSION['proxy.pages']} or newer and run as the ninedeploy-agent container, ` +
   'and its owner must not have turned it off (NINEDEPLOY_AGENT_NODE_PAGES=off)';
+
+/** P2: a node service's restarts are read, and its Stop requested, through the node's agent (lib/nodeRestartLimit.ts). */
+const NODE_RESTART_LIMIT_REASON =
+  `On a node, the node's agent reports the restarts and the stop is the Stop button's own: the agent needs ordered lifecycle (v${AGENT_CAPABILITY_VERSION['docker.lifecycle']} or newer). ` +
+  'While the node cannot be reached, nothing is counted, and a requested Stop waits for the node';
 
 const ok: ServiceCapability = { status: 'available', reason: null };
 const no = (reason: string): ServiceCapability => ({ status: 'unavailable', reason });
@@ -76,7 +85,11 @@ function evaluate(id: ServiceCapabilityId, svc: CapabilityService, f: Facts): Se
       if (f.fanout) return no(r.fanout!);
       return ok;
     case 'restartLimit':
-      return restartLimitSupported(svc) ? ok : no(r.node);
+      if (!restartLimitSupported(svc)) return no(r.node);
+      // P2: on a node only the primary's containers are sampled; fan-out targets would keep looping.
+      if (f.onNode && f.fanout) return no(r.fanout!);
+      if (f.onNode) return { status: 'limited', reason: NODE_RESTART_LIMIT_REASON };
+      return ok;
     case 'inlineDockerfile':
       if (svc.type !== 'docker' || svc.image || svc.composeContent) return no(r.node);
       // Saved for a node service too, but only a build on the panel host has the file.

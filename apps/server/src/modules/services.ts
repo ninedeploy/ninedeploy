@@ -1009,10 +1009,14 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
         return assertNodeCapability(app.db, target, { cap: 'proxy.pages', feature: 'serve maintenance and error pages', sealedRequired: true }).then(() => true, () => false);
       });
       if (refusal) throw badRequest(refusal, 'move_panel_host_only');
-      // G1.3: nodes are not sampled; the limit would sit unseen there (its card is hidden).
-      const { getRestartLimit } = await import('../lib/restartLimit.js');
+      // G1.3 / P2: a node docker service is sampled and stopped through the node's agent,
+      // so the limit moves along only to a node that takes the Stop button's ordered Stop.
+      const { getRestartLimit, restartLimitSupported } = await import('../lib/restartLimit.js');
       if (await getRestartLimit(app.db, existing.id)) {
-        throw badRequest('Turn the restart-loop limit off before the service runs on a node', 'move_panel_host_only');
+        const moved = { ...existing, ...(patch.type !== undefined && { type: patch.type }), serverId: target };
+        const { assertNodeLifecycleAvailable } = await import('../lib/nodeLifecycleRuntime.js');
+        const usable = restartLimitSupported(moved) && await assertNodeLifecycleAvailable(app.db, moved).then(() => true, () => false);
+        if (!usable) throw badRequest('Turn the restart-loop limit off before the service runs on this node: its agent cannot take the ordered Stop the limit uses', 'move_panel_host_only');
       }
     }
     if (moving) {

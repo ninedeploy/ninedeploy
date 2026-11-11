@@ -237,14 +237,15 @@ describe('r662: moving and deleting remote services', () => {
     }
   });
 
-  it('refuses a move to a node while the restart-loop limit is on (G1.3)', async () => {
+  it('refuses a move with the restart-loop limit on to a node whose agent cannot take the ordered Stop (G1.3, P2)', async () => {
     restart.limit = { maxRestarts: 3, windowMinutes: 10 };
     try {
       const app = await movingApp();
       const res = await app.inject({ method: 'PATCH', url: '/1', headers: asUser({ isOperator: true }), payload: { serverId: 5 } });
       expect(res.statusCode).toBe(400);
       expect(res.json().error).toMatchObject({ code: 'move_panel_host_only', message: expect.stringContaining('restart-loop limit') });
-      expect(ops()).toEqual([]);
+      // Only the target's capabilities were read; nothing was retired.
+      expect(ops()).toEqual(['5 agent.ping {}']);
     } finally {
       restart.limit = null;
     }

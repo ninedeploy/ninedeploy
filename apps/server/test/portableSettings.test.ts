@@ -144,7 +144,8 @@ describe('clone', () => {
       { restartLimit: { maxRestarts: 3, windowMinutes: 5 }, maintenance: { title: 'x', message: 'y', retryAfterSeconds: 60, bypass: [] }, shellHook: 'rm -rf /' },
       { kind: 'import' },
     );
-    expect(report.applied).toEqual([]);
-    expect(report.skipped.map((s) => s.setting)).toEqual(['shellHook', 'restart limit', 'maintenance mode']);
+    // P2: a node docker service has a restart-loop limit, sampled through its agent.
+    expect(report.applied).toEqual(['restart limit']);
+    expect(report.skipped.map((s) => s.setting)).toEqual(['shellHook', 'maintenance mode']);
   });
 });

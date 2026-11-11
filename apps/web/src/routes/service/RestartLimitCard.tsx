@@ -12,14 +12,14 @@ import { capabilityUsable, useServiceCapabilities } from '../../lib/capabilities
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
 /**
- * Service → Settings (G1.3): stop a docker service on the panel host, or a PM2
- * service, whose containers or processes keep restarting, and notify. Off by default.
+ * Service → Settings (G1.3): stop a docker service (on the panel host or, through its agent, on a node), or a PM2
+ * service on the panel host, whose containers or processes keep restarting, and notify. Off by default.
  */
 export function RestartLimitCard({ svc }: { svc: ServiceDetail }) {
   const t = useT();
   const qc = useQueryClient();
   const { toast } = useToast();
-  // G1.3 / C1: offered where the server accepts it (docker on the panel host and PM2, not Swarm).
+  // G1.3 / C1: offered where the server accepts it (docker, PM2 on the panel host, not Swarm).
   const caps = useServiceCapabilities(svc.id);
   const limitable = capabilityUsable(caps.data, 'restartLimit');
   const q = useQuery({ queryKey: ['restart-limit', svc.id], queryFn: () => api.services.restartLimit.get(svc.id), enabled: limitable });
@@ -55,7 +55,7 @@ export function RestartLimitCard({ svc }: { svc: ServiceDetail }) {
           <Switch checked={on} onChange={setOn} label={t('Restart-loop limit')} />
         </div>
         <p className="text-xs text-slate-500">
-          {t('Stops the service, as the Stop button does, when its containers or PM2 processes restart this many times within the window, and notifies. A deploy in progress is left alone. Docker services on the panel host and PM2 services.')}
+          {t('Stops the service, as the Stop button does, when its containers or PM2 processes restart this many times within the window, and notifies. A deploy in progress is left alone. Docker services, and PM2 services on the panel host. On a node, its agent counts the restarts.')}
         </p>
         {on && (
           <div className="grid gap-3 sm:grid-cols-2">

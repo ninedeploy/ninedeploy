@@ -65,6 +65,9 @@ describe('evaluation', () => {
     expect((await caps(2)).inlineDockerfile.status).toBe('unavailable');
     expect((await caps(7)).restartLimit.status).toBe('unavailable');
     expect((await caps(4)).restartLimit.status).toBe('available');
+    // P2: on a node, the agent reports the restarts and takes the ordered Stop.
+    expect((await caps(5)).restartLimit).toMatchObject({ status: 'limited', reason: expect.stringMatching(/Stop button’s own|Stop button's own/) });
+    expect((await caps(8)).restartLimit.status).toBe('available');
     expect((await caps(3)).fileMounts.status).toBe('unavailable');
     expect((await caps(7)).autoscale.status).toBe('limited');
     expect((await caps(5)).scaleToZero.status).toBe('in_progress');

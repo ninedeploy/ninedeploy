@@ -10,9 +10,12 @@ import { settingRowsWithPrefix } from './settingRows.js';
 
 /**
  * G1.3 restart-loop limit. Opt-in per service (`restart_limit:<id>`): a
- * docker service on the panel host whose containers restart `maxRestarts`
- * times within `windowMinutes`, or a PM2 service whose processes do, is stopped — as the Stop button would — and
- * `service.restart_limit` is audited, which notifies. A deploy in progress
+ * docker service whose containers restart `maxRestarts` times within
+ * `windowMinutes`, or a PM2 service whose processes do, is stopped — as the
+ * Stop button would — and `service.restart_limit` is audited, which notifies.
+ * P2: a docker service on a node is sampled and stopped through its agent
+ * (lib/nodeRestartLimit.ts); that stop is a requested node Stop, which the
+ * lifecycle reconciler carries out. A deploy in progress
  * is left alone (it restarts containers on purpose). Docker's own
  * `RestartCount` is the signal, or PM2's `restart_time` less the restarts the
  * panel asked for; a new container or process (a deploy) starts afresh.
@@ -59,9 +62,13 @@ export async function setRestartLimit(db: DB, serviceId: number, limit: RestartL
   replacePolicyOwner(db, serviceId);
 }
 
-/** Panel-host docker services and PM2 services; a Swarm service has no containers of its name, and nodes are not sampled. */
+/**
+ * Docker services, on the panel host or (P2) on a node, and PM2 services on
+ * the panel host. A Swarm service has no containers of its name.
+ */
 export function restartLimitSupported(svc: Pick<Service, 'type' | 'serverId' | 'orchestrator'>): boolean {
-  return (svc.type === 'docker' || svc.type === 'pm2') && svc.serverId == null && svc.orchestrator !== 'swarm';
+  if (svc.orchestrator === 'swarm') return false;
+  return svc.type === 'docker' || (svc.type === 'pm2' && svc.serverId == null);
 }
 
 /** Per service: the last RestartCount seen per container id, and when restarts happened. */
@@ -109,8 +116,17 @@ export interface RestartLimitDeps {
   /** The same for a PM2 service, by process name (default: pm2 describe / pm2 stop). */
   samplePm2?: (runtimeId: string) => Promise<Map<string, number>>;
   stopPm2?: (runtimeId: string) => Promise<void>;
-  onTripped?: (svc: Service, limit: RestartLimitConfig, restarts: number) => void;
+  /** A node service (P2): its own containers' counts, or null when the sample is not trustworthy. Throws when the node cannot be asked. */
+  sampleNode?: (svc: Service, names: string[]) => Promise<Map<string, number> | null>;
+  /** Why a node service must be left alone now (a deploy, a pending Start, a sleep), or null. */
+  nodeBlocked?: (svc: Service) => Promise<string | null>;
+  /** Request the node Stop; false when the service changed under it. */
+  stopNode?: (svc: Service) => Promise<boolean>;
+  /** `stopRequested`: a node Stop was requested and is carried out (and audited as `service.stop`) by the lifecycle reconciler. */
+  onTripped?: (svc: Service, limit: RestartLimitConfig, restarts: number, how: { stopRequested: boolean }) => void;
 }
+
+const nodeDefaults = async () => import('./nodeRestartLimit.js');
 
 async function inspectRestarts(names: string[]): Promise<Map<string, number>> {
   const out = new Map<string, number>();
@@ -140,6 +156,12 @@ export async function enforceRestartLimits(db: DB, deps: RestartLimitDeps = {}, 
     ).map((r) => r.id),
   );
   const stopped: number[] = [];
+  // Panel-host services first, so a slow or unreachable node never delays them.
+  const placed = await db.select({ id: services.id, serverId: services.serverId }).from(services).where(inArray(services.id, ids));
+  const onNode = new Set(placed.filter((r) => r.serverId != null).map((r) => r.id));
+  ids.sort((a, b) => Number(onNode.has(a)) - Number(onNode.has(b)) || a - b);
+  /** Nodes that failed a sample in this pass: their other services wait for the next one. */
+  const failedNodes = new Set<number>();
   for (const id of ids) {
     const svc = await db.query.services.findFirst({ where: eq(services.id, id) });
     const owner = policyOwners.get(db)?.get(id);
@@ -157,6 +179,44 @@ export async function enforceRestartLimits(db: DB, deps: RestartLimitDeps = {}, 
     if (busy.has(id)) continue;
     const runtimeId = svc.runtimeId;
     const names = pm2 ? [runtimeId] : replicaNames(runtimeId, runtimeReplicaCounts(svc).capacity);
+    if (svc.serverId != null) {
+      if (failedNodes.has(svc.serverId)) continue;
+      const node = (deps.sampleNode && deps.nodeBlocked && deps.stopNode) ? null : await nodeDefaults();
+      const blocked = deps.nodeBlocked ?? ((s: Service) => node!.nodeRestartStopBlocked(db, s));
+      if (await blocked(svc)) continue;
+      let sample: Map<string, number> | null;
+      try {
+        sample = await (deps.sampleNode ?? ((s: Service, n: string[]) => node!.sampleNodeRestarts(db, s, n)))(svc, names);
+      } catch {
+        failedNodes.add(svc.serverId);
+        continue;
+      }
+      // An untrustworthy sample leaves the history as it was: an empty one would drop every baseline.
+      if (!sample) continue;
+      if (policyOwners.get(db)?.get(id) !== owner) continue;
+      const ownsNodePolicy = and(eq(settings.key, key(id)), eq(settings.value, policy.value));
+      if ((await db.select({ key: settings.key }).from(settings).where(ownsNodePolicy)).length === 0) continue;
+      if (!recordRestarts(id, sample, limit, now)) continue;
+      const sampled = history.get(id);
+      const restarts = sampled?.restarts.length ?? limit.maxRestarts;
+      let requested = false;
+      try {
+        requested = await (deps.stopNode ?? ((s: Service) => node!.requestNodeRestartStop(db, s)))(svc);
+      } catch {
+        requested = false;
+      }
+      if (!requested) continue;
+      if (policyOwners.get(db)?.get(id) === owner) {
+        await db.update(settings).set({
+          value: { maxRestarts: limit.maxRestarts, windowMinutes: limit.windowMinutes, trippedAt: new Date(now).toISOString() } as unknown as boolean,
+          updatedAt: new Date(),
+        }).where(ownsNodePolicy);
+      }
+      if (policyOwners.get(db)?.get(id) === owner && history.get(id) === sampled) history.delete(id);
+      deps.onTripped?.(svc, { maxRestarts: limit.maxRestarts, windowMinutes: limit.windowMinutes }, restarts, { stopRequested: true });
+      stopped.push(id);
+      continue;
+    }
     const sample = pm2 ? await (deps.samplePm2 ?? pm2RestartCounts)(runtimeId) : await (deps.sample ?? inspectRestarts)(names);
     if (policyOwners.get(db)?.get(id) !== owner) continue;
     const ownsPolicy = and(eq(settings.key, key(id)), eq(settings.value, policy.value));
@@ -190,7 +250,7 @@ export async function enforceRestartLimits(db: DB, deps: RestartLimitDeps = {}, 
       }).where(ownsPolicy);
     }
     if (policyOwners.get(db)?.get(id) === owner && history.get(id) === sampledHistory) history.delete(id);
-    deps.onTripped?.(svc, { maxRestarts: limit.maxRestarts, windowMinutes: limit.windowMinutes }, restarts);
+    deps.onTripped?.(svc, { maxRestarts: limit.maxRestarts, windowMinutes: limit.windowMinutes }, restarts, { stopRequested: false });
     stopped.push(id);
   }
   return stopped;

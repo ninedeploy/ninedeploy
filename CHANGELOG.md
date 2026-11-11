@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The restart-loop limit for docker services on a node.** It used to be refused on a node, because the panel only read restart counts on its own host. Now the node's agent reports them.
+  - Each replica is resolved by name and proved to belong to this deployment of this service before its count is read. The count is read even while the container is restarting.
+  - When the limit trips, the panel requests the same ordered Stop as the Stop button. The node carries it out, and `service.stop` is audited once it confirms. `service.restart_limit` notes `stopRequested`.
+  - It never cancels a deploy, including one waiting for CI or an approval, and waits while a Start, Restart, sleep or wake is pending. An unreachable node counts nothing and loses nothing.
+  - It works with any agent that has ordered lifecycle (v0.18.3 or newer); turning the limit on asks the agent first. A service that also runs on other nodes (fan-out) is still refused.
+  - Checked live on a node: one crash did not trip; three did, and the node stopped the container and kept it stopped.
 - **Maintenance mode and custom error pages for services on a node.** Until now both were refused for a node service, because a node's proxy cannot reach the panel that serves the pages. Now the node serves them itself.
   - The agent runs a small page server, `ninedeploy-pages`, from its own image. It runs read-only, as nobody, with no published port.
   - The panel renders each page and sends it to the agent. Only once the page server answers does the node's proxy route to it. If that fails, or the node cannot be reached, the service keeps reaching the app and the save changes nothing (`502 node_pages_unapplied`).

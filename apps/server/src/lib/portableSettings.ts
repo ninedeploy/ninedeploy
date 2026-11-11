@@ -169,7 +169,7 @@ export async function applyPortableServiceSettings(db: DB, target: Target, raw: 
       report.skipped.push({ setting, reason: err instanceof Error ? err.message : String(err) });
     }
   };
-  await step('restart limit', !!s.restartLimit, () => setRestartLimit(db, target.id, s.restartLimit!), restartLimitSupported(target) ? null : 'only docker and PM2 services on the panel host have one');
+  await step('restart limit', !!s.restartLimit, () => setRestartLimit(db, target.id, s.restartLimit!), restartLimitSupported(target) ? null : 'only docker services, and PM2 services on the panel host, have one');
   await step(
     'maintenance mode',
     !!s.maintenance,

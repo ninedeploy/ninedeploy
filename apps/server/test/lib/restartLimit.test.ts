@@ -60,7 +60,7 @@ describe('enforceRestartLimits', () => {
     expect(await lib.enforceRestartLimits(db, deps, 2 * MIN)).toEqual([5]);
     expect(stop).toHaveBeenCalledWith(['web-1', 'web-1-r2']);
     expect((await db.query.services.findFirst({ where: (s, { eq }) => eq(s.id, 5) }))?.status).toBe('stopped');
-    expect(onTripped).toHaveBeenCalledWith(expect.objectContaining({ id: 5 }), limit, 3);
+    expect(onTripped).toHaveBeenCalledWith(expect.objectContaining({ id: 5 }), limit, 3, { stopRequested: false });
     expect((await lib.getRestartLimit(db, 5))?.trippedAt).toBe(new Date(2 * MIN).toISOString());
     // Stopped now: nothing more happens.
     count = 9;
@@ -88,7 +88,7 @@ describe('enforceRestartLimits', () => {
     expect(sample).not.toHaveBeenCalled();
     expect(stop).not.toHaveBeenCalled();
     expect((await db.query.services.findFirst({ where: (s, { eq }) => eq(s.id, 7) }))?.status).toBe('stopped');
-    expect(onTripped).toHaveBeenCalledWith(expect.objectContaining({ id: 7 }), limit, 3);
+    expect(onTripped).toHaveBeenCalledWith(expect.objectContaining({ id: 7 }), limit, 3, { stopRequested: false });
   });
 
   it('leaves a service alone while it deploys, and does nothing without a limit', async () => {
@@ -132,7 +132,9 @@ describe('routes', () => {
   it('names the services the sweep samples', () => {
     expect(lib.restartLimitSupported({ type: 'docker', serverId: null, orchestrator: null })).toBe(true);
     expect(lib.restartLimitSupported({ type: 'pm2', serverId: null, orchestrator: null })).toBe(true);
-    expect(lib.restartLimitSupported({ type: 'docker', serverId: 4, orchestrator: null })).toBe(false);
+    // P2: a node docker service is sampled through its agent; PM2 runs on the panel host only.
+    expect(lib.restartLimitSupported({ type: 'docker', serverId: 4, orchestrator: null })).toBe(true);
+    expect(lib.restartLimitSupported({ type: 'pm2', serverId: 4, orchestrator: null })).toBe(false);
     expect(lib.restartLimitSupported({ type: 'docker', serverId: null, orchestrator: 'swarm' })).toBe(false);
     expect(lib.restartLimitSupported({ type: 'compose', serverId: null, orchestrator: null })).toBe(false);
   });
