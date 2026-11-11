@@ -9,6 +9,7 @@ import { planFromDokploy } from '../src/lib/importers/dokploy.js';
 import { domainsFrom, envNames, isGeneratedHost, memToMb, stripUserinfo, type ImportPlan, type SourceGet } from '../src/lib/importers/plan.js';
 import { caproverSource, coolifySource, dokploySource, normaliseBase, OtpRequiredError, SourceError } from '../src/lib/importers/sources.js';
 import { caprover, caproverLive, coolify, DOKPLOY_LIVE_APP_ID, dokploy, dokployLive, SENTINEL } from './fixtures/importSources.js';
+import { COOLIFY_LIVE_IDS, coolifyLive } from './fixtures/importSourcesCoolifyLive.js';
 
 /** A source that answers only the paths in its fixture (an unexpected call fails the test). */
 const fromFixture = (map: Record<string, unknown>): SourceGet => async (p) => {
@@ -102,6 +103,26 @@ describe('Coolify adapter', async () => {
     expect(plan.databases[0]!.runtime).toEqual({ kind: 'container', name: plan.databases[0]!.ref });
     expect(issue(plan.databases[2]!.issues, 'database_type')?.level).toBe('unsupported');
     expect(plan.source).toEqual({ kind: 'coolify', url: 'https://coolify.example', version: '4.7.0', scope: 'the team the API token belongs to' });
+  });
+
+  it('asks to reconnect private access only for a non-public source, a deploy key, an SSH URL or an HTTPS username', async () => {
+    const app = (uuid: string, extra: Record<string, unknown>) => ({ uuid, name: uuid, build_pack: 'nixpacks', git_repository: 'https://github.com/acme/x', ...extra });
+    const rows = [
+      app('pub', { source_type: 'App\\Models\\GithubApp', source_id: 0 }),
+      app('pubstr', { source_type: 'App\\Models\\GithubApp', source_id: '0' }),
+      app('none', {}),
+      app('gh', { source_type: 'App\\Models\\GithubApp', source_id: 3 }),
+      app('gl', { source_type: 'App\\Models\\GitlabApp', source_id: 0 }),
+      app('key', { private_key_id: 7 }),
+      app('ssh', { git_repository: 'git@github.com:acme/x.git' }),
+      app('sshurl', { git_repository: 'ssh://git@git.example/acme/x.git' }),
+      app('user', { git_https_username: 'deploy' }),
+    ];
+    const map: Record<string, unknown> = { '/api/v1/version': '4.7.5', '/api/v1/applications': rows, '/api/v1/services': [], '/api/v1/databases': [] };
+    for (const r of rows) { map[`/api/v1/applications/${r.uuid}/envs`] = []; map[`/api/v1/applications/${r.uuid}/storages`] = {}; }
+    const p = await planFromCoolify(fromFixture(map), 'https://c.example');
+    const flagged = p.services.filter((s) => issue(s.issues, 'source')).map((s) => s.ref);
+    expect(flagged).toEqual(['gh', 'gl', 'key', 'ssh', 'sshurl', 'user']);
   });
 
   it('reads a GitHub owner/repo and an app with no repository', async () => {
@@ -443,5 +464,51 @@ describe('Dokploy adapter, against a capture from a live v0.31.0', async () => {
     // Live: Dokploy runs the application and the database as Swarm services named after their appName.
     expect(web.runtime).toEqual({ kind: 'swarm-service', name: 'app-input-haptic-driver-jff7nq' });
     expect(plan.databases).toEqual([expect.objectContaining({ name: 'orders', engine: 'postgres', image: 'postgres:16', runtime: { kind: 'swarm-service', name: 'postgres-input-digital-array-t7b1r7' } })]);
+  });
+});
+
+describe('Coolify adapter, against a capture from a live 4.7.5', async () => {
+  const plan = await planFromCoolify(fromFixture(coolifyLive), 'http://127.0.0.1:18000');
+  const byName = (n: string) => plan.services.find((s) => s.name === n)!;
+
+  it('was given no secret value by the read token, and keeps none in the plan', () => {
+    expect(JSON.stringify(coolifyLive)).not.toMatch(/S3NT1N3L/);
+    assertNoSecret(plan);
+  });
+
+  it('plans the image application with its limits, domain, env names and the uuid-prefixed volume name', () => {
+    expect(plan.source.version).toBe('4.7.5');
+    const web = byName('web');
+    expect(web.ref).toBe(COOLIFY_LIVE_IDS.web);
+    expect(web.create).toEqual({ name: 'web', type: 'docker', image: 'nginx:1.27-alpine', port: 80, memLimitMb: 256, cpuLimitMilli: 500, volumeMount: '/usr/share/nginx/html' });
+    expect(web.domains).toEqual([{ host: 'shop.example.com', https: true }]);
+    expect(web.env).toEqual([{ key: 'APP_MODE' }, { key: 'API_SECRET' }]);
+    expect(web.volumes).toEqual([{ mountPath: '/usr/share/nginx/html', source: 'volume', name: `${COOLIFY_LIVE_IDS.web}-web-html` }]);
+    expect(web.issues).toEqual([]);
+  });
+
+  it('plans the public-repository application without asking to reconnect private access', () => {
+    const api = byName('api');
+    expect(api.create).toEqual({
+      name: 'api', type: 'docker', repoUrl: 'https://github.com/coollabsio/coolify-examples', branch: 'v4.x',
+      build: { buildPack: 'nixpacks', baseDir: '/nodejs' }, port: 3000, healthPath: '/health',
+    });
+    expect(api.domains).toEqual([{ host: 'api.shop.example.com', https: true }]);
+    // Coolify adds NIXPACKS_NODE_VERSION itself.
+    expect(api.env.map((e) => e.key).sort()).toEqual(['DATABASE_URL', 'NIXPACKS_NODE_VERSION']);
+    // Live: a public repository gets Coolify's built-in "Public GitHub" source (GithubApp id 0).
+    expect(issue(api.issues, 'source')).toBeUndefined();
+    expect(issue(api.issues, 'git_repository')?.level).toBe('info');
+  });
+
+  it('plans the one-click service as a compose stack and the databases with their uuid containers', () => {
+    const status = byName('status');
+    expect(status.kind).toBe('compose');
+    expect(status.ref).toBe(COOLIFY_LIVE_IDS.svc);
+    expect(status.env.map((e) => e.key)).toContain('SERVICE_FQDN_UPTIMEKUMA');
+    expect(plan.databases.map((d) => ({ name: d.name, engine: d.engine, image: d.image, runtime: d.runtime }))).toEqual([
+      { name: 'orders', engine: 'postgres', image: 'postgres:16-alpine', runtime: { kind: 'container', name: COOLIFY_LIVE_IDS.pg } },
+      { name: 'cache', engine: 'redis', image: 'redis:7.2', runtime: { kind: 'container', name: COOLIFY_LIVE_IDS.redis } },
+    ]);
   });
 });

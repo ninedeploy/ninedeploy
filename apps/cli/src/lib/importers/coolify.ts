@@ -98,7 +98,13 @@ async function applicationItem(get: SourceGet, app: Obj): Promise<PlanService> {
     if (!create.repoUrl) issues.push({ level: 'manual', option: 'git_repository', detail: 'No repository in the source.' });
   }
   const sourceType = str(app['source_type']) ?? '';
-  if (/Github|Gitlab|Gitea|Bitbucket/i.test(sourceType) || app['private_key_id'] != null) {
+  // Coolify gives every app made from a public repository its built-in "Public GitHub"
+  // source, GithubApp id 0 (checked live on 4.7.5). Only another source needs credentials.
+  const publicSource = /GithubApp/i.test(sourceType) && app['source_id'] != null && Number(app['source_id']) === 0;
+  const gitSource = /Github|Gitlab|Gitea|Bitbucket/i.test(sourceType) && !publicSource;
+  // A read token hides private_key_id, so a deploy-key app shows as an SSH repository URL.
+  const sshRepo = /^(ssh:\/\/|[^@\s/]+@[^:\s]+:)/i.test(str(app['git_repository']) ?? '');
+  if (gitSource || app['private_key_id'] != null || sshRepo || str(app['git_https_username'])) {
     issues.push({ level: 'manual', option: 'source', detail: 'Private repository access does not transfer: reconnect it in NineDeploy (GitHub App, token or deploy key).' });
   }
 

@@ -45,7 +45,7 @@ ninedeploy import apply plan.json --yes --project 3 --dotenv blog=./blog.env   #
   - Apply attaches only when the panel's connection string can stand in exactly: `postgres://`, `mysql://` or `mariadb://` with no `?options`, or `redis://` on database 0.
   - Anything else is listed for you to change by hand, with the reason: `postgresql://` and other scheme spellings your driver may need, `?sslmode=` and other options, a Redis database index, Mongo (the panel's string names no database), and a variable that holds only the host.
   - A value that names the old platform's own host, such as `captain.old.example` (as written in the plan's source URL), is listed too. NineDeploy can still reach that host, so the app would quietly keep using the old database.
-  - The source hosts are the CapRover app name (with and without `srv-captain--`), the Coolify container name and the Dokploy app name. CapRover's and Dokploy's were checked against live instances.
+  - The source hosts are the CapRover app name (with and without `srv-captain--`), the Coolify container name and the Dokploy app name. CapRover's and Dokploy's were checked against live instances. Coolify's was read in its source (the container is named after the database's uuid) and the uuid matched a live plan.
 
 **What it does not do**
 - **It does not deploy anything.** Deploy each service when its environment is complete.
@@ -78,7 +78,7 @@ Without `--yes`, `import data` prints the order that loses no writes, and the du
 **The dump commands**
 - The commands produce what the panel's import accepts: `pg_dump -Fc`, `mysqldump` or `mariadb-dump` of the app's database, a gzipped `mongodump --archive`, or an RDB snapshot.
 - They read credentials from the database container's own environment, inside single quotes, so no password appears in the output or in your shell history.
-- The CapRover commands were run against a live CapRover v1.16.0: a PostgreSQL 16 one-click app with 500 rows arrived with the same row count and checksum. The Dokploy commands were run against a live Dokploy v0.31.0: the dump of a PostgreSQL 16 database lists its table and rows (`pg_restore -l`), and the volume archive holds the volume's files. The Coolify commands follow its source code.
+- The CapRover commands were run against a live CapRover v1.16.0: a PostgreSQL 16 one-click app with 500 rows arrived with the same row count and checksum. The Dokploy commands were run against a live Dokploy v0.31.0: the dump of a PostgreSQL 16 database lists its table and rows (`pg_restore -l`), and the volume archive holds the volume's files. The Coolify commands follow its source code: the live Coolify 4.7.5 check read its API only and deployed nothing, so they have not been run.
 - The MySQL command was run against a MySQL 8.4 container: 500 rows arrived in the managed database with the same checksum. It names the database without `--databases`, because that form adds `CREATE DATABASE` and `USE` lines, which would put the rows in a second database beside the one NineDeploy connects your app to.
 
 **The import**
@@ -112,7 +112,7 @@ Without `--yes`, `import data` prints the order that loses no writes, and the du
 - A bind mount, or a volume whose name the plan does not hold, is read through the source container instead (`--volumes-from`). That works only while the container still exists: a Swarm service scaled to 0 has none left. Otherwise archive the host directory yourself with `tar -czf - --numeric-owner -C <dir> .`.
 - The receipt records the import id, sha256 and size. A stopped upload resumes. A volume that is already imported is not imported again, and a different archive is refused.
 
-**Checked live** on CapRover v1.16.0, which names an app's Docker volume exactly as its volume name. A volume holding a nested file, a file owned by uid 1234 with mode 640, and a symlink arrived in the deployed NineDeploy service with the same listing, owners and checksums, and nginx served the page through the symlink. A second run made no second import. While the service ran, the start was refused; after stopping it, the same import snapshotted the volume first. The Dokploy volume command was run against a live Dokploy v0.31.0, which names the Docker volume exactly as the mount's volume name. The Coolify volume command follows its source code.
+**Checked live** on CapRover v1.16.0, which names an app's Docker volume exactly as its volume name. A volume holding a nested file, a file owned by uid 1234 with mode 640, and a symlink arrived in the deployed NineDeploy service with the same listing, owners and checksums, and nginx served the page through the symlink. A second run made no second import. While the service ran, the start was refused; after stopping it, the same import snapshotted the volume first. The Dokploy volume command was run against a live Dokploy v0.31.0, which names the Docker volume exactly as the mount's volume name. On Coolify the volume name carries the application's uuid as a prefix (`<uuid>-web-html`), as the live 4.7.5 API showed. Its source names the Docker volume exactly that, but the command has not been run there.
 
 ## Cut over the domains
 
@@ -153,7 +153,8 @@ The DNS check is strict on purpose. Adding a domain makes Traefik ask Let's Encr
 ## Per source
 
 **Coolify**
-- A plain `read` token is enough. Values that need `read:sensitive` (env values, compose YAML, passwords) are never requested.
+- A plain `read` token is enough. Values that need `read:sensitive` (env values, compose YAML, passwords) are never requested. Checked live: a `read` token is given no env value or database password at all.
+- An app from a public repository needs nothing reconnected. The plan asks you to reconnect private access when the app uses a GitHub App, GitLab or other Git source, a deploy key (seen as an SSH repository URL, since a `read` token hides the key) or an HTTPS username.
 - A compose stack from a one-click template is listed without its compose file. Paste the file into a new compose service, or look for the app in the NineDeploy Hub.
 - Databases are read from `/databases`, so KeyDB, Dragonfly and ClickHouse are included. SQLite has no managed equivalent.
 
@@ -188,13 +189,19 @@ The DNS check is strict on purpose. Adding a domain makes Traefik ask Let's Encr
 
 ## How the adapters were checked
 
-The field mappings were written against the source code of Coolify v4.7.0, Dokploy v0.31.0 and CapRover v1.16.0, and are tested with fixtures derived from that code.
+The field mappings were written against the source code of Coolify v4.7.0, Dokploy v0.31.0 and CapRover v1.16.0, and are tested with fixtures derived from that code and with captures from live instances.
 
 - **CapRover v1.16.0 was also run live.** A plan was made against a fresh instance with an app from a repository, an image app with a host port and a one-click PostgreSQL. Its responses are kept as a test fixture, with secret values replaced. That run found three things the source reading had missed:
   - an app that was never deployed runs CapRover's placeholder image, which is not planned as its image;
   - a stopped app (0 instances) is flagged as stopped;
   - the version is read from `versionInfo`.
 - **Dokploy v0.31.0 was also run live**, set up the way its installer does. A project with an image application (env, domain, volume mount) and a PostgreSQL 16 database was created through its API, and the plan matched it field for field. Its responses are kept as a test fixture, with secret values replaced. The run also confirmed the Swarm service and volume names that `import data` uses, and found that a default API key is rate-limited.
-- **Coolify has not yet been run against a live instance.**
+- **Coolify 4.7.5 was also run live**, set up the way its installer does. Through its API, a project was created with:
+  - an image application with env, a domain, memory and CPU limits and a volume;
+  - a public-repository Nixpacks application with a base directory, a health check and env;
+  - PostgreSQL and Redis databases;
+  - an uptime-kuma one-click service.
+
+  Nothing was deployed. The plan matched what was created, its responses are kept as a test fixture, and the `read` token was given no secret value. The run found one false flag: Coolify gives public-repository apps its built-in "Public GitHub" source, which the plan took for a private one. The dump and volume commands were not run there.
 
 If a plan looks wrong for your version, please open an issue with the plan's `source.version`.
