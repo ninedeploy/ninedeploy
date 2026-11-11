@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { expect, test } from './fixtures';
+import { expect, perLayout, test } from './fixtures';
 import { apiGet, watch } from './support';
 
 type Deploy = { id: number; status: string };
@@ -29,22 +29,25 @@ async function nextFinishedDeploy(page: Page, id: number, after: number): Promis
   return newest!;
 }
 
-test('environment and rollback: a variable added in the panel, a redeploy, then a rollback to the first release', async ({ page }) => {
+test('environment and rollback: a variable added in the panel, a redeploy, then a rollback to the first release', async ({ page, layout }) => {
   test.setTimeout(600_000);
   const w = watch(page);
   await page.goto('/');
   const id = await serviceId(page, 'e2e-web');
-  const first = (await deploys(page, id)).at(-1)!;
-  expect(first.status).toBe('running');
+  // The release running now: the first one in the classic run; in the compact
+  // run, which repeats this journey, the classic run's rollback.
+  const first = (await deploys(page, id)).find((d) => d.status === 'running')!;
+  expect(first, 'a running release to roll back to').toBeTruthy();
 
-  // Environment tab: add GREETING=hello-e2e.
+  // Environment tab: add GREETING=hello-e2e (GREETING_COMPACT in the compact run, which repeats this on the same service).
+  const key = perLayout(layout, 'GREETING').toUpperCase().replace(/-/g, '_');
   await page.goto(`/services/${id}?tab=environment`);
-  await page.getByPlaceholder('KEY', { exact: true }).fill('GREETING');
+  await page.getByPlaceholder('KEY', { exact: true }).fill(key);
   await page.getByPlaceholder('value', { exact: true }).fill('hello-e2e');
   await page.getByPlaceholder('KEY', { exact: true }).press('Enter');
-  await expect(page.getByText('GREETING', { exact: true })).toBeVisible();
+  await expect(page.getByText(key, { exact: true })).toBeVisible();
   const env = await apiGet<EnvVar[]>(page, `/v1/services/${id}/env`);
-  expect(env.find((v) => v.key === 'GREETING')?.value).toBe('hello-e2e');
+  expect(env.find((v) => v.key === key)?.value).toBe('hello-e2e');
 
   // Redeploy from the service header; the new release comes up running.
   const before = (await deploys(page, id))[0]!.id;

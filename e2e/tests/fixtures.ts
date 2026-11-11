@@ -10,8 +10,16 @@ import { test as base } from '@playwright/test';
  */
 export const SESSION_FILE = '.auth/session.json';
 
-export const test = base.extend({
-  page: async ({ page }, use) => {
+/**
+ * A3: the panel layout a project runs in. The compact projects set it the way
+ * Settings → Appearance does (apps/web/src/lib/layout.ts), before the first
+ * page script, so every journey sees it from its first page.
+ */
+export type PanelLayout = 'classic' | 'compact';
+
+export const test = base.extend<{ layout: PanelLayout }>({
+  layout: ['classic', { option: true }],
+  page: async ({ page, layout }, use) => {
     if (!existsSync(SESSION_FILE)) throw new Error(`${SESSION_FILE} is missing: the setup journey must run first`);
     const saved = JSON.parse(readFileSync(SESSION_FILE, 'utf8')) as Record<string, string>;
     await page.addInitScript((entries: Record<string, string>) => {
@@ -19,8 +27,12 @@ export const test = base.extend({
         if (sessionStorage.getItem(k) === null) sessionStorage.setItem(k, v);
       }
     }, saved);
+    if (layout === 'compact') await page.addInitScript(() => localStorage.setItem('ninedeploy_layout', 'compact'));
     await use(page);
   },
 });
+
+/** A name a journey creates, unique per layout so the compact run can repeat it on the same panel. */
+export const perLayout = (layout: PanelLayout, name: string): string => (layout === 'classic' ? name : `${name}-${layout}`);
 
 export { expect } from '@playwright/test';

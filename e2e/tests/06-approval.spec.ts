@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { expect, test } from './fixtures';
+import { expect, perLayout, test } from './fixtures';
 import { apiGet, watch } from './support';
 
 type Deploy = { id: number; status: string };
@@ -14,16 +14,19 @@ async function deploys(page: Page, id: number): Promise<Deploy[]> {
  * an admin did not start from the panel. A deploy hook always waits, since
  * whoever holds the URL is not necessarily an admin.
  */
-test('approval: a deploy-hook deploy into a lane that requires approval waits, and the admin approves it', async ({ page }) => {
+test('approval: a deploy-hook deploy into a lane that requires approval waits, and the admin approves it', async ({ page, layout }) => {
   test.setTimeout(600_000);
+  // The compact run repeats this journey on the same panel under its own names.
+  const lane = perLayout(layout, 'production');
+  const serviceName = perLayout(layout, 'e2e-gated');
   const w = watch(page);
 
   // Services → Lanes: a "production" lane that requires approval.
   await page.goto('/services');
   await page.getByRole('button', { name: 'Manage deployment lanes' }).click();
-  await page.getByPlaceholder('New lane name (e.g. staging)').fill('production');
+  await page.getByPlaceholder('New lane name (e.g. staging)').fill(lane);
   await page.getByRole('button', { name: /Create lane/ }).click();
-  const approval = page.getByRole('switch', { name: 'Require approval for production' });
+  const approval = page.getByRole('switch', { name: `Require approval for ${lane}` });
   await approval.click();
   await expect(approval).toHaveAttribute('aria-checked', 'true');
   await page.keyboard.press('Escape');
@@ -31,11 +34,11 @@ test('approval: a deploy-hook deploy into a lane that requires approval waits, a
   // A service deployed into that lane by the admin, from the wizard, runs at once.
   await page.goto('/services?deploy=image');
   const dialog = page.getByRole('dialog');
-  await dialog.getByPlaceholder('my-app').fill('e2e-gated');
+  await dialog.getByPlaceholder('my-app').fill(serviceName);
   await dialog.getByPlaceholder('n8nio/n8n').fill('nginx:1.27-alpine');
   await dialog.getByRole('button', { name: /Continue/ }).click();
   await dialog.getByPlaceholder('3000', { exact: true }).fill('80');
-  await dialog.getByRole('combobox', { name: 'Environment' }).selectOption({ label: 'production' });
+  await dialog.getByRole('combobox', { name: 'Environment' }).selectOption({ label: lane });
   const deployButton = dialog.getByRole('button', { name: /^Deploy$/ });
   for (let i = 0; i < 5 && !(await deployButton.isVisible()); i++) await dialog.getByRole('button', { name: /Continue/ }).click();
   await deployButton.click();

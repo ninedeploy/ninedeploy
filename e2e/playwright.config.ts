@@ -32,7 +32,7 @@ export default defineConfig({
     {
       name: 'desktop',
       testMatch: /0[2-9]-.*\.spec\.ts/,
-      testIgnore: /phone/,
+      testIgnore: /phone|08-compact/,
       dependencies: ['setup'],
       use: { ...devices['Desktop Chrome'], viewport: { width: 1366, height: 900 } },
     },
@@ -41,6 +41,21 @@ export default defineConfig({
       testMatch: /phone\.spec\.ts/,
       dependencies: ['desktop'],
       use: { ...devices['Pixel 7'] },
+    },
+    // A3: the compact layout (opt-in for one release) passes the journeys
+    // that use the service page and the sidebar, on the same panel: 04 and 06
+    // under their own names, then what only compact has, then phone width.
+    {
+      name: 'desktop-compact',
+      testMatch: /(04-env-rollback|06-approval|08-compact)\.spec\.ts/,
+      dependencies: ['desktop'],
+      use: { ...devices['Desktop Chrome'], viewport: { width: 1366, height: 900 }, layout: 'compact' },
+    },
+    {
+      name: 'phone-compact',
+      testMatch: /phone\.spec\.ts/,
+      dependencies: ['desktop-compact'],
+      use: { ...devices['Pixel 7'], layout: 'compact' },
     },
     // A5: README screenshots, only with ND_SCREENSHOTS=<dir> and --project=screens.
     {
