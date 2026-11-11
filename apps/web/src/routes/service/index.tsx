@@ -257,7 +257,8 @@ export function ServiceDetail() {
   const primaryTabs = byId(COMPACT_PRIMARY);
   const moreTabs = byId(COMPACT_MORE);
   // An active More tab keeps the group open, so a deep link never lands on a hidden tab.
-  const moreShown = moreOpen || COMPACT_MORE.includes(tab);
+  const moreActive = COMPACT_MORE.includes(tab);
+  const moreShown = moreOpen || moreActive;
   const renderTab = (tabDef: (typeof SERVICE_TABS)[number]) => {
     const Icon = tabDef.icon;
     const isActive = tab === tabDef.id;
@@ -456,8 +457,11 @@ export function ServiceDetail() {
                 type="button"
                 aria-expanded={moreShown}
                 aria-controls="service-more-tabs"
+                // While one of its tabs is open the group cannot close, so the button says so instead of doing nothing.
+                disabled={moreActive}
+                title={moreActive ? t('Open a tab above to close More') : undefined}
                 onClick={() => setMoreOpen((v) => !v)}
-                className="flex shrink-0 items-center gap-2 whitespace-nowrap rounded-xl px-3 py-2 text-left text-xs font-medium text-slate-400 transition-all hover:bg-white/[0.04] hover:text-slate-200 lg:w-full lg:gap-3"
+                className="flex shrink-0 items-center gap-2 whitespace-nowrap rounded-xl px-3 py-2 text-left text-xs font-medium text-slate-400 transition-all hover:bg-white/[0.04] hover:text-slate-200 disabled:cursor-default disabled:opacity-60 lg:w-full lg:gap-3"
               >
                 <MoreHorizontal size={15} className="opacity-70" />
                 <span>{t('More')}</span>

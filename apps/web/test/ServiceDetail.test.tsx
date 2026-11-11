@@ -2297,7 +2297,12 @@ describe('ServiceDetail', () => {
       renderRoute(<ServiceDetail />, { path: '/services/:id', route: '/services/1?tab=compose' });
       expect(await screen.findByLabelText('Compose file editor')).toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'More' })).toHaveAttribute('aria-expanded', 'true');
+      // It cannot close while one of its tabs is open, so it is not offered as a toggle.
+      expect(screen.getByRole('button', { name: 'More' })).toBeDisabled();
       expect(screen.getByRole('tab', { name: 'Compose File' })).toHaveAttribute('aria-selected', 'true');
+      fireEvent.click(screen.getByRole('tab', { name: 'Overview' }));
+      await waitFor(() => expect(screen.getByRole('button', { name: 'More' })).toBeEnabled());
+      expect(screen.getByRole('button', { name: 'More' })).toHaveAttribute('aria-expanded', 'false');
     });
 
     it('shows runtime logs on the Logs tab, once even with the header toggle on', async () => {

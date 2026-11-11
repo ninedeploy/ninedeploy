@@ -6244,9 +6244,10 @@ export const TR: Readonly<Record<string, string>> = {
   // ── Compact layout (A3) ─────────────────────────────────────────────────
   'Layout': 'Düzen',
   'Classic': 'Klasik',
-  'Compact (preview)': 'Sade (önizleme)',
-  'Compact shows six service tabs with the rest under More, folds rarely used service settings, and shortens the sidebar. It becomes the default in a coming release.': 'Sade düzen servis sayfasında altı sekme gösterir, kalanını Diğer altında toplar, az kullanılan servis ayarlarını katlar ve kenar çubuğunu kısaltır. Gelecek bir sürümde varsayılan olacak.',
+  'Compact (preview)': 'Kompakt (önizleme)',
+  'Compact shows six service tabs with the rest under More, folds rarely used service settings, and shortens the sidebar. It becomes the default in a coming release.': 'Kompakt düzen servis sayfasında altı sekme gösterir, kalanını Diğer altında toplar, az kullanılan servis ayarlarını katlar ve kenar çubuğunu kısaltır. Gelecek bir sürümde varsayılan olacak.',
   'More': 'Diğer',
   'More settings': 'Diğer ayarlar',
+  'Open a tab above to close More': 'Diğer bölümünü kapatmak için yukarıdaki bir sekmeyi açın',
   'Placement, container options, canary, hooks, maintenance and restart limit': 'Yerleşim, konteyner seçenekleri, canary, kancalar, bakım ve yeniden başlatma sınırı',
 };
