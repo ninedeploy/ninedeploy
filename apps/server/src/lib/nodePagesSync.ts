@@ -29,6 +29,21 @@ export function nodePagesOutcome(serverId: number): { ok: boolean; reason: strin
 }
 /** For tests. */
 export function resetNodePagesOutcomes(): void { outcomes.clear(); }
+/** Forget a node's last outcome, so only the next sync can answer for it. */
+export function clearNodePagesOutcome(serverId: number): void { outcomes.delete(serverId); }
+
+/**
+ * Why the last sync of `serverId` did not put `serviceId`'s pages on the node,
+ * or null when it did, or when the service has nothing to serve there (no
+ * active domain). No outcome at all means the sync never reached its pages step.
+ */
+export async function nodePagesFailure(db: DB, serverId: number, serviceId: number): Promise<string | null> {
+  const expected = (await nodePagesPayload(db, serverId)).some((p) => p.serviceId === serviceId);
+  if (!expected) return null;
+  const outcome = outcomes.get(serverId);
+  if (outcome?.ok && outcome.serviceIds.includes(serviceId)) return null;
+  return outcome?.reason ?? 'the node was not synced: it did not answer, or its routing write was refused';
+}
 
 /** The pages of every service on this node that has some: its own services only, never fan-out ones. */
 export async function nodePagesPayload(db: DB, serverId: number): Promise<NodePagesWrite[]> {

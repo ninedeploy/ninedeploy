@@ -55,6 +55,12 @@ export async function setMaintenance(db: DB, serviceId: number, config: Maintena
   await setSettingJson(db, `${MAINT}${serviceId}`, { ...maintenanceConfig.parse(config), since: prev?.since ?? new Date().toISOString() });
 }
 
+/** Put back exactly what `getMaintenance` read (its `since` included), or nothing. */
+export async function restoreMaintenance(db: DB, serviceId: number, stored: StoredMaintenance | null): Promise<void> {
+  if (!stored) await db.delete(settings).where(eq(settings.key, `${MAINT}${serviceId}`));
+  else await setSettingJson(db, `${MAINT}${serviceId}`, stored);
+}
+
 export async function getErrorPages(db: DB, serviceId: number): Promise<ErrorPagesView> {
   const raw = await getSettingJson<{ pages?: unknown }>(db, `${PAGES}${serviceId}`, null);
   const parsed = errorPagesInput.safeParse({ pages: raw?.pages ?? {} });

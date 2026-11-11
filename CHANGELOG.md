@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Maintenance mode and custom error pages for services on a node.** Until now both were refused for a node service, because a node's proxy cannot reach the panel that serves the pages. Now the node serves them itself.
   - The agent runs a small page server, `ninedeploy-pages`, from its own image. It runs read-only, as nobody, with no published port.
-  - The panel renders each page and sends it to the agent. Only once the page server answers does the node's proxy route to it. If it does not answer, the service keeps reaching the app, and saving the setting says so (`502 node_pages_unapplied`).
+  - The panel renders each page and sends it to the agent. Only once the page server answers does the node's proxy route to it. If that fails, or the node cannot be reached, the service keeps reaching the app and the save changes nothing (`502 node_pages_unapplied`).
   - A page is served only on the service's own domains, as on the panel host. Maintenance also wins over a sleeping node service.
   - A service in maintenance, or with custom error pages, can now move to such a node. Fan-out services still cannot use either.
   - The node's agent must be v0.18.27 or newer and run as the `ninedeploy-agent` container. The node's owner can turn it off with `NINEDEPLOY_AGENT_NODE_PAGES=off`. An older agent is refused with `422 node_agent_outdated`, and nothing is saved.

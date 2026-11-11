@@ -192,6 +192,8 @@ describe('rendered routing', () => {
 });
 
 describe('P2: on a node, the node serves the pages', () => {
+  // clearAllMocks keeps implementations: each test sets the re-render it needs.
+  beforeEach(() => { rerender.writeDynamicConfig.mockImplementation(async () => undefined); });
   type Doc = { http: { routers: Record<string, { rule: string; service: string; middlewares?: string[] }>; middlewares: Record<string, Record<string, unknown>>; services: Record<string, { loadBalancer: { servers: Array<{ url: string }> } }> } };
   const onNode = async () => {
     const { encrypt } = await import('../src/lib/crypto.js');
@@ -218,6 +220,10 @@ describe('P2: on a node, the node serves the pages', () => {
   it('saves maintenance for a node service once its agent can serve the pages, without asking whether Traefik reaches the panel', async () => {
     await onNode();
     reach.reason = 'Traefik cannot reach the panel';
+    // The re-render syncs the node, and its page server takes the pages.
+    const { syncNodePages } = await import('../src/lib/nodePagesSync.js');
+    const ok = agent(['proxy.pages']);
+    rerender.writeDynamicConfig.mockImplementation(async () => { await syncNodePages(db, 7, ok.call, () => undefined); });
     const a = await app();
     const on = await a.inject({ method: 'PUT', url: '/services/5/maintenance', headers: asUser(1), payload: { maintenance: { title: 'Down' } } });
     expect(on.statusCode, on.body).toBe(200);
@@ -238,19 +244,55 @@ describe('P2: on a node, the node serves the pages', () => {
     await a.close();
   });
 
-  it('says so when the node could not take the pages at the re-render, keeping the setting', async () => {
+  it('changes nothing when the node could not take the pages at the re-render, and re-renders the old state', async () => {
     await onNode();
     const { syncNodePages, resetNodePagesOutcomes } = await import('../src/lib/nodePagesSync.js');
     resetNodePagesOutcomes();
     const fake = agent(['proxy.pages'], 'proxy.pages.ensure');
-    rerender.writeDynamicConfig.mockImplementationOnce(async () => { await syncNodePages(db, 7, fake.call, () => undefined); });
+    rerender.writeDynamicConfig.mockImplementation(async () => { await syncNodePages(db, 7, fake.call, () => undefined); });
     const a = await app();
     const res = await a.inject({ method: 'PUT', url: '/services/5/maintenance', headers: asUser(1), payload: { maintenance: {} } });
     expect(res.statusCode).toBe(502);
-    expect(res.json().error).toMatchObject({ code: 'node_pages_unapplied', message: expect.stringContaining('ninedeploy-agent container') });
-    expect((await a.inject({ method: 'GET', url: '/services/5/maintenance', headers: asUser(1) })).json().maintenance).not.toBeNull();
+    expect(res.json().error).toMatchObject({ code: 'node_pages_unapplied', message: expect.stringMatching(/was not changed.*ninedeploy-agent container/) });
+    expect((await a.inject({ method: 'GET', url: '/services/5/maintenance', headers: asUser(1) })).json()).toEqual({ maintenance: null, since: null });
+    // Saved, re-rendered, put back, re-rendered again.
+    expect(rerender.writeDynamicConfig).toHaveBeenCalledTimes(2);
     await a.close();
     resetNodePagesOutcomes();
+  });
+
+  it('changes nothing when the re-render never reached the node pages step (unreachable node, refused write), whatever an older sync said', async () => {
+    await onNode();
+    const { setErrorPages, setMaintenance, getMaintenance, getErrorPages } = await import('../src/lib/maintenance.js');
+    const { syncNodePages, resetNodePagesOutcomes } = await import('../src/lib/nodePagesSync.js');
+    await setMaintenance(db, 5, { title: 'Old title', message: 'old', retryAfterSeconds: 60, bypass: [] });
+    await setErrorPages(db, 5, { '502': '<h1>old</h1>' });
+    const before = await getMaintenance(db, 5);
+    // An earlier sync succeeded; this re-render never syncs the node at all.
+    resetNodePagesOutcomes();
+    expect(await syncNodePages(db, 7, agent(['proxy.pages']).call, () => undefined)).toBe(true);
+    rerender.writeDynamicConfig.mockImplementation(async () => undefined);
+    const a = await app();
+    const maint = await a.inject({ method: 'PUT', url: '/services/5/maintenance', headers: asUser(1), payload: { maintenance: { title: 'New title' } } });
+    expect(maint.statusCode).toBe(502);
+    expect(maint.json().error.message).toMatch(/was not changed: node #7 could not serve it \(the node was not synced/);
+    expect(await getMaintenance(db, 5)).toEqual(before);
+    const pages = await a.inject({ method: 'PUT', url: '/services/5/error-pages', headers: asUser(1), payload: { pages: { '502': '<h1>new</h1>' } } });
+    expect(pages.statusCode).toBe(502);
+    expect((await getErrorPages(db, 5)).pages).toEqual({ '502': '<h1>old</h1>' });
+    // Switching off never needs the node.
+    expect((await a.inject({ method: 'PUT', url: '/services/5/maintenance', headers: asUser(1), payload: { maintenance: null } })).statusCode).toBe(200);
+    await a.close();
+    resetNodePagesOutcomes();
+  });
+
+  it('saves for a node service with no active domain: there is nothing to route', async () => {
+    await onNode();
+    await db.update(domains).set({ status: 'pending' });
+    rerender.writeDynamicConfig.mockImplementation(async () => undefined);
+    const a = await app();
+    expect((await a.inject({ method: 'PUT', url: '/services/5/maintenance', headers: asUser(1), payload: { maintenance: {} } })).statusCode).toBe(200);
+    await a.close();
   });
 
   it('builds each node service pages: its own active hosts, the rendered maintenance page, custom errors only', async () => {

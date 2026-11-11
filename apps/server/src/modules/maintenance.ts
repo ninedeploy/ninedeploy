@@ -6,9 +6,9 @@ import { ERROR_PAGE_PREFIX, MAINTENANCE_PREFIX, writeDynamicConfig } from '../en
 import { audit } from '../lib/audit.js';
 import { badRequest, HttpError, parseId } from '../lib/errors.js';
 import { assertNodeCapability } from '../lib/agentCapabilities.js';
-import { nodePagesOutcome } from '../lib/nodePagesSync.js';
+import { clearNodePagesOutcome, nodePagesFailure } from '../lib/nodePagesSync.js';
 import { assertServiceCapability } from '../lib/serviceCapabilities.js';
-import { getErrorPages, getMaintenance, maintenanceView, setErrorPages, setMaintenance } from '../lib/maintenance.js';
+import { getErrorPages, getMaintenance, maintenanceView, restoreMaintenance, setErrorPages, setMaintenance } from '../lib/maintenance.js';
 import { DEFAULT_ERROR, hostMatches, maintenanceAnswer, page } from '../lib/maintenancePages.js';
 import { wakeUnreachableReason } from '../lib/panelUpstream.js';
 import { assertServiceRole, loadServiceForUser } from '../lib/resourceAccess.js';
@@ -96,17 +96,34 @@ export const serviceMaintenanceRoutes: FastifyPluginAsync = async (app) => {
     if (unreachable) throw badRequest(`${what}: ${unreachable}`, code);
   };
   /**
-   * P2: the re-render synced the node, pages first. When its page server could
-   * not take them, the node keeps routing to the app: say so rather than report
-   * a maintenance mode no visitor sees. The setting stays; the next routing
-   * change retries.
+   * Save, then re-render. P2: for a node service being switched on, the save
+   * counts only when THIS re-render's node sync wrote the service's pages and
+   * the page server answered. Anything else (the page server failed, the
+   * node was unreachable, the sync stopped before its pages step) restores the
+   * previous value and re-renders again: nothing re-syncs a node on its own,
+   * so a kept setting would claim a maintenance mode no visitor ever sees.
    */
-  const assertNodeApplied = (svc: { id: number; serverId: number | null }, what: string) => {
-    if (svc.serverId == null) return;
-    const outcome = nodePagesOutcome(svc.serverId);
-    if (outcome && !outcome.ok) {
-      throw new HttpError(502, 'node_pages_unapplied', `${what} is saved, but node #${svc.serverId} could not serve it yet: ${outcome.reason ?? 'unknown error'}. Its domains still reach the app; the node retries with the next routing change.`);
+  const saveAndApply = async (
+    svc: { id: number; serverId: number | null },
+    enabling: boolean,
+    what: string,
+    save: () => Promise<void>,
+    restore: () => Promise<void>,
+    log: (m: string) => void,
+  ) => {
+    if (svc.serverId == null || !enabling) {
+      await save();
+      await rerender(log);
+      return;
     }
+    clearNodePagesOutcome(svc.serverId);
+    await save();
+    await rerender(log);
+    const failure = await nodePagesFailure(app.db, svc.serverId, svc.id);
+    if (failure === null) return;
+    await restore();
+    await rerender(log);
+    throw new HttpError(502, 'node_pages_unapplied', `${what} was not changed: node #${svc.serverId} could not serve it (${failure}). Its domains keep answering as before.`);
   };
 
   app.get('/:id/maintenance', async (req) => {
@@ -123,9 +140,9 @@ export const serviceMaintenanceRoutes: FastifyPluginAsync = async (app) => {
       await assertServiceCapability(app.db, svc, 'maintenance');
       await assertPagesReachable(svc, 'Cannot turn maintenance on', 'maintenance_unreachable');
     }
-    await setMaintenance(app.db, svc.id, maintenance);
-    await rerender((m) => req.log.warn(m));
-    if (maintenance) assertNodeApplied(svc, 'Maintenance mode');
+    const previous = await getMaintenance(app.db, svc.id);
+    await saveAndApply(svc, !!maintenance, 'Maintenance mode', () => setMaintenance(app.db, svc.id, maintenance),
+      () => restoreMaintenance(app.db, svc.id, previous), (m) => req.log.warn(m));
     void audit(app.db, req.user!.id, maintenance ? 'service.maintenance.on' : 'service.maintenance.off', `${svc.name} #${svc.id}`, {
       serviceId: svc.id,
       ...(maintenance && { bypass: maintenance.bypass.length }),
@@ -147,9 +164,9 @@ export const serviceMaintenanceRoutes: FastifyPluginAsync = async (app) => {
       await assertServiceCapability(app.db, svc, 'errorPages');
       await assertPagesReachable(svc, 'Cannot use custom error pages', 'error_pages_unreachable');
     }
-    await setErrorPages(app.db, svc.id, pages);
-    await rerender((m) => req.log.warn(m));
-    if (any) assertNodeApplied(svc, 'The custom error pages');
+    const previous = (await getErrorPages(app.db, svc.id)).pages;
+    await saveAndApply(svc, any, 'The custom error pages', () => setErrorPages(app.db, svc.id, pages),
+      () => setErrorPages(app.db, svc.id, previous), (m) => req.log.warn(m));
     void audit(app.db, req.user!.id, 'service.error_pages.set', `${svc.name} #${svc.id}`, {
       serviceId: svc.id,
       statuses: Object.keys(pages).filter((k) => (pages as Record<string, string | undefined>)[k]?.trim()),
