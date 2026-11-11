@@ -45,7 +45,7 @@ ninedeploy import apply plan.json --yes --project 3 --dotenv blog=./blog.env   #
   - Apply attaches only when the panel's connection string can stand in exactly: `postgres://`, `mysql://` or `mariadb://` with no `?options`, or `redis://` on database 0.
   - Anything else is listed for you to change by hand, with the reason: `postgresql://` and other scheme spellings your driver may need, `?sslmode=` and other options, a Redis database index, Mongo (the panel's string names no database), and a variable that holds only the host.
   - A value that names the old platform's own host, such as `captain.old.example` (as written in the plan's source URL), is listed too. NineDeploy can still reach that host, so the app would quietly keep using the old database.
-  - The source hosts are the CapRover app name (with and without `srv-captain--`), the Coolify container name and the Dokploy app name. CapRover's and Dokploy's were checked against live instances. Coolify's was read in its source (the container is named after the database's uuid) and the uuid matched a live plan.
+  - The source hosts are the CapRover app name (with and without `srv-captain--`), the Coolify container name and the Dokploy app name. CapRover's and Dokploy's were checked against live instances. Coolify's comes from its source, which names the container after the database's uuid; the live API returned the uuid the plan uses.
 
 **What it does not do**
 - **It does not deploy anything.** Deploy each service when its environment is complete.
