@@ -118,7 +118,7 @@ export const CUTOVER_ORDER = [
   'Switch DNS to this panel, then add the domains: ninedeploy import cutover plan.json --yes (it adds only hosts whose DNS already points here).',
 ];
 
-const SOURCE_CHECKED_LIVE: Record<SourceKind, boolean> = { caprover: true, coolify: false, dokploy: false, heroku: false };
+const SOURCE_CHECKED_LIVE: Record<SourceKind, boolean> = { caprover: true, coolify: false, dokploy: true, heroku: false };
 
 export function renderDataPreview(plan: ImportPlan, receipt: ImportReceipt | null): string {
   const out: string[] = ['Order:'];

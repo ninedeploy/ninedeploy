@@ -8,7 +8,7 @@ import { planFromCoolify } from '../src/lib/importers/coolify.js';
 import { planFromDokploy } from '../src/lib/importers/dokploy.js';
 import { domainsFrom, envNames, isGeneratedHost, memToMb, stripUserinfo, type ImportPlan, type SourceGet } from '../src/lib/importers/plan.js';
 import { caproverSource, coolifySource, dokploySource, normaliseBase, OtpRequiredError, SourceError } from '../src/lib/importers/sources.js';
-import { caprover, caproverLive, coolify, dokploy, SENTINEL } from './fixtures/importSources.js';
+import { caprover, caproverLive, coolify, DOKPLOY_LIVE_APP_ID, dokploy, dokployLive, SENTINEL } from './fixtures/importSources.js';
 
 /** A source that answers only the paths in its fixture (an unexpected call fails the test). */
 const fromFixture = (map: Record<string, unknown>): SourceGet => async (p) => {
@@ -311,7 +311,7 @@ describe('source clients', () => {
     const get = dokploySource('https://d.example', SENTINEL, f as typeof fetch);
     expect(await get('/api/ok')).toEqual({ a: 1 });
     expect(await get('/api/blank')).toBeNull();
-    await expect(get('/api/denied')).rejects.toThrow(/API key was refused/);
+    await expect(get('/api/denied')).rejects.toThrow(/API key was refused: it is wrong, belongs to another organization, or has used up its rate limit. A Dokploy key allows 10 requests a day/);
     await expect(get('/api/bad?x=1')).rejects.toThrow(/Dokploy \/api\/bad answered HTTP 400: Input validation failed/);
   });
 
@@ -423,5 +423,25 @@ describe('ninedeploy import plan', () => {
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
     await importPlanAction('coolify', { url: 'https://c.example' }, { env: { NINEDEPLOY_IMPORT_TOKEN: 't' }, fetch: (async () => new Response(JSON.stringify({ message: 'API is disabled.' }), { status: 403 })) as typeof fetch });
     expect(process.exitCode).toBe(1);
+  });
+});
+
+describe('Dokploy adapter, against a capture from a live v0.31.0', async () => {
+  const plan = await planFromDokploy(fromFixture(dokployLive), 'http://127.0.0.1:13001');
+
+  it('keeps no secret anywhere in the plan (env values, tokens)', () => assertNoSecret(plan));
+
+  it('plans the captured image application with its domain, env names and volume, and the database with its Swarm service', () => {
+    expect(plan.source.version).toBe('v0.31.0');
+    expect(plan.services).toHaveLength(1);
+    const web = plan.services[0]!;
+    expect(web.ref).toBe(DOKPLOY_LIVE_APP_ID);
+    expect(web.create).toEqual({ name: 'web', type: 'docker', image: 'nginx:1.27-alpine', port: 80, volumeMount: '/usr/share/nginx/html' });
+    expect(web.domains).toEqual([{ host: 'shop.example.com', https: true }]);
+    expect(web.env).toEqual([{ key: 'APP_MODE' }, { key: 'API_SECRET' }]);
+    expect(web.volumes).toEqual([{ mountPath: '/usr/share/nginx/html', source: 'volume', name: 'web-html' }]);
+    // Live: Dokploy runs the application and the database as Swarm services named after their appName.
+    expect(web.runtime).toEqual({ kind: 'swarm-service', name: 'app-input-haptic-driver-jff7nq' });
+    expect(plan.databases).toEqual([expect.objectContaining({ name: 'orders', engine: 'postgres', image: 'postgres:16', runtime: { kind: 'swarm-service', name: 'postgres-input-digital-array-t7b1r7' } })]);
   });
 });

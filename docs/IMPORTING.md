@@ -16,7 +16,7 @@ The command runs on your machine. The source credential stays there: it is read 
 # Coolify: turn on Settings → Advanced → API access, then create a token with "read" (Keys & Tokens).
 NINEDEPLOY_IMPORT_TOKEN=… ninedeploy import plan coolify --url https://coolify.example.com
 
-# Dokploy: create an API key for the organization (Profile → API keys).
+# Dokploy: create an API key for the organization (Profile → API keys) with rate limiting off: a default key allows 10 requests a day.
 NINEDEPLOY_IMPORT_TOKEN=… ninedeploy import plan dokploy --url https://dokploy.example.com
 
 # CapRover: the dashboard password (NINEDEPLOY_IMPORT_OTP for a two-factor code; otherwise it is asked for).
@@ -45,7 +45,7 @@ ninedeploy import apply plan.json --yes --project 3 --dotenv blog=./blog.env   #
   - Apply attaches only when the panel's connection string can stand in exactly: `postgres://`, `mysql://` or `mariadb://` with no `?options`, or `redis://` on database 0.
   - Anything else is listed for you to change by hand, with the reason: `postgresql://` and other scheme spellings your driver may need, `?sslmode=` and other options, a Redis database index, Mongo (the panel's string names no database), and a variable that holds only the host.
   - A value that names the old platform's own host, such as `captain.old.example` (as written in the plan's source URL), is listed too. NineDeploy can still reach that host, so the app would quietly keep using the old database.
-  - The source hosts are the CapRover app name (with and without `srv-captain--`), the Coolify container name and the Dokploy app name. Only CapRover's were checked against a live instance.
+  - The source hosts are the CapRover app name (with and without `srv-captain--`), the Coolify container name and the Dokploy app name. CapRover's and Dokploy's were checked against live instances.
 
 **What it does not do**
 - **It does not deploy anything.** Deploy each service when its environment is complete.
@@ -78,7 +78,7 @@ Without `--yes`, `import data` prints the order that loses no writes, and the du
 **The dump commands**
 - The commands produce what the panel's import accepts: `pg_dump -Fc`, `mysqldump` or `mariadb-dump` of the app's database, a gzipped `mongodump --archive`, or an RDB snapshot.
 - They read credentials from the database container's own environment, inside single quotes, so no password appears in the output or in your shell history.
-- The CapRover commands were run against a live CapRover v1.16.0: a PostgreSQL 16 one-click app with 500 rows arrived with the same row count and checksum. The Coolify and Dokploy commands follow their source code.
+- The CapRover commands were run against a live CapRover v1.16.0: a PostgreSQL 16 one-click app with 500 rows arrived with the same row count and checksum. The Dokploy commands were run against a live Dokploy v0.31.0: the dump of a PostgreSQL 16 database lists its table and rows (`pg_restore -l`), and the volume archive holds the volume's files. The Coolify commands follow its source code.
 - The MySQL command was run against a MySQL 8.4 container: 500 rows arrived in the managed database with the same checksum. It names the database without `--databases`, because that form adds `CREATE DATABASE` and `USE` lines, which would put the rows in a second database beside the one NineDeploy connects your app to.
 
 **The import**
@@ -112,7 +112,7 @@ Without `--yes`, `import data` prints the order that loses no writes, and the du
 - A bind mount, or a volume whose name the plan does not hold, is read through the source container instead (`--volumes-from`). That works only while the container still exists: a Swarm service scaled to 0 has none left. Otherwise archive the host directory yourself with `tar -czf - --numeric-owner -C <dir> .`.
 - The receipt records the import id, sha256 and size. A stopped upload resumes. A volume that is already imported is not imported again, and a different archive is refused.
 
-**Checked live** on CapRover v1.16.0, which names an app's Docker volume exactly as its volume name. A volume holding a nested file, a file owned by uid 1234 with mode 640, and a symlink arrived in the deployed NineDeploy service with the same listing, owners and checksums, and nginx served the page through the symlink. A second run made no second import. While the service ran, the start was refused; after stopping it, the same import snapshotted the volume first. The Coolify and Dokploy volume commands follow their source code.
+**Checked live** on CapRover v1.16.0, which names an app's Docker volume exactly as its volume name. A volume holding a nested file, a file owned by uid 1234 with mode 640, and a symlink arrived in the deployed NineDeploy service with the same listing, owners and checksums, and nginx served the page through the symlink. A second run made no second import. While the service ran, the start was refused; after stopping it, the same import snapshotted the volume first. The Dokploy volume command was run against a live Dokploy v0.31.0, which names the Docker volume exactly as the mount's volume name. The Coolify volume command follows its source code.
 
 ## Cut over the domains
 
@@ -159,6 +159,8 @@ The DNS check is strict on purpose. Adding a domain makes Traefik ask Let's Encr
 
 **Dokploy**
 - The plan covers the organization the API key belongs to.
+- **Create the API key with rate limiting off.** A default Dokploy key is limited to 10 requests a day; in the live check it was refused after 5. A plan makes 2 requests plus one per application, compose stack and database. Dokploy refuses a spent key with the same 401 as a wrong one.
+- Applications and databases run as Swarm services named after their app name, and a volume mount's Docker volume is named exactly as its volume name (checked live).
 - Builds with Heroku and Paketo buildpacks map to the same NineDeploy build packs.
 - An uploaded ("drop") application cannot be read over the API; re-upload it as a ZIP source.
 - For a Gitea source the URL must be entered by hand, because the record does not include the Gitea host.
@@ -192,6 +194,7 @@ The field mappings were written against the source code of Coolify v4.7.0, Dokpl
   - an app that was never deployed runs CapRover's placeholder image, which is not planned as its image;
   - a stopped app (0 instances) is flagged as stopped;
   - the version is read from `versionInfo`.
-- **Coolify and Dokploy have not yet been run against live instances.**
+- **Dokploy v0.31.0 was also run live**, set up the way its installer does. A project with an image application (env, domain, volume mount) and a PostgreSQL 16 database was created through its API, and the plan matched it field for field. Its responses are kept as a test fixture, with secret values replaced. The run also confirmed the Swarm service and volume names that `import data` uses, and found that a default API key is rate-limited.
+- **Coolify has not yet been run against a live instance.**
 
 If a plan looks wrong for your version, please open an issue with the plan's `source.version`.

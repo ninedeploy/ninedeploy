@@ -58,7 +58,8 @@ export function dokploySource(base: string, apiKey: string, f: Fetch = fetch): S
     const res = await f(`${base}${path}`, { headers: { 'x-api-key': apiKey, accept: 'application/json' } });
     const data = await body(res);
     if (res.ok) return data;
-    if (res.status === 401) throw httpError(res, 'Dokploy', 'the API key was refused (create one under Profile → API keys, for this organization).');
+    // Dokploy answers a plain 401 for a wrong key and for one past its rate limit alike (checked live on v0.31.0).
+    if (res.status === 401) throw httpError(res, 'Dokploy', 'the API key was refused: it is wrong, belongs to another organization, or has used up its rate limit. A Dokploy key allows 10 requests a day unless it was created with rate limiting off, and a plan makes 2 plus one per application, compose stack and database. Create one under Profile → API keys with rate limiting off.');
     const message = typeof data === 'object' && data && 'message' in data ? String((data as { message: unknown }).message) : '';
     throw httpError(res, `Dokploy ${path.split('?')[0]}`, message);
   };
