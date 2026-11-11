@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import type { ServiceLifecycleView } from '@ninedeploy/sdk';
 import {
-  Activity, ArrowLeft, Boxes, Copy, Download, ExternalLink, FileCode2, FileStack, FolderTree, GitBranch, Globe, HardDrive, KeyRound, LayoutDashboard, Network, Play, Rocket, RotateCcw, Settings, ShieldAlert, Square, Terminal, Workflow,
+  Activity, ArrowLeft, Boxes, ChevronDown, Copy, Download, ExternalLink, FileCode2, FileStack, FolderTree, GitBranch, Globe, HardDrive, KeyRound, LayoutDashboard, MoreHorizontal, Network, Play, Rocket, RotateCcw, Settings, ShieldAlert, Square, Terminal, Workflow,
 } from 'lucide-react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { api, authedFetch } from '../../lib/api.js';
@@ -35,6 +35,7 @@ import { NodeLifecycleCard } from './NodeLifecycleCard.js';
 import { ContainerFileBrowser } from '../../components/ContainerFileBrowser.js';
 import { ServiceDomainLauncher } from '../../components/ServiceDomainLauncher.js';
 import { fill, msg, useT } from '../../lib/i18n.js';
+import { usePanelLayout } from '../../lib/layout.js';
 
 type TabId = 'overview' | 'terminal' | 'architecture' | 'manifest' | 'compose' | 'deploys' | 'ci' | 'environment' | 'network' | 'volumes' | 'files' | 'framework' | 'settings' | 'activity' | 'danger';
 
@@ -56,6 +57,15 @@ const SERVICE_TABS: Array<{ id: TabId; label: string; icon: typeof LayoutDashboa
   { id: 'activity', label: msg('Activity Logs'), icon: Activity },
   { id: 'danger', label: msg('Danger Zone'), icon: ShieldAlert },
 ];
+
+/**
+ * A3 compact layout: the same tabs and `?tab=` keys (deep links, journeys and
+ * help topics keep working), six of them up front under shorter names and
+ * the rest under "More", which opens by itself when one of them is active.
+ */
+const COMPACT_PRIMARY: TabId[] = ['overview', 'deploys', 'environment', 'network', 'activity', 'settings'];
+const COMPACT_MORE: TabId[] = ['volumes', 'terminal', 'files', 'manifest', 'compose', 'ci', 'framework', 'architecture', 'danger'];
+const COMPACT_LABEL: Partial<Record<TabId, string>> = { network: msg('Domains'), activity: msg('Logs') };
 
 /** Past tense for the lifecycle toast (`${action}ed` read "Service stoped"). */
 const LIFECYCLE_DONE = { stop: msg('Service stopped'), start: msg('Service started'), restart: msg('Service restarted') } as const;
@@ -90,6 +100,8 @@ export function ServiceDetail() {
     navigate({ search: sp.toString() });
   };
   const navigate = useNavigate();
+  const { isCompact } = usePanelLayout();
+  const [moreOpen, setMoreOpen] = useState(false);
 
   // A non-numeric :id (e.g. /services/abc) must not leak NaN into every
   // query/mutation — treat it as "not found" and bounce to the list.
@@ -241,6 +253,41 @@ export function ServiceDetail() {
   // reachable by `?tab=compose` either — for every other service.
   const visibleTabs = SERVICE_TABS.filter((tabDef) => tabDef.id !== 'compose' || !!svc?.composeContent);
   const tab: TabId = visibleTabs.some((tabDef) => tabDef.id === tabParam) ? (tabParam as TabId) : 'overview';
+  const byId = (ids: TabId[]) => ids.flatMap((tid) => visibleTabs.filter((tabDef) => tabDef.id === tid));
+  const primaryTabs = byId(COMPACT_PRIMARY);
+  const moreTabs = byId(COMPACT_MORE);
+  // An active More tab keeps the group open, so a deep link never lands on a hidden tab.
+  const moreShown = moreOpen || COMPACT_MORE.includes(tab);
+  const renderTab = (tabDef: (typeof SERVICE_TABS)[number]) => {
+    const Icon = tabDef.icon;
+    const isActive = tab === tabDef.id;
+    const isDanger = tabDef.id === 'danger';
+    const label = (isCompact && COMPACT_LABEL[tabDef.id]) || tabDef.label;
+    return (
+      <button
+        key={tabDef.id}
+        type="button"
+        role="tab"
+        aria-selected={isActive}
+        aria-controls="service-tab-panel"
+        ref={isActive ? activeTabRef : undefined}
+        onClick={() => switchTab(tabDef.id)}
+        className={cn(
+          'flex shrink-0 items-center gap-2 whitespace-nowrap rounded-xl px-3 py-2 text-left text-xs font-medium transition-all lg:w-full lg:gap-3',
+          isActive
+            ? isDanger
+              ? 'bg-rose-500/15 text-rose-300 ring-1 ring-inset ring-rose-500/30 font-semibold'
+              : 'bg-indigo-500/15 text-indigo-200 ring-1 ring-inset ring-indigo-500/30 font-semibold shadow-sm'
+            : isDanger
+              ? 'text-rose-400/80 hover:bg-rose-500/10 hover:text-rose-300'
+              : 'text-slate-400 hover:bg-white/[0.04] hover:text-slate-200',
+        )}
+      >
+        <Icon size={15} className={cn(isActive ? (isDanger ? 'text-rose-400' : 'text-indigo-400') : 'opacity-70')} />
+        <span>{t(label)}</span>
+      </button>
+    );
+  };
   // In the one-row tab strip (below lg) the active tab may sit off-screen.
   const activeTabRef = useRef<HTMLButtonElement | null>(null);
   // biome-ignore lint/correctness/useExhaustiveDependencies: re-run when the tab changes; the ref itself is stable.
@@ -382,7 +429,8 @@ export function ServiceDetail() {
         enabled={svc.type === 'docker' && svc.canary !== undefined && (deploys.data ?? []).some((d) => IN_FLIGHT.includes(d.status))}
       />
 
-      {showRuntimeLogs && svc.runtimeId && <RuntimeLogsCard serviceId={id} slug={svc.slug} />}
+      {/* Compact: the Logs tab shows runtime logs itself; never stream them twice. */}
+      {showRuntimeLogs && svc.runtimeId && !(isCompact && tab === 'activity') && <RuntimeLogsCard serviceId={id} slug={svc.slug} />}
       <NodeLifecycleCard serviceId={id} command={lifecycleState.data?.command ?? null} />
       {lifecycleState.isError && <ErrorCard title={t('Could not load runtime commands')} error={lifecycleState.error} onRetry={() => void lifecycleState.refetch()} />}
 
@@ -402,37 +450,27 @@ export function ServiceDetail() {
             <div className="hidden px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-500 lg:block">
               {t('Service Navigation')}
             </div>
-            {visibleTabs.map((tabDef) => {
-              const Icon = tabDef.icon;
-              const isActive = tab === tabDef.id;
-              const isDanger = tabDef.id === 'danger';
-
-              return (
-                <button
-                  key={tabDef.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={isActive}
-                  aria-controls="service-tab-panel"
-                  ref={isActive ? activeTabRef : undefined}
-                  onClick={() => switchTab(tabDef.id)}
-                  className={cn(
-                    'flex shrink-0 items-center gap-2 whitespace-nowrap rounded-xl px-3 py-2 text-left text-xs font-medium transition-all lg:w-full lg:gap-3',
-                    isActive
-                      ? isDanger
-                        ? 'bg-rose-500/15 text-rose-300 ring-1 ring-inset ring-rose-500/30 font-semibold'
-                        : 'bg-indigo-500/15 text-indigo-200 ring-1 ring-inset ring-indigo-500/30 font-semibold shadow-sm'
-                      : isDanger
-                        ? 'text-rose-400/80 hover:bg-rose-500/10 hover:text-rose-300'
-                        : 'text-slate-400 hover:bg-white/[0.04] hover:text-slate-200',
-                  )}
-                >
-                  <Icon size={15} className={cn(isActive ? (isDanger ? 'text-rose-400' : 'text-indigo-400') : 'opacity-70')} />
-                  <span>{t(tabDef.label)}</span>
-                </button>
-              );
-            })}
+            {(isCompact ? primaryTabs : visibleTabs).map(renderTab)}
+            {isCompact && moreTabs.length > 0 && (
+              <button
+                type="button"
+                aria-expanded={moreShown}
+                aria-controls="service-more-tabs"
+                onClick={() => setMoreOpen((v) => !v)}
+                className="flex shrink-0 items-center gap-2 whitespace-nowrap rounded-xl px-3 py-2 text-left text-xs font-medium text-slate-400 transition-all hover:bg-white/[0.04] hover:text-slate-200 lg:w-full lg:gap-3"
+              >
+                <MoreHorizontal size={15} className="opacity-70" />
+                <span>{t('More')}</span>
+                <ChevronDown size={13} className={cn('ml-auto opacity-60 transition-transform', moreShown && 'rotate-180')} />
+              </button>
+            )}
           </div>
+          {/* Below lg the More tabs are a second scrolling row; on lg they continue the list. */}
+          {isCompact && moreShown && (
+            <div id="service-more-tabs" className="mt-2 flex gap-1 overflow-x-auto rounded-2xl border border-white/[0.06] bg-white/[0.02] p-2 lg:block lg:space-y-1 lg:overflow-visible">
+              {moreTabs.map(renderTab)}
+            </div>
+          )}
         </aside>
 
         {/* Right Content Pane */}
@@ -501,6 +539,7 @@ export function ServiceDetail() {
           {tab === 'framework' && <FrameworkTab serviceId={id} svc={svc} />}
           {tab === 'activity' && (
             <>
+              {isCompact && svc.runtimeId && <RuntimeLogsCard serviceId={id} slug={svc.slug} />}
               <ActivityTab serviceId={id} name={svc.name} />
               <ShippedLogSearchCard serviceId={id} />
               {/* G5.4: errors reported by Sentry SDKs. */}

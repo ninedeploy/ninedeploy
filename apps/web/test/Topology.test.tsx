@@ -1,8 +1,10 @@
-﻿import { describe, expect, it, vi, beforeEach } from 'vitest';
+﻿import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import { Topology } from '../src/routes/Topology.js';
 import { api } from '../src/lib/api.js';
 import { renderWithProviders, mockOf } from './helpers.js';
+import { LAYOUT_STORAGE_KEY } from '../src/lib/layout.js';
+import { ModeProvider } from '../src/lib/mode.js';
 
 vi.mock('../src/lib/api.js', async () => {
   // Must be './apiMock.js', not './helpers.js' — see the note in apiMock.ts.
@@ -390,4 +392,31 @@ it('shows an error state with retry when the graph query fails', async () => {
           expect(screen.queryByLabelText('Close Inspector')).not.toBeInTheDocument());
       }
     });
+  describe('A3 compact layout', () => {
+    afterEach(() => { localStorage.removeItem(LAYOUT_STORAGE_KEY); localStorage.removeItem('ninedeploy_experience_mode'); });
+    const link = () => screen.queryByRole('link', { name: 'Docker networks' });
+
+    it('links to Docker networks, which left the sidebar, in Advanced mode only', async () => {
+      mockOf(api.topology.get).mockResolvedValue(graph as never);
+      localStorage.setItem(LAYOUT_STORAGE_KEY, 'compact');
+      localStorage.setItem('ninedeploy_experience_mode', 'advanced');
+      const advanced = renderWithProviders(<ModeProvider><Topology /></ModeProvider>);
+      await screen.findByTestId('react-flow');
+      expect(link()).toHaveAttribute('href', '/networks');
+      advanced.unmount();
+
+      localStorage.setItem('ninedeploy_experience_mode', 'simple');
+      const simple = renderWithProviders(<ModeProvider><Topology /></ModeProvider>);
+      await screen.findByTestId('react-flow');
+      expect(link()).not.toBeInTheDocument();
+      simple.unmount();
+
+      // Classic keeps Networks in the sidebar, so no link.
+      localStorage.setItem(LAYOUT_STORAGE_KEY, 'classic');
+      localStorage.setItem('ninedeploy_experience_mode', 'advanced');
+      renderWithProviders(<ModeProvider><Topology /></ModeProvider>);
+      await screen.findByTestId('react-flow');
+      expect(link()).not.toBeInTheDocument();
+    });
+  });
 });

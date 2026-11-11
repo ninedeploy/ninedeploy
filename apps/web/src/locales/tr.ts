@@ -6241,4 +6241,12 @@ export const TR: Readonly<Record<string, string>> = {
   'The panel now offers every release': 'Panel artık her sürümü sunuyor',
   // ── First run: Let's Encrypt email on the setup form (A2) ───────────────
   "Also use this email for Let's Encrypt, so domains get HTTPS certificates automatically": "Bu e-postayı Let's Encrypt için de kullan, böylece alan adları HTTPS sertifikalarını otomatik alır",
+  // ── Compact layout (A3) ─────────────────────────────────────────────────
+  'Layout': 'Düzen',
+  'Classic': 'Klasik',
+  'Compact (preview)': 'Sade (önizleme)',
+  'Compact shows six service tabs with the rest under More, folds rarely used service settings, and shortens the sidebar. It becomes the default in a coming release.': 'Sade düzen servis sayfasında altı sekme gösterir, kalanını Diğer altında toplar, az kullanılan servis ayarlarını katlar ve kenar çubuğunu kısaltır. Gelecek bir sürümde varsayılan olacak.',
+  'More': 'Diğer',
+  'More settings': 'Diğer ayarlar',
+  'Placement, container options, canary, hooks, maintenance and restart limit': 'Yerleşim, konteyner seçenekleri, canary, kancalar, bakım ve yeniden başlatma sınırı',
 };

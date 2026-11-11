@@ -11,6 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A compact panel layout, to try before it becomes the default.** Turn it on under Settings → Appearance → Layout. Nothing changes until you do. It is kept per browser, like the theme.
+  - The service page shows six tabs: Overview, Deploys, Environment, Domains, Logs and Settings. The other nine sit under More, which opens by itself when a link leads to one of them. Every `?tab=` link still works.
+  - Logs shows the running container's output above the activity log.
+  - Settings folds the cards a service rarely needs under More settings: target node, build placement, orchestrator, inline Dockerfile, container options, canary, status badge, registry webhook, commit status, restart limit, and maintenance and error pages. A card whose feature is on stays out of the fold, so maintenance mode or a restart limit is never hidden.
+  - The sidebar merges Hub into New and moves Networks inside Topology, behind a link shown in Advanced mode. Queue stays, because it is the only list of deploys waiting for approval across services.
+  - The browser journeys now also run in the compact layout: environment and rollback, approval, the compact-only views, and every phone page.
+  - A coming release makes compact the default and removes the classic layout.
 - A separate manual macOS workflow records the complete configured server unit suite and its file/config manifest, alongside controlled CLI and workspace MCP checks (round 100).
 - Manual macOS server audit workflow records native filesystem, SQLite and controlled Docker CLI regressions without starting a daemon or desktop GUI (round 89).
 - **A read-only import plan for Coolify, Dokploy and CapRover.** `ninedeploy import plan <coolify|dokploy|caprover> --url …` reads the other platform's API from your machine and lists what NineDeploy would create:

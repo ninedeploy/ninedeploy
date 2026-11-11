@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FakeWebSocket } from './web-utils.js';
+import { LAYOUT_STORAGE_KEY } from '../src/lib/layout.js';
 
 const authMock = vi.hoisted(() => ({ useAuth: vi.fn() }));
 const themeMock = vi.hoisted(() => ({ useTheme: vi.fn() }));
@@ -721,6 +722,44 @@ describe('Layout', () => {
     renderLayout('/databases');
     await waitFor(() => {
       expect(screen.getByRole('link', { name: /Databases/ })).toBeInTheDocument();
+    });
+  });
+
+  describe('A3 compact layout', () => {
+    afterEach(() => localStorage.removeItem(LAYOUT_STORAGE_KEY));
+    const advancedMode = { mode: 'advanced', isAdvanced: true, isSimple: false, setMode: vi.fn(), toggleMode: vi.fn() } as const;
+    const simpleMode = { mode: 'simple', isAdvanced: false, isSimple: true, setMode: vi.fn(), toggleMode: vi.fn() } as const;
+    const navLinks = () => within(screen.getByRole('navigation')).getAllByRole('link').map((a) => a.textContent);
+
+    it('merges Hub into New, keeps Queue, and lights New on the Hub', async () => {
+      localStorage.setItem(LAYOUT_STORAGE_KEY, 'compact');
+      const r = renderLayout('/hub');
+      await waitFor(() => expect(r.queryClient.getQueryState(['menus'])?.status).toBe('success'));
+      await waitFor(() => expect(navLinks()).toEqual(['New', 'Manifest Creator', 'Dashboard', 'Services', 'Queue']));
+      expect(within(screen.getByRole('navigation')).getByRole('link', { name: 'New' })).toHaveAttribute('href', '/new');
+      expect(within(screen.getByRole('navigation')).getByRole('link', { name: 'New' }).className).toContain('font-medium');
+      // The group's New item replaces the panel's New resource button.
+      expect(within(screen.getByRole('navigation')).queryByRole('button', { name: 'New resource' })).not.toBeInTheDocument();
+    });
+
+    it('moves Networks inside Topology, which /networks lights up, in Advanced mode too', async () => {
+      localStorage.setItem(LAYOUT_STORAGE_KEY, 'compact');
+      modeMock.useExperienceMode.mockReturnValue(advancedMode);
+      try {
+        const r = renderLayout('/networks');
+        await waitFor(() => expect(r.queryClient.getQueryState(['menus'])?.status).toBe('success'));
+        await waitFor(() => expect(navLinks()).toEqual(['Domains', 'Traefik', 'Tunnels', 'Topology']));
+        expect(within(screen.getByRole('navigation')).getByRole('link', { name: 'Topology' }).className).toContain('font-medium');
+      } finally {
+        modeMock.useExperienceMode.mockReturnValue(simpleMode);
+      }
+    });
+
+    it('keeps the classic groups without the setting', async () => {
+      const r = renderLayout('/hub');
+      await waitFor(() => expect(r.queryClient.getQueryState(['menus'])?.status).toBe('success'));
+      await waitFor(() => expect(navLinks()).toEqual(['Hub', 'Manifest Creator', 'Dashboard', 'Services', 'Queue']));
+      expect(within(screen.getByRole('navigation')).getByRole('button', { name: 'New resource' })).toBeInTheDocument();
     });
   });
 

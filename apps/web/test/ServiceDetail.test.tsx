@@ -1,4 +1,4 @@
-﻿import { describe, expect, it, vi, beforeEach } from 'vitest';
+﻿import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { screen, waitFor, fireEvent, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Link, Route, Routes, useLocation } from 'react-router';
@@ -8,6 +8,9 @@ import { canaryApi } from '../src/lib/canaryApi.js';
 import { autoscaleApi } from '../src/lib/autoscaleApi.js';
 import { sleepApi } from '../src/lib/sleepApi.js';
 import { renderRoute, renderWithProviders, mockOf } from './helpers.js';
+import { LAYOUT_STORAGE_KEY } from '../src/lib/layout.js';
+import { ThemeProvider } from '../src/lib/theme.js';
+import { AppearanceSection } from '../src/routes/settings/AppearanceSection.js';
 
 vi.mock('../src/lib/api.js', async () => {
   // Must be './apiMock.js', not './helpers.js' — see the note in apiMock.ts.
@@ -2251,6 +2254,101 @@ describe('ServiceDetail', () => {
       renderRoute(<ServiceDetail />, { path: '/services/:id', route: '/services/1?tab=settings' });
       await screen.findByText('Service settings');
       expect(screen.queryByRole('switch', { name: 'Sleep when idle' })).not.toBeInTheDocument();
+    });
+  });
+
+  describe('A3 compact layout', () => {
+    const tabNames = () => screen.getAllByRole('tab').map((el) => el.textContent);
+    afterEach(() => localStorage.removeItem(LAYOUT_STORAGE_KEY));
+
+    it('keeps the classic fifteen tabs until Settings → Appearance switches to Compact, then shows six and More', async () => {
+      // The wiring, not just the page: the Appearance switch must reach a mounted service page.
+      renderWithProviders(
+        <ThemeProvider>
+          <AppearanceSection />
+          <Routes><Route path="/services/:id" element={<ServiceDetail />} /></Routes>
+        </ThemeProvider>,
+        { route: '/services/1' },
+      );
+      await screen.findByRole('heading', { name: 'api' });
+      expect(tabNames()).toHaveLength(14); // no inline compose file
+      expect(screen.queryByRole('button', { name: 'More' })).not.toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Compact (preview)' }));
+      await waitFor(() => expect(tabNames()).toEqual(['Overview', 'Deploys', 'Environment', 'Domains', 'Logs', 'Settings']));
+      expect(localStorage.getItem(LAYOUT_STORAGE_KEY)).toBe('compact');
+      const more = screen.getByRole('button', { name: 'More' });
+      expect(more).toHaveAttribute('aria-expanded', 'false');
+
+      fireEvent.click(more);
+      expect(tabNames()).toEqual([
+        'Overview', 'Deploys', 'Environment', 'Domains', 'Logs', 'Settings',
+        'Volumes & Storage', 'Terminal & Exec', 'File Browser', 'Manifest & Traefik', 'CI', 'Framework', 'Architecture', 'Danger Zone',
+      ]);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Classic' }));
+      await waitFor(() => expect(screen.queryByRole('button', { name: 'More' })).not.toBeInTheDocument());
+      expect(tabNames()[1]).toBe('Terminal & Exec');
+    });
+
+    it('opens More by itself for a deep link to one of its tabs, and lists an inline compose file there', async () => {
+      localStorage.setItem(LAYOUT_STORAGE_KEY, 'compact');
+      mockOf(api.services.get).mockResolvedValue({ ...service, type: 'compose', repoUrl: null, composeService: 'web', composeContent: 'services: {}\n' } as never);
+      renderRoute(<ServiceDetail />, { path: '/services/:id', route: '/services/1?tab=compose' });
+      expect(await screen.findByLabelText('Compose file editor')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'More' })).toHaveAttribute('aria-expanded', 'true');
+      expect(screen.getByRole('tab', { name: 'Compose File' })).toHaveAttribute('aria-selected', 'true');
+    });
+
+    it('shows runtime logs on the Logs tab, once even with the header toggle on', async () => {
+      localStorage.setItem(LAYOUT_STORAGE_KEY, 'compact');
+      mockOf(api.services.logs).mockResolvedValue({ lines: 'line one\nline two' } as never);
+      const user = userEvent.setup();
+      renderRoute(<ServiceDetail />, { path: '/services/:id', route: '/services/1' });
+      await user.click(await screen.findByRole('button', { name: /Runtime logs/ }));
+      await screen.findByText((_c, el) => el?.textContent === 'line one\nline two');
+      await user.click(screen.getByRole('tab', { name: 'Logs' }));
+      await waitFor(() => expect(screen.getAllByText((_c, el) => el?.tagName === 'PRE' && el.textContent === 'line one\nline two')).toHaveLength(1));
+    });
+
+    it('folds rarely used settings that are off, keeps the deploy hook out, and opens the fold on request', async () => {
+      localStorage.setItem(LAYOUT_STORAGE_KEY, 'compact');
+      mockOf(api.services.get).mockResolvedValue({ ...service, canary: null } as never);
+      renderRoute(<ServiceDetail />, { path: '/services/:id', route: '/services/1?tab=settings' });
+      // Journey 06 switches the deploy hook on from here, so it must never fold.
+      expect(await screen.findByRole('switch', { name: 'Deploy hook' })).toBeInTheDocument();
+      const fold = screen.getByRole('button', { name: /More settings/ });
+      expect(fold).toHaveAttribute('aria-expanded', 'false');
+      expect(screen.queryByRole('switch', { name: 'Canary releases' })).not.toBeInTheDocument();
+      fireEvent.click(fold);
+      expect(await screen.findByRole('switch', { name: 'Canary releases' })).toHaveAttribute('aria-checked', 'false');
+    });
+
+    it('never folds a setting that is on: a canary from the service, a registry webhook from its own query', async () => {
+      localStorage.setItem(LAYOUT_STORAGE_KEY, 'compact');
+      mockOf(api.services.registryHook.get).mockResolvedValue({ enabled: true, mine: true, url: 'https://panel.example/hook', createdAt: null, lastPushAt: null } as never);
+      mockOf(api.services.get).mockResolvedValue({
+        ...service, repoUrl: null, image: 'nginx:1.27', canary: { steps: [10, 50], stepSeconds: 120, maxErrorRate: 5, maxP95Ms: null, minRequests: 20 },
+      } as never);
+      renderRoute(<ServiceDetail />, { path: '/services/:id', route: '/services/1?tab=settings' });
+      expect(await screen.findByRole('switch', { name: 'Canary releases' })).toHaveAttribute('aria-checked', 'true');
+      // Mounted in the closed fold first, it moves out once its data says it is on.
+      expect(await screen.findByRole('switch', { name: 'Registry webhook' })).toHaveAttribute('aria-checked', 'true');
+      expect(screen.getByRole('button', { name: /More settings/ })).toHaveAttribute('aria-expanded', 'false');
+    });
+
+    it('renders every Settings card in the classic layout with no fold', async () => {
+      mockOf(api.services.get).mockResolvedValue({ ...service, canary: null } as never);
+      renderRoute(<ServiceDetail />, { path: '/services/:id', route: '/services/1?tab=settings' });
+      expect(await screen.findByRole('switch', { name: 'Canary releases' })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /More settings/ })).not.toBeInTheDocument();
+    });
+
+    it('ignores an unknown stored value and starts classic', async () => {
+      localStorage.setItem(LAYOUT_STORAGE_KEY, 'something-else');
+      renderRoute(<ServiceDetail />, { path: '/services/:id', route: '/services/1' });
+      await screen.findByRole('heading', { name: 'api' });
+      expect(screen.queryByRole('button', { name: 'More' })).not.toBeInTheDocument();
     });
   });
 });

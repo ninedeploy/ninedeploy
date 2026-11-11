@@ -20,13 +20,18 @@ import { HelpButton, HelpDrawer } from './HelpDrawer.js';
 import { DeployQueueBadge } from './DeployQueueBadge.js';
 import { HelpProvider } from '../help/HelpContext.js';
 import { useExperienceMode } from '../lib/mode.js';
+import { readLayout, usePanelLayout } from '../lib/layout.js';
 import { installPanelAutofillGuard } from '../lib/autofill.js';
 import { useBranding } from '../lib/branding.js';
 import { msg, useT } from '../lib/i18n.js';
 import { menuTarget, usePluginMenus } from '../lib/pluginMenus.js';
 import { DeployLauncher, useNewResource } from '../lib/deployLauncher.js';
 
-interface NavItem { to: string; label: string; icon: LucideIcon; advancedOnly?: boolean; operatorOnly?: boolean }
+interface NavItem {
+  to: string; label: string; icon: LucideIcon; advancedOnly?: boolean; operatorOnly?: boolean;
+  /** Other path prefixes this item stands for (a page merged into it). */
+  also?: string[];
+}
 
 interface NavGroup { id: string; label: string; icon: LucideIcon; items: NavItem[] }
 
@@ -116,10 +121,33 @@ const GROUPS: NavGroup[] = [
   },
 ];
 
-function matchItem(item: NavItem, pathname: string): boolean {
+/**
+ * A3 compact layout: the classic groups with two overlapping pairs merged.
+ * Hub becomes "New" (the resource picker, which links to the Hub), and
+ * Networks moves inside Topology (its page links there, Advanced mode only).
+ * Each merged page still lights up the item that took it over. The Queue
+ * item stays: /deploys is the only list of deploys waiting for approval
+ * across services, and the top-bar badge hides itself with nothing in flight.
+ */
+const COMPACT_GROUPS: NavGroup[] = GROUPS.map((g) => ({
+  ...g,
+  items: g.items.flatMap((i): NavItem[] => {
+    if (i.to === '/hub') return [{ to: '/new', label: msg('New'), icon: Plus, also: ['/hub'] }];
+    if (i.to === '/networks') return [];
+    if (i.to === '/topology') return [{ ...i, also: ['/networks'] }];
+    return [i];
+  }),
+}));
+
+/** The longest prefix of `pathname` the item answers to, or 0. */
+function matchLength(item: NavItem, pathname: string): number {
   // '/services' must not light up on '/services/new' for a DIFFERENT item —
   // prefix matching is fine because group items have distinct prefixes.
-  return pathname.startsWith(item.to);
+  return Math.max(0, ...[item.to, ...(item.also ?? [])].filter((p) => pathname.startsWith(p)).map((p) => p.length));
+}
+
+function matchItem(item: NavItem, pathname: string): boolean {
+  return matchLength(item, pathname) > 0;
 }
 
 /**
@@ -141,9 +169,10 @@ function findGroup(pathname: string, groups: NavGroup[] = GROUPS): string | null
   let best: { groupId: string; prefixLen: number } | null = null;
   for (const g of groups) {
     for (const i of g.items) {
-      if (!matchItem(i, pathname)) continue;
-      if (best === null || i.to.length > best.prefixLen) {
-        best = { groupId: g.id, prefixLen: i.to.length };
+      const len = matchLength(i, pathname);
+      if (len === 0) continue;
+      if (best === null || len > best.prefixLen) {
+        best = { groupId: g.id, prefixLen: len };
       }
     }
   }
@@ -155,6 +184,8 @@ export function Layout() {
   const { theme, toggleTheme } = useTheme();
   const t = useT();
   const { isSimple } = useExperienceMode();
+  const { isCompact } = usePanelLayout();
+  const baseGroups = isCompact ? COMPACT_GROUPS : GROUPS;
   const location = useLocation();
   const branding = useBranding();
   // Every "New" entry point leads to the /new resource picker (0.16.1).
@@ -168,7 +199,7 @@ export function Layout() {
   const navGroups = useMemo(() => {
     const visible = (item: NavItem) =>
       (!item.advancedOnly || !isSimple) && (!item.operatorOnly || user?.isOperator === true);
-    const rawGroups = GROUPS.map((g) => ({
+    const rawGroups = baseGroups.map((g) => ({
       ...g,
       items: g.items.filter(visible),
     }));
@@ -206,7 +237,7 @@ export function Layout() {
         items: extensionItems,
       },
     ];
-  }, [menus.data, isSimple, user?.isOperator]);
+  }, [menus.data, isSimple, user?.isOperator, baseGroups]);
 
   // Below `md` the secondary panel is a drawer over the content: closed on
   // first paint and after every navigation. Open beside the content it left
@@ -219,7 +250,7 @@ export function Layout() {
     // secondary panel always has something visible on a fresh load (the
     // /nowhere and root paths otherwise render an empty rail and a panel
     // header with no items).
-    const fromPath = findGroup(location.pathname, GROUPS);
+    const fromPath = findGroup(location.pathname, readLayout() === 'compact' ? COMPACT_GROUPS : GROUPS);
     if (fromPath) return fromPath;
     return GROUPS[1]?.id ?? null;
   });
@@ -363,7 +394,8 @@ export function Layout() {
 
           {/* Items */}
           <nav className="flex-1 overflow-y-auto px-2 py-1">
-            {currentGroup.id === 'deploy' && (
+            {/* Compact: the group's own "New" item replaces this button. */}
+            {currentGroup.id === 'deploy' && !isCompact && (
               <button type="button"
                 onClick={openDeploy}
                 className="mb-2 flex w-full items-center gap-2.5 rounded-lg bg-indigo-500/15 px-2.5 py-2 text-sm font-medium text-indigo-200 ring-1 ring-inset ring-indigo-500/30 transition hover:bg-indigo-500/25 hover:text-white"

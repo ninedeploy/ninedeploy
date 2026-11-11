@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Cpu, GitPullRequest, Layers, Server, Settings, Tag } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState, type ReactNode } from 'react';
+import { usePanelLayout } from '../../lib/layout.js';
+import { SettingsFold, useFeaturesOn, type FoldKey } from './SettingsFold.js';
 import { dockerBuildTarget, formatDockerLabels, parseDockerLabels } from '@ninedeploy/schemas';
 import type { Service, ServiceDetail } from '@ninedeploy/sdk';
 import { api } from '../../lib/api.js';
@@ -35,50 +37,65 @@ import { FanoutRecoveryCard } from './FanoutRecoveryCard.js';
 
 /** Service fields, build configuration, lifecycle hooks, PR previews, and resource limits. */
 export function SettingsTab({ serviceId, svc }: { serviceId: number; svc: ServiceDetail }) {
+  const { isCompact } = usePanelLayout();
+  const on = useFeaturesOn(svc);
+  // One ordered list for both layouts. A `fold` key marks a card the compact
+  // layout folds under "More settings" while its feature is off.
+  const cards: Array<{ key: string; fold?: FoldKey; node: ReactNode }> = [
+    // G5.2: staged edits, reviewed and applied together.
+    { key: 'pending', node: <PendingChangesTray serviceId={serviceId} /> },
+    { key: 'settings', node: <SettingsCard serviceId={serviceId} /> },
+    { key: 'github', node: <GithubCard svc={svc} /> },
+    { key: 'tags', node: <TagsCard serviceId={serviceId} svc={svc} /> },
+    { key: 'previews', node: <PreviewEnvironmentsCard svc={svc} /> },
+    { key: 'target', fold: 'target', node: <TargetNodeCard svc={svc} /> },
+    // G3.1: the same move, with the data volume.
+    { key: 'move', node: <MoveWithDataCard svc={svc} /> },
+    ...(svc.type === 'docker' ? [
+      { key: 'primary-recovery', node: <PrimaryRecoveryCard serviceId={serviceId} /> },
+      { key: 'swarm-recovery', node: <SwarmRecoveryCard serviceId={serviceId} /> },
+      { key: 'fanout-recovery', node: <FanoutRecoveryCard serviceId={serviceId} /> },
+    ] : []),
+    // Multi-node: Build → placement and image transfers; Runtime → Swarm. Both hide on an older panel.
+    { key: 'build-placement', fold: 'buildPlacement', node: <BuildPlacementCard svc={svc} /> },
+    { key: 'orchestrator', fold: 'orchestrator', node: <OrchestratorCard svc={svc} /> },
+    { key: 'limits', node: <LimitsCard svc={svc} /> },
+    // G5.6: suggestions from the metric history, under the limits they are about.
+    { key: 'sizing', node: <SizingCard serviceId={serviceId} /> },
+    // G1.1: a Dockerfile pasted here instead of kept in the repository.
+    { key: 'inline-dockerfile', fold: 'inlineDockerfile', node: <InlineDockerfileCard svc={svc} /> },
+    { key: 'container-options', fold: 'containerOptions', node: <ContainerOptionsCard svc={svc} /> },
+    // 0.16.9: docker services on a panel that reports the field.
+    { key: 'canary', fold: 'canary', node: <CanaryCard svc={svc} /> },
+    { key: 'status-badge', fold: 'statusBadge', node: <StatusBadgeCard serviceId={serviceId} serviceName={svc.name} /> },
+    { key: 'deploy-hook', node: <DeployHookCard serviceId={serviceId} /> },
+    // G1.7: redeploy when the registry says the image tag was pushed.
+    { key: 'registry-hook', fold: 'registryHook', node: <RegistryHookCard svc={svc} /> },
+    { key: 'commit-status', fold: 'commitStatus', node: <CommitStatusCard svc={svc} /> },
+    { key: 'scaling', node: <ScalingCard svc={svc} /> },
+    // 0.16.10: next to Scaling, whose replicas it manages while on.
+    { key: 'autoscale', node: <AutoscaleCard svc={svc} /> },
+    // 0.16.11 scale to zero: docker services on a panel that reports the field.
+    { key: 'sleep', node: <SleepCard svc={svc} /> },
+    // G1.3: stop a crash-looping service (opt-in).
+    { key: 'restart-limit', fold: 'restartLimit', node: <RestartLimitCard svc={svc} /> },
+    // G2.2: maintenance page and custom error pages.
+    { key: 'maintenance', fold: 'maintenance', node: <MaintenanceCard svc={svc} /> },
+    // G2.3: panel sign-in in front of the service's domains.
+    { key: 'forward-auth', node: <ForwardAuthCard svc={svc} /> },
+    // C1: what this service cannot fully use where it runs, and why.
+    { key: 'capability-limits', node: <CapabilityLimitsCard serviceId={serviceId} /> },
+    // G2.1: a compose stack picks each domain's service in Network → Domains.
+  ];
+  const folded = (c: (typeof cards)[number]) => isCompact && c.fold !== undefined && !on.has(c.fold);
   return (
     <div className="mt-5 space-y-5">
-      {/* G5.2: staged edits, reviewed and applied together. */}
-      <PendingChangesTray serviceId={serviceId} />
-      <SettingsCard serviceId={serviceId} />
-      <GithubCard svc={svc} />
-      <TagsCard serviceId={serviceId} svc={svc} />
-      <PreviewEnvironmentsCard svc={svc} />
-      <TargetNodeCard svc={svc} />
-      {/* G3.1: the same move, with the data volume. */}
-      <MoveWithDataCard svc={svc} />
-      {svc.type === 'docker' && <PrimaryRecoveryCard serviceId={serviceId} />}
-      {svc.type === 'docker' && <SwarmRecoveryCard serviceId={serviceId} />}
-      {svc.type === 'docker' && <FanoutRecoveryCard serviceId={serviceId} />}
-      {/* Multi-node: Build → placement and image transfers; Runtime → Swarm. Both hide on an older panel. */}
-      <BuildPlacementCard svc={svc} />
-      <OrchestratorCard svc={svc} />
-      <LimitsCard svc={svc} />
-      {/* G5.6: suggestions from the metric history, under the limits they are about. */}
-      <SizingCard serviceId={serviceId} />
-      {/* G1.1: a Dockerfile pasted here instead of kept in the repository. */}
-      <InlineDockerfileCard svc={svc} />
-      <ContainerOptionsCard svc={svc} />
-      {/* 0.16.9: docker services on a panel that reports the field. */}
-      <CanaryCard svc={svc} />
-      <StatusBadgeCard serviceId={serviceId} serviceName={svc.name} />
-      <DeployHookCard serviceId={serviceId} />
-      {/* G1.7: redeploy when the registry says the image tag was pushed. */}
-      <RegistryHookCard svc={svc} />
-      <CommitStatusCard svc={svc} />
-      <ScalingCard svc={svc} />
-      {/* 0.16.10: next to Scaling, whose replicas it manages while on. */}
-      <AutoscaleCard svc={svc} />
-      {/* 0.16.11 scale to zero: docker services on a panel that reports the field. */}
-      <SleepCard svc={svc} />
-      {/* G1.3: stop a crash-looping service (opt-in). */}
-      <RestartLimitCard svc={svc} />
-      {/* G2.2: maintenance page and custom error pages. */}
-      <MaintenanceCard svc={svc} />
-      {/* G2.3: panel sign-in in front of the service's domains. */}
-      <ForwardAuthCard svc={svc} />
-      {/* C1: what this service cannot fully use where it runs, and why. */}
-      <CapabilityLimitsCard serviceId={serviceId} />
-      {/* G2.1: a compose stack picks each domain's service in Network → Domains. */}
+      {cards.filter((c) => !folded(c)).map((c) => <Fragment key={c.key}>{c.node}</Fragment>)}
+      {isCompact && (
+        <SettingsFold>
+          {cards.filter(folded).map((c) => <Fragment key={c.key}>{c.node}</Fragment>)}
+        </SettingsFold>
+      )}
     </div>
   );
 }

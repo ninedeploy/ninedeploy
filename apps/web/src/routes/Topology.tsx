@@ -46,6 +46,8 @@ import { Button, ErrorCard, PageHeader, StatusBadge, cn } from '../components/ui
 import { downloadBlob, formatBytes } from '../lib/format.js';
 import { ServiceDomainLauncher } from '../components/ServiceDomainLauncher.js';
 import { msg, useT } from '../lib/i18n.js';
+import { usePanelLayout } from '../lib/layout.js';
+import { useExperienceMode } from '../lib/mode.js';
 
 // ── Layout constants ──────────────────────────────────────────────────────
 // A deterministic 4-tier column layout: networks (top) → ingress/services
@@ -747,6 +749,8 @@ function TopologyLegend() {
 export function Topology() {
   const t = useT();
   const { user } = useAuth();
+  const { isCompact } = usePanelLayout();
+  const { isAdvanced } = useExperienceMode();
   const graph = useQuery({ queryKey: ['topology'], queryFn: () => api.topology.get() });
   const volumesQuery = useQuery({
     queryKey: ['volumes'],
@@ -830,6 +834,12 @@ export function Topology() {
         />
 
         <div className="flex flex-wrap items-center gap-2">
+          {/* A3 compact: Networks left the sidebar for here; Advanced mode only, as before. */}
+          {isCompact && isAdvanced && (
+            <Link to="/networks" className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-1.5 text-xs text-slate-300 transition hover:bg-white/[0.06]">
+              {t('Docker networks')}
+            </Link>
+          )}
           {/* Layer Filter Pills */}
           <div className="flex items-center gap-1 rounded-xl border border-white/10 bg-white/[0.03] p-1 text-xs">
             <button

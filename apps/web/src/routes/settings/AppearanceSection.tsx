@@ -2,10 +2,12 @@ import { useTheme, ACCENTS } from '../../lib/theme.js';
 import { Card, CardBody, cn } from '../../components/ui.js';
 import { LanguageSwitch } from '../../components/LanguageSwitch.js';
 import { useT } from '../../lib/i18n.js';
+import { usePanelLayout } from '../../lib/layout.js';
 
-/** Appearance: interface language, dark/light theme + accent color. */
+/** Appearance: interface language, dark/light theme, layout (A3) + accent color. */
 export function AppearanceSection() {
   const { theme, accent, setTheme, setAccent } = useTheme();
+  const { layout, setLayout } = usePanelLayout();
   const t = useT();
   return (
     <Card className="mb-5">
@@ -33,6 +35,29 @@ export function AppearanceSection() {
               </button>
             ))}
           </div>
+        </div>
+        <div className="mb-4">
+          <span className="mb-2 block text-xs text-slate-500">{t('Layout')}</span>
+          <div className="flex flex-wrap gap-2">
+            {(['classic', 'compact'] as const).map((l) => (
+              <button type="button"
+                key={l}
+                aria-pressed={layout === l}
+                onClick={() => setLayout(l)}
+                className={cn(
+                  'flex items-center gap-2 rounded-lg border px-4 py-2 text-sm transition',
+                  layout === l
+                    ? 'border-indigo-500/60 bg-indigo-500/10 text-slate-200'
+                    : 'border-white/10 bg-white/[0.02] text-slate-500 hover:border-white/20',
+                )}
+              >
+                {l === 'classic' ? t('Classic') : t('Compact (preview)')}
+              </button>
+            ))}
+          </div>
+          <p className="mt-2 text-xs text-slate-500">
+            {t('Compact shows six service tabs with the rest under More, folds rarely used service settings, and shortens the sidebar. It becomes the default in a coming release.')}
+          </p>
         </div>
         <div>
           <span className="mb-2 block text-xs text-slate-500">{t('Accent color')}</span>
