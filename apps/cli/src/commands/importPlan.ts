@@ -8,8 +8,10 @@
  * from an environment variable or a hidden prompt, never from the command
  * line, and stays on this machine; the plan holds variable names only.
  */
-import { writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
 import { planFromCaprover } from '../lib/importers/caprover.js';
+import { planFromHeroku } from '../lib/importers/heroku.js';
 import { planFromCoolify } from '../lib/importers/coolify.js';
 import { planFromDokploy } from '../lib/importers/dokploy.js';
 import type { ImportPlan, SourceGet, SourceKind } from '../lib/importers/plan.js';
@@ -17,21 +19,27 @@ import { caproverSource, coolifySource, dokploySource, normaliseBase, OtpRequire
 import { c, error, header, info, success } from '../lib/format.js';
 import { promptHidden } from '../prompts.js';
 
-export const IMPORT_SOURCES: readonly SourceKind[] = ['coolify', 'dokploy', 'caprover'];
+export const IMPORT_SOURCES: readonly SourceKind[] = ['coolify', 'dokploy', 'caprover', 'heroku'];
 
-/** Where each source's credential comes from, without the command line. */
-export const CREDENTIAL_ENV: Record<SourceKind, string> = {
+type PanelSource = Exclude<SourceKind, 'heroku'>;
+
+/** Where each source's credential comes from, without the command line. Heroku is read from files and needs none. */
+export const CREDENTIAL_ENV: Record<PanelSource, string> = {
   coolify: 'NINEDEPLOY_IMPORT_TOKEN',
   dokploy: 'NINEDEPLOY_IMPORT_TOKEN',
   caprover: 'NINEDEPLOY_IMPORT_PASSWORD',
 };
-const PROMPT: Record<SourceKind, string> = {
+const PROMPT: Record<PanelSource, string> = {
   coolify: 'Coolify API token (a "read" token is enough): ',
   dokploy: 'Dokploy API key: ',
   caprover: 'CapRover password: ',
 };
 
 export interface ImportPlanDeps {
+  /** Heroku: the checkout to read app.json / Procfile from, the branch, and the Heroku app name. */
+  heroku?: { dir?: string; branch?: string; app?: string };
+  /** Reads a file of the checkout, or undefined when it does not exist (tests replace it). */
+  readFile?: (file: string) => string | undefined;
   env?: NodeJS.ProcessEnv;
   ask?: (message: string) => Promise<string>;
   fetch?: typeof fetch;
@@ -41,6 +49,19 @@ export interface ImportPlanDeps {
 export async function buildImportPlan(kind: string, url: string, deps: ImportPlanDeps = {}): Promise<ImportPlan> {
   if (!IMPORT_SOURCES.includes(kind as SourceKind)) throw new SourceError(`Unknown source "${kind}" (expected ${IMPORT_SOURCES.join(', ')}).`);
   const source = kind as SourceKind;
+  if (source === 'heroku') {
+    // The repository URL stays whole (normaliseBase would cut its path).
+    const dir = path.resolve(deps.heroku?.dir ?? '.');
+    const read = deps.readFile ?? ((f: string) => (existsSync(f) ? readFileSync(f, 'utf8') : undefined));
+    try {
+      return planFromHeroku(
+        { appJson: read(path.join(dir, 'app.json')), procfile: read(path.join(dir, 'Procfile')), herokuYml: read(path.join(dir, 'heroku.yml')) !== undefined },
+        { repoUrl: url.trim(), branch: deps.heroku?.branch ?? 'main', app: deps.heroku?.app, dirName: path.basename(dir) },
+      );
+    } catch (err) {
+      throw new SourceError(err instanceof Error ? err.message : String(err));
+    }
+  }
   const env = deps.env ?? process.env;
   const ask = deps.ask ?? promptHidden;
   const base = normaliseBase(url);
@@ -78,6 +99,10 @@ export function renderImportPlan(plan: ImportPlan): string {
     if (svc.domains.length) lines.push(`      domains: ${svc.domains.map((d) => `${d.https ? 'https' : 'http'}://${d.host}${d.sourceDefault ? " (the source's own host; stays)" : ''}`).join(', ')}`);
     if (svc.env.length) lines.push(`      env: ${svc.env.length} variable(s): ${svc.env.map((e) => e.key).join(', ')} (names only)`);
     if (svc.volumes.length) lines.push(`      volumes: ${svc.volumes.map((v) => v.mountPath).join(', ')}`);
+    if (svc.create.build?.startCmd) lines.push(`      start: ${svc.create.build.startCmd}`);
+    if (svc.create.build?.preDeployCmd) lines.push(`      before each deploy: ${svc.create.build.preDeployCmd}`);
+    if (svc.settings?.healthCheck) lines.push(`      health check: ${svc.settings.healthCheck}`);
+    if (svc.attachments?.length) lines.push(`      attaches: ${svc.attachments.map((a) => `${a.database} as ${a.envAlias}`).join(', ')}`);
     for (const i of svc.issues) lines.push(`      ${i.level === 'unsupported' ? '✗' : i.level === 'manual' ? '!' : '·'} ${i.option}: ${i.detail}`);
   }
   lines.push('');
@@ -91,10 +116,14 @@ export function renderImportPlan(plan: ImportPlan): string {
   return lines.join('\n');
 }
 
-export async function importPlanAction(kind: string, opts: { url: string; json?: boolean; out?: string }, deps: ImportPlanDeps = {}): Promise<void> {
+export async function importPlanAction(
+  kind: string,
+  opts: { url: string; json?: boolean; out?: string; dir?: string; branch?: string; app?: string },
+  deps: ImportPlanDeps = {},
+): Promise<void> {
   let plan: ImportPlan;
   try {
-    plan = await buildImportPlan(kind, opts.url, deps);
+    plan = await buildImportPlan(kind, opts.url, { ...deps, heroku: { dir: opts.dir, branch: opts.branch, app: opts.app } });
   } catch (err) {
     error(err instanceof Error ? err.message : String(err));
     process.exitCode = 1;

@@ -69,7 +69,7 @@ The usual building blocks are all here: Git and image deploys, TLS, databases, b
 
 ### How it compares
 
-Coolify, Dokploy and CapRover are the closest alternatives. They are older, have larger communities and longer template catalogs, and Coolify also ships MCP and image scanning. NineDeploy does not import projects from them yet. If you already run one of them happily, the reasons to switch are the points above. Feature names alone are not a reason: our capabilities come with stated limits, and we have not verified every competitor's depth.
+Coolify, Dokploy and CapRover are the closest alternatives. They are older, have larger communities and longer template catalogs, and Coolify also ships MCP and image scanning. `ninedeploy import` moves services, databases, volumes and domains from them, and from a Heroku app's `app.json` and `Procfile` ([docs/IMPORTING.md](docs/IMPORTING.md); CapRover is checked against a live instance, Coolify and Dokploy against their source code). If you already run one of them happily, the reasons to switch are the points above. Feature names alone are not a reason: our capabilities come with stated limits, and we have not verified every competitor's depth.
 
 ---
 

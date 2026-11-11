@@ -31,6 +31,18 @@ const REDIS_FAMILY = new Set<PlanEngine>(['redis', 'keydb', 'dragonfly']);
 export function sourceHosts(kind: SourceKind, db: PlanDatabase): string[] {
   const name = db.runtime?.name?.toLowerCase();
   if (!name) return [];
+  switch (db.runtime!.kind) {
+    case 'heroku-app':
+      // The name is the Heroku app, not a host: add-on URLs name Heroku's own hosts.
+      return [];
+    case 'container':
+    case 'swarm-service':
+      break;
+    default: {
+      const never: never = db.runtime!.kind;
+      return never;
+    }
+  }
   if (kind === 'caprover') {
     const app = name.replace(/^srv-captain--/, '');
     return [app, `srv-captain--${app}`];
@@ -88,7 +100,8 @@ export function findConnections(plan: ImportPlan, envContent: string): Connectio
   for (const db of plan.databases) for (const h of sourceHosts(plan.source.kind, db)) byHost.set(h, db);
   let platform: string | null = null;
   try {
-    platform = new URL(plan.source.url).hostname.toLowerCase().replace(/^\[|\]$/g, '');
+    // A Heroku plan's URL is the repository, not a host the app could reach a database on.
+    if (plan.source.kind !== 'heroku') platform = new URL(plan.source.url).hostname.toLowerCase().replace(/^\[|\]$/g, '');
   } catch {
     platform = null;
   }

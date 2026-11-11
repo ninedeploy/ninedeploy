@@ -5,6 +5,8 @@
  * name; anything else becomes a placeholder to fill in by hand.
  */
 
+import type { PlanRuntime } from './plan.js';
+
 /** A Docker container or service name: no spaces, quotes, `$`, `;` or other shell syntax. */
 const DOCKER_NAME = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,254}$/;
 
@@ -25,13 +27,24 @@ export function fileBase(name: string): string {
  * missing or unusual name gives `<container>` and a note saying so.
  */
 export function sourceTarget(
-  runtime: { kind: 'container' | 'swarm-service'; name: string } | undefined,
+  runtime: PlanRuntime | undefined,
   what: string,
   all = false,
 ): { target: string; note: string | null } {
   if (runtime && isPlainName(runtime.name)) {
-    if (runtime.kind === 'container') return { target: runtime.name, note: null };
-    return { target: `$(docker ps -${all ? 'a' : ''}q --filter label=com.docker.swarm.service.name=${runtime.name} | head -n 1)`, note: null };
+    switch (runtime.kind) {
+      case 'container':
+        return { target: runtime.name, note: null };
+      case 'swarm-service':
+        return { target: `$(docker ps -${all ? 'a' : ''}q --filter label=com.docker.swarm.service.name=${runtime.name} | head -n 1)`, note: null };
+      case 'heroku-app':
+        // A Heroku app has no container on a host you run docker on.
+        return { target: '<container>', note: `Replace <container> with ${what}; Heroku runs it, so there is no docker host to read it from.` };
+      default: {
+        const never: never = runtime.kind;
+        return never;
+      }
+    }
   }
   const why = runtime ? ` (its name on the source, ${JSON.stringify(runtime.name)}, is not a plain Docker name, so it is not put in a shell command)` : '';
   return { target: '<container>', note: `Replace <container> with ${what} on the source host (docker ps${all ? ' -a' : ''})${why}.` };

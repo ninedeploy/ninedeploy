@@ -33,7 +33,7 @@ import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { getClient, type NineDeployClient } from '../client.js';
 import { loadConfig } from '../config.js';
 import { c, error, header, info, success } from '../lib/format.js';
-import { findConnections } from '../lib/importers/connections.js';
+import { type ConnectionHit, findConnections } from '../lib/importers/connections.js';
 import type { ImportPlan, PlanEngine, PlanIssue, PlanService } from '../lib/importers/plan.js';
 
 type CreateServiceInput = Parameters<NineDeployClient['services']['create']>[0];
@@ -41,7 +41,11 @@ type CreateDatabaseInput = Parameters<NineDeployClient['databases']['create']>[0
 
 /** The panel calls apply makes; NineDeployClient satisfies it. */
 export interface ApplyClient {
-  services: { create: (input: CreateServiceInput) => Promise<{ id: number }> };
+  services: {
+    create: (input: CreateServiceInput) => Promise<{ id: number }>;
+    /** Settings set right after create (the plan's `settings`, e.g. a worker's `running` health check). */
+    update: (id: number, input: { healthCheck?: 'running' }) => Promise<unknown>;
+  };
   databases: { create: (input: CreateDatabaseInput) => Promise<{ id: number }> };
   env: { import: (serviceId: number, content: string) => Promise<{ imported: number; skipped: number; errors: Array<{ line: number; message: string }> }> };
   attachments: {
@@ -188,12 +192,15 @@ export async function applyPlan(plan: ImportPlan, opts: ApplyOptions, deps: Appl
       let created: { id: number };
       try {
         created = await deps.client.services.create({ ...s.create, reuseExisting: true, ...(opts.project ? { tagProjectIds: [opts.project] } : {}) } as CreateServiceInput);
+        // Before done: a run that stops here creates (reuses) and sets it again.
+        if (s.settings?.healthCheck) await deps.client.services.update(created.id, { healthCheck: s.settings.healthCheck });
       } catch (err) {
         put(key, { ...base, state: 'failed', notes: [message(err)] });
         continue;
       }
       const domains = domainNotes(s);
-      put(key, { ...base, state: 'done', id: created.id, notes: ['Created, not deployed.', ...domains, ...notes] });
+      const settings = s.settings?.healthCheck ? [`Health check: ${s.settings.healthCheck} (the process answers no HTTP).`] : [];
+      put(key, { ...base, state: 'done', id: created.id, notes: ['Created, not deployed.', ...settings, ...domains, ...notes] });
     }
     const serviceId = receipt.items[key]!.id!;
 
@@ -253,27 +260,34 @@ export async function applyPlan(plan: ImportPlan, opts: ApplyOptions, deps: Appl
     }
   }
 
-  // Connection strings in the .env files that still name the source's
-  // databases: attach the new database under that variable when the panel's
-  // string replaces it exactly, otherwise say what to change by hand.
+  // Attachments: the plan's own (Heroku add-ons, set as DATABASE_URL /
+  // REDIS_URL there) and connection strings in the .env files that still name
+  // the source's databases, attached under that variable when the panel's
+  // string replaces them exactly; the rest are listed for a person.
   for (const s of plan.services) {
     const file = envFiles[s.name];
     const svc = receipt.items[`service:${s.ref}`];
-    if (file === undefined || svc?.state !== 'done' || svc.id === undefined) continue;
+    if (svc?.state !== 'done' || svc.id === undefined) continue;
+    const wishes: Array<ConnectionHit & { addon?: true }> = [];
+    for (const a of s.attachments ?? []) {
+      const db = plan.databases.find((d) => d.ref === a.database);
+      if (db && !wishes.some((w) => w.key === a.envAlias)) wishes.push({ key: a.envAlias, database: db, host: '', action: 'attach', reason: '', addon: true });
+    }
+    if (file !== undefined) for (const h of findConnections(plan, file)) if (!wishes.some((w) => w.key === h.key)) wishes.push(h);
     let current: Array<{ id: number; databaseId: number; envAlias: string }> | null = null;
-    for (const h of findConnections(plan, file)) {
+    for (const h of wishes) {
       const key = `attach:${s.ref}:${h.key}`;
       if (receipt.items[key]?.state === 'done') continue;
       const base = { kind: 'attach' as const, ref: `${s.ref}:${h.key}`, name: `${h.key} of ${s.name}` };
-      const what = h.database ? `the source's database ${h.database.name}` : 'the old platform';
+      const what = h.addon ? `the ${h.database!.name} add-on` : h.database ? `the source's database ${h.database.name} (${h.host})` : `the old platform (${h.host})`;
       if (h.action === 'manual') {
-        put(key, { ...base, state: 'skipped', notes: [`${h.key} names ${what} (${h.host}): ${h.reason}.`] });
+        put(key, { ...base, state: 'skipped', notes: [`${h.key} names ${what}: ${h.reason}.`] });
         continue;
       }
       const db = h.database!;
       const made = receipt.items[`database:${db.ref}`];
       if (made?.state !== 'done' || made.id === undefined) {
-        put(key, { ...base, state: 'skipped', notes: [`${h.key} names ${what} (${h.host}), which is not created here yet; run again once it is.`] });
+        put(key, { ...base, state: 'skipped', notes: [`${h.key} names ${what}, which is not created here yet; run again once it is.`] });
         continue;
       }
       try {
@@ -292,7 +306,7 @@ export async function applyPlan(plan: ImportPlan, opts: ApplyOptions, deps: Appl
       // variable naming the same database (DATABASE_URL and DIRECT_URL) is
       // left to a person rather than recorded as attached.
       const onlyOne = (alias: string) =>
-        put(key, { ...base, state: 'skipped', notes: [`${h.key} names the source's database ${db.name} (${h.host}), but ${db.name} is already attached as ${alias}, and the panel gives a database one variable per service. Set ${h.key} by hand (Databases → ${db.name} → Connection).`] });
+        put(key, { ...base, state: 'skipped', notes: [`${h.key} names ${what}, but ${db.name} is already attached as ${alias}, and the panel gives a database one variable per service. Set ${h.key} by hand (Databases → ${db.name} → Connection).`] });
       const other = same ? undefined : current.find((a) => a.databaseId === made.id);
       if (other) {
         onlyOne(other.envAlias);
@@ -318,7 +332,9 @@ export async function applyPlan(plan: ImportPlan, opts: ApplyOptions, deps: Appl
       }
       put(key, {
         ...base, state: 'done', id,
-        notes: [`Attached ${db.name} as ${h.key} (the copied value named ${h.host}). The service's own ${h.key} still shows the old value; the attachment replaces it at every deploy.`],
+        notes: [h.addon
+          ? `Attached ${db.name} as ${h.key}, as Heroku sets it for the add-on. It is set at every deploy.`
+          : `Attached ${db.name} as ${h.key} (the copied value named ${h.host}). The service's own ${h.key} still shows the old value; the attachment replaces it at every deploy.`],
       });
     }
   }
@@ -358,8 +374,14 @@ export function renderApplyPreview(plan: ImportPlan, receipt: ImportReceipt | nu
   }
   const links = plan.services.flatMap((s) => {
     const file = envFiles[s.name];
-    return file === undefined ? [] : findConnections(plan, file).map((h) => ({ s, h }));
+    const own = (s.attachments ?? []).map((a) => a.envAlias);
+    return file === undefined ? [] : findConnections(plan, file).filter((h) => !own.includes(h.key)).map((h) => ({ s, h }));
   });
+  const addons = plan.services.flatMap((s) => (s.attachments ?? []).map((a) => ({ s, a })));
+  if (addons.length) {
+    out.push('Attachments (add-ons):');
+    for (const { s, a } of addons) out.push(`  + ${a.envAlias} of ${s.name}: attach ${a.database}`);
+  }
   if (links.length) {
     out.push('Connection strings that name the source:');
     for (const { s, h } of links) {

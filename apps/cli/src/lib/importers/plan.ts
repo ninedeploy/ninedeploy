@@ -11,7 +11,7 @@
  */
 import type { CreateService } from '@ninedeploy/schemas';
 
-export type SourceKind = 'coolify' | 'dokploy' | 'caprover';
+export type SourceKind = 'coolify' | 'dokploy' | 'caprover' | 'heroku';
 
 /** GET a JSON path on the source panel (auth already applied). */
 export type SourceGet = (path: string) => Promise<unknown>;
@@ -27,7 +27,7 @@ export interface PlanIssue {
 /** The createService fields a step-2 apply would send (subset, never secrets). */
 export type ServiceCreateFields = Pick<CreateService, 'name' | 'type'> &
   Partial<Pick<CreateService, 'image' | 'repoUrl' | 'branch' | 'port' | 'publishedPort' | 'replicas' | 'cpuLimitMilli' | 'memLimitMb' | 'healthPath' | 'volumeMount'>> & {
-    build?: { buildPack?: NonNullable<CreateService['build']>['buildPack']; baseDir?: string; dockerfilePath?: string; outputDir?: string };
+    build?: { buildPack?: NonNullable<CreateService['build']>['buildPack']; baseDir?: string; dockerfilePath?: string; outputDir?: string; startCmd?: string; preDeployCmd?: string };
   };
 
 /**
@@ -66,8 +66,18 @@ export interface PlanService {
    * Where it runs on the source host, for the volume command of `import
    * data` (same shape as PlanDatabase.runtime). Optional and additive.
    */
-  runtime?: { kind: 'container' | 'swarm-service'; name: string };
+  runtime?: PlanRuntime;
+  /** Settings apply sets right after create (an update; not create fields). Optional and additive. */
+  settings?: { healthCheck?: 'running' };
+  /** Databases of the plan to attach under a variable (Heroku add-ons). Optional and additive. */
+  attachments?: Array<{ database: string; envAlias: string }>;
 }
+
+/**
+ * Where an item runs on the source: a container, a Swarm service, or (Heroku
+ * add-ons) the Heroku app that owns it. Every reader switches on `kind`.
+ */
+export type PlanRuntime = { kind: 'container' | 'swarm-service' | 'heroku-app'; name: string };
 
 export type PlanEngine = 'postgres' | 'mysql' | 'mariadb' | 'mongo' | 'redis' | 'keydb' | 'dragonfly' | 'clickhouse';
 export interface PlanDatabase {
@@ -82,7 +92,7 @@ export interface PlanDatabase {
    * a plain container name, or a Swarm service whose task container is found
    * by its com.docker.swarm.service.name label. Optional and additive.
    */
-  runtime?: { kind: 'container' | 'swarm-service'; name: string };
+  runtime?: PlanRuntime;
   issues: PlanIssue[];
 }
 

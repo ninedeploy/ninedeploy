@@ -23,7 +23,7 @@ import { getClient, type NineDeployClient } from '../client.js';
 import { loadConfig } from '../config.js';
 import { c, error, header, info, success } from '../lib/format.js';
 import type { ImportPlan, PlanDatabase, PlanEngine, SourceKind } from '../lib/importers/plan.js';
-import { fileBase, flagArg, sourceTarget } from '../lib/importers/shell.js';
+import { fileBase, flagArg, isPlainName, sourceTarget } from '../lib/importers/shell.js';
 import { type ImportReceipt, renderReceipt, validatePlan, writeReceipt } from './importApply.js';
 import { importVolumes, renderVolumePreview, type VolumeClient } from './importVolumes.js';
 
@@ -64,6 +64,16 @@ const DUMP_FILE: Record<PlanEngine, (n: string) => string> = {
 export function dumpCommand(db: PlanDatabase): { command: string; file: string; notes: string[] } | null {
   if (!db.engine || !IMPORTABLE[db.engine]) return null;
   const file = DUMP_FILE[db.engine](fileBase(db.name));
+  if (db.runtime?.kind === 'heroku-app') {
+    // Heroku Postgres: a pg_dump custom-format backup taken by Heroku, downloaded with the Heroku CLI.
+    if (db.engine !== 'postgres') return null;
+    const app = isPlainName(db.runtime.name) ? db.runtime.name : '<app>';
+    return {
+      command: `heroku pg:backups:capture -a ${app} && curl -sSfo ${file} "$(heroku pg:backups:url -a ${app})"`,
+      file,
+      notes: app === '<app>' ? ['Replace <app> with the Heroku app name.'] : [],
+    };
+  }
   const notes: string[] = [];
   const { target, note } = sourceTarget(db.runtime, 'the name of the database container');
   if (note) notes.push(note);
@@ -108,7 +118,7 @@ export const CUTOVER_ORDER = [
   'Switch DNS to this panel, then add the domains: ninedeploy import cutover plan.json --yes (it adds only hosts whose DNS already points here).',
 ];
 
-const SOURCE_CHECKED_LIVE: Record<SourceKind, boolean> = { caprover: true, coolify: false, dokploy: false };
+const SOURCE_CHECKED_LIVE: Record<SourceKind, boolean> = { caprover: true, coolify: false, dokploy: false, heroku: false };
 
 export function renderDataPreview(plan: ImportPlan, receipt: ImportReceipt | null): string {
   const out: string[] = ['Order:'];
@@ -125,7 +135,12 @@ export function renderDataPreview(plan: ImportPlan, receipt: ImportReceipt | nul
       out.push(`  ✓ ${db.name}: imported (#${data.importId}, sha256 ${data.sha256?.slice(0, 12)}…)`);
       continue;
     }
-    const cmd = dumpCommand(db);
+    // A Heroku add-on without the app name has no command (and no container to docker exec into).
+    const cmd = plan.source.kind === 'heroku' && db.runtime?.kind !== 'heroku-app' ? null : dumpCommand(db);
+    if (!cmd && plan.source.kind === 'heroku') {
+      out.push(`  – ${db.name}: ${db.engine === 'postgres' ? 'pass --app <heroku app> to import plan for the pg:backups command, or download a backup from Heroku' : 'Heroku has no export command for it; move its keys by hand'}`);
+      continue;
+    }
     if (!cmd) {
       out.push(`  – ${db.name}: the panel has no dump import for ${db.engine ?? 'this engine'}; move its data by hand`);
       continue;
@@ -135,7 +150,8 @@ export function renderDataPreview(plan: ImportPlan, receipt: ImportReceipt | nul
     for (const n of cmd.notes) out.push(`      ${n}`);
     out.push(`      then: --dump ${flagArg(db.name, cmd.file)}`);
   }
-  if (!SOURCE_CHECKED_LIVE[plan.source.kind]) out.push('', `The ${plan.source.kind} commands follow its source code and have not been run against a live instance yet.`);
+  if (plan.source.kind === 'heroku') out.push('', 'The Heroku commands follow the Heroku CLI documentation and have not been run against Heroku.');
+  else if (!SOURCE_CHECKED_LIVE[plan.source.kind]) out.push('', `The ${plan.source.kind} commands follow its source code and have not been run against a live instance yet.`);
   out.push(...renderVolumePreview(plan, receipt));
   return out.join('\n');
 }

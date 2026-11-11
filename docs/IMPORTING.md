@@ -1,6 +1,6 @@
-# Moving from Coolify, Dokploy or CapRover
+# Moving from Coolify, Dokploy, CapRover or Heroku
 
-`ninedeploy import plan` reads another platform's API and shows what NineDeploy would create. For each item it also lists what NineDeploy cannot carry over and what needs a person. It is read-only: it creates nothing in NineDeploy and changes nothing on the source. `ninedeploy import apply` then creates what a saved plan describes. It never touches the source.
+`ninedeploy import plan` reads another platform's API, or a Heroku app's `app.json` and `Procfile`, and shows what NineDeploy would create. For each item it also lists what NineDeploy cannot carry over and what needs a person. It is read-only: it creates nothing in NineDeploy and changes nothing on the source. `ninedeploy import apply` then creates what a saved plan describes. It never touches the source.
 
 | Step | What it does | Status |
 |---|---|---|
@@ -21,6 +21,9 @@ NINEDEPLOY_IMPORT_TOKEN=… ninedeploy import plan dokploy --url https://dokploy
 
 # CapRover: the dashboard password (NINEDEPLOY_IMPORT_OTP for a two-factor code; otherwise it is asked for).
 NINEDEPLOY_IMPORT_PASSWORD=… ninedeploy import plan caprover --url https://captain.apps.example.com
+
+# Heroku: no credential. --url is the app's repository, --dir a checkout of it; --app names the Heroku app.
+ninedeploy import plan heroku --url https://github.com/acme/shop.git --dir ./shop --branch main --app acme-shop
 ```
 
 `--json` prints the plan as JSON, and `--out plan.json` also saves it. Leave the variable unset and the command asks for the credential without echoing it.
@@ -166,6 +169,18 @@ The DNS check is strict on purpose. Adding a domain makes Traefik ask Let's Encr
 - An app built by CapRover from an upload or the CLI, with no repository on record, has its image only inside CapRover. Push its source or image somewhere NineDeploy can reach first.
 - A custom nginx config, pre-deploy script and Swarm service override have no equivalent and are listed as such.
 - An app that was registered but never deployed has no image or repository to carry. It is listed for a person to complete.
+
+**Heroku**
+- The plan is built from the app's `app.json` and `Procfile`, as Heroku documents them. No Heroku API is read and no credential is needed.
+- Each Procfile process except `release` becomes a service built from the repository with Nixpacks. Its start command is the process's line.
+  - This is checked live on a NineDeploy panel. Nixpacks runs the start command through a shell, so `$PORT` expands, and sets `PORT` to the service port. The `web` service gets port 5000.
+  - The heroku and paketo build packs, and Dockerfile builds, ignore a start command, which is why the importer does not use them for Procfile apps.
+- `release` runs before each deploy of the web service. Other processes, such as `worker`, get the `running` health check (they answer no HTTP) and no domain. `formation` quantities become replicas, at most 10.
+- The `heroku-postgresql` and `heroku-redis` add-ons become a NineDeploy PostgreSQL and Redis, attached to every service as `DATABASE_URL` and `REDIS_URL`, as Heroku sets them. Other add-ons are listed for you to replace.
+- Config var names come from `app.json`. For the values, run `heroku config --shell -a <app> > shop.env` and pass `--dotenv <service>=shop.env` to `import apply`. Leave out `DATABASE_URL` and `REDIS_URL`, which the attachments set.
+- Heroku Postgres requires SSL, so apps often force it in code. The NineDeploy database is reached over the internal Docker network, which has no TLS: drop that requirement for this connection.
+- `import data` prints `heroku pg:backups:capture` and a download of the backup, which the dump import accepts as a pg_dump custom-format file. Heroku Key-Value Store (Redis) has no export command, so move those keys by hand.
+- Not carried: `scripts.postdeploy` (it runs once on Heroku, so run it by hand after the first deploy), `heroku.yml` container builds, buildpacks other than Nixpacks's own detection, dyno sizes and domains. Add domains to the plan, or under Service → Domains.
 
 ## How the adapters were checked
 

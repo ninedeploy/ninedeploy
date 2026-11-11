@@ -700,14 +700,17 @@ egressCmd
   .action((projectId: string, opts: { driver?: string }) => egressClearAction(getClient(), projectId, opts));
 
 // ── Import from another platform (A1 step 1: read-only plan) ─────────────
-const importCmd = program.command('import').description('Move from Coolify, Dokploy or CapRover: plan (read-only), apply, data, cutover');
+const importCmd = program.command('import').description('Move from Coolify, Dokploy, CapRover or Heroku: plan (read-only), apply, data, cutover');
 importCmd
   .command('plan <source>')
-  .description('Read a coolify | dokploy | caprover panel and print what NineDeploy would create. Nothing is created or changed. The credential comes from NINEDEPLOY_IMPORT_TOKEN (Coolify, Dokploy) or NINEDEPLOY_IMPORT_PASSWORD (CapRover, plus NINEDEPLOY_IMPORT_OTP), or a hidden prompt.')
-  .requiredOption('--url <url>', 'The source panel, e.g. https://coolify.example.com')
+  .description('Read a coolify | dokploy | caprover panel, or a Heroku app\'s app.json and Procfile, and print what NineDeploy would create. Nothing is created or changed. The credential comes from NINEDEPLOY_IMPORT_TOKEN (Coolify, Dokploy) or NINEDEPLOY_IMPORT_PASSWORD (CapRover, plus NINEDEPLOY_IMPORT_OTP), or a hidden prompt; Heroku needs none.')
+  .requiredOption('--url <url>', 'The source panel (e.g. https://coolify.example.com), or for heroku the app\'s git repository')
+  .option('--dir <path>', 'heroku: a checkout of the repository holding app.json / Procfile (default: .)')
+  .option('--branch <branch>', 'heroku: the branch NineDeploy deploys (default: main)')
+  .option('--app <name>', 'heroku: the Heroku app name, for the pg:backups command')
   .option('--json', 'Print the plan as JSON')
   .option('--out <file>', 'Also write the plan (JSON, names only) to a file')
-  .action((source: string, opts: { url: string; json?: boolean; out?: string }) => importPlanAction(source, opts));
+  .action((source: string, opts: { url: string; json?: boolean; out?: string; dir?: string; branch?: string; app?: string }) => importPlanAction(source, opts));
 importCmd
   .command('apply <plan>')
   .description('Create the services and databases of a saved plan (import plan --out) on this panel. Without --yes it only shows what it would create. Never deploys and never adds a domain; keeps a resumable receipt next to the plan.')

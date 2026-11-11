@@ -391,7 +391,7 @@ describe('ninedeploy import plan', () => {
   });
 
   it('refuses an unknown source and an empty credential', async () => {
-    await expect(buildImportPlan('heroku', 'https://x.example', { env: {} })).rejects.toThrow(/Unknown source/);
+    await expect(buildImportPlan('render', 'https://x.example', { env: {} })).rejects.toThrow(/Unknown source/);
     await expect(buildImportPlan('dokploy', 'https://x.example', { env: {}, ask: async () => '  ' })).rejects.toThrow(/NINEDEPLOY_IMPORT_TOKEN/);
   });
 
