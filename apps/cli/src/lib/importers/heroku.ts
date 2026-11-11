@@ -147,7 +147,7 @@ export function planFromHeroku(files: HerokuFiles, opts: HerokuOptions): ImportP
       create.port = 5000;
       issues.push({ level: 'info', option: 'PORT', detail: 'NineDeploy sets PORT to the service port (5000) for a Nixpacks build, as Heroku sets $PORT.' });
       if (release) {
-        issues.push({ level: 'manual', option: 'release', detail: `Nixpacks runs the Procfile's release line ("${release.command}") as a build step of every service built from this repository, with the attached DATABASE_URL, so it runs before each deploy of each of them, not once. Make sure that is safe (a migration usually is), or take it out of the Procfile and run it by hand. A $VARIABLE in it is written, with its value, into the build log and the image.` });
+        issues.push({ level: 'manual', option: 'release', detail: `Nixpacks runs the Procfile's release line ("${release.command}") as a build step of every service built from this repository, with the attached DATABASE_URL, so it runs before each deploy of each of them, not once. Make sure that is safe (a migration usually is), or take it out of the Procfile and run it by hand. A $VARIABLE in it is built into the image with its value (the deploy log masks secret values).` });
       }
     }
     if (!p.command) issues.push({ level: 'info', option: 'Procfile', detail: 'No Procfile: Nixpacks picks the start command.' });

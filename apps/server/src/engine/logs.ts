@@ -3,6 +3,34 @@ import { appendFileSync, closeSync, existsSync, openSync, readdirSync, readFileS
 import path from 'node:path';
 import { config } from '../config.js';
 
+/** Shorter values are not masked: they would blank out ordinary words and numbers. */
+export const MIN_MASKED_LENGTH = 6;
+
+/**
+ * The strings a secret value can appear as in build output: itself, and for a
+ * connection string its password alone, raw and URL-decoded (a tool that
+ * parses the URL prints the password, not the URL).
+ */
+export function secretForms(value: string): string[] {
+  const forms = new Set<string>([value]);
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(value)) {
+    try {
+      const pw = new URL(value).password;
+      if (pw) {
+        forms.add(pw);
+        try {
+          forms.add(decodeURIComponent(pw));
+        } catch {
+          /* not percent-encoded */
+        }
+      }
+    } catch {
+      /* not a URL after all */
+    }
+  }
+  return [...forms].filter((f) => f.length >= MIN_MASKED_LENGTH);
+}
+
 /** r667: how much of a deploy log one read loads (see LogBus.read). */
 export const MAX_LOG_READ_BYTES = 8 * 1024 * 1024;
 
@@ -16,7 +44,33 @@ class LogBus extends EventEmitter {
     this.setMaxListeners(0);
   }
 
-  publish(deploymentId: number, line: string): void {
+  /**
+   * Secret values of a running deployment (its secret env vars, attached
+   * database connection strings, resolved vault references), longest first.
+   * Build tools can echo them: Nixpacks writes a `$VAR` of a build command
+   * into its RUN step with the value filled in, and BuildKit prints that step.
+   * Every published line is masked before it reaches the file or a
+   * subscriber; the set goes when the deployment's last writer ends.
+   */
+  private readonly secrets = new Map<number, string[]>();
+
+  /** Mask these values in everything this deployment logs from now on. */
+  maskValues(deploymentId: number, values: Iterable<string>): void {
+    const all = new Set(this.secrets.get(deploymentId) ?? []);
+    for (const v of values) for (const f of secretForms(v)) all.add(f);
+    if (all.size > 0) this.secrets.set(deploymentId, [...all].sort((a, b) => b.length - a.length));
+  }
+
+  private mask(deploymentId: number, line: string): string {
+    const values = this.secrets.get(deploymentId);
+    if (!values) return line;
+    let out = line;
+    for (const v of values) if (out.includes(v)) out = out.split(v).join('***');
+    return out;
+  }
+
+  publish(deploymentId: number, raw: string): void {
+    const line = this.mask(deploymentId, raw);
     const file = path.join(config.paths.logsDir, `${deploymentId}.log`);
     try {
       appendFileSync(file, `${line}\n`);
@@ -82,6 +136,7 @@ class LogBus extends EventEmitter {
       return;
     }
     this.writers.delete(deploymentId);
+    this.secrets.delete(deploymentId);
     this.emit(`end:${deploymentId}`);
   }
 

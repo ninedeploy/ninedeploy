@@ -1355,6 +1355,10 @@ async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deplo
     const runtimeEnvironment: RuntimeEnvironment = restore
       ? { values: {}, attachmentCount: 0, readyAttachmentCount: 0, managedDatabaseKeys: [], secretKeys: [], withheldFromPreview: [], attachedDatabases: [] }
       : await loadRuntimeEnv(db, service, templateDatabaseId, log);
+    // Mask the secret values in every later line of this deployment's log:
+    // build tools echo them (Nixpacks fills a `$VAR` of a build command into
+    // its RUN step, and BuildKit prints the step).
+    logBus.maskValues(deploymentId, runtimeEnvironment.secretKeys.map((k) => runtimeEnvironment.values[k] ?? ''));
     // G2.1: a compose domain routed to another service of the stack names it in the environment.
     // Best-effort: the variables are a convenience, never a reason to fail the deploy.
     if (service.type === 'compose' && !restore) {

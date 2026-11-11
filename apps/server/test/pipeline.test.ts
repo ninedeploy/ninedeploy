@@ -743,6 +743,24 @@ describe('artifact promotion pipeline', () => {
     await runDeployment(db as never, 1);
     expect(updates).toContainEqual({ table: deployments, values: { artifact: { ...artifact, originDeploymentId: 1 } } });
   });
+  it('masks secret env values in everything the build logs (Nixpacks echoes a RUN step with $VAR filled in)', async () => {
+    const { db } = makeDb();
+    baseSetup(db);
+    db.query.envVars.findMany.mockResolvedValue([
+      { key: 'PRIVATE_TOKEN', valueEncrypted: 'fixture-secret-value-123', isSecret: true },
+      { key: 'PUBLIC_NAME', valueEncrypted: 'fixture-public-value', isSecret: false },
+    ]);
+    const lines = collectLogs(1);
+    // The harness's decrypt answers `dec:<stored>`, so that is the value the build would see.
+    h.builder.buildAndRun.mockImplementationOnce(async () => {
+      logBus.publish(1, '#12 RUN echo "token=dec:fixture-secret-value-123 name=dec:fixture-public-value"');
+      return { runtimeId: 'built', port: 3000, healthPath: '/' } as never;
+    });
+    await runDeployment(db as never, 1);
+    const text = lines.join('\n');
+    expect(text).toContain('#12 RUN echo "token=*** name=dec:fixture-public-value"');
+    expect(text).not.toContain('fixture-secret-value-123');
+  });
   it('refuses registry archival of Nixpacks secret env before building or changing traffic', async () => {
     const { db, updates } = makeDb();
     baseSetup(db, { pushRegistrySourceId: 1, pushRepository: 'team/app' });

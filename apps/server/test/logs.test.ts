@@ -2,7 +2,7 @@
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { deleteLog, logBus, pruneOldLogs } from '../src/engine/logs.js';
+import { deleteLog, logBus, pruneOldLogs, secretForms } from '../src/engine/logs.js';
 
 const h = vi.hoisted(() => {
   const config: { paths: { logsDir: string } } = { paths: { logsDir: '' } };
@@ -35,6 +35,33 @@ describe('logBus', () => {
     expect(listener).toHaveBeenCalledWith('hello');
     expect(logBus.read(42)).toBe('hello\n');
     unsubscribe();
+  });
+
+  it('masks a deployment\'s secret values on disk and live, including a connection string\'s password, until its last writer ends', () => {
+    const listener = vi.fn();
+    const unsubscribe = logBus.subscribe(77, listener);
+    logBus.beginRun(77);
+    logBus.maskValues(77, ['postgres://nine:p%40ss-w0rd!@nd-db-x:5432/app', 'short', 'tok_abcdef123456']);
+    logBus.publish(77, 'url=postgres://nine:p%40ss-w0rd!@nd-db-x:5432/app pw=p@ss-w0rd! raw=p%40ss-w0rd! t=tok_abcdef123456 short');
+    expect(listener).toHaveBeenCalledWith('url=*** pw=*** raw=*** t=*** short');
+    expect(logBus.read(77)).toBe('url=*** pw=*** raw=*** t=*** short\n');
+    logBus.publish(78, 'tok_abcdef123456');
+    expect(logBus.read(78)).toBe('tok_abcdef123456\n');
+    logBus.end(77);
+    logBus.publish(77, 'tok_abcdef123456');
+    expect(logBus.read(77)).toContain('\ntok_abcdef123456\n');
+    logBus.maskValues(79, ['tiny']);
+    logBus.publish(79, 'tiny');
+    expect(logBus.read(79)).toBe('tiny\n');
+    unsubscribe();
+  });
+
+  it('derives the forms a secret appears in', () => {
+    expect(secretForms('redis://:s3cret-pass@h:6379')).toEqual(['redis://:s3cret-pass@h:6379', 's3cret-pass']);
+    expect(secretForms('postgres://u@h/d')).toEqual(['postgres://u@h/d']);
+    expect(secretForms('http://u:%E0%A4%A@h')).toEqual(['http://u:%E0%A4%A@h', '%E0%A4%A']);
+    expect(secretForms('x://[bad')).toEqual(['x://[bad']);
+    expect(secretForms('abc')).toEqual([]);
   });
 
   it('unsubscribing stops delivery', () => {
