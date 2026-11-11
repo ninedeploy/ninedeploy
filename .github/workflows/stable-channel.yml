@@ -68,10 +68,17 @@ jobs:
           fi
           echo "target=$target" >> "$GITHUB_OUTPUT"
 
+      # GitHub refuses the built-in GITHUB_TOKEN any ref whose commit has other
+      # workflow files than the default branch ("Resource not accessible by
+      # integration", 403), and every release commit does once main moves on.
+      # So the tag is written with STABLE_TAG_TOKEN: a fine-grained token for
+      # this repository with Contents and Workflows read and write.
       - name: Move the stable tag
         if: steps.pick.outputs.target != ''
         env:
           TARGET: ${{ steps.pick.outputs.target }}
+          GH_TOKEN: ${{ secrets.STABLE_TAG_TOKEN || secrets.GITHUB_TOKEN }}
+          HAS_TAG_TOKEN: ${{ secrets.STABLE_TAG_TOKEN != '' }}
         run: |
           set -euo pipefail
           sha=$(gh api "repos/$REPO/git/ref/tags/$TARGET" --jq .object.sha)
@@ -79,9 +86,17 @@ jobs:
           [ "$type" = "commit" ] || { echo "::error::$TARGET is not a lightweight tag on a commit ($type)"; exit 1; }
           echo "stable → $TARGET ($sha)"
           if [ "$DRY_RUN" = "true" ]; then exit 0; fi
+          hint() {
+            if [ "$HAS_TAG_TOKEN" != "true" ]; then
+              echo "::error::Could not move the stable tag: the STABLE_TAG_TOKEN secret is not set, and GITHUB_TOKEN may not write a tag on a release commit whose workflow files differ from main. Add a fine-grained token for this repository with Contents and Workflows read and write as the STABLE_TAG_TOKEN Actions secret."
+            else
+              echo "::error::Could not move the stable tag with STABLE_TAG_TOKEN: check that it is not expired and has Contents and Workflows read and write on this repository."
+            fi
+            exit 1
+          }
           if gh api "repos/$REPO/git/ref/tags/stable" >/dev/null 2>&1; then
-            gh api -X PATCH "repos/$REPO/git/refs/tags/stable" -f sha="$sha" -F force=true >/dev/null
+            gh api -X PATCH "repos/$REPO/git/refs/tags/stable" -f sha="$sha" -F force=true >/dev/null || hint
           else
-            gh api -X POST "repos/$REPO/git/refs" -f ref=refs/tags/stable -f sha="$sha" >/dev/null
+            gh api -X POST "repos/$REPO/git/refs" -f ref=refs/tags/stable -f sha="$sha" >/dev/null || hint
           fi
           echo "### Stable is now $TARGET" >> "$GITHUB_STEP_SUMMARY"
