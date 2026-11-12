@@ -976,7 +976,7 @@ async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deplo
     // host, never on the node. Refused before anything is built, so a hook
     // that used to "work" on the wrong machine now fails with the fix named.
     // P2: pre-deploy and post-deploy run on a node whose agent has docker.hooks (asked live).
-    const hookRefusal = await nodeHookRefusal(db, serverId, buildConfig);
+    const hookRefusal = await nodeHookRefusal(db, serverId, buildConfig, service);
     if (hookRefusal) {
       log(`✗ ${hookRefusal}`);
       await nodeAuthority?.check();
@@ -1536,7 +1536,11 @@ async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deplo
       if (await isCancelled(db, deploymentId)) throw new DeploymentCancelled();
     });
 
-    // A node service runs it on the node, from the builder (nodePreDeploy).
+    // A node service runs it on the node, from the builder (nodePreDeploy);
+    // never the panel host's shell for one (r522: the gate admits docker only).
+    if (buildConfig?.preDeployCmd?.trim() && remoteNodeCall && (service.type !== 'docker' || service.orchestrator === 'swarm')) {
+      throw new Error('On a node, deploy hooks run only for a docker service; the pre-deploy hook was not run');
+    }
     if (buildConfig?.preDeployCmd && !remoteNodeCall) {
       log(`▶ Running Pre-Deploy Hook: ${buildConfig.preDeployCmd} …`);
       await runHook(buildConfig.preDeployCmd, workDir, ctx.env, log);
@@ -1695,6 +1699,9 @@ async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deplo
           const image = await nodeRuntimeImage(remoteNodeCall, runtime);
           await runNodeHook(remoteNodeCall, { service: ctx.service, deploymentId, phase: 'post-deploy', cmd: buildConfig.postDeployCmd,
             image, env: ctx.env, extraNetworks: nodeHookNetworks, log });
+        } else if (remoteNodeCall) {
+          // Never the panel host's shell for a node service (r522): the gate admits docker only.
+          throw new Error('on a node, hooks run only for a docker service; it was not run');
         } else {
           await runHook(buildConfig.postDeployCmd, workDir, ctx.env, log);
         }

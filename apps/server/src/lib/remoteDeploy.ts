@@ -438,19 +438,30 @@ export function remoteHookRefusal(build: HookFields | null | undefined, opts: { 
 export const NODE_HOOKS_AGENT_VERSION = '0.18.27';
 
 /**
- * P2: {@link remoteHookRefusal} for `serverId`, asking its agent (live) whether
- * it runs deploy hooks. Null when the hooks can run there.
+ * P2: {@link remoteHookRefusal} for a service on `serverId`, asking its agent
+ * (live) whether it runs deploy hooks. Null when the hooks can run there.
+ * Only a plain docker service runs them on a node (from its release image); a
+ * compose or Swarm service, or any other type, keeps the full refusal.
  */
-export async function nodeHookRefusal(db: DB, serverId: number, build: HookFields | null | undefined): Promise<string | null> {
-  if (remoteHookRefusal(build) === null) return null;
+export async function nodeHookRefusal(
+  db: DB,
+  serverId: number,
+  build: HookFields | null | undefined,
+  service: { type: string; orchestrator?: string | null },
+): Promise<string | null> {
+  const all = remoteHookRefusal(build);
+  if (all === null) return null;
+  if (service.type !== 'docker' || service.orchestrator === 'swarm') {
+    return `${all} On a node, hooks run only for a docker service (not compose, Swarm or other types).`;
+  }
   const preStop = remoteHookRefusal(build, { nodeRunsHooks: true });
   if (preStop) return preStop;
   const { assertNodeCapability } = await import('./agentCapabilities.js');
   try {
     await assertNodeCapability(db, serverId, { cap: 'docker.hooks', feature: 'run pre-deploy and post-deploy hooks in a one-off container', sealedRequired: true });
     return null;
-  } catch {
-    return remoteHookRefusal(build);
+  } catch (err) {
+    return `${all} (${err instanceof Error ? err.message : String(err)})`;
   }
 }
 
@@ -469,7 +480,10 @@ export async function assertRemoteServiceSupported(
   }
   if (service.serverId == null) return;
   const build = await db.query.buildConfigs.findFirst({ where: eq(buildConfigs.serviceId, service.id) });
-  const hookReason = await nodeHookRefusal(db, service.serverId, build);
+  // A caller that does not say the type gets the full refusal (only docker runs hooks on a node).
+  const hookReason = await nodeHookRefusal(db, service.serverId, build, {
+    type: service.type ?? '', orchestrator: (service as { orchestrator?: string | null }).orchestrator ?? null,
+  });
   if (hookReason) throw badRequest(hookReason, 'remote_deploy_unsupported');
 }
 

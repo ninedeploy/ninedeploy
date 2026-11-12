@@ -3332,6 +3332,24 @@ describe('runDeployment on a remote-server target', () => {
     expect(inserts.filter((i) => i.table === auditLog).map((i) => i.values)[0]).toMatchObject({ action: 'deploy.failed' });
   });
 
+  it('P2: a compose service on a node whose agent runs hooks is still refused, and never runs a hook on the panel host', async () => {
+    const { db } = makeDb();
+    baseSetup(db, { type: 'compose', serverId: 4, composeContent: 'services: {}' });
+    db.query.buildConfigs.findFirst.mockResolvedValue({ buildPack: 'auto', preDeployCmd: null, postDeployCmd: 'curl -fsS http://x', preStopCmd: '' });
+    const lines = collectLogs(1);
+    agentRunsHooks(() => ({ exitCode: 0 }));
+    h.agentOp.mockClear();
+    execMock.run.mockClear();
+
+    await runDeployment(db as never, 1);
+
+    const ops = h.agentOp.mock.calls.map((c) => (c as unknown[])[2] as string);
+    expect(ops).not.toContain('docker.composeUp');
+    expect(ops).not.toContain('docker.hookRun');
+    expect(execMock.run).not.toHaveBeenCalled();
+    expect(lines.join(' ')).toMatch(/hooks run only for a docker service/);
+  });
+
   it('P2: a pre-stop hook is still refused on a node, before anything runs', async () => {
     const { db } = makeDb();
     baseSetup(db, { image: 'nginx:latest', serverId: 4 });

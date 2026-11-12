@@ -72,6 +72,37 @@ describe('runNodeDeployHook', () => {
     expect(calls.filter((c) => c[0] === 'rm')).toEqual([['rm', '-f', 'nd-hook-5-12-pre'], ['rm', '-f', 'nd-hook-5-12-pre']]);
   });
 
+  it('a hook that outlives its bound is reported as timed out, and its container is removed', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      const calls: string[][] = [];
+      const spawn = vi.fn(async (argv: string[], onLine: (l: string) => void) => {
+        calls.push(argv);
+        if (argv[0] === 'image') { onLine(IMAGE_ID); return 0; }
+        if (argv[0] === 'inspect') { if (calls.filter((c) => c[0] === 'inspect').length === 1) return 1; onLine('hook'); return 0; }
+        if (argv[0] === 'start') { vi.setSystemTime(Date.now() + 601_000); return 124; }
+        return 0;
+      });
+      const receipt = await runNodeDeployHook(base, () => undefined, spawn);
+      expect(receipt).toMatchObject({ exitCode: 124, timedOut: true });
+      expect(calls.at(-1)).toEqual(['rm', '-f', 'nd-hook-5-12-pre']);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a hook that exits 124 by itself, well within its bound, did not time out', async () => {
+    const { spawn } = fakeDocker({ imageId: IMAGE_ID, exitCode: 124 });
+    expect(await runNodeDeployHook(base, () => undefined, spawn)).toMatchObject({ exitCode: 124, timedOut: false });
+  });
+
+  it('the panel waits the hook bound plus a margin, on the transport without a headers timeout', async () => {
+    const { agentRequestTimeoutMs, LONG_AGENT_OPS } = await import('../../src/lib/agentClient.js');
+    expect(LONG_AGENT_OPS.has('docker.hookRun')).toBe(true);
+    expect(agentRequestTimeoutMs('docker.hookRun', { timeoutSeconds: 3600 })).toBe(3_720_000);
+    expect(agentRequestTimeoutMs('docker.hookRun', { timeoutSeconds: 60 })).toBe(180_000);
+  });
+
   it('never touches a container under the name that is not a hook', async () => {
     const { spawn, calls } = fakeDocker({ imageId: IMAGE_ID, existing: 'service' });
     await expect(runNodeDeployHook(base, () => undefined, spawn)).rejects.toThrow(/held by something other than a deploy hook/);

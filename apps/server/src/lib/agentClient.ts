@@ -45,6 +45,8 @@ export const LONG_AGENT_OPS: ReadonlySet<string> = new Set([
   'build.railpack',
   'docker.buildWith',
   'docker.push',
+  // P2: a node deploy hook (a migration) may run long; its own bound is its timeoutSeconds.
+  'docker.hookRun',
 ]);
 /** Node-side child timeout for {@link LONG_AGENT_OPS} — the panel host's exec default. */
 export const AGENT_LONG_OP_TIMEOUT_MS = 30 * 60 * 1000;
@@ -83,6 +85,11 @@ export function agentRequestTimeoutMs(op: string, params: Record<string, unknown
   if (op === 'docker.readiness') return 15_000;
   if (op === 'docker.metrics') return 15_000;
   if (op === 'docker.logsSince') return 20_000;
+  // P2: the hook's own bound (lib/nodeDeployHookRun.ts), plus its setup, cleanup and the answer.
+  if (op === 'docker.hookRun') {
+    const s = params['timeoutSeconds'];
+    return (typeof s === 'number' && Number.isInteger(s) && s >= 1 && s <= 3600 ? s : 3600) * 1000 + 120_000;
+  }
   return LONG_AGENT_OPS.has(op) ? AGENT_LONG_OP_TIMEOUT_MS + 30_000 : SHORT_OP_REQUEST_MS;
 }
 

@@ -395,7 +395,9 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     // (no BuildKit daemon configured via BUILDKIT_HOST).
     if (input.serverId != null) {
       // P2: pre-deploy and post-deploy run on a node whose agent has docker.hooks (asked live).
-      const hookRefusal = await nodeHookRefusal(app.db, input.serverId, input.build);
+      const hookRefusal = await nodeHookRefusal(app.db, input.serverId, input.build, {
+        type: input.type, orchestrator: (input as { orchestrator?: string | null }).orchestrator ?? null,
+      });
       if (hookRefusal) throw badRequest(hookRefusal, 'remote_deploy_unsupported');
     }
     // 0.16 T4: not when a node whose agent builds Railpack itself builds it.
@@ -924,12 +926,17 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     const mergedServerId = patch.serverId !== undefined ? patch.serverId : existing.serverId;
     const placing = patch.serverId != null && patch.serverId !== existing.serverId;
     const settingHook = (['preDeployCmd', 'postDeployCmd', 'preStopCmd'] as const).some((k) => !!build?.[k]?.trim());
-    if (mergedServerId != null && (placing || settingHook)) {
+    // P2: hooks run on a node for a docker service only, so a kind change re-checks them too.
+    const patchedOrchestrator = (patch as { orchestrator?: string | null }).orchestrator;
+    const mergedType = patch.type ?? existing.type;
+    const mergedOrchestrator = patchedOrchestrator !== undefined ? patchedOrchestrator : existing.orchestrator;
+    const changingKind = mergedType !== existing.type || mergedOrchestrator !== existing.orchestrator;
+    if (mergedServerId != null && (placing || settingHook || changingKind)) {
       const hookRefusal = await nodeHookRefusal(app.db, mergedServerId, {
         preDeployCmd: merged('preDeployCmd'),
         postDeployCmd: merged('postDeployCmd'),
         preStopCmd: merged('preStopCmd'),
-      });
+      }, { type: mergedType, orchestrator: mergedOrchestrator });
       if (hookRefusal) throw badRequest(hookRefusal, 'remote_deploy_unsupported');
     }
     // r520/r582: switching TO railpack on an install that cannot run it.

@@ -244,6 +244,15 @@ describe('remoteHookRefusal (r522)', () => {
     expect(remoteHookRefusal({ preDeployCmd: 'npm run migrate', preStopCmd: 'drain' }, { nodeRunsHooks: true })).toMatch(/pre-stop hook acts on the running container/);
   });
 
+  it('P2: only a plain docker service runs hooks on a node; the agent is not even asked for the others', async () => {
+    const { nodeHookRefusal } = await import('../../src/lib/remoteDeploy.js');
+    const db = {} as never;
+    for (const kind of [{ type: 'compose' }, { type: 'pm2' }, { type: 'docker', orchestrator: 'swarm' }]) {
+      expect(await nodeHookRefusal(db, 4, { postDeployCmd: 'x' }, kind)).toMatch(/hooks run only for a docker service/);
+    }
+    expect(await nodeHookRefusal(db, 4, { postDeployCmd: '  ' }, { type: 'compose' })).toBeNull();
+  });
+
   it('P2: the version in the message is the capability version', async () => {
     const { NODE_HOOKS_AGENT_VERSION } = await import('../../src/lib/remoteDeploy.js');
     const { AGENT_CAPABILITY_VERSION } = await import('../../src/lib/agentCapabilities.js');
