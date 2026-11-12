@@ -6,9 +6,10 @@ import { audit } from '../lib/audit.js';
 import { deleteGrantsForMember, reinstateGrantsForMember, suspendGrantsForMember } from '../lib/accessGrants.js';
 import { randomToken, sha256 } from '../lib/crypto.js';
 import { unauthorized } from '../lib/errors.js';
-import { getSettingJson, setSettingJson, setSettingString } from '../lib/settings.js';
+import { setSettingJson, setSettingString } from '../lib/settings.js';
 import { STUDIO_EPOCH_KEY } from './studioProxy.js';
 import { rehomeOwnedResources } from './workspaces.js';
+import { readOwnedSettingJson } from '../lib/ownedSettingSchemas.js';
 
 /**
  * SCIM 2.0 user provisioning (RFC 7644) — the deprovisioning half of the
@@ -107,7 +108,7 @@ type WorkspaceRole = (typeof workspaceRole)[number];
 const suspendedKey = (workspaceId: number) => `scim.suspended.ws${workspaceId}`;
 
 async function suspendedSeats(db: DB, workspaceId: number): Promise<Record<string, WorkspaceRole>> {
-  return (await getSettingJson<Record<string, WorkspaceRole>>(db, suspendedKey(workspaceId), {})) ?? {};
+  return readOwnedSettingJson<Record<string, WorkspaceRole>>(db, suspendedKey(workspaceId), {});
 }
 
 async function suspendedRole(db: DB, userId: number, workspaceId: number): Promise<WorkspaceRole | null> {

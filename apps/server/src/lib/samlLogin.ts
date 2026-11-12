@@ -5,7 +5,8 @@ import { InMemoryCacheProvider } from '@node-saml/node-saml/lib/in-memory-cache-
 import { SAML, ValidateInResponseTo, type Profile } from '@node-saml/node-saml';
 import { z } from 'zod';
 import { parseIdpMetadata, wrapPem } from './saml.js';
-import { getSettingJson, setSettingJson } from './settings.js';
+import { setSettingJson } from './settings.js';
+import { readOwnedSettingJson } from './ownedSettingSchemas.js';
 
 /**
  * G3.6 SAML sign-in, on `@node-saml/node-saml` (xml-crypto for XML-DSig with
@@ -142,13 +143,13 @@ interface StoredLink {
 
 /** The account a provider's subject is linked to, when the link matches the IdP's current configuration. */
 export async function linkedSamlUser(db: DB, providerId: number, subject: string, fingerprint: string): Promise<{ userId: number } | { stale: true } | null> {
-  const link = await getSettingJson<StoredLink>(db, linkKey(providerId, subject), null);
-  if (!link || !Number.isInteger(link.userId)) return null;
+  const link = await readOwnedSettingJson<StoredLink | null>(db, linkKey(providerId, subject), null);
+  if (!link) return null;
   return link.fingerprint === fingerprint ? { userId: link.userId } : { stale: true };
 }
 
 export async function linkSamlIdentity(db: DB, providerId: number, subject: string, userId: number, fingerprint: string): Promise<void> {
-  const existing = await getSettingJson<StoredLink>(db, linkKey(providerId, subject), null);
+  const existing = await readOwnedSettingJson<StoredLink | null>(db, linkKey(providerId, subject), null);
   if (existing && existing.userId !== userId) throw new Error('This SAML identity is already linked to another account');
   await setSettingJson<StoredLink>(db, linkKey(providerId, subject), { userId, fingerprint });
 }

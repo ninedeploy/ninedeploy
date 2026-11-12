@@ -18,6 +18,7 @@ import {
 import { buildEnv, capture, killTree } from './exec.js';
 import { getSettingJson, setSettingJson } from './settings.js';
 import { settingRowsWithPrefix } from './settingRows.js';
+import { readOwnedSettingJson } from './ownedSettingSchemas.js';
 
 /**
  * G5.1 image vulnerability scanning with Trivy, panel host only.
@@ -65,7 +66,7 @@ export async function setImageScanPolicy(db: DB, patch: ImageScanPolicyPatch): P
 }
 
 export async function getImageScanResult(db: DB, serviceId: number): Promise<ImageScanResult | null> {
-  return getSettingJson<ImageScanResult>(db, resultKey(serviceId), null);
+  return readOwnedSettingJson<ImageScanResult | null>(db, resultKey(serviceId), null);
 }
 
 /** Drop the results of services that no longer exist. Returns how many went. */

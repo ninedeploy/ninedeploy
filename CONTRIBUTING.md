@@ -36,7 +36,7 @@ pnpm typecheck && pnpm lint && pnpm test
   - every route in the authorization matrix and the OpenAPI surface;
   - every environment variable in `.env.example`;
   - no import cycles;
-  - every per-entity settings key declared in `lib/ownedSettings.ts`.
+  - every per-entity settings key declared in `lib/ownedSettings.ts`, with its stored shape in `lib/ownedSettingSchemas.ts` (read JSON rows through `readOwnedSettingJson`).
 
 ## The rules every change follows
 

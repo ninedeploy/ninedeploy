@@ -4,7 +4,8 @@ import { decrypt } from './crypto.js';
 import { guardedFetch } from './egressGuard.js';
 import { commitStateFor, type CommitState, type FeedbackLog } from './githubFeedback.js';
 import { redactSecrets } from './redactSecret.js';
-import { getSettingJson, setSettingJson } from './settings.js';
+import { setSettingJson } from './settings.js';
+import { readOwnedSettingJson } from './ownedSettingSchemas.js';
 
 /**
  * Commit statuses for GitLab, Gitea and Bitbucket (ROADMAP 0.16.8 item 8),
@@ -35,7 +36,7 @@ export interface CommitStatusSetting {
 const settingKey = (serviceId: number) => `commit_status:${serviceId}`;
 
 export async function getCommitStatusSetting(db: DB, serviceId: number): Promise<CommitStatusSetting> {
-  const stored = await getSettingJson<CommitStatusSetting>(db, settingKey(serviceId), null);
+  const stored = await readOwnedSettingJson<CommitStatusSetting | null>(db, settingKey(serviceId), null);
   return { enabled: stored?.enabled === true };
 }
 

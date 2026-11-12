@@ -15,8 +15,9 @@ import { backupNodeVolume, createNodeVolume, nodeVolumeExists, restoreNodeVolume
 import { loadServiceForUser } from '../lib/resourceAccess.js';
 import { composeVolumes, createComposeVolume, type ComposeVolume } from '../lib/composeVolumes.js';
 import { primaryServiceVolumeName } from '../lib/retainedSlugVolume.js';
-import { getSettingJson, setSettingJson } from '../lib/settings.js';
+import { setSettingJson } from '../lib/settings.js';
 import type { AuthUser } from '../plugins/auth.js';
+import { readOwnedSettingJson } from '../lib/ownedSettingSchemas.js';
 
 /**
  * G3.1 move a service WITH its data between the panel host and nodes.
@@ -121,7 +122,7 @@ export function serviceMoveRoutes(deps: MoveDeps = defaultMoveDeps): FastifyPlug
 
     app.get('/:id/move', async (req): Promise<ServiceMoveView> => {
       const svc = await loadServiceForUser(app.db, parseId((req.params as { id: string }).id), req.user!);
-      return (await getSettingJson<ServiceMoveView>(app.db, key(svc.id), null)) ?? { state: 'none', from: null, to: null, step: null, error: null, startedAt: null, finishedAt: null, deploymentId: null };
+      return (await readOwnedSettingJson<ServiceMoveView | null>(app.db, key(svc.id), null)) ?? { state: 'none', from: null, to: null, step: null, error: null, startedAt: null, finishedAt: null, deploymentId: null };
     });
 
     app.post('/:id/move', async (req, reply): Promise<ServiceMoveView> => {

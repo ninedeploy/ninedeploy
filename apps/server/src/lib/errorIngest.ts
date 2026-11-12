@@ -2,7 +2,8 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { brotliDecompressSync, gunzipSync, inflateSync } from 'node:zlib';
 import { and, desc, eq, inArray, like, lt, ne, or, sql } from 'drizzle-orm';
 import { deployments, errorEvents, errorIssues, settings, type DB, type ErrorIssue } from '@ninedeploy/db';
-import { getSettingJson, setSettingJson } from './settings.js';
+import { setSettingJson } from './settings.js';
+import { readOwnedSettingJson } from './ownedSettingSchemas.js';
 
 /**
  * G5.4 Sentry-compatible error ingest. A service gets a DSN
@@ -24,7 +25,7 @@ interface StoredKey {
 }
 
 export async function ingestKeyInfo(db: DB, serviceId: number): Promise<{ createdAt: string } | null> {
-  const k = await getSettingJson<StoredKey>(db, keyName(serviceId), null);
+  const k = await readOwnedSettingJson<StoredKey | null>(db, keyName(serviceId), null);
   return k ? { createdAt: k.createdAt } : null;
 }
 
@@ -41,7 +42,7 @@ export async function removeIngestKey(db: DB, serviceId: number): Promise<void> 
 
 export async function ingestKeyMatches(db: DB, serviceId: number, key: string | null): Promise<boolean> {
   if (!key || !/^[0-9a-f]{32}$/.test(key)) return false;
-  const k = await getSettingJson<StoredKey>(db, keyName(serviceId), null);
+  const k = await readOwnedSettingJson<StoredKey | null>(db, keyName(serviceId), null);
   if (!k) return false;
   return timingSafeEqual(Buffer.from(sha256(key), 'hex'), Buffer.from(k.keyHash, 'hex'));
 }

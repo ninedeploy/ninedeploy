@@ -2,7 +2,8 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { settings, type DB } from '@ninedeploy/db';
 import { isDockerHub, parseImageRef } from './imageRef.js';
-import { getSettingJson, setSettingJson } from './settings.js';
+import { setSettingJson } from './settings.js';
+import { readOwnedSettingJson } from './ownedSettingSchemas.js';
 
 /**
  * G1.7 registry push webhooks. A secret URL per image service that a
@@ -29,8 +30,7 @@ export const TOKEN_RE = /^[A-Za-z0-9_-]{32}$/;
 const sha256 = (s: string) => createHash('sha256').update(s).digest('hex');
 
 export async function getRegistryHook(db: DB, serviceId: number): Promise<StoredRegistryHook | null> {
-  const raw = await getSettingJson<StoredRegistryHook>(db, key(serviceId), null);
-  return raw && typeof raw.tokenSha256 === 'string' && Number.isInteger(raw.userId) ? raw : null;
+  return readOwnedSettingJson<StoredRegistryHook | null>(db, key(serviceId), null);
 }
 
 /** Mint a new token (the previous one stops working); returns it once. */
