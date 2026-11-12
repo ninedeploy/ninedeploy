@@ -593,26 +593,32 @@ export async function runDatabaseUpgrade(
 
 /** Point the row back at the previous volume. Writes made since the upgrade stay on the upgraded volume. */
 export async function rollbackDatabaseUpgrade(db: DB, upgrade: UpgradeRow, actorId: number | null, deps: DatabaseUpgradeDeps = databaseUpgradeDeps): Promise<void> {
-  if (upgrade.status !== 'completed') throw refuse('database_upgrade_state', `Only a completed upgrade can be rolled back (this one is ${upgrade.status}).`);
-  const d = await db.query.databases.findFirst({ where: eq(databases.id, upgrade.databaseId) });
-  if (!d) throw refuse('database_upgrade_state', 'The database is gone.');
-  if (d.volumeName !== upgrade.targetVolume) throw refuse('database_upgrade_state', `The database no longer uses ${upgrade.targetVolume}.`);
-  if (d.pitrEnabled) throw refuse('database_upgrade_pitr', 'Point-in-time recovery is on: its archive and base backups belong to the upgraded cluster. Turn it off before rolling back.');
-  if (!(await deps.volumeExists(upgrade.previousVolume))) throw refuse('database_upgrade_state', `The previous volume ${upgrade.previousVolume} is gone; nothing to roll back to.`);
-  const log = (line: string) => logger.info(`database #${d.id} upgrade #${upgrade.id}: ${line}`);
-  await deps.maintenance(d, log, async () => {
+  const d0 = await db.query.databases.findFirst({ where: eq(databases.id, upgrade.databaseId) });
+  if (!d0) throw refuse('database_upgrade_state', 'The database is gone.');
+  const log = (line: string) => logger.info(`database #${d0.id} upgrade #${upgrade.id}: ${line}`);
+  // Every check runs again under the database's lock: a concurrent rollback,
+  // finalize or upgrade must never act on what this call read before it.
+  await deps.maintenance(d0, log, async () => {
+    const up = await db.query.databaseUpgrades.findFirst({ where: eq(databaseUpgrades.id, upgrade.id) });
+    const d = await db.query.databases.findFirst({ where: eq(databases.id, upgrade.databaseId) });
+    if (!up || up.status !== 'completed') throw refuse('database_upgrade_state', `Only a completed upgrade can be rolled back (this one is ${up?.status ?? 'gone'}).`);
+    if (!d) throw refuse('database_upgrade_state', 'The database is gone.');
+    if (d.volumeName !== up.targetVolume) throw refuse('database_upgrade_state', `The database no longer uses ${up.targetVolume}.`);
+    if (d.pitrEnabled) throw refuse('database_upgrade_pitr', 'Point-in-time recovery is on: its archive and base backups belong to the upgraded cluster. Turn it off before rolling back.');
+    if (!(await deps.volumeExists(up.previousVolume))) throw refuse('database_upgrade_state', `The previous volume ${up.previousVolume} is gone; nothing to roll back to.`);
+    // Claim the rollback before anything stops: a racing finalize now finds it is no longer `completed`.
+    const claimed = await db.update(databaseUpgrades).set({ status: 'rolled_back', switched: false, rolledBackAt: new Date() })
+      .where(and(eq(databaseUpgrades.id, up.id), eq(databaseUpgrades.status, 'completed'))).returning({ id: databaseUpgrades.id });
+    if (claimed.length === 0) throw refuse('database_upgrade_state', 'The upgrade changed meanwhile; reload and try again.');
     await db.update(databases).set({ status: 'stopped' }).where(eq(databases.id, d.id));
     await deps.stopAndRemove(d.containerName!, log);
-    await db.transaction(async (tx) => {
-      await tx.update(databases).set({ version: upgrade.previousVersion, volumeName: upgrade.previousVolume }).where(eq(databases.id, d.id));
-      await tx.update(databaseUpgrades).set({ status: 'rolled_back', switched: false, rolledBackAt: new Date() }).where(eq(databaseUpgrades.id, upgrade.id));
-    });
+    await db.update(databases).set({ version: up.previousVersion, volumeName: up.previousVolume }).where(eq(databases.id, d.id));
     const back = (await db.query.databases.findFirst({ where: eq(databases.id, d.id) }))!;
     if (!(await bringUp(db, back, deps, log))) {
-      throw new HttpError(500, 'database_upgrade_rollback_start', `The row points at ${upgrade.previousVolume} again, but PostgreSQL ${upgrade.fromMajor} did not start; start it from the database page.`);
+      throw new HttpError(500, 'database_upgrade_rollback_start', `The row points at ${up.previousVolume} again, but PostgreSQL ${up.fromMajor} did not start; start it from the database page.`);
     }
   });
-  void audit(db, actorId, 'database.upgrade.rollback', d.name, { databaseId: d.id, upgradeId: upgrade.id, fromMajor: upgrade.fromMajor, toMajor: upgrade.toMajor });
+  void audit(db, actorId, 'database.upgrade.rollback', d0.name, { databaseId: d0.id, upgradeId: upgrade.id, fromMajor: upgrade.fromMajor, toMajor: upgrade.toMajor });
 }
 
 /**
@@ -620,19 +626,29 @@ export async function rollbackDatabaseUpgrade(db: DB, upgrade: UpgradeRow, actor
  * completed upgrade, the upgraded one after a rollback.
  */
 export async function finalizeDatabaseUpgrade(db: DB, upgrade: UpgradeRow, actorId: number | null, deps: DatabaseUpgradeDeps = databaseUpgradeDeps): Promise<{ removedVolume: string }> {
-  if (upgrade.status !== 'completed' && upgrade.status !== 'rolled_back') {
-    throw refuse('database_upgrade_state', `Only a completed or rolled-back upgrade can be finalized (this one is ${upgrade.status}).`);
-  }
-  const d = await db.query.databases.findFirst({ where: eq(databases.id, upgrade.databaseId) });
-  const unused = upgrade.status === 'completed' ? upgrade.previousVolume : upgrade.targetVolume;
-  if (d?.volumeName === unused) throw refuse('database_upgrade_state', `The database still uses ${unused}.`);
+  const d0 = await db.query.databases.findFirst({ where: eq(databases.id, upgrade.databaseId) });
   const log = (line: string) => logger.info(`database #${upgrade.databaseId} upgrade #${upgrade.id}: ${line}`);
-  if (await deps.volumeExists(unused)) {
-    if (!(await deps.removeVolume(unused, log))) throw refuse('database_upgrade_volume_busy', `Volume ${unused} could not be removed (a container may still mount it).`);
-  }
-  await db.update(databaseUpgrades).set({ status: 'finalized', finalizedAt: new Date() }).where(eq(databaseUpgrades.id, upgrade.id));
-  void audit(db, actorId, 'database.upgrade.finalize', d?.name ?? `#${upgrade.databaseId}`, { databaseId: upgrade.databaseId, upgradeId: upgrade.id, removedVolume: unused });
-  return { removedVolume: unused };
+  const work = async (): Promise<{ removedVolume: string; name: string }> => {
+    // Re-read under the lock: a rollback may have switched the row since.
+    const up = await db.query.databaseUpgrades.findFirst({ where: eq(databaseUpgrades.id, upgrade.id) });
+    if (!up || (up.status !== 'completed' && up.status !== 'rolled_back')) {
+      throw refuse('database_upgrade_state', `Only a completed or rolled-back upgrade can be finalized (this one is ${up?.status ?? 'gone'}).`);
+    }
+    const d = await db.query.databases.findFirst({ where: eq(databases.id, up.databaseId) });
+    const unused = up.status === 'completed' ? up.previousVolume : up.targetVolume;
+    if (d?.volumeName === unused) throw refuse('database_upgrade_state', `The database still uses ${unused}.`);
+    if (await deps.volumeExists(unused)) {
+      if (!(await deps.removeVolume(unused, log))) throw refuse('database_upgrade_volume_busy', `Volume ${unused} could not be removed (a container may still mount it).`);
+    }
+    await db.update(databaseUpgrades).set({ status: 'finalized', finalizedAt: new Date() })
+      .where(and(eq(databaseUpgrades.id, up.id), eq(databaseUpgrades.status, up.status)));
+    return { removedVolume: unused, name: d?.name ?? `#${up.databaseId}` };
+  };
+  // The database's lock serializes this with a rollback and an upgrade; a
+  // database already deleted has nothing left to race with.
+  const out = d0 ? await deps.maintenance(d0, log, work) : await work();
+  void audit(db, actorId, 'database.upgrade.finalize', out.name, { databaseId: upgrade.databaseId, upgradeId: upgrade.id, removedVolume: out.removedVolume });
+  return { removedVolume: out.removedVolume };
 }
 
 /**

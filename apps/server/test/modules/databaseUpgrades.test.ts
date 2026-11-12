@@ -141,6 +141,10 @@ describe('database upgrade routes', () => {
       expect(res.statusCode, `${method} ${url}`).toBe(409);
       expect(res.json().error?.message ?? res.body, `${method} ${url}`).toContain('major upgrade');
     }
+    // A create retry for the same database (reuseExisting) must not start it either.
+    const retry = await a.inject({ method: 'POST', url: '/v1/databases', headers: as, payload: { name: 'orders', engine: 'postgres', version: '16', reuseExisting: true } });
+    expect(retry.statusCode).toBe(409);
+    expect(retry.json().error?.message).toContain('major upgrade');
     expect((await db.query.databases.findFirst({ where: eq(databases.id, 10) }))!.status).toBe('running');
   });
 });

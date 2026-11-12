@@ -370,6 +370,8 @@ export const databasesRoutes: FastifyPluginAsync = async (app) => {
             // 0.16 T6: a node row is never resumed by a panel-host request.
             existing.serverId == null;
           if (!sameRequest) throw badRequest('A different database already uses this name');
+          // O2: a retry must not start the container an upgrade stopped on purpose.
+          await assertNoRunningUpgrade(app.db, existing.id);
 
           try {
             // A reused row whose adoption never completed (failed first attempt

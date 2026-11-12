@@ -296,6 +296,20 @@ describe('rollback and finalize', () => {
     expect((await upgradeRow(up.id)).status).toBe('completed');
   });
 
+  it('finalize and rollback act on the state under the lock, never on a stale copy', async () => {
+    const { deps, volumes } = fakeDeps();
+    const stale = await admitAndRun(deps);
+    expect(stale.status).toBe('completed');
+    await rollbackDatabaseUpgrade(db, stale, 7, deps);
+    // A finalize sent with the pre-rollback copy must delete the UPGRADED
+    // volume (now unused), never the previous one the row points at again.
+    expect(await finalizeDatabaseUpgrade(db, stale, 7, deps)).toEqual({ removedVolume: `nd-db-orders-data-u${stale.id}` });
+    expect(volumes.has('nd-db-orders-data')).toBe(true);
+    // And a rollback sent with that copy after the finalize is refused.
+    await expect(rollbackDatabaseUpgrade(db, stale, 7, deps)).rejects.toMatchObject({ code: 'database_upgrade_state' });
+    expect(deps.maintenance).toHaveBeenCalledTimes(4);
+  });
+
   it('rollback is refused while PITR is on', async () => {
     const { deps } = fakeDeps();
     const up = await admitAndRun(deps);
