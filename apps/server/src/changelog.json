@@ -1,5 +1,19 @@
 [
   {
+    "version": "0.18.27",
+    "date": "2026-11-12",
+    "title": "PostgreSQL major upgrades, node parity, and importers from Coolify, Dokploy, CapRover and Heroku",
+    "changes": [
+      "Databases → Settings → Major version upgrade moves a PostgreSQL database to a newer major (14–18). The running cluster is checked first; the database is dumped, restored into a new volume and compared before the switch, keeps its hostname and password, and can be rolled back until you finalize.",
+      "Services on nodes get maintenance mode and custom error pages, the restart-loop limit, and pre- and post-deploy hooks. Update each node agent to this release to use them.",
+      "Swarm replicas on worker nodes get the terminal, the file browser, inspect and metrics, through the worker's agent.",
+      "ninedeploy import moves apps from Coolify, Dokploy, CapRover or Heroku: plan, create the services and databases, copy database dumps and volumes, then add the domains once DNS points here.",
+      "Security: deploy logs no longer show secret values (database passwords, secret variables) that a build tool echoes.",
+      "A compact panel layout to try under Settings → Appearance → Layout.",
+      "Fixes: a new PostgreSQL database no longer crash-loops on a kept volume of another major; a backup right after a database starts no longer fails; damaged per-service settings read as unset. See CHANGELOG.md."
+    ]
+  },
+  {
     "version": "0.18.26",
     "date": "2026-11-09",
     "title": "Your panel on its own domain, a stable update channel, and a panel IP allow-list",

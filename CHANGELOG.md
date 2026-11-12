@@ -9,12 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.27] - 2026-11-12
+
 **Highlights**
 - Services on nodes get maintenance mode and custom error pages, the restart-loop limit, and pre- and post-deploy hooks. Swarm replicas on worker nodes get the terminal, the file browser and metrics.
 - Move to NineDeploy from Coolify, Dokploy, CapRover or Heroku with `ninedeploy import`: plan, create the services, copy databases and volumes, then switch the domains.
 - PostgreSQL databases move to a newer major from the database page: checked, dumped, restored into a new volume and compared before the switch, with rollback until you finalize. And a compact panel layout to try, under Settings → Appearance → Layout.
 
 **Action needed:** No. To use the new node features, update each node agent to this release.
+
+<!-- stable: security -->
 
 ### Added
 

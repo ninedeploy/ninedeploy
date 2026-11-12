@@ -45,7 +45,12 @@ describe('the release summary block', () => {
   });
 
   it('the release in progress already carries its block, so tagging it is not held up', () => {
-    const s = notes.releaseSummary(notes.changelogSection(changelog, 'Unreleased')!);
+    // Unreleased while work collects; right after a version heading is cut
+    // above it, Unreleased is empty and the newest version section is the one.
+    const unreleased = notes.changelogSection(changelog, 'Unreleased')!;
+    const newest = /^## \[(\d+\.\d+\.\d+)\]/m.exec(changelog)![1]!;
+    const section = unreleased.trim() ? unreleased : notes.changelogSection(changelog, newest)!;
+    const s = notes.releaseSummary(section);
     expect(s.highlights.length).toBeGreaterThan(0);
     expect(s.highlights.length).toBeLessThanOrEqual(3);
   });
