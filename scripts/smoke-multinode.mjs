@@ -1377,6 +1377,20 @@ async function swarmWorkerTaskChecks(ctx, { svcId, stack }) {
   const first = moved.find((n) => n.startsWith(`${svcName}.1.`));
   if (!first) fail(`${label}: no replica 1 among ${moved.join(', ')}`);
 
+  // Metrics over every running task: measured through the worker's agent, and unknown (absent), never
+  // zero or the panel host's share, while that agent cannot answer.
+  const statOf = async () => (await api('/v1/stats')).json?.containers?.find((c) => c.kind === 'service' && c.refId === svcId) ?? null;
+  const measured = await until(statOf, { ms: 180_000, every: 5000 });
+  if (!measured) fail(`${label}: /v1/stats never reported the service while both tasks ran on the worker`);
+  docker(['stop', requireOwned('container', AGENT)]);
+  const unknown = await until(async () => (await statOf()) === null, { ms: 240_000, every: 5000 });
+  if (!unknown) fail(`${label}: /v1/stats kept reporting ${JSON.stringify(await statOf())} with the worker's agent stopped (wanted unknown)`);
+  startAgent(CANDIDATE_IMAGE, ctx.tokenSha256, { NINEDEPLOY_AGENT_SWARM_MANAGER: `${ctx.panelDindIp}:2377` });
+  await waitAgent(ctx.serverId, `${label}: the worker's agent back`);
+  const again = await until(statOf, { ms: 180_000, every: 5000 });
+  if (!again) fail(`${label}: /v1/stats did not report the service again once the worker's agent answered`);
+  step(`${label}: /v1/stats measured both tasks on the worker (${measured.memMb} MiB of ${measured.memLimitMb} MiB per task); with the worker's agent stopped the service had no figure (unknown, not zero); back after the agent returned (${again.memMb} MiB)`);
+
   // A terminal on replica 1 runs in the worker's container.
   const open = async (what) => {
     const r = await api('/v1/terminals', { method: 'POST', body: { target: { kind: 'service', serviceId: svcId, replica: 1 } } });
