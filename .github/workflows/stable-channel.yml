@@ -68,10 +68,11 @@ jobs:
           fi
           echo "target=$target" >> "$GITHUB_OUTPUT"
 
-      # GitHub refuses the built-in GITHUB_TOKEN any ref whose commit has other
-      # workflow files than the default branch ("Resource not accessible by
-      # integration", 403), and every release commit does once main moves on.
-      # So the tag is written with STABLE_TAG_TOKEN: a fine-grained token for
+      # GitHub refused the built-in GITHUB_TOKEN this ref ("Resource not
+      # accessible by integration", 403) although the job has contents: write,
+      # most likely because the release commit has other workflow files than
+      # the default branch, as every release does once main moves on. So the
+      # tag is written with STABLE_TAG_TOKEN: a fine-grained token for
       # this repository with Contents and Workflows read and write.
       - name: Move the stable tag
         if: steps.pick.outputs.target != ''
