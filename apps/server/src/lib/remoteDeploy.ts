@@ -408,11 +408,14 @@ type HookFields = {
  * agent has no operation for an arbitrary command. A node-pinned service with
  * a hook set therefore ran it on the wrong machine (a migration against the
  * panel host's network, a cache flush of nothing) while the deploy reported
- * success. Refused like every other shape the node cannot honour. Services
- * that already carry such a hook get the fix in the message: clear the hook,
- * or clear the target server.
+ * success. Refused like every other shape the node cannot honour.
+ *
+ * P2: a node whose agent has `docker.hooks` runs pre-deploy and post-deploy
+ * in a one-off container from the release image (lib/nodeDeployHooks.ts);
+ * pass `nodeRunsHooks` for such a node. A pre-stop hook acts on the running
+ * instance, which a fresh container is not, so it stays refused on a node.
  */
-export function remoteHookRefusal(build: HookFields | null | undefined): string | null {
+export function remoteHookRefusal(build: HookFields | null | undefined, opts: { nodeRunsHooks?: boolean } = {}): string | null {
   if (!build) return null;
   const set = (
     [
@@ -422,9 +425,33 @@ export function remoteHookRefusal(build: HookFields | null | undefined): string 
     ] as const
   )
     .filter(([, cmd]) => typeof cmd === 'string' && cmd.trim() !== '')
-    .map(([name]) => name);
+    .map(([name]) => name)
+    .filter((name) => !opts.nodeRunsHooks || name === 'pre-stop');
   if (set.length === 0) return null;
-  return `Deployments to a remote server are not available for this service: its ${set.join(', ')} hook${set.length > 1 ? 's run' : ' runs'} on the panel host, not on the node, and the node agent has no operation for an arbitrary command. Clear the hook${set.length > 1 ? 's' : ''} in Service → Settings → Build, or clear the target server to deploy it on the panel host.`;
+  if (opts.nodeRunsHooks) {
+    return 'Deployments to a remote server are not available for this service: its pre-stop hook acts on the running container, and on a node a hook runs in a fresh one-off container instead. Clear the pre-stop hook in Service → Settings → Build, or clear the target server to deploy it on the panel host.';
+  }
+  return `Deployments to a remote server are not available for this service: its ${set.join(', ')} hook${set.length > 1 ? 's run' : ' runs'} on the panel host, not on the node, and this node's agent does not run deploy hooks. Pre-deploy and post-deploy hooks run on a node whose agent is v${NODE_HOOKS_AGENT_VERSION} or newer (in a one-off container from the release image); a pre-stop hook never does. Update the node agent, clear the hook${set.length > 1 ? 's' : ''} in Service → Settings → Build, or clear the target server to deploy it on the panel host.`;
+}
+
+/** Kept in step with AGENT_CAPABILITY_VERSION['docker.hooks'] (a test checks it). */
+export const NODE_HOOKS_AGENT_VERSION = '0.18.27';
+
+/**
+ * P2: {@link remoteHookRefusal} for `serverId`, asking its agent (live) whether
+ * it runs deploy hooks. Null when the hooks can run there.
+ */
+export async function nodeHookRefusal(db: DB, serverId: number, build: HookFields | null | undefined): Promise<string | null> {
+  if (remoteHookRefusal(build) === null) return null;
+  const preStop = remoteHookRefusal(build, { nodeRunsHooks: true });
+  if (preStop) return preStop;
+  const { assertNodeCapability } = await import('./agentCapabilities.js');
+  try {
+    await assertNodeCapability(db, serverId, { cap: 'docker.hooks', feature: 'run pre-deploy and post-deploy hooks in a one-off container', sealedRequired: true });
+    return null;
+  } catch {
+    return remoteHookRefusal(build);
+  }
 }
 
 /**
@@ -442,7 +469,7 @@ export async function assertRemoteServiceSupported(
   }
   if (service.serverId == null) return;
   const build = await db.query.buildConfigs.findFirst({ where: eq(buildConfigs.serviceId, service.id) });
-  const hookReason = remoteHookRefusal(build);
+  const hookReason = await nodeHookRefusal(db, service.serverId, build);
   if (hookReason) throw badRequest(hookReason, 'remote_deploy_unsupported');
 }
 

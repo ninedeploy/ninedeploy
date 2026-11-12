@@ -7,6 +7,7 @@ import { auditLog, buildConfigs, databaseAttachments, databases, deploymentRelea
 import { createComposeRelease } from '../src/lib/composeRelease.js';
 import { logBus } from '../src/engine/logs.js';
 import { filterTrustworthyProjectLinks, runDeployment, splitHookCommand } from '../src/engine/pipeline.js';
+import { resetNodeCapabilityCache } from '../src/lib/agentCapabilities.js';
 import { GithubAppError } from '../src/lib/githubApp.js';
 import { githubAppCloneHint } from '../src/lib/sourceCreds.js';
 import { ProxyRoutingUnconfirmed } from '../src/lib/proxyRoutingAck.js';
@@ -3265,22 +3266,105 @@ describe('runDeployment on a remote-server target', () => {
 
   // r522: runHook runs on the PANEL host; a node-pinned service's hooks ran
   // on the wrong machine while the deploy reported success.
-  it('r522: refuses deploy hooks on a node-pinned service before anything runs, naming the fix', async () => {
+  /** P2: a node agent with docker.hooks; `hook` answers each docker.hookRun. */
+  const agentRunsHooks = (hook: (params: Record<string, unknown>) => { exitCode: number; output?: string[] }) => {
+    agentAnswersRunning();
+    const base = h.agentOp.getMockImplementation()!;
+    h.agentOp.mockImplementation(async (...args: unknown[]) => {
+      const [, , op, params] = args as [unknown, unknown, string, Record<string, unknown>];
+      if (op === 'agent.ping') return { exitCode: 0, lines: ['ND-AGENT {"version":"0.18.27","caps":["docker.probe","docker.recovery","docker.hooks"]}'] };
+      if (op === 'docker.inspect' && params.format === 'image') return { exitCode: 0, lines: [`sha256:${'b'.repeat(64)}`] };
+      if (op === 'docker.hookRun') {
+        const r = hook(params);
+        const sink = args[4] as (line: string) => void;
+        const lines = [...(r.output ?? []).map((l) => `│ ${l}`), `ND-HOOK ${JSON.stringify({ exitCode: r.exitCode, timedOut: false, imageId: `sha256:${'b'.repeat(64)}` })}`];
+        for (const l of lines) sink(l);
+        return { exitCode: 0, lines };
+      }
+      return base(...args);
+    });
+  };
+
+  it('P2: runs pre-deploy on the node from the release image before any replica, and post-deploy from the running image', async () => {
+    const { db } = makeDb();
+    baseSetup(db, { image: 'nginx:latest', serverId: 4 });
+    db.query.buildConfigs.findFirst.mockResolvedValue({ buildPack: 'auto', preDeployCmd: 'npm run migrate', postDeployCmd: 'node notify.js "a b"', preStopCmd: '' });
+    const lines = collectLogs(1);
+    execMock.run.mockClear();
+    agentRunsHooks(() => ({ exitCode: 0, output: ['migrated 3 tables'] }));
+
+    await runDeployment(db as never, 1);
+
+    const calls = h.agentOp.mock.calls.map((c) => ({ op: (c as unknown[])[2] as string, params: (c as unknown[])[3] as Record<string, unknown> }));
+    const ops = calls.map((c) => c.op);
+    const hooks = calls.filter((c) => c.op === 'docker.hookRun');
+    expect(hooks.map((c) => c.params.phase)).toEqual(['pre-deploy', 'post-deploy']);
+    expect(hooks[0]!.params).toMatchObject({ image: 'nginx:latest', argv: ['npm', 'run', 'migrate'], network: 'ninedeploy', serviceId: 5, deploymentId: 1 });
+    expect(hooks[1]!.params).toMatchObject({ image: `sha256:${'b'.repeat(64)}`, argv: ['node', 'notify.js', 'a b'] });
+    const pre = ops.indexOf('docker.hookRun'), post = ops.lastIndexOf('docker.hookRun');
+    const firstRun = ops.findIndex((op) => op === 'docker.runEnv' || op === 'docker.runSpec');
+    expect(ops.indexOf('docker.pull')).toBeLessThan(pre);
+    expect(firstRun).toBeGreaterThan(pre);
+    expect(post).toBeGreaterThan(firstRun);
+    // Each hook gets its own env file, removed afterwards.
+    expect(calls.filter((c) => c.op === 'file.deleteEnv').map((c) => c.params.name)).toEqual(expect.arrayContaining(['nd-hook-web-1-pre', 'nd-hook-web-1-post']));
+    // Never on the panel host.
+    expect(execMock.run).not.toHaveBeenCalled();
+    expect(lines).toContain('migrated 3 tables');
+    expect(lines).toContain('✓ Deployment successful');
+  });
+
+  it('P2: a failing pre-deploy hook fails the deploy before any replica is created', async () => {
+    const { db, inserts } = makeDb();
+    baseSetup(db, { image: 'nginx:latest', serverId: 4, runtimeId: 'web-old' });
+    db.query.buildConfigs.findFirst.mockResolvedValue({ buildPack: 'auto', preDeployCmd: 'npm run migrate', postDeployCmd: null, preStopCmd: '' });
+    const lines = collectLogs(1);
+    agentRunsHooks(() => ({ exitCode: 2, output: ['relation users already exists'] }));
+
+    await runDeployment(db as never, 1);
+
+    const ops = h.agentOp.mock.calls.map((c) => (c as unknown[])[2] as string);
+    expect(ops).toContain('docker.hookRun');
+    expect(ops).not.toContain('docker.runEnv');
+    expect(ops).not.toContain('docker.runSpec');
+    expect(ops).not.toContain('docker.stop');
+    expect(lines.join('\n')).toMatch(/pre-deploy hook exited with code 2 on the node/);
+    expect(inserts.filter((i) => i.table === auditLog).map((i) => i.values)[0]).toMatchObject({ action: 'deploy.failed' });
+  });
+
+  it('P2: a pre-stop hook is still refused on a node, before anything runs', async () => {
+    const { db } = makeDb();
+    baseSetup(db, { image: 'nginx:latest', serverId: 4 });
+    db.query.buildConfigs.findFirst.mockResolvedValue({ buildPack: 'auto', preDeployCmd: null, postDeployCmd: null, preStopCmd: 'npm run drain' });
+    const lines = collectLogs(1);
+    agentRunsHooks(() => ({ exitCode: 0 }));
+    h.agentOp.mockClear();
+
+    await runDeployment(db as never, 1);
+
+    expect(h.agentOp.mock.calls.map((c) => (c as unknown[])[2])).not.toContain('docker.pull');
+    expect(lines.join(' ')).toMatch(/pre-stop hook acts on the running container/);
+  });
+
+  it('r522: refuses deploy hooks on a node whose agent does not run them, before anything runs, naming the fix', async () => {
     const { db, inserts } = makeDb();
     baseSetup(db, { ownerUserId: 42, image: 'nginx:latest', serverId: 4 });
     db.query.buildConfigs.findFirst.mockResolvedValue({ buildPack: 'auto', preDeployCmd: 'npm run migrate', postDeployCmd: null, preStopCmd: '' });
     const lines = collectLogs(1);
+    agentAnswersRunning();
+    resetNodeCapabilityCache();
     h.agentOp.mockClear();
     execMock.run.mockClear();
 
     await runDeployment(db as never, 1);
 
-    expect(h.agentOp).not.toHaveBeenCalled();
+    // P2: the agent is asked whether it runs hooks, and nothing else.
+    expect(new Set(h.agentOp.mock.calls.map((c) => (c as unknown[])[2]))).toEqual(new Set(['agent.ping']));
     // The hook never ran on the panel host either.
     expect(execMock.run).not.toHaveBeenCalled();
     const text = lines.join(' ');
     expect(text).toMatch(/pre-deploy hook runs on the panel host/);
-    expect(text).toMatch(/Clear the hook in Service → Settings → Build, or clear the target server/);
+    expect(text).toMatch(/Update the node agent, clear the hook in Service → Settings → Build, or clear the target server/);
     const audits = inserts.filter((i) => i.table === auditLog).map((i) => i.values);
     expect(audits[0]).toMatchObject({ action: 'deploy.failed' });
   });

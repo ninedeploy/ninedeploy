@@ -234,8 +234,20 @@ describe('remoteHookRefusal (r522)', () => {
     expect(remoteHookRefusal({ preDeployCmd: '  ', postDeployCmd: null, preStopCmd: '' })).toBeNull();
     const one = remoteHookRefusal({ preDeployCmd: 'npm run migrate' });
     expect(one).toMatch(/its pre-deploy hook runs on the panel host/);
-    expect(one).toMatch(/Clear the hook in Service → Settings → Build, or clear the target server/);
+    expect(one).toMatch(/node whose agent is v0\.18\.27 or newer/);
+    expect(one).toMatch(/Update the node agent, clear the hook in Service → Settings → Build, or clear the target server/);
     expect(remoteHookRefusal({ postDeployCmd: 'a', preStopCmd: 'b' })).toMatch(/post-deploy, pre-stop hooks run/);
+  });
+
+  it('P2: on a node that runs hooks, only a pre-stop hook is refused', () => {
+    expect(remoteHookRefusal({ preDeployCmd: 'npm run migrate', postDeployCmd: 'x' }, { nodeRunsHooks: true })).toBeNull();
+    expect(remoteHookRefusal({ preDeployCmd: 'npm run migrate', preStopCmd: 'drain' }, { nodeRunsHooks: true })).toMatch(/pre-stop hook acts on the running container/);
+  });
+
+  it('P2: the version in the message is the capability version', async () => {
+    const { NODE_HOOKS_AGENT_VERSION } = await import('../../src/lib/remoteDeploy.js');
+    const { AGENT_CAPABILITY_VERSION } = await import('../../src/lib/agentCapabilities.js');
+    expect(NODE_HOOKS_AGENT_VERSION).toBe(AGENT_CAPABILITY_VERSION['docker.hooks']);
   });
 
   it('is part of the queue-time 400 for a pinned service only', async () => {

@@ -83,6 +83,7 @@ The panel keeps the last answer in memory for up to 5 minutes, so after an agent
 | GitHub Actions just-in-time runners on the node (GITHUB_APP.md §7.1) | `gha.runner` | 0.18.7 | opt-in: `NINEDEPLOY_AGENT_GHA_RUNNERS=on`; `off` or unset turns it off |
 | `ninedeploy tunnel service` / `tunnel db` to a service or database on the node (sealed `tunnel.open`, encrypted `/agent/tunnel`) | `tunnel.tcp` | 0.18.7 | `NINEDEPLOY_AGENT_TUNNELS=off` |
 | Maintenance mode and custom error pages for node services, served by the node's page server `ninedeploy-pages` (TRAEFIK_INGRESS.md) | `proxy.pages` | 0.18.27 | `NINEDEPLOY_AGENT_NODE_PAGES=off`, or `NINEDEPLOY_AGENT_CONTAINER_MUTATIONS=off` |
+| Pre-deploy and post-deploy hooks of node services, in a one-off container from the release image (DEPLOYMENTS.md) | `docker.hooks` | 0.18.27 | `NINEDEPLOY_AGENT_DEPLOY_HOOKS=off`, or `NINEDEPLOY_AGENT_CONTAINER_MUTATIONS=off` |
 
 A switch counts as off when it is `off`, `false`, `0`, `no` or `disabled`. Switching a feature off removes its capability from the ping, and the agent refuses the operation too.
 

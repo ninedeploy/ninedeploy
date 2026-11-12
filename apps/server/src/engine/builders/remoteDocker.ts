@@ -393,6 +393,12 @@ export function createRemoteDockerBuilder(
     /** Pipeline-owned, durable preparation for an ordered node generation. */
     prepareCapacity?: (input: { service: BuildContext['service']; deploymentId: number; image: string; env: Record<string, string>;
       volumeAttachments: NonNullable<BuildContext['volumeAttachments']>; files: NonNullable<BuildContext['nodeFiles']> }) => Promise<DeployRuntime>;
+    /**
+     * P2: runs once the release image is on the node and before any new
+     * replica or capacity is created (the node's pre-deploy hook). A throw
+     * fails the deploy with the previous release still serving.
+     */
+    beforeRun?: (input: { service: BuildContext['service']; image: string; env: Record<string, string> }) => Promise<void>;
   } = {},
 ): Builder {
   const pollMs = opts.pollMs ?? 2000;
@@ -527,6 +533,8 @@ export function createRemoteDockerBuilder(
         if (builtWithNixpacks && env['PORT'] === undefined) runEnv = { ...env, PORT: String(port) };
       }
       if (!service.healthCheck && !service.port && runService.port) requireDefaultProbe();
+
+      if (opts.beforeRun) await opts.beforeRun({ service: runService, image: target, env: runEnv });
 
       if (opts.prepareCapacity && runService.port != null) {
         const runtime = await opts.prepareCapacity({ service: runService, deploymentId, image: target, env: runEnv,

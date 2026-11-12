@@ -823,6 +823,8 @@ export const TR: Readonly<Record<string, string>> = {
   'fails the deploy': 'dağıtımı başarısız kılar',
   'Fields take ONE command (argv-style) — wrap compound logic yourself, e.g. {example}.':
     'Alanlar TEK bir komut alır (argv biçiminde) — birleşik mantığı kendiniz sarmalayın, örn. {example}.',
+  'This service runs on a node: there, pre-deploy and post-deploy run in a one-off container from the release image, with the service environment and network, not on the host. The node agent must be v0.18.27 or newer. A pre-stop hook is not available on a node.':
+    'Bu servis bir node\'da çalışıyor: orada pre-deploy ve post-deploy, sunucuda değil, sürümün image\'ından açılan tek seferlik bir container\'da, servisin ortam değişkenleri ve ağıyla çalışır. Node agent\'ı v0.18.27 veya daha yeni olmalı. Pre-stop hook\'u node\'da kullanılamaz.',
   'Pre-deploy command (e.g. DB migrations)': 'Dağıtım öncesi komut (örn. veritabanı geçişleri)',
   'Post-deploy command (e.g. cache warm-up)': 'Dağıtım sonrası komut (örn. önbellek ısıtma)',
   'Pre-stop command': 'Durdurma öncesi komut',

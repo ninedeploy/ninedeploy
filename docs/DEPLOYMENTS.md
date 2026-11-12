@@ -924,8 +924,25 @@ version to install, and nothing else changes. The full reference is
 - **Volume attachments, a container command and the Docker socket** work on
   node docker services (agent v0.15.2); a missing managed volume is created on
   the node before the container starts, and before `compose up` for a stack.
-- **Deploy hooks** still run on the panel host only, so a node service with a
-  pre-deploy, post-deploy or pre-stop hook is refused.
+- **Deploy hooks (P2)** run on the node when its agent is v0.18.27 or newer
+  (capability `docker.hooks`). On a node a hook does not run in a shell on the
+  host, as it does on the panel host: it runs in a one-off container from the
+  release image, with the service's environment, network, limits and node
+  database bridges, as Heroku's and Render's release commands do.
+  - Pre-deploy runs once the image is on the node and before any new container
+    exists. If it fails, the deploy fails and the running release keeps serving.
+  - Post-deploy runs from the image the new container runs, once it is healthy.
+    As on the panel host, its failure is logged and does not fail the deploy.
+  - The command is exec'd as on the panel host: the first word replaces the
+    image's entrypoint, with no shell (`sh -c "a && b"` for compound logic).
+  - No port, volume or Docker socket, not privileged, `no-new-privileges`, a
+    pids limit, a one-hour bound. The container is removed afterwards, also
+    after a timeout or a cancel, and so is its env file.
+  - Output goes to the deploy log with the service's secrets masked.
+  - A pre-stop hook is still refused on a node: it acts on the running
+    container, and a fresh one is not that container. An older agent, or one
+    whose owner set `NINEDEPLOY_AGENT_DEPLOY_HOOKS=off`, keeps refusing every
+    hook. Fan-out targets get no hooks; they run on the primary only.
 - **Fan-out targets** receive the primary's image when it was built with
   Nixpacks, Railpack, the static pack or on another host, instead of a
   different build. Each target is checked on its own before anything runs

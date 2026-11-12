@@ -82,7 +82,7 @@ import { assertPrimaryVolumeNotAttachedElsewhere, assertSlugVolumeNotRetained } 
 import { composeBuilder } from '../engine/builders/compose.js';
 import { dockerBuilder, railpackRefusedForInstall, removeBuildpacksCache } from '../engine/builders/docker.js';
 import { BUILDPACKS_NODE_REASON, isBuildpackPack } from '../lib/buildPacks.js';
-import { remoteHookRefusal } from '../lib/remoteDeploy.js';
+import { nodeHookRefusal } from '../lib/remoteDeploy.js';
 import { pm2Builder, pm2Restart, pm2Start, pm2Stop } from '../engine/builders/pm2.js';
 import { deleteLog } from '../engine/logs.js';
 import { writeDynamicConfig } from '../engine/proxy.js';
@@ -394,7 +394,8 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     // cannot carry one; r520/r582: railpack is refused where it cannot build
     // (no BuildKit daemon configured via BUILDKIT_HOST).
     if (input.serverId != null) {
-      const hookRefusal = remoteHookRefusal(input.build);
+      // P2: pre-deploy and post-deploy run on a node whose agent has docker.hooks (asked live).
+      const hookRefusal = await nodeHookRefusal(app.db, input.serverId, input.build);
       if (hookRefusal) throw badRequest(hookRefusal, 'remote_deploy_unsupported');
     }
     // 0.16 T4: not when a node whose agent builds Railpack itself builds it.
@@ -924,7 +925,7 @@ export const servicesRoutes: FastifyPluginAsync = async (app) => {
     const placing = patch.serverId != null && patch.serverId !== existing.serverId;
     const settingHook = (['preDeployCmd', 'postDeployCmd', 'preStopCmd'] as const).some((k) => !!build?.[k]?.trim());
     if (mergedServerId != null && (placing || settingHook)) {
-      const hookRefusal = remoteHookRefusal({
+      const hookRefusal = await nodeHookRefusal(app.db, mergedServerId, {
         preDeployCmd: merged('preDeployCmd'),
         postDeployCmd: merged('postDeployCmd'),
         preStopCmd: merged('preStopCmd'),

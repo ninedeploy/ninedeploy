@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Pre-deploy and post-deploy hooks for docker services on a node.** They used to be refused on a node, because hooks ran as a shell on the panel host. On a node they now run in a one-off container from the release image, with the service's environment, network and node databases, much like a release command on Heroku or Render.
+  - Pre-deploy runs once the image is on the node and before any new container starts. If it fails, the deploy fails and the running release keeps serving. Post-deploy runs from the new release's image once it is healthy; as on the panel host, its failure is only logged.
+  - The command runs as on the panel host: its first word replaces the image's entrypoint, with no shell. The container gets no port, volume or Docker socket, is not privileged, and is removed afterwards, also after a timeout or a cancel. Its output reaches the deploy log with secrets masked.
+  - The node's agent must be v0.18.27 or newer. Its owner can turn it off with `NINEDEPLOY_AGENT_DEPLOY_HOOKS=off`. An older agent keeps refusing every hook, and a pre-stop hook stays refused on a node, because it acts on the running container.
 - **The restart-loop limit for docker services on a node.** It used to be refused on a node, because the panel only read restart counts on its own host. Now the node's agent reports them.
   - Each replica is resolved by name and proved to belong to this deployment of this service before its count is read. The count is read even while the container is restarting.
   - When the limit trips, the panel requests the same ordered Stop as the Stop button. The node carries it out, and `service.stop` is audited once it confirms. `service.restart_limit` notes `stopRequested`.

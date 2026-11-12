@@ -556,6 +556,11 @@ function SettingsCard({ serviceId }: { serviceId: number }) {
                     fails: <span className="text-slate-300">{t('fails the deploy')}</span>,
                   })}
                 </p>
+                {svc.serverId != null && (
+                  <p className="text-amber-300/80">
+                    {t('This service runs on a node: there, pre-deploy and post-deploy run in a one-off container from the release image, with the service environment and network, not on the host. The node agent must be v0.18.27 or newer. A pre-stop hook is not available on a node.')}
+                  </p>
+                )}
                 <p>
                   {fill(t('Fields take ONE command (argv-style) — wrap compound logic yourself, e.g. {example}.'), {
                     example: <code className="font-mono text-[10px] text-indigo-200">sh -c &quot;a &amp;&amp; b&quot;</code>,

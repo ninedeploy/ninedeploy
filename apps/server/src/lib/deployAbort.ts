@@ -40,6 +40,8 @@ export const CANCELLABLE_AGENT_OPS: ReadonlySet<string> = new Set([
   'docker.composePull',
   'docker.push',
   'git.fetch',
+  // P2: a node deploy hook; the agent removes its container once the CLI is killed.
+  'docker.hookRun',
 ]);
 
 /** Advertised in `agent.ping` by an agent that kills a {@link CANCELLABLE_AGENT_OPS} op whose request was dropped. */

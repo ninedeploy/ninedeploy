@@ -6,6 +6,7 @@ import { servingTrafficOps } from './servingTraffic.js';
 import { idleWatchOps } from './idleWatch.js';
 import { wakeCatcherOps } from './wakeCatcher.js';
 import { nodePagesOps } from './nodePages.js';
+import { deployHookOps } from './deployHooks.js';
 import { containerReadinessOps } from './containerReadiness.js';
 import { containerMetricsOps } from './containerMetrics.js';
 import { containerLifecycleOps } from './containerLifecycle.js';
@@ -133,6 +134,8 @@ export const AGENT_OP_MODULES: readonly AgentOpModule[] = [
   pgbouncerOps,
   // P2 maintenance mode and error pages served on the node (agentOps/nodePages.ts)
   nodePagesOps,
+  // P2 deploy hooks in a one-off container from the release image (agentOps/deployHooks.ts)
+  deployHookOps,
 ];
 
 /**
@@ -164,6 +167,8 @@ export const AGENT_KILL_SWITCHES: Readonly<Partial<Record<MultiNodeCapability, r
   'wake.catcher.retire': ['NINEDEPLOY_AGENT_PROXY_TRAFFIC', 'NINEDEPLOY_AGENT_CONTAINER_MUTATIONS', 'NINEDEPLOY_AGENT_ORDERED_PROXY'],
   // P2: the page server is a container the agent starts, like the wake catcher.
   'proxy.pages': ['NINEDEPLOY_AGENT_NODE_PAGES', 'NINEDEPLOY_AGENT_CONTAINER_MUTATIONS'],
+  // P2: a hook is a container the agent starts with the service's env.
+  'docker.hooks': ['NINEDEPLOY_AGENT_DEPLOY_HOOKS', 'NINEDEPLOY_AGENT_CONTAINER_MUTATIONS'],
   'db.studio': ['NINEDEPLOY_AGENT_DATABASES', 'NINEDEPLOY_AGENT_DATABASE_STUDIOS'],
   'db.client': ['NINEDEPLOY_AGENT_DATABASES', 'NINEDEPLOY_AGENT_DATABASE_CLIENTS'],
   'db.publicAccess': ['NINEDEPLOY_AGENT_DATABASES', 'NINEDEPLOY_AGENT_PUBLIC_DATABASES'],

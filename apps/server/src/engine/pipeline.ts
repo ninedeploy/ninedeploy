@@ -1,3 +1,5 @@
+import { splitHookCommand } from '../lib/hookCommand.js';
+import { nodeRuntimeImage, runNodeHook } from '../lib/nodeDeployHooks.js';
 import path from 'node:path';
 import { existsSync, mkdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
@@ -21,7 +23,7 @@ import { assertReleaseTarget, readReleaseRecord, storeReleaseRecord } from '../l
 import { extractSourceUpload, isUploadSourced, listSourceUploads, UPLOAD_SOURCE_PANEL_BUILD } from '../lib/sourceUpload.js';
 import { getInlineDockerfile, INLINE_DOCKERFILE_PANEL_BUILD, inlineDockerfileSha, prepareEmptyContext, writeInlineDockerfile } from '../lib/inlineDockerfile.js';
 import { composeRouteEnv } from '../lib/composeRoutes.js';
-import { cloneCredentialKind, remoteDatabaseRefusal, remoteDeploySupported, remoteDeployUnsupportedReason, remoteHookRefusal, remoteServiceRefusal } from '../lib/remoteDeploy.js';
+import { cloneCredentialKind, remoteDatabaseRefusal, remoteDeploySupported, remoteDeployUnsupportedReason, nodeHookRefusal, remoteHookRefusal, remoteServiceRefusal } from '../lib/remoteDeploy.js';
 import { nodeGitCredentialSource } from '../lib/nodeGitCredential.js';
 import { agentOp, agentTransportSealed } from '../lib/agentClient.js';
 import { recoverCompletedInitialStop } from '../lib/nodeLegacyStopRecovery.js';
@@ -156,57 +158,8 @@ export async function reconcileDeploymentHistory(db: DB): Promise<number> {
   return supersededIds.length;
 }
 
-/**
- * Tokenize a hook command line. Hooks are documented as ONE argv-style
- * command whose compound form is `sh -c "a && b"` — that only works if
- * quoting is honoured; a plain whitespace split leaves the quote bytes in
- * argv (`sh -c '"a'` → "command not found"). Rules: single quotes are fully
- * literal; inside double quotes `\` escapes `"` and `\`; outside quotes `\`
- * escapes the next char; unterminated quotes run to end of input.
- */
-/** Exported for the tokenizer's own unit tests — pure string logic. */
-export function splitHookCommand(cmd: string): string[] {
-  const argv: string[] = [];
-  let cur = '';
-  let open = false; // the current token exists — keeps `''`/`""` as empty args
-  let quote: '"' | "'" | null = null;
-  for (let i = 0; i < cmd.length; i++) {
-    const ch = cmd[i]!;
-    if (quote === "'") {
-      if (ch === "'") quote = null;
-      else cur += ch;
-      continue;
-    }
-    if (quote === '"') {
-      if (ch === '"') quote = null;
-      else if (ch === '\\' && (cmd[i + 1] === '"' || cmd[i + 1] === '\\')) cur += cmd[++i];
-      else cur += ch;
-      continue;
-    }
-    if (ch === '"' || ch === "'") {
-      quote = ch;
-      open = true;
-      continue;
-    }
-    if (/\s/.test(ch)) {
-      if (open) {
-        argv.push(cur);
-        cur = '';
-        open = false;
-      }
-      continue;
-    }
-    if (ch === '\\' && i + 1 < cmd.length) {
-      cur += cmd[++i];
-      open = true;
-      continue;
-    }
-    cur += ch;
-    open = true;
-  }
-  if (open) argv.push(cur);
-  return argv;
-}
+/** Moved to lib/hookCommand.ts (the node hook runner shares it); re-exported for the tokenizer's tests. */
+export { splitHookCommand } from '../lib/hookCommand.js';
 
 /** Execute a lifecycle hook command in the service workDir with resolved environment. */
 async function runHook(cmd: string, cwd: string, env: Record<string, string>, log: (line: string) => void): Promise<void> {
@@ -991,6 +944,8 @@ async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deplo
   let remoteBuilderFor: ((prebuiltImage?: BuildContext['prebuiltImage'], orderedCapacity?: boolean) => Builder) | null = null;
   let currentRemoteImage: BuildContext['prebuiltImage'];
   let remoteNodeCall: AgentCall | undefined;
+  /** P2: the node database bridges a node hook joins, as the replicas do (set with the runtime environment). */
+  let nodeHookNetworks: string[] = [];
   let orderedDatabaseCheck: (() => Promise<void>) | undefined;
   let orderedDatabaseNetworks: string[] = [];
   let orderedDatabaseIdentities: string[] = [];
@@ -1020,7 +975,8 @@ async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deplo
     // r522: deploy hooks run through the panel's own `run()` — on the panel
     // host, never on the node. Refused before anything is built, so a hook
     // that used to "work" on the wrong machine now fails with the fix named.
-    const hookRefusal = remoteHookRefusal(buildConfig);
+    // P2: pre-deploy and post-deploy run on a node whose agent has docker.hooks (asked live).
+    const hookRefusal = await nodeHookRefusal(db, serverId, buildConfig);
     if (hookRefusal) {
       log(`✗ ${hookRefusal}`);
       await nodeAuthority?.check();
@@ -1066,6 +1022,17 @@ async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deplo
       return invoke(op, params, sink, options);
     };
     remoteNodeCall = call;
+    // P2: the node's pre-deploy hook, in a one-off container from the release
+    // image, once that image is on the node and before any replica exists.
+    const preDeployCmd = buildConfig?.preDeployCmd?.trim() ? buildConfig.preDeployCmd : null;
+    const nodePreDeploy = preDeployCmd && service.type === 'docker'
+      ? async (input: { service: BuildContext['service']; image: string; env: Record<string, string> }) => {
+        log(`▶ Running Pre-Deploy Hook on the node: ${preDeployCmd} …`);
+        await runNodeHook(call, { service: input.service, deploymentId, phase: 'pre-deploy', cmd: preDeployCmd, image: input.image,
+          env: input.env, extraNetworks: nodeHookNetworks, log });
+        if (await isCancelled(db, deploymentId)) throw new DeploymentCancelled();
+      }
+      : null;
     // r660: the node's name goes into the "update this agent" refusal.
     const label = await nodeLabel(db, serverId);
     // 0.13 (T5): a GitHub App repository is checked out on the node with a
@@ -1075,7 +1042,7 @@ async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deplo
       currentRemoteImage = prebuiltImage;
       return service.type === 'compose'
         ? createRemoteComposeBuilder(call, { nodeLabel: label, gitCredential })
-        : createRemoteDockerBuilder(call, { nodeLabel: label, gitCredential, isSealed: async () => {
+        : createRemoteDockerBuilder(call, { nodeLabel: label, gitCredential, ...(nodePreDeploy ? { beforeRun: nodePreDeploy } : {}), isSealed: async () => {
           await nodeAuthority?.check();
           try { return await agentTransportSealed(db, serverId, deployAbortSignal()); } finally { await nodeAuthority?.check(); }
         }, ...(prebuiltImage ? { prebuiltImage } : {}), ...(orderedCapacity && admission?.claimed && nodeAuthority ? {
@@ -1373,6 +1340,10 @@ async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deplo
       }
     }
     fanoutEnv = runtimeEnvironment.values;
+    if (service.serverId != null) {
+      const { nodeDatabaseNetwork } = await import('../lib/nodeDatabase.js');
+      nodeHookNetworks = runtimeEnvironment.attachedDatabases.filter((a) => a.serverId === service.serverId).map((a) => nodeDatabaseNetwork(a.slug));
+    }
     if (runtimeEnvironment.withheldFromPreview.length > 0) {
       log(
         `🔒 PR preview: withheld from this preview's environment — ${runtimeEnvironment.withheldFromPreview.join(', ')}. A preview runs code from a pull-request branch, so it never receives project-shared secrets, vault references or the production service's databases. To give previews their own values, add them to the parent service's preview-only set (Service → Environment → Preview deployments) or attach a separate, non-production database to it (Service → Databases).`,
@@ -1565,7 +1536,8 @@ async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deplo
       if (await isCancelled(db, deploymentId)) throw new DeploymentCancelled();
     });
 
-    if (buildConfig?.preDeployCmd) {
+    // A node service runs it on the node, from the builder (nodePreDeploy).
+    if (buildConfig?.preDeployCmd && !remoteNodeCall) {
       log(`▶ Running Pre-Deploy Hook: ${buildConfig.preDeployCmd} …`);
       await runHook(buildConfig.preDeployCmd, workDir, ctx.env, log);
     }
@@ -1715,9 +1687,17 @@ async function runDeploymentCore(db: DB, deploymentId: number, dep: typeof deplo
     log('##[stage:HEALTHCHECK:success]');
 
     if (buildConfig?.postDeployCmd) {
-      log(`▶ Running Post-Deploy Hook: ${buildConfig.postDeployCmd} …`);
+      log(`▶ Running Post-Deploy Hook${remoteNodeCall ? ' on the node' : ''}: ${buildConfig.postDeployCmd} …`);
       try {
-        await runHook(buildConfig.postDeployCmd, workDir, ctx.env, log);
+        // P2: on a node, in a one-off container from the image the new release runs.
+        if (remoteNodeCall && service.serverId != null && service.type === 'docker') {
+          if (!runtime) throw new Error('the new release has no runtime, so the hook was not run');
+          const image = await nodeRuntimeImage(remoteNodeCall, runtime);
+          await runNodeHook(remoteNodeCall, { service: ctx.service, deploymentId, phase: 'post-deploy', cmd: buildConfig.postDeployCmd,
+            image, env: ctx.env, extraNetworks: nodeHookNetworks, log });
+        } else {
+          await runHook(buildConfig.postDeployCmd, workDir, ctx.env, log);
+        }
       } catch (err) {
         log(`warning: post-deploy hook failed: ${msg(err)}`);
       }

@@ -88,6 +88,7 @@ const FEATURES: Record<MultiNodeCapability, string> = {
   'wake.catcher.retire': 'retire an unreferenced node wake catcher',
   'proxy.orderedWrite': 'order node proxy routing writes',
   'proxy.pages': 'serve maintenance and error pages',
+  'docker.hooks': 'run pre-deploy and post-deploy hooks in a one-off container',
   'docker.readiness': 'verify candidate replica readiness',
   'docker.metrics': 'measure immutable container resources',
   'docker.lifecycle': 'control immutable container state',
