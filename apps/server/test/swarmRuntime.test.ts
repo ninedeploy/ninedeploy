@@ -191,8 +191,23 @@ describe('the runtime helpers (lib/swarm.ts)', () => {
     expect(swarm.swarmServiceStat('nd-web_web', running, [local])).toBeUndefined();
     expect(swarm.swarmServiceStat('nd-web_web', [], [local, worker])).toBeUndefined();
     expect(swarm.swarmServiceStat('nd-api_web', [{ id: A }], [local, worker])).toBeUndefined();
-    // runningSwarmTasks' short ids still match a full-length task container name.
+    // A single running task, measured.
     expect(swarm.swarmServiceStat('nd-web_web', [{ id: A }], [new Map([[`nd-web_web.1.${A}`, local.get(`nd-web_web.1.${A}`)!]])])).toBeDefined();
+  });
+
+  it('stats (P1): only tasks that run now count, so a replica Swarm cannot place never leaves the service unknown', () => {
+    const A = 'a'.repeat(25), P = 'p'.repeat(25), S = 's'.repeat(25), X = 'x'.repeat(25);
+    const out = [
+      `${A} nd-web_web.1 Running 5 minutes ago`,
+      `${P} nd-web_web.2 Pending 2 minutes ago`,
+      `${S} nd-web_web.3 Starting 3 seconds ago`,
+      `${X} nd-other_web.1 Running 1 minute ago`,
+      'garbage',
+    ].join('\n');
+    const running = swarm.parseMeasurableSwarmTasks(out, 'nd-web_web');
+    expect(running).toEqual([{ id: A }]);
+    const local = new Map([[`nd-web_web.1.${A}`, { name: `nd-web_web.1.${A}`, cpuPct: 3, memBytes: 30, memLimitBytes: 100 }]]);
+    expect(swarm.swarmServiceStat('nd-web_web', running, [local])).toEqual({ name: 'nd-web_web', cpuPct: 3, memBytes: 30, memLimitBytes: 100 });
   });
 
   it('GET /v1/services/:id/swarm view: null stack off Swarm; counts and tasks on it', async () => {

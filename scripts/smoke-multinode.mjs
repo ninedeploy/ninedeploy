@@ -1383,8 +1383,14 @@ async function swarmWorkerTaskChecks(ctx, { svcId, stack }) {
   const measured = await until(statOf, { ms: 180_000, every: 5000 });
   if (!measured) fail(`${label}: /v1/stats never reported the service while both tasks ran on the worker`);
   docker(['stop', requireOwned('container', AGENT)]);
-  const unknown = await until(async () => (await statOf()) === null, { ms: 240_000, every: 5000 });
-  if (!unknown) fail(`${label}: /v1/stats kept reporting ${JSON.stringify(await statOf())} with the worker's agent stopped (wanted unknown)`);
+  // Absent on every poll for longer than two collector ticks (30 s each), not a single poll between ticks.
+  let absentSince = null;
+  const unknown = await until(async () => {
+    if ((await statOf()) !== null) { absentSince = null; return false; }
+    absentSince ??= Date.now();
+    return Date.now() - absentSince >= 75_000;
+  }, { ms: 300_000, every: 5000 });
+  if (!unknown) fail(`${label}: /v1/stats kept reporting ${JSON.stringify(await statOf())} with the worker's agent stopped (wanted unknown for 75 s)`);
   startAgent(CANDIDATE_IMAGE, ctx.tokenSha256, { NINEDEPLOY_AGENT_SWARM_MANAGER: `${ctx.panelDindIp}:2377` });
   await waitAgent(ctx.serverId, `${label}: the worker's agent back`);
   const again = await until(statOf, { ms: 180_000, every: 5000 });

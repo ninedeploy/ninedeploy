@@ -475,6 +475,30 @@ export async function runningSwarmTasks(runtimeId: string): Promise<Array<{ id: 
 }
 
 /**
+ * P1: the tasks of a Swarm service that run NOW (current state Running),
+ * wherever they run — the ones metrics can measure. A task that Swarm wants
+ * running but cannot place or is still starting (Pending, Assigned,
+ * Starting) is not counted, so an unschedulable replica never leaves the
+ * service unknown forever. Throws when the manager cannot answer.
+ */
+export async function measurableSwarmTasks(runtimeId: string): Promise<Array<{ id: string }>> {
+  const out = await capture('docker', ['service', 'ps', '--filter', 'desired-state=running', '--no-trunc', '--format', '{{.ID}} {{.Name}} {{.CurrentState}}', runtimeId], {
+    timeoutMs: READ_TIMEOUT_MS,
+  });
+  return parseMeasurableSwarmTasks(out, runtimeId);
+}
+
+/** Exported for tests: `<id> <name> <current state…>` lines, Running ones of this service only. */
+export function parseMeasurableSwarmTasks(out: string, runtimeId: string): Array<{ id: string }> {
+  const tasks: Array<{ id: string }> = [];
+  for (const line of out.split('\n')) {
+    const [id, name, state] = line.trim().split(/\s+/);
+    if (id && name && state === 'Running' && RE_SWARM_TASK_ID.test(id) && name.startsWith(`${runtimeId}.`)) tasks.push({ id });
+  }
+  return tasks;
+}
+
+/**
  * One task's log lines since `since`, read through the manager wherever the
  * task runs, as `<timestamp> <line>` like `docker logs --timestamps` prints
  * them (`--raw` drops the `<task>@<node> |` context). At most `max` lines.

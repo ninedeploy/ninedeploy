@@ -8,7 +8,7 @@ import { evaluateAlerts, type MetricSnapshot } from '../lib/alerting.js';
 import { trafficAlertSnapshots } from '../lib/trafficAlerts.js';
 import { createNodeHealthWatch } from '../lib/nodeHealth.js';
 import { readCertificates } from '../engine/proxy.js';
-import { runningSwarmTasks, swarmRuntimeOf, swarmServiceStat } from '../lib/swarm.js';
+import { measurableSwarmTasks, swarmRuntimeOf, swarmServiceStat } from '../lib/swarm.js';
 import { collectNodeMetrics, NODE_METRIC_MAX_AGE_MS, type NodeContainerStats, type NodeMetricSamples } from '../lib/nodeMetrics.js';
 import { DISK_SAMPLE_SECONDS, sampleServiceDisk } from '../lib/diskUsage.js';
 import { measureNodeVolume } from '../lib/nodeVolumes.js';
@@ -67,7 +67,8 @@ export default fp(
       try {
         const containers = await collectContainerStats();
         const sampledAt = Date.now();
-        cache = { containers, sampledAt, host: await collectHostStats(), nodeContainers, nodeSamples };
+        // The previous tick's Swarm figures stay until this tick's replace them (no gap for the stats routes).
+        cache = { containers, sampledAt, host: await collectHostStats(), nodeContainers, nodeSamples, ...(cache.swarmStats ? { swarmStats: cache.swarmStats } : {}) };
 
         const all = await fastify.db.select().from(services);
         // P1: a Swarm service's tasks on workers that joined through NineDeploy are measured through their agents.
@@ -90,7 +91,7 @@ export default fp(
           const fresh = [...nodeContainers].filter(([id]) => (nodeSamples.get(id)?.sampledAt ?? 0) > Date.now() - NODE_METRIC_MAX_AGE_MS).map(([, m]) => m);
           for (const s of swarmServices) {
             const runtime = swarmRuntimeOf(s)!;
-            const tasks = await runningSwarmTasks(runtime).catch(() => null);
+            const tasks = await measurableSwarmTasks(runtime).catch(() => null);
             const st = tasks ? swarmServiceStat(runtime, tasks, [containers, ...fresh], s.memLimitMb ?? 0) : undefined;
             if (st) swarmStats.set(s.id, st);
           }
