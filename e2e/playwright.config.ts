@@ -43,11 +43,11 @@ export default defineConfig({
       use: { ...devices['Pixel 7'] },
     },
     // A3: the compact layout (opt-in for one release) passes the journeys
-    // that use the service page and the sidebar, on the same panel: 04 and 06
-    // under their own names, then what only compact has, then phone width.
+    // that use the service page and the sidebar, on the same panel: 04, 06 and
+    // 09 under their own names, then what only compact has, then phone width.
     {
       name: 'desktop-compact',
-      testMatch: /(04-env-rollback|06-approval|08-compact)\.spec\.ts/,
+      testMatch: /(04-env-rollback|06-approval|08-compact|09-domain-tls)\.spec\.ts/,
       dependencies: ['desktop'],
       use: { ...devices['Desktop Chrome'], viewport: { width: 1366, height: 900 }, layout: 'compact' },
     },

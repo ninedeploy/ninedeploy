@@ -171,6 +171,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Internal
 
+- A browser journey for domains and HTTPS: a domain added in the panel gets a Traefik router to the running container, switching HTTPS off and on follows into the router, and removing the domain removes the router. It runs in the classic and compact layouts.
 - **Release notes lead with what users need.** Each CHANGELOG section now opens with **Highlights** (at most three bullets) and an **Action needed:** line, and CI and test entries move to this Internal section. `scripts/release-notes.mjs` puts that block at the top of the GitHub release notes, and `pnpm release:tag` refuses a version whose section lacks it. Re-running the release of an older tag keeps its plain notes.
 - A separate manual macOS workflow records the complete configured server unit suite and its file/config manifest, alongside controlled CLI and workspace MCP checks (round 100).
 - Manual macOS server audit workflow records native filesystem, SQLite and controlled Docker CLI regressions without starting a daemon or desktop GUI (round 89).
