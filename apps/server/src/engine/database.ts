@@ -69,6 +69,26 @@ export function withDatabaseOperationLock<T>(id: number, log: (line: string) => 
   return withDatabaseBackupOperation(id, () => withExclusiveOperation(`database-${id}`, log, op));
 }
 
+/**
+ * O2: hold a panel-host database's operation locks — the in-process queue by
+ * id and the cross-process lock its backups and restores take — across a
+ * multi-step operation (a major upgrade). Inside, call the `*Held` dump and
+ * restore below: the locked ones would queue behind this very hold.
+ */
+export function withDatabaseMaintenance<T>(d: Database, log: (line: string) => void, op: () => Promise<T>): Promise<T> {
+  return withDatabaseBackupOperation(d.id, () => withExclusiveOperation(`database-${d.containerName ?? d.id}`, log, op));
+}
+
+/** {@link backupDatabase} for a caller that holds {@link withDatabaseMaintenance}. */
+export function dumpDatabaseHeld(d: Database, file: string, log: (line: string) => void): Promise<void> {
+  return backupDatabaseUnlocked(d, file, log);
+}
+
+/** {@link restoreDatabase} for a caller that holds {@link withDatabaseMaintenance}. */
+export function restoreDatabaseHeld(d: Database, file: string, log: (line: string) => void): Promise<void> {
+  return restoreDatabaseUnlocked(d, file, log);
+}
+
 /** Matches a versioned secret envelope ("v<ver>:…"). Backups written since the
  *  encryption change carry this prefix; anything else is a legacy plaintext dump. */
 const ENVELOPE_RE = /^v\d+:/;
@@ -591,6 +611,50 @@ export async function startDatabase(
 }
 
 /**
+ * O2: run a database image on a volume with NO network — no attached service,
+ * Studio or proxy can reach it — under the row's credentials and limits. The
+ * major upgrade dumps the old cluster through one (the fence) and restores
+ * into the new one through another (the staging copy). `--restart no`: a
+ * daemon restart must never bring one back. The caller removes it by name.
+ */
+export async function runIsolatedDatabase(
+  d: Database,
+  spec: { name: string; image: string; volume: string; mount: string },
+  log: (line: string) => void,
+): Promise<void> {
+  const cfg = ENGINES[d.engine];
+  if (!cfg) throw new Error(`Unknown engine: ${d.engine}`);
+  await run('docker', ['rm', '-f', spec.name], {}, swallow).catch(() => undefined);
+  const args = ['run', '-d', '--name', spec.name, '--network', 'none', '--restart', 'no', '--label', `${MANAGED_VOLUME_LABEL}=database-upgrade`, '--label', `ninedeploy.database.slug=${d.slug}`];
+  if (d.memLimitMb > 0) args.push('--memory', `${d.memLimitMb}m`, '--memory-swap', `${d.memLimitMb}m`);
+  args.push('-v', `${spec.volume}:${spec.mount}`);
+  const vars = cfg.env(decrypt(d.passwordEncrypted));
+  const envFile = Object.keys(vars).length > 0
+    ? writeSecretFile('nd-db', 'database.env', `${Object.entries(vars).map(([k, v]) => `${k}=${v}`).join('\n')}\n`)
+    : null;
+  if (envFile) args.push('--env-file', envFile.path);
+  args.push(spec.image);
+  log(`Starting ${spec.name} (${spec.image}, no network) …`);
+  try {
+    await run('docker', args, {}, log);
+  } finally {
+    envFile?.cleanup();
+  }
+}
+
+/** The mount path for a postgres volume whose data belongs to `image` (see {@link postgresImageLayout}). */
+export function postgresMountForImage(image: string, fallbackVersion?: string | null): string {
+  return postgresImageLayout(image, fallbackVersion).mount;
+}
+
+/** The postgres major an image tag runs (`postgres:16`, `pgvector/pgvector:pg17`), or null when the tag does not say. */
+export function postgresImageMajor(image: string): number | null {
+  const tag = image.slice(image.lastIndexOf(':') + 1);
+  const m = tag.match(/^(?:pg)?(\d+)/);
+  return m ? Number.parseInt(m[1]!, 10) : null;
+}
+
+/**
  * Join a running managed database to the per-slug bridge of every service it
  * is attached to. The DB stays on the shared `ninedeploy` mesh as a baseline
  * (so the operator can still reach it for management even when no service is
@@ -777,6 +841,17 @@ export async function adoptRetainedVolume(
   }
 
   const clusterImage = labels['ninedeploy.database.image'] ?? ENGINES.postgres?.image(d.version ?? undefined) ?? 'postgres';
+  // O2: postgres refuses to start on another major's data directory, so the
+  // new row would crash-loop. Its kept pre-upgrade volume makes this likelier:
+  // a database deleted after a major upgrade leaves the OLD major's data under
+  // the default `nd-db-<slug>-data` name a new database of that slug reuses.
+  const labeledMajor = labels['ninedeploy.database.image'] ? postgresImageMajor(labels['ninedeploy.database.image']) : null;
+  const rowMajor = postgresMajor(d.version);
+  if (labeledMajor != null && labeledMajor !== rowMajor) {
+    throw new Error(
+      `Retained volume "${d.volumeName}" holds PostgreSQL ${labeledMajor} data${provenance}, and this database is set to PostgreSQL ${rowMajor}: postgres does not start on another major's data. Create it with version ${labeledMajor} and upgrade it from the database page, point it at a different volume, or delete the volume (Volumes panel, or \`docker volume rm ${d.volumeName}\`)`,
+    );
+  }
   try {
     await resetPostgresVolumePassword(d, clusterImage, log);
   } catch (err) {

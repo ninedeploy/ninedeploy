@@ -50,6 +50,7 @@ import { nodeVolumeExists } from '../lib/nodeVolumes.js';
 import { withNodeDatabaseLifecycle } from '../lib/nodeDatabaseLifecycle.js';
 import { nodeStudioState, clearNodeStudioForMutation, startNodeStudioForDatabase, stopNodeStudioForDatabase } from '../lib/nodeStudio.js';
 import { attachmentHostMismatch, fanoutDatabaseHostRefusal } from '../lib/remoteDatabaseRefusal.js';
+import { assertNoRunningUpgrade } from '../lib/databaseUpgrade.js';
 // ── end 0.16 T6 ──
 
 /** Docker volume names only: prevents `existingVolume` from becoming a bind
@@ -151,6 +152,9 @@ async function nodesOf(db: DB, rows: ReadonlyArray<{ serverId?: number | null }>
 /** Serialize node database mutations with Studio preparation and reload after
  * admission. Local database operations keep their existing runtime path. */
 async function mutateDatabase<T>(db: DB, target: Database, action: (d: Database) => Promise<T>): Promise<T> {
+  // O2: stop, start, restart, limits and delete would race the upgrade's own
+  // stop/dump/switch and could bring the old cluster back onto the network.
+  await assertNoRunningUpgrade(db, target.id);
   if (!isNodeDatabase(target)) return action(target);
   return withNodeDatabaseLifecycle(target.id, async () => {
     const d = await db.query.databases.findFirst({ where: eq(databases.id, target.id) });

@@ -74,6 +74,17 @@ describe('lib/inventory', () => {
     expect(resolveVolumeOwner([], [], 'nd-db-orders-data-wal')).toBeNull();
   });
 
+  it('O2: a database owns the volumes of its major upgrades (nd-db-<slug>-data-u<id>), whichever one it uses', () => {
+    // After the upgrade the row names the new volume; the kept previous one
+    // is the default name. After a second upgrade or a rollback the KEPT one
+    // is an -u<id> volume: never offered as an orphan while the database exists.
+    const dbs = [dbRow({ id: 5, slug: 'orders', name: 'Orders DB', engine: 'postgres', volumeName: 'nd-db-orders-data', containerName: 'nd-db-orders' })];
+    const owner = { kind: 'database', refId: 5, name: 'Orders DB', engine: 'postgres', containerName: 'nd-db-orders' };
+    expect(resolveVolumeOwner([], dbs, 'nd-db-orders-data-u3')).toEqual(owner);
+    expect(resolveVolumeOwner([], dbs, 'nd-db-other-data-u3')).toBeNull();
+    expect(resolveVolumeOwner([], [], 'nd-db-orders-data-u3')).toBeNull();
+  });
+
   it('resolveVolumeOwnerWithSharing reports how many other services also attach the volume', () => {
     const svcs = [
       svcRow({ id: 2, slug: 'web', name: 'web', runtimeId: 'web-2' }),

@@ -448,7 +448,7 @@ describe('retained volume provenance + adoption', () => {
       return '[{"Name":"v"}]';
     });
 
-    await expect(adoptRetainedVolume(dbRow({ passwordEncrypted: 'v0:secret' }), vi.fn())).resolves.toEqual({ action: 'rekeyed' });
+    await expect(adoptRetainedVolume(dbRow({ passwordEncrypted: 'v0:secret', version: '16' }), vi.fn())).resolves.toEqual({ action: 'rekeyed' });
     expect(h.ensureDockerImage).toHaveBeenCalledWith('postgres:16', expect.any(Function));
   });
 
@@ -481,7 +481,7 @@ describe('retained volume provenance + adoption', () => {
       return '[{"Name":"v"}]';
     });
 
-    await adoptRetainedVolume(dbRow({ passwordEncrypted: "v0:it's" }), vi.fn());
+    await adoptRetainedVolume(dbRow({ passwordEncrypted: "v0:it's", version: '16' }), vi.fn());
     expect(sql).toContain("ALTER ROLE nine WITH PASSWORD 'it''s' VALID UNTIL 'infinity';");
   });
 
@@ -493,9 +493,24 @@ describe('retained volume provenance + adoption', () => {
       return '[{"Name":"v"}]';
     });
 
-    await expect(adoptRetainedVolume(dbRow(), vi.fn())).rejects.toThrow(
+    await expect(adoptRetainedVolume(dbRow({ version: '16' }), vi.fn())).rejects.toThrow(
       /Retained volume "v" holds postgres data \(previously "Old DB", postgres\) but re-keying it failed/,
     );
+  });
+
+  it('O2: refuses data of another major before any re-key (postgres would crash-loop on it)', async () => {
+    // A database deleted after a major upgrade leaves the OLD major's data
+    // under the default name a new database of that slug picks up.
+    captureVolume(true, labels());
+    h.capture.mockImplementation(async (_cmd: string, args: string[]) => {
+      if (args.includes('--format')) return JSON.stringify(labels());
+      return '[{"Name":"v"}]';
+    });
+    await expect(adoptRetainedVolume(dbRow({ version: '18' }), vi.fn())).rejects.toThrow(
+      /holds PostgreSQL 16 data \(previously "Old DB", postgres\), and this database is set to PostgreSQL 18/,
+    );
+    await expect(adoptRetainedVolume(dbRow(), vi.fn())).rejects.toThrow(/set to PostgreSQL 18/);
+    expect(h.capture.mock.calls.some(([, args]) => (args as string[]).includes('--single'))).toBe(false);
   });
 
   it('refuses engines it cannot re-key, naming the volume and its origin', async () => {

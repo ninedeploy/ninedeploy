@@ -19,6 +19,7 @@ import { pitrRecoveries, projects, type Database } from '@ninedeploy/db';
 import { audit } from '../lib/audit.js';
 import { conflict, forbidden, HttpError, notFound, parseId as num, unprocessable } from '../lib/errors.js';
 import { pitrBusy, pitrStatus, pitrUnavailable, runPitrBaseBackup, setPitr, startPitrRecovery } from '../lib/pitr.js';
+import { assertNoRunningUpgrade } from '../lib/databaseUpgrade.js';
 import { assertDatabaseRole, assertProjectRole, isWorkspaceMember, loadDatabaseForUser } from '../lib/resourceAccess.js';
 
 const settingsBody = z.object({
@@ -66,6 +67,8 @@ export const pitrRoutes: FastifyPluginAsync = async (app) => {
 
   app.put<{ Params: { id: string } }>('/:id/pitr', async (req) => {
     const d = await load(req.params.id, req.user!, 'admin');
+    // O2: switching PITR restarts the container with its archive volume.
+    await assertNoRunningUpgrade(app.db, d.id);
     const body = settingsBody.safeParse(req.body ?? {});
     if (!body.success) throw unprocessable(body.error.issues[0]!.message);
     const updated = await setPitr(app.db, d, body.data, req.user!.id, log);

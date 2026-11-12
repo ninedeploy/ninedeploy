@@ -44,6 +44,7 @@ import { deployLeftoverFindings, hostPortFindings, parseDockerLabels, routingFin
 import { serviceRoutingView } from './routingView.js';
 import { writeDynamicConfig } from './proxy.js';
 import { startStoppedGeneration } from './interruptedRuntime.js';
+import { assertNoRunningUpgrade } from '../lib/databaseUpgrade.js';
 import {
   containerRunning,
   listManagedVolumeNames,
@@ -750,6 +751,8 @@ export async function fixDoctorFinding(
       if (id == null) throw new Error('missing database id');
       const [row] = await db.select().from(databases).where(eq(databases.id, id));
       if (!row) throw conflict(`Database #${id} is gone — re-scan and retry.`);
+      // O2: a major upgrade stops the container on purpose; starting it would put the old cluster back on the network.
+      await assertNoRunningUpgrade(db, id);
       await startDatabase(row, collect);
       break;
     }

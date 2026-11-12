@@ -11,6 +11,7 @@ import {
   pruneOrphanVolumeStaging,
   recoverInterruptedVolumeImports,
 } from '../lib/volumeImport.js';
+import { pruneFinishedUpgrades, recoverInterruptedUpgrades } from '../lib/databaseUpgrade.js';
 
 const HOUR_MS = 60 * 60 * 1000;
 
@@ -26,6 +27,11 @@ const HOUR_MS = 60 * 60 * 1000;
  *
  * Service volume imports (A1, lib/volumeImport.ts) get the same recovery,
  * expiry, orphan-staging and retention steps.
+ *
+ * Database major upgrades (O2, lib/databaseUpgrade.ts): an upgrade the
+ * previous process was running is recovered at boot (its helpers removed, the
+ * database started again on the volume its row names) WITHOUT blocking
+ * startup, and failed or finalized records older than 180 days are pruned.
  *
  * Every step is isolated and never blocks startup.
  */
@@ -52,6 +58,7 @@ export default fp(
       await step('volume-expire-stale', () => expireStaleVolumeImports(fastify.db, now));
       await step('volume-orphan-staging', () => pruneOrphanVolumeStaging(fastify.db, undefined, now));
       await step('volume-retention', () => pruneFinishedVolumeImports(fastify.db, now));
+      await step('upgrade-retention', () => pruneFinishedUpgrades(fastify.db, undefined, now));
     };
     const tick = async () => {
       try {
@@ -73,6 +80,8 @@ export default fp(
     // the previous process's.
     await step('recover-interrupted', () => recoverInterruptedImports(fastify.db));
     await step('volume-recover-interrupted', () => recoverInterruptedVolumeImports(fastify.db));
+    // Starts databases (Docker): never awaited, so a slow daemon cannot hold up boot.
+    void step('upgrade-recover-interrupted', () => recoverInterruptedUpgrades(fastify.db));
     await sweep();
     timer = setTimeout(() => void tick(), interval);
     timer.unref();

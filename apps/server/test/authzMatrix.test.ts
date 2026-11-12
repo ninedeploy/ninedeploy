@@ -520,6 +520,9 @@ function paramValue(url: string, param: string, r: Res): string {
     // ── 0.14 T4 database import ── (no import row is seeded: every import id is unknown)
     case 'importId':
       return '999999';
+    // O2: no upgrade row is seeded.
+    case 'upgradeId':
+      return '999999';
     case 'index':
       return '0';
     // ── end 0.14 T4 ──
@@ -1367,6 +1370,17 @@ export const MATRIX: Record<string, Rule> = {
   }),
   'GET /v1/backup-destinations/:id/objects': OP,
   // ── end 0.14 T4 ──
+  // ── O2 database major upgrade: reading is a viewer's; starting, rolling back
+  // and finalizing stop the database, so they take its admin role (like delete).
+  'GET /v1/databases/:id/upgrades': R('viewer'),
+  'GET /v1/databases/:id/upgrades/options': R('viewer'),
+  'POST /v1/databases/:id/upgrades': R('admin', {
+    body: () => ({ toMajor: 18 }),
+    note: 'the seeded database has no running container, so an admin gets the 409 refusal; the run is covered by test/lib/databaseUpgrade.test.ts',
+  }),
+  'POST /v1/databases/:id/upgrades/:upgradeId/rollback': R('admin', { allow404: 'no upgrade row is seeded' }),
+  'POST /v1/databases/:id/upgrades/:upgradeId/finalize': R('admin', { allow404: 'no upgrade row is seeded' }),
+  // ── end O2 ──
   // ── A1 service volume import (operator: a volume restore's floor) ──
   'GET /v1/services/:id/volume-imports': OP,
   'POST /v1/services/:id/volume-imports': R('operator', {

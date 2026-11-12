@@ -98,9 +98,11 @@ const EXEMPT: Record<string, string> = {
 
 // importSystemArchive (lib/systemArchive.ts) audits `system.import`; the panel
 // backup helpers (lib/panelBackup.ts) audit every run and restore outcome;
-// setPitr (lib/pitr.ts) audits every enable, disable and retention change.
+// setPitr (lib/pitr.ts) audits every enable, disable and retention change;
+// rollbackDatabaseUpgrade and finalizeDatabaseUpgrade (lib/databaseUpgrade.ts)
+// audit their outcome once the work is done (it can still be refused).
 const HELPERS =
-  /\baudit\(|\bdeactivateUser\(|\bregisterAccount\(|\bcreateFirstAdmin\(|\bimportSystemArchive\(|\bstartPanelBackup\(|\brestorePanelBackup\(|\bsetPitr\(/;
+  /\baudit\(|\bdeactivateUser\(|\bregisterAccount\(|\bcreateFirstAdmin\(|\bimportSystemArchive\(|\bstartPanelBackup\(|\brestorePanelBackup\(|\bsetPitr\(|\brollbackDatabaseUpgrade\(|\bfinalizeDatabaseUpgrade\(/;
 const ROUTE = /\b(?:app|scope|api|r|instance|protectedScope|admin)\.(post|put|patch|delete)\b(?:<[\s\S]*?>)?\(\s*'([^']*)'/g;
 
 describe('audit coverage (r222)', () => {

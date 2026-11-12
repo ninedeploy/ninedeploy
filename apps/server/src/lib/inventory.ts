@@ -54,6 +54,14 @@ export function resolveVolumeOwner(
   if (archiveOf) {
     return { kind: 'database', refId: archiveOf.id, name: archiveOf.name, engine: archiveOf.engine, containerName: archiveOf.containerName };
   }
+  // O2: a major upgrade's volume `nd-db-<slug>-data-u<id>` (lib/databaseUpgrade.ts):
+  // the one being restored, or the one a rollback or a second upgrade keeps.
+  // Never an orphan while the database exists; finalize deletes it.
+  const upgradeVolume = /^nd-db-(.+)-data-u\d+$/.exec(name);
+  if (upgradeVolume) {
+    const owner = dbs.find((x) => x.slug === upgradeVolume[1]);
+    if (owner) return { kind: 'database', refId: owner.id, name: owner.name, engine: owner.engine, containerName: owner.containerName };
+  }
   // 1) explicit attachment link (any service may own the volume).
   for (const att of attachments) {
     if (att.volumeName !== name) continue;

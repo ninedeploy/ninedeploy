@@ -132,6 +132,13 @@ const RECORD = process.env['NINEDEPLOY_RECORD_DB_ARGV'] === '1';
 // These six operations were unsupported in 0.15 and intentionally gained
 // implementations in G1.8. The historical fixture remains unchanged.
 const ADDED_BACKUP_OPERATIONS = new Set(['clickhouse backup', 'clickhouse restore', 'meilisearch backup', 'meilisearch restore', 'rabbitmq backup', 'rabbitmq restore']);
+// O2: the adopt scenario hands every postgres row a volume labelled
+// postgres:17. None of these rows runs 17 (null and vector are 18, one is 16),
+// so 0.15 re-keyed the data and then started a server that refuses it
+// (crash loop). Adoption now refuses another major's data before any command;
+// the historical fixture remains unchanged and the refusal is pinned below.
+const MAJOR_MISMATCH_ADOPTIONS = new Set(['postgres adopt retained volume', 'postgres:16 adopt retained volume', 'postgres:vector adopt retained volume']);
+const exempt = (name: string) => ADDED_BACKUP_OPERATIONS.has(name) || MAJOR_MISMATCH_ADOPTIONS.has(name);
 
 /** A panel-host database row as v0.15.0 writes it. */
 function row(engineName: string, version: string | null, extra: Partial<Database> = {}): Database {
@@ -334,14 +341,18 @@ describe('v0.15.0 database argv fixture (panel host)', () => {
     if (RECORD) writeFileSync(FIXTURE, `${JSON.stringify(got, null, 2)}\n`);
     const fixture = JSON.parse(readFileSync(FIXTURE, 'utf8')) as typeof got;
     expect(Object.keys(got)).toEqual(Object.keys(fixture));
-    for (const name of Object.keys(fixture)) if (!ADDED_BACKUP_OPERATIONS.has(name)) expect(got[name], name).toEqual(fixture[name]);
+    for (const name of Object.keys(fixture)) if (!exempt(name)) expect(got[name], name).toEqual(fixture[name]);
+    for (const name of MAJOR_MISMATCH_ADOPTIONS) {
+      expect(got[name]!.events, name).toEqual(got[name]!.events.filter((e) => !JSON.stringify(e).includes('--single')));
+      expect((got[name]!.outcome as { error?: string }).error, name).toMatch(/holds PostgreSQL 17 data .*set to PostgreSQL 1[68]/);
+    }
   });
 
   it('a panel-host row (server_id NULL) through databaseRuntime sends byte-identical argv (the upgrade proof)', async () => {
     const got = await recordArgv(runtimeImpl);
     const fixture = JSON.parse(readFileSync(FIXTURE, 'utf8')) as typeof got;
     expect(Object.keys(got)).toEqual(Object.keys(fixture));
-    for (const name of Object.keys(fixture)) if (!ADDED_BACKUP_OPERATIONS.has(name)) expect(got[name], name).toEqual(fixture[name]);
+    for (const name of Object.keys(fixture)) if (!exempt(name)) expect(got[name], name).toEqual(fixture[name]);
   });
 
   it('keeps the six newly supported backup operations equivalent through panel dispatch', async () => {

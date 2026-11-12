@@ -15,6 +15,8 @@ import type {
   PublicAccessStatus,
   DatabaseImport,
   DatabaseImportCreate,
+  DatabaseUpgrade,
+  DatabaseUpgradeOptions,
   BackupDestinationObject,
   BackupReplica,
   BackupReplicasView,
@@ -103,6 +105,25 @@ export interface DatabasesApi {
       recover: (id: number, input: { name: string; targetTime?: string | Date | null }) => Promise<PitrRecoveryAdmission>;
       recoveries: (id: number) => Promise<PitrRecovery[]>;
       recovery: (id: number, recoveryId: number) => Promise<PitrRecovery>;
+    };
+    /**
+     * O2: major-version upgrades (PostgreSQL on the panel host). `options`
+     * reads the running cluster's major and what it can move to. `start`
+     * checks the cluster, then answers 202 with the running upgrade: the
+     * database is stopped, dumped (kept as a `pre-upgrade` backup), restored
+     * into a new volume on the target major and compared before the switch.
+     * The previous volume stays until `finalize`; until then `rollback`
+     * points the database back at it. Starting, rolling back and finalizing
+     * need `admin` on the database.
+     */
+    upgrades: {
+      list: (id: number) => Promise<DatabaseUpgrade[]>;
+      options: (id: number) => Promise<DatabaseUpgradeOptions>;
+      start: (id: number, input: { toMajor: number }) => Promise<DatabaseUpgrade>;
+      rollback: (id: number, upgradeId: number) => Promise<DatabaseUpgrade>;
+      finalize: (id: number, upgradeId: number) => Promise<DatabaseUpgrade & { removedVolume: string }>;
+      /** Poll until the upgrade is no longer `running` (default every 2 s, for up to 2 h). */
+      wait: (id: number, upgradeId: number, opts?: { intervalMs?: number; timeoutMs?: number }) => Promise<DatabaseUpgrade>;
     };
     /**
      * 0.14: public access through a per-database Traefik TCP sidecar. Reading
@@ -223,6 +244,24 @@ export function databasesApi(t: Transport): DatabasesApi {
           }),
         recoveries: (id) => get<PitrRecovery[]>(`/v1/databases/${id}/pitr/recoveries`),
         recovery: (id, recoveryId) => get<PitrRecovery>(`/v1/databases/${id}/pitr/recoveries/${recoveryId}`),
+      },
+      upgrades: {
+        list: (id) => get<DatabaseUpgrade[]>(`/v1/databases/${id}/upgrades`),
+        options: (id) => get<DatabaseUpgradeOptions>(`/v1/databases/${id}/upgrades/options`),
+        start: (id, input) => send<DatabaseUpgrade>('POST', `/v1/databases/${id}/upgrades`, input),
+        rollback: (id, upgradeId) => send<DatabaseUpgrade>('POST', `/v1/databases/${id}/upgrades/${upgradeId}/rollback`, {}),
+        finalize: (id, upgradeId) => send<DatabaseUpgrade & { removedVolume: string }>('POST', `/v1/databases/${id}/upgrades/${upgradeId}/finalize`, {}),
+        wait: async (id, upgradeId, opts = {}) => {
+          const interval = opts.intervalMs ?? 2_000;
+          const deadline = Date.now() + (opts.timeoutMs ?? 2 * 60 * 60 * 1000);
+          for (;;) {
+            const row = (await get<DatabaseUpgrade[]>(`/v1/databases/${id}/upgrades`)).find((u) => u.id === upgradeId);
+            if (!row) throw new Error(`upgrade ${upgradeId} of database ${id} not found`);
+            if (row.status !== 'running') return row;
+            if (Date.now() >= deadline) throw new Error(`upgrade ${upgradeId} is still running (phase ${row.phase ?? 'unknown'})`);
+            await new Promise<void>((resolve) => (globalThis as unknown as { setTimeout: (fn: () => void, ms: number) => unknown }).setTimeout(resolve, interval));
+          }
+        },
       },
       pgbouncerStatus: (id) => get<PgbouncerStatus>(`/v1/databases/${id}/pgbouncer`),
       enablePgbouncer: (id, input) =>

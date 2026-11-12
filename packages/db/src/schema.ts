@@ -1296,6 +1296,9 @@ export const databaseImportStatus = [
 ] as const;
 export const databaseImportFormat = ['pg_custom', 'pg_plain', 'mysql_sql', 'mongo_archive', 'rdb'] as const;
 export const volumeImportStatus = ['uploading', 'pending', 'running', 'completed', 'failed', 'cancelled', 'expired'] as const;
+/** O2: a major-version upgrade of a managed database. `completed` keeps the
+ *  previous volume for rollback until `finalized` deletes it. */
+export const databaseUpgradeStatus = ['running', 'completed', 'failed', 'rolled_back', 'finalized'] as const;
 // G3.2 added gcp, azure, onepassword and exec; the column is plain text (no CHECK), so no migration.
 export const secretProviderKind = ['vault', 'aws', 'gcp', 'azure', 'onepassword', 'exec'] as const;
 
@@ -1430,6 +1433,56 @@ export const volumeImports = sqliteTable(
   (t) => ({
     serviceCreatedIdx: index('volume_imports_service_created_idx').on(t.serviceId, t.createdAt),
     statusIdx: index('volume_imports_status_idx').on(t.status),
+  }),
+);
+
+/**
+ * O2 (competitive roadmap): a major-version upgrade of a managed database by
+ * dump and restore into a new volume. The container name (the hostname every
+ * attached service uses) never changes; the row's `version` and `volume_name`
+ * switch only after the restored copy matched the old cluster. The previous
+ * volume stays until the upgrade is finalized, so a rollback can point the row
+ * back at it.
+ */
+export const databaseUpgrades = sqliteTable(
+  'database_upgrades',
+  {
+    id: id(),
+    databaseId: integer('database_id')
+      .notNull()
+      .references(() => databases.id, { onDelete: 'cascade' }),
+    engine: text('engine').notNull(),
+    /** The major the old cluster reported (`server_version_num`), not the row's tag. */
+    fromMajor: integer('from_major').notNull(),
+    toMajor: integer('to_major').notNull(),
+    /** The row's `version` before the switch (NULL = the engine default), restored on rollback. */
+    previousVersion: text('previous_version'),
+    /** The row's `version` after the switch. */
+    targetVersion: text('target_version').notNull(),
+    /** The image (ID) the old container ran: the fence dumps through it. */
+    fromImage: text('from_image').notNull(),
+    toImage: text('to_image').notNull(),
+    previousVolume: text('previous_volume').notNull(),
+    targetVolume: text('target_volume').notNull(),
+    status: text('status', { enum: databaseUpgradeStatus }).notNull().default('running'),
+    /** Where a running upgrade is: preflight, dump, restore, verify, switch, start. */
+    phase: text('phase'),
+    /** Whether the row already points at the target volume (boot recovery decides by it). */
+    switched: integer('switched', { mode: 'boolean' }).notNull().default(false),
+    safetyBackupId: integer('safety_backup_id').references(() => backups.id, { onDelete: 'set null' }),
+    /** JSON: what was compared between the old cluster and the restored copy. */
+    verification: text('verification'),
+    error: text('error'),
+    createdByUserId: integer('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: ts('created_at'),
+    updatedAt: tsUpdatable('updated_at'),
+    completedAt: integer('completed_at', { mode: 'timestamp' }),
+    rolledBackAt: integer('rolled_back_at', { mode: 'timestamp' }),
+    finalizedAt: integer('finalized_at', { mode: 'timestamp' }),
+  },
+  (t) => ({
+    databaseCreatedIdx: index('database_upgrades_database_created_idx').on(t.databaseId, t.createdAt),
+    statusIdx: index('database_upgrades_status_idx').on(t.status),
   }),
 );
 
@@ -3043,6 +3096,8 @@ export type TlsCertificate = typeof tlsCertificates.$inferSelect;
 export type NewTlsCertificate = typeof tlsCertificates.$inferInsert;
 export type DatabaseImport = typeof databaseImports.$inferSelect;
 export type NewDatabaseImport = typeof databaseImports.$inferInsert;
+export type DatabaseUpgrade = typeof databaseUpgrades.$inferSelect;
+export type NewDatabaseUpgrade = typeof databaseUpgrades.$inferInsert;
 export type SecretProvider = typeof secretProviders.$inferSelect;
 export type NewSecretProvider = typeof secretProviders.$inferInsert;
 export type TerminalSession = typeof terminalSessions.$inferSelect;

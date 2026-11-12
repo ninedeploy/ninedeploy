@@ -68,6 +68,7 @@ const RETENTION: Record<string, Retention> = {
   // R3 (migration 0123)
   pitr_recoveries: { swept: 'pitr-recoveries' },
   // A1 (migration 0124)
+  database_upgrades: { config: "swept by the import plugin (plugins/databaseImports.ts step 'upgrade-retention'): failed and finalized rows go after 180 days; completed and rolled-back ones still hold a volume and stay until finalized; cascades with the database" },
   volume_imports: { config: "swept by the import plugin (plugins/databaseImports.ts step 'volume-retention'): finished rows go after 90 days, idle uploads expire after 24h; cascades with the service" },
 };
 

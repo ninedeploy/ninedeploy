@@ -38,6 +38,7 @@ import {
 } from './commands/notifications.js';
 import { databasePgbouncer } from './commands/pgbouncer.js';
 import { pitrBaseBackup, pitrDisable, pitrEnable, pitrRecover, pitrRecoveries, pitrStatus } from './commands/pitr.js';
+import { upgradeFinalize, upgradeRollback, upgradeStart, upgradeStatus } from './commands/databaseUpgrade.js';
 import { backupPolicyGet, backupPolicySet } from './commands/backupPolicy.js';
 import { logsSearch } from './commands/logs.js';
 import {
@@ -361,6 +362,24 @@ databases
   .action((dbId: string, action: string, opts: { port?: number }) =>
     databasePgbouncer(getClient(), dbId, action, opts),
   );
+
+// ── Major-version upgrades (O2) ──────────────────────────────────────────
+const upgradeCmd = databases
+  .command('upgrade')
+  .description('Move a PostgreSQL database to a newer major: dump, restore into a new volume, compare, switch (previous volume kept)');
+upgradeCmd.command('status <dbId>').description('The running major, the majors it can move to, and the upgrade history')
+  .action((dbId: string) => upgradeStatus(getClient(), dbId));
+upgradeCmd.command('start <dbId>').description('Upgrade to a newer major; the database stops until it is done (database admin)')
+  .requiredOption('--to <major>', 'Target PostgreSQL major, e.g. 18')
+  .option('-y, --yes', 'Skip the confirmation')
+  .option('--no-wait', 'Return once the upgrade is admitted')
+  .action((dbId: string, o: { to?: string; yes?: boolean; wait?: boolean }) => upgradeStart(getClient(), dbId, o));
+upgradeCmd.command('rollback <dbId> <upgradeId>').description('Point the database back at the previous volume (database admin)')
+  .option('-y, --yes', 'Skip the confirmation')
+  .action((dbId: string, upgradeId: string, o: { yes?: boolean }) => upgradeRollback(getClient(), dbId, upgradeId, o));
+upgradeCmd.command('finalize <dbId> <upgradeId>').description('Delete the volume the database no longer uses; no rollback after this (database admin)')
+  .option('-y, --yes', 'Skip the confirmation')
+  .action((dbId: string, upgradeId: string, o: { yes?: boolean }) => upgradeFinalize(getClient(), dbId, upgradeId, o));
 
 // ── PostgreSQL point-in-time recovery (R3) ───────────────────────────────
 const pitrCmd = databases

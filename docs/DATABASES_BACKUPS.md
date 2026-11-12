@@ -313,3 +313,40 @@ A dump restores the database as it was when the dump was taken. Point-in-time re
 - **Restoring the data volume or the archive volume of a database with PITR on is refused** (409 `pitr_volume_restore_refused`). An older data directory under a live archive would write segment names the archive already holds with other contents. Disable PITR first, or recover to a point in time instead. A dump restore (`pg_restore` into the running database) is fine: it is just more WAL.
 - **Rolling back the panel** to a version without PITR keeps the database archiving, because the container keeps its flags until it is recreated. Nothing prunes the archive in that version. Disable PITR before rolling back.
 
+
+## ⬆️ 12. Major version upgrades (PostgreSQL, O2)
+
+A PostgreSQL database can move to a newer major (for example 16 → 18) from **Settings → Major version upgrade**. The CLI is `ninedeploy databases upgrade start <dbId> --to 18`, and the API is `POST /v1/databases/:id/upgrades` with `{ "toMajor": 18 }`. Starting, rolling back and finalizing need `admin` on the database. Reading the options (`GET /v1/databases/:id/upgrades/options`) and the history needs `viewer`.
+
+**What happens, in order.**
+1. **Checks against the running database, before anything stops.** The panel reads the real major from the cluster (`server_version_num`), not from the configured tag. It refuses, naming what to change, when:
+   - the cluster holds another database;
+   - there is a role besides the database user;
+   - the built-in `postgres` database holds tables;
+   - there is not room on disk for about twice the database size.
+   The upgrade carries one database and its user, so any of these would be lost silently.
+2. **The new image is pulled** while the database still runs.
+3. **The database stops, and the outage starts here.** It is dumped through a container that runs its own image on its own volume with no network, so nothing writes after the dump. The dump is kept as a backup (`pre-upgrade`, never pruned by the schedule).
+4. **The dump is restored into a new volume** (`nd-db-<slug>-data-u<id>`) by the new major, in a second container with no network. The copy is then compared with the original:
+   - the exact row count of every table;
+   - every sequence;
+   - the number of indexes, constraints, views, triggers and functions;
+   - the extensions.
+   The restore stops at the first error. Any difference fails the upgrade.
+5. **Only then does the database switch.** The row's version and volume change, and the container starts under the **same name**. Attached services, PgBouncer and Studio keep their hostname and password. The database joins its services' bridges again.
+
+The CLI waits for the result (`--no-wait` returns at once). The card shows the phase while it runs. On a test panel, a 500-row database took 11 seconds; the outage grows with the size of the database, because steps 3–4 copy all of it.
+
+**When it fails.** A failure before the switch removes the new volume and starts the database as it was, on its old major. A new major that does not start after the switch is pointed back the same way. The reason is on the upgrade row (`GET /v1/databases/:id/upgrades`). If the panel restarts in the middle, it finishes on boot: before the switch it starts the old database; after it, it starts the verified copy.
+
+**Rollback and finalize.** After a completed upgrade the previous volume is kept.
+- **Roll back** (`ninedeploy databases upgrade rollback <dbId> <upgradeId>`) points the database back at it, on the old major. Writes made since the upgrade stay on the upgraded volume and are **not** carried back.
+- **Finalize** (`… finalize <dbId> <upgradeId>`) deletes the volume the database no longer uses: the previous one after an upgrade, the upgraded one after a rollback. There is no rollback after it.
+- A second upgrade waits until the first is finalized.
+
+**While an upgrade runs**, the database's stop, start, restart, limits, delete and PITR switch answer 409, and the Doctor will not start it. Backups and restores wait for it.
+
+**Limits.**
+- **PostgreSQL on the panel host only, to 14–18.** Databases on nodes, pgvector databases and preview copies are refused. Other engines have no major upgrade yet.
+- **PITR must be off** (its archive and base backups belong to one cluster). Turn it off, upgrade, turn it on again. A rollback is refused while PITR is on.
+- **Deleting the database keeps both volumes**, like any data volume. A new database created later with the same name would pick up the old `nd-db-<slug>-data` volume. If that volume holds another major's data, the create is refused with the major named, instead of starting a server that cannot read it.

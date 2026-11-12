@@ -50,6 +50,7 @@ import { DatabaseTopologyTab } from './database/DatabaseTopologyTab.js';
 import { BackupScheduleCard } from './database/BackupScheduleCard.js';
 import { BackupReplicasCard } from './database/BackupReplicasCard.js';
 import { PitrCard } from './database/PitrCard.js';
+import { UpgradeCard } from './database/UpgradeCard.js';
 import { ImportCard } from './database/ImportCard.js';
 import { RestoreVerifyDialog } from './database/RestoreVerifyDialog.js';
 import { PublicAccessCard } from './database/PublicAccessCard.js';
@@ -1072,6 +1073,8 @@ function SettingsPanel({ db, onDeleted }: { db: IDatabaseDetail; onDeleted: () =
           {db.engine === 'postgres' && <PgbouncerCard db={db} />}
         </>
       )}
+
+      <UpgradeCard db={db} />
 
       {/* Danger Zone */}
       <Card className="p-5 border-rose-500/20 bg-rose-500/[0.02] space-y-4">

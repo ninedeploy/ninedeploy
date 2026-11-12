@@ -16,6 +16,7 @@ import { readFileSync } from 'node:fs';
 import Fastify, { type FastifyPluginAsync } from 'fastify';
 import { describe, expect, it } from 'vitest';
 import { databaseImportRoutes } from '../src/modules/databaseImports.js';
+import { databaseUpgradeRoutes } from '../src/modules/databaseUpgrades.js';
 import { databasePublicAccessRoutes } from '../src/modules/databasePublicAccess.js';
 import { secretProviderRoutes } from '../src/modules/secretProviders.js';
 import { traefikCustomRoutes } from '../src/modules/traefikCustom.js';
@@ -33,6 +34,8 @@ const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
 const MODULES: Array<{ binding: string; file: string; prefix: string; routes: FastifyPluginAsync }> = [
   { binding: 'databasePublicAccessRoutes', file: './databasePublicAccess.js', prefix: '/databases', routes: databasePublicAccessRoutes },
   { binding: 'databaseImportRoutes', file: './databaseImports.js', prefix: '/databases', routes: databaseImportRoutes },
+  // O2: major upgrades of a managed database.
+  { binding: 'databaseUpgradeRoutes', file: './databaseUpgrades.js', prefix: '/databases', routes: databaseUpgradeRoutes },
   { binding: 'traefikCustomRoutes', file: './traefikCustom.js', prefix: '/traefik', routes: traefikCustomRoutes },
   {
     binding: 'secretProviderRoutes',
