@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+**Highlights**
+- Services on nodes get maintenance mode and custom error pages, the restart-loop limit, and pre- and post-deploy hooks. Swarm replicas on worker nodes get the terminal, the file browser and metrics.
+- Move to NineDeploy from Coolify, Dokploy, CapRover or Heroku with `ninedeploy import`: plan, create the services, copy databases and volumes, then switch the domains.
+- A compact panel layout to try, under Settings → Appearance → Layout.
+
+**Action needed:** No. To use the new node features, update each node agent to this release.
+
 ### Added
 
 - **Terminal, file browser, inspect and metrics for Swarm replicas on worker nodes.** They used to work only for a replica on the panel host, and answered `swarm_task_elsewhere` for one on a worker. Now a replica on a worker that joined the swarm through NineDeploy is reached through that node's agent, with the same gates as any node terminal.
@@ -42,8 +49,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - The sidebar merges Hub into New and moves Networks inside Topology, behind a link shown in Advanced mode. Queue stays, because it is the only list of deploys waiting for approval across services.
   - The browser journeys now also run in the compact layout: environment and rollback, approval, the compact-only views, and every phone page.
   - A coming release makes compact the default and removes the classic layout.
-- A separate manual macOS workflow records the complete configured server unit suite and its file/config manifest, alongside controlled CLI and workspace MCP checks (round 100).
-- Manual macOS server audit workflow records native filesystem, SQLite and controlled Docker CLI regressions without starting a daemon or desktop GUI (round 89).
 - **A read-only import plan for Coolify, Dokploy and CapRover.** `ninedeploy import plan <coolify|dokploy|caprover> --url …` reads the other platform's API from your machine and lists what NineDeploy would create:
   - services, with their repository, image or compose source, build pack, port, limits, domains and first volume;
   - environment variable names;
@@ -102,7 +107,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Deploy logs no longer show secret values.** A build tool can echo them. Nixpacks, for one, fills a `$VAR` of a build command into its RUN step, and BuildKit prints that step, so a Procfile `release` line referencing `$DATABASE_URL` put the attached database's password in the deploy log, which every member of the service can read. Each deployment now masks its secret variables, attached connection strings (and their password on its own) and resolved vault references as `***` in every log line, on disk and live. Checked live: the same deploy that showed the password now shows `echo "***"`. Values shorter than 6 characters are not masked. The image itself still carries the value in its build history, as Nixpacks writes it; keep secrets out of build commands.
 - Volume backup restores (and volume imports) no longer drop symlinks. The staged swap moved entries only when `[ -e ]` was true, which follows links. A link whose target was elsewhere, or not yet moved (`link.html -> index.html`), was silently left behind and deleted with the staging directory. Found by the volume import's live proof, and covered by a real-Docker test that fails without the fix.
 - `ninedeploy import data` now prints a MySQL/MariaDB dump command without `--databases`. That flag writes `CREATE DATABASE` and `USE` into the dump, and the panel restores the file as written. For an admin the import reported success but put every row in a second database beside the managed `app` database, which the app's connection string names; anyone else was refused. Checked live with MySQL 8.4: the old form put 500 rows into `shopdb` and left `app` empty, while the new form put them into `app` with the same checksum. Dumps taken with the earlier command should be taken again.
-- Swarm deployment regression tests now await database readiness and close their native database clients after every case (F1133).
 - CloudWatch log drains retain captured batches when HTTP 200 acknowledges rejected log events, preserving accepted-event and rejection-boundary handling (F1126).
 - Elasticsearch log drains send bulk NDJSON to the index bulk operation while preserving configured index, query parameters and authentication (F1124).
 - Elasticsearch drains retain queued logs when a bulk acknowledgement is unreadable or malformed instead of recording delivery success (F1122).
@@ -118,10 +122,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Git LFS builds now reject conflicting sizes for the same object before downloading or changing checkout files, instead of silently accepting the last pointer declaration (F1114).
 - Git LFS recognition now validates the complete basic-v1 pointer, preserving ordinary text with pointer-looking prefixes (F1112).
 - Git LFS hydration now accepts native-compatible CRLF, omitted final newlines and outer Unicode whitespace for basic-v1 pointers (F1113).
-- Workspace MCP readiness checks now remove token environment names case-insensitively before child startup, including Windows lowercase and mixed-case aliases (F1111).
-- MCP workspace installs now link a tracked launcher before build output exists, and macOS setup verifies the command after build (F1110).
 - Git LFS fetches now remove temporary objects on batch, stream, verification or checkout-copy failure before returning (F1109).
-- Autoscaler regression fixtures now await SQLite readiness and release owned native clients after each test, with permanent ownership guards (F1108).
 - Backup scheduler now refuses new dump admission after close, including callbacks resuming from pending reads and daily loops between databases (F1107).
 - Backup policy cron publication now ignores superseded reads from saves, periodic refreshes and startup while preserving independent database changes (F1106).
 - Backup drill history rows now include the database identity required by the SDK and already present on single-entry responses (F1105).
@@ -167,6 +168,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Failed CI log file creation or append no longer consumes the chunk sequence; partial writes restore the prior file length and reservation so retries preserve accepted diagnostics (F1066).
 - CI log writes serialize admission and file append per attempt within the panel process, preserving chunk order and acknowledging overlapping retries from current persisted sequence state (F1065).
 - CI results that lose the job transition to cancellation return a conflict instead of success; cancellation closes the current attempt even when a competing result just finished its attempt write (F1064).
+
+### Internal
+
+- **Release notes lead with what users need.** Each CHANGELOG section now opens with **Highlights** (at most three bullets) and an **Action needed:** line, and CI and test entries move to this Internal section. `scripts/release-notes.mjs` puts that block at the top of the GitHub release notes, and `pnpm release:tag` refuses a version whose section lacks it. Re-running the release of an older tag keeps its plain notes.
+- A separate manual macOS workflow records the complete configured server unit suite and its file/config manifest, alongside controlled CLI and workspace MCP checks (round 100).
+- Manual macOS server audit workflow records native filesystem, SQLite and controlled Docker CLI regressions without starting a daemon or desktop GUI (round 89).
+- Swarm deployment regression tests now await database readiness and close their native database clients after every case (F1133).
+- Workspace MCP readiness checks now remove token environment names case-insensitively before child startup, including Windows lowercase and mixed-case aliases (F1111).
+- MCP workspace installs now link a tracked launcher before build output exists, and macOS setup verifies the command after build (F1110).
+- Autoscaler regression fixtures now await SQLite readiness and release owned native clients after each test, with permanent ownership guards (F1108).
 
 ## [0.18.26] - 2026-11-09
 

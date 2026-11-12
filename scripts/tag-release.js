@@ -112,6 +112,16 @@ if (changelogRaw.includes('Placeholder')) {
   die(`changelog.json on ${commitish} still carries a Placeholder stub — fill it before tagging.`);
 }
 
+// A6: the CHANGELOG.md section opens with the user-facing block the GitHub
+// release notes lead with (scripts/release-notes.mjs): **Highlights** (at most
+// three bullets) and an **Action needed:** line.
+try {
+  sh('node', ['scripts/release-notes.mjs', '--check', bare, 'CHANGELOG.md'], { stdio: ['ignore', 'pipe', 'pipe'] });
+} catch (err) {
+  const reason = String(err.stderr ?? err).trim().split('\n').pop();
+  die(`${reason} — open the section with **Highlights** (1-3 bullets for users) and **Action needed:** No. / Yes: …`);
+}
+
 // 4. The gates that would have caught the 0.10.30 escape: typecheck (an
 // unescaped-apostrophe changelog fails compile) AND the version test (whose
 // placeholder/duplicate guard once caught a release note that quoted the

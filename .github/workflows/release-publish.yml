@@ -899,12 +899,18 @@ jobs:
           case "$state" in
             none)
               notes="$(mktemp)"
-              {
-                printf 'See [CHANGELOG.md](https://github.com/%s/blob/%s/CHANGELOG.md) for the full release notes.\n\n' "$GITHUB_REPOSITORY" "$RELEASE_TAG"
-                printf '**Pull the image:**\n```\ndocker pull ghcr.io/ninedeploy/ninedeploy:%s\ndocker pull ghcr.io/ninedeploy/ninedeploy:latest\n```\n\n' "$RELEASE_TAG"
-                printf '**Verify it:** the image is signed with cosign (keyless) and carries build provenance; `SHA256SUMS` covers the source archive, `install.sh` and the desktop installers, and `SHA256SUMS.sigstore.json` is its signature. See [Verifying a release](https://github.com/%s/blob/%s/README.md#verifying-a-release).\n\n' "$GITHUB_REPOSITORY" "$RELEASE_TAG"
-                printf '**Desktop app:** Windows (`.exe`), macOS (`.dmg`, Intel and Apple silicon) and Linux (`.AppImage`, `.deb`). The installers are not code-signed yet: Windows SmartScreen warns about an unknown publisher, and macOS opens the app only after you allow it under System Settings → Privacy & Security. Keeping the sign-in through the macOS Keychain is not verified yet. See [Desktop client](https://github.com/%s/blob/%s/docs/DESKTOP.md).\n' "$GITHUB_REPOSITORY" "$RELEASE_TAG"
-              } > "$notes"
+              # A6: the CHANGELOG section's Highlights and Action needed lead the notes
+              # (scripts/release-notes.mjs). A tag cut before the script existed keeps the plain notes.
+              if [ -f scripts/release-notes.mjs ]; then
+                node scripts/release-notes.mjs "$RELEASE_TAG" CHANGELOG.md > "$notes"
+              else
+                {
+                  printf 'See [CHANGELOG.md](https://github.com/%s/blob/%s/CHANGELOG.md) for the full release notes.\n\n' "$GITHUB_REPOSITORY" "$RELEASE_TAG"
+                  printf '**Pull the image:**\n```\ndocker pull ghcr.io/ninedeploy/ninedeploy:%s\ndocker pull ghcr.io/ninedeploy/ninedeploy:latest\n```\n\n' "$RELEASE_TAG"
+                  printf '**Verify it:** the image is signed with cosign (keyless) and carries build provenance; `SHA256SUMS` covers the source archive, `install.sh` and the desktop installers, and `SHA256SUMS.sigstore.json` is its signature. See [Verifying a release](https://github.com/%s/blob/%s/README.md#verifying-a-release).\n\n' "$GITHUB_REPOSITORY" "$RELEASE_TAG"
+                  printf '**Desktop app:** Windows (`.exe`), macOS (`.dmg`, Intel and Apple silicon) and Linux (`.AppImage`, `.deb`). The installers are not code-signed yet: Windows SmartScreen warns about an unknown publisher, and macOS opens the app only after you allow it under System Settings → Privacy & Security. Keeping the sign-in through the macOS Keychain is not verified yet. See [Desktop client](https://github.com/%s/blob/%s/docs/DESKTOP.md).\n' "$GITHUB_REPOSITORY" "$RELEASE_TAG"
+                } > "$notes"
+              fi
               gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft --verify-tag \
                 --title "$RELEASE_TAG" --notes-file "$notes" \
                 "$a/ninedeploy-${RELEASE_TAG}.tar.gz" "$a/install.sh" "${desktop_paths[@]}" "$a/SHA256SUMS.sigstore.json" "$a/SHA256SUMS" CHANGELOG.md

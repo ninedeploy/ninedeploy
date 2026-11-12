@@ -47,7 +47,7 @@ Installed panels update themselves, so every release reaches every operator. A c
 - **Wire what you write.** A module is not done until something mounts it and a test asserts that mount: a registered route, a scheduled job, a rendered card. Unit tests alone have missed this before.
 - **Commands run as argument lists.** Never build a shell string from user input.
 - **Secrets** are encrypted at rest, write-only in the API, and never logged.
-- **Keep `CHANGELOG.md` honest.** Add a line under `[Unreleased]` saying what changes for the operator. Say what does not work yet as plainly as what does.
+- **Keep `CHANGELOG.md` honest.** Add a line under `[Unreleased]` saying what changes for the operator. Say what does not work yet as plainly as what does. CI, test and tooling changes go under `### Internal` at the end of the section.
 
 ## Translations
 
@@ -59,7 +59,9 @@ One-click templates are reviewed for pinned images and closed-by-default exposur
 
 ## Releases and the stable channel
 
-Maintainers tag releases. Every release is offered at once to panels on the default channel. Panels on the **stable** channel get only the release that the `stable` tag points at. Once a day, `.github/workflows/stable-channel.yml` moves that tag to the newest release that has been out for 7 days. Two markers in a GitHub release's notes change that:
+Maintainers tag releases. Each release's `CHANGELOG.md` section opens with a block for the people who run NineDeploy: **Highlights**, one to three bullets a user notices, and an **Action needed:** line (`No.`, optionally with a short note, or `Yes: <what to do>`). The GitHub release notes lead with that block (`scripts/release-notes.mjs`), and `pnpm release:tag` refuses a version whose section lacks it. A stable marker (below) written in the section is carried into the release notes.
+
+Every release is offered at once to panels on the default channel. Panels on the **stable** channel get only the release that the `stable` tag points at. Once a day, `.github/workflows/stable-channel.yml` moves that tag to the newest release that has been out for 7 days. Two markers in a GitHub release's notes change that:
 
 - `<!-- stable: hold -->` keeps a release off stable, for example while a regression is investigated.
 - `<!-- stable: security -->` promotes it at the next run without waiting.
