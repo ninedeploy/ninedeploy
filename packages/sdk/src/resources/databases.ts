@@ -110,7 +110,7 @@ export interface DatabasesApi {
      * O2: major-version upgrades (PostgreSQL on the panel host). `options`
      * reads the running cluster's major and what it can move to. `start`
      * checks the cluster, then answers 202 with the running upgrade: the
-     * database is stopped, dumped (kept as a `pre-upgrade` backup), restored
+     * database is stopped, dumped (the dump is kept in its backups), restored
      * into a new volume on the target major and compared before the switch.
      * The previous volume stays until `finalize`; until then `rollback`
      * points the database back at it. Starting, rolling back and finalizing

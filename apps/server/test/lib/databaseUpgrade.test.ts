@@ -203,9 +203,48 @@ describe('the run', () => {
     expect(up.id).toBe(1);
     expect(up).toMatchObject({ status: 'failed', switched: false });
     expect(calls).toContain('start nd-db-orders v18 nd-db-orders-data-u1');
-    expect(calls).toContain('volume- nd-db-orders-data-u1');
+    // The new cluster was on the network: it may hold writes, so its volume stays.
+    expect(calls).not.toContain('volume- nd-db-orders-data-u1');
+    expect(up.error).toContain('nd-db-orders-data-u1 is kept');
     expect(calls.at(-2)).toBe('start nd-db-orders v16 nd-db-orders-data');
     expect(await row()).toMatchObject({ status: 'running', version: '16', volumeName: 'nd-db-orders-data' });
+  });
+
+  it('a failure to join the service bridges after the switch does not undo it', async () => {
+    const { deps } = fakeDeps();
+    deps.attachBridges = vi.fn(async () => { throw new Error('network gone'); });
+    const up = await admitAndRun(deps);
+    expect(up.status).toBe('completed');
+    expect(await row()).toMatchObject({ status: 'running', version: '18' });
+  });
+
+  it('a row with no version on a 16 cluster goes back to 16, never to the engine default', async () => {
+    // NULL follows the engine default (18): starting that on 16 data crash-loops.
+    await db.update(databases).set({ version: null }).where(eq(databases.id, 10));
+    const { deps, calls } = fakeDeps({ staging: { rows: `public.orders${SEP}41` } });
+    const up = await admitAndRun(deps);
+    expect(up).toMatchObject({ status: 'failed', previousVersion: '16' });
+    expect(calls.at(-2)).toBe('start nd-db-orders v16 nd-db-orders-data');
+    expect(await row()).toMatchObject({ status: 'running', version: '16' });
+  });
+
+  it('a rollback from a row that had no version starts 16', async () => {
+    await db.update(databases).set({ version: null }).where(eq(databases.id, 10));
+    const { deps, calls } = fakeDeps();
+    const up = await admitAndRun(deps);
+    expect(up.previousVersion).toBe('16');
+    calls.length = 0;
+    await rollbackDatabaseUpgrade(db, up, 7, deps);
+    expect(calls).toContain('start nd-db-orders v16 nd-db-orders-data');
+    expect((await row()).version).toBe('16');
+  });
+
+  it('a row whose tag matches the cluster keeps its tag', async () => {
+    const { deps } = fakeDeps();
+    await db.update(databases).set({ version: '16.4' }).where(eq(databases.id, 10));
+    const d = await row();
+    const admitted = await admitUpgrade(db, d, await planUpgrade(db, d, 18, deps), 7);
+    expect(admitted.previousVersion).toBe('16.4');
   });
 
   it('a failed pull stops nothing', async () => {
@@ -281,6 +320,40 @@ describe('boot recovery and retention', () => {
     expect(await row()).toMatchObject({ status: 'running', volumeName: 'nd-db-orders-data' });
     expect((await upgradeRow(admitted.id))).toMatchObject({ status: 'failed' });
     expect((await upgradeRow(admitted.id)).error).toContain('interrupted by a panel restart');
+  });
+
+  it('boot recovery of a row with no version starts the major it really ran', async () => {
+    await db.update(databases).set({ version: null }).where(eq(databases.id, 10));
+    const { deps, calls } = fakeDeps();
+    const d = await row();
+    await admitUpgrade(db, d, await planUpgrade(db, d, 18, deps), 7);
+    await db.update(databases).set({ status: 'stopped' }).where(eq(databases.id, 10));
+    deps.containerRunning = vi.fn(async () => false);
+    await recoverInterruptedUpgrades(db, deps);
+    expect(calls).toContain('start nd-db-orders v16 nd-db-orders-data');
+  });
+
+  it('an upgraded cluster that does not start at boot is pointed back, its volume kept', async () => {
+    const { deps, calls } = fakeDeps({ failStartOf: 'nd-db-orders-data-u1' });
+    const d = await row();
+    const admitted = await admitUpgrade(db, d, await planUpgrade(db, d, 18, deps), 7);
+    await db.update(databases).set({ status: 'stopped', version: '18', volumeName: admitted.targetVolume }).where(eq(databases.id, 10));
+    await db.update(databaseUpgrades).set({ switched: true }).where(eq(databaseUpgrades.id, admitted.id));
+    deps.containerRunning = vi.fn(async () => false);
+    await recoverInterruptedUpgrades(db, deps);
+    expect(calls).not.toContain(`volume- ${admitted.targetVolume}`);
+    expect(calls.at(-2)).toBe('start nd-db-orders v16 nd-db-orders-data');
+    expect((await upgradeRow(admitted.id)).error).toContain(`${admitted.targetVolume} is kept`);
+  });
+
+  it('switched, but the row names another volume: recovery deletes nothing', async () => {
+    const { deps, calls } = fakeDeps({ volumes: ['nd-db-orders-data', 'nd-db-orders-data-u1'] });
+    const d = await row();
+    const admitted = await admitUpgrade(db, d, await planUpgrade(db, d, 18, deps), 7);
+    await db.update(databaseUpgrades).set({ switched: true }).where(eq(databaseUpgrades.id, admitted.id));
+    await recoverInterruptedUpgrades(db, deps);
+    expect(calls.some((c) => c.startsWith('volume-'))).toBe(false);
+    expect((await upgradeRow(admitted.id)).error).toContain('nothing was deleted');
   });
 
   it('an upgrade interrupted after the switch gets its start; the verified copy stays', async () => {

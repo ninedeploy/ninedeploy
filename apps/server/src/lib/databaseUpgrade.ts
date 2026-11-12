@@ -40,6 +40,7 @@ import {
   databaseVolumeLabels,
   dumpDatabaseHeld,
   ENGINES,
+  postgresMajor,
   postgresMountForImage,
   resolveVolumePath,
   restoreDatabaseHeld,
@@ -324,7 +325,11 @@ export async function admitUpgrade(db: DB, d: Database, plan: UpgradePlan, actor
       engine: d.engine,
       fromMajor: plan.facts.major,
       toMajor: Number.parseInt(plan.targetVersion, 10),
-      previousVersion: d.version,
+      // The row's tag can disagree with the data (a NULL version follows the
+      // engine default, which may have moved on since the cluster was made):
+      // every way back starts the image this value names, so it must be the
+      // major the cluster really runs.
+      previousVersion: postgresMajor(d.version) === plan.facts.major ? d.version : String(plan.facts.major),
       targetVersion: plan.targetVersion,
       fromImage: plan.fromImage.id,
       toImage: plan.toImage,
@@ -421,11 +426,20 @@ async function attachedSlugs(db: DB, databaseId: number): Promise<string[]> {
 
 const clip = (s: string) => (s.length > 2000 ? `${s.slice(0, 2000)}…` : s);
 
+/** The per-service bridges are extra: the shared network already serves clients, so a failure only logs. */
+async function joinBridges(db: DB, d: Database, deps: DatabaseUpgradeDeps, log: (line: string) => void): Promise<void> {
+  try {
+    await deps.attachBridges(d, await attachedSlugs(db, d.id), log);
+  } catch (err) {
+    log(`could not join the service bridges again (the shared network still serves them): ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
 /** Bring the database back up and report it running (or error when even that fails). */
 async function bringUp(db: DB, d: Database, deps: DatabaseUpgradeDeps, log: (line: string) => void): Promise<boolean> {
   try {
     await deps.start(d, log);
-    await deps.attachBridges(d, await attachedSlugs(db, d.id), log);
+    await joinBridges(db, d, deps, log);
     if (!(await deps.waitReady(d.containerName!, d, log))) throw new Error(`${d.containerName} did not accept connections`);
     await db.update(databases).set({ status: 'running' }).where(eq(databases.id, d.id));
     return true;
@@ -459,6 +473,8 @@ export async function runDatabaseUpgrade(
   const staging = stagingName(d0.slug);
   let createdVolume = false;
   let switched = false;
+  // Once the new cluster was started on the network it may hold writes: its volume is never deleted after that.
+  let everSwitched = false;
   let stopped = false;
 
   try {
@@ -520,11 +536,12 @@ export async function runDatabaseUpgrade(
         await tx.update(databaseUpgrades).set({ switched: true }).where(eq(databaseUpgrades.id, upgradeId));
       });
       switched = true;
+      everSwitched = true;
 
       await phase('start');
       const fresh = (await db.query.databases.findFirst({ where: eq(databases.id, d0.id) }))!;
       await deps.start(fresh, log);
-      await deps.attachBridges(fresh, await attachedSlugs(db, d0.id), log);
+      await joinBridges(db, fresh, deps, log);
       if (!(await deps.waitReady(fresh.containerName!, fresh, log))) throw new Error(`PostgreSQL ${up0.toMajor} did not accept connections after the switch`);
       await db.update(databases).set({ status: 'running' }).where(eq(databases.id, d0.id));
       await db.update(databaseUpgrades).set({ status: 'completed', phase: null, completedAt: new Date() }).where(eq(databaseUpgrades.id, upgradeId));
@@ -549,14 +566,19 @@ export async function runDatabaseUpgrade(
       });
       switched = false;
     }
-    if (createdVolume && !switched) {
+    let kept = '';
+    if (createdVolume && !everSwitched) {
       const gone = await deps.removeVolume(up0.targetVolume, log).catch(() => false);
       if (!gone) log(`the new volume ${up0.targetVolume} could not be removed; delete it from the Volumes panel`);
+    } else if (everSwitched) {
+      kept = ` The upgraded volume ${up0.targetVolume} is kept: it may hold writes made after the switch.`;
     }
     if (stopped) {
+      // Back on the major the cluster really ran (a NULL tag would start the engine default).
+      await db.update(databases).set({ version: up0.previousVersion, volumeName: up0.previousVolume }).where(eq(databases.id, d0.id));
       const back = (await db.query.databases.findFirst({ where: eq(databases.id, d0.id) }))!;
       const up = await bringUp(db, back, deps, log);
-      outcome = up ? `The database runs on PostgreSQL ${up0.fromMajor} as before.` : `The database could not be started again on PostgreSQL ${up0.fromMajor}; start it from the database page.`;
+      outcome = (up ? `The database runs on PostgreSQL ${up0.fromMajor} as before.` : `The database could not be started again on PostgreSQL ${up0.fromMajor}; start it from the database page.`) + kept;
     } else {
       outcome = 'Nothing was stopped.';
     }
@@ -641,11 +663,15 @@ export async function recoverInterruptedUpgrades(db: DB, deps: DatabaseUpgradeDe
         await tx.update(databases).set({ version: up.previousVersion, volumeName: up.previousVolume }).where(eq(databases.id, d.id));
         await tx.update(databaseUpgrades).set({ switched: false }).where(eq(databaseUpgrades.id, up.id));
       });
-      note = 'the upgraded cluster did not start, so the database was pointed back';
+      note = `the upgraded cluster did not start, so the database was pointed back; the upgraded volume ${up.targetVolume} is kept`;
+    } else if (up.switched) {
+      // Switched, yet the row names another volume: touch nothing, start what the row names.
+      note = `the row no longer names the upgraded volume ${up.targetVolume}; nothing was deleted`;
     } else {
       note = 'the database was started on its previous volume';
+      await db.update(databases).set({ version: up.previousVersion, volumeName: up.previousVolume }).where(eq(databases.id, d.id));
+      if (up.targetVolume && (await deps.volumeExists(up.targetVolume))) await deps.removeVolume(up.targetVolume, log).catch(() => false);
     }
-    if (up.targetVolume && (await deps.volumeExists(up.targetVolume))) await deps.removeVolume(up.targetVolume, log).catch(() => false);
     const back = (await db.query.databases.findFirst({ where: eq(databases.id, d.id) }))!;
     const ok = (await deps.containerRunning(back.containerName!)) || (await bringUp(db, back, deps, log));
     if (ok) await db.update(databases).set({ status: 'running' }).where(eq(databases.id, d.id));

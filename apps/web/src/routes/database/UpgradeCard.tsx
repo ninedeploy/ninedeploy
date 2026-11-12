@@ -13,7 +13,7 @@ const message = (err: unknown, fallback: string) => (err instanceof Error ? err.
 /**
  * O2, Database → Settings: move a PostgreSQL database to a newer major. The
  * panel checks the running cluster, stops the database, dumps it (kept as a
- * `pre-upgrade` backup), restores into a new volume and compares the copy
+ * backup, labelled `pre-upgrade` in the database), restores into a new volume and compares the copy
  * before the switch. The previous volume stays until "Finalize"; until then
  * "Roll back" points the database back at it. Admin on the database.
  */

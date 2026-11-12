@@ -326,7 +326,7 @@ A PostgreSQL database can move to a newer major (for example 16 → 18) from **S
    - there is not room on disk for about twice the database size.
    The upgrade carries one database and its user, so any of these would be lost silently.
 2. **The new image is pulled** while the database still runs.
-3. **The database stops, and the outage starts here.** It is dumped through a container that runs its own image on its own volume with no network, so nothing writes after the dump. The dump is kept as a backup (`pre-upgrade`, never pruned by the schedule).
+3. **The database stops, and the outage starts here.** It is dumped through a container that runs its own image on its own volume with no network, so nothing writes after the dump. The dump is kept in the database's backups (the upgrade record names it as `safetyBackupId`); the schedule never prunes it.
 4. **The dump is restored into a new volume** (`nd-db-<slug>-data-u<id>`) by the new major, in a second container with no network. The copy is then compared with the original:
    - the exact row count of every table;
    - every sequence;
@@ -337,7 +337,9 @@ A PostgreSQL database can move to a newer major (for example 16 → 18) from **S
 
 The CLI waits for the result (`--no-wait` returns at once). The card shows the phase while it runs. On a test panel, a 500-row database took 11 seconds; the outage grows with the size of the database, because steps 3–4 copy all of it.
 
-**When it fails.** A failure before the switch removes the new volume and starts the database as it was, on its old major. A new major that does not start after the switch is pointed back the same way. The reason is on the upgrade row (`GET /v1/databases/:id/upgrades`). If the panel restarts in the middle, it finishes on boot: before the switch it starts the old database; after it, it starts the verified copy.
+**Which major the database goes back to.** The panel records the major the cluster really runs, read from the server. A database created without a version follows the engine default, which may since have moved past its data; a failure, a rollback or a restart in the middle puts it back on its real major and pins that version.
+
+**When it fails.** A failure before the switch removes the new volume and starts the database as it was, on its old major. A new major that does not start after the switch is pointed back the same way, and its volume is kept: it was on the network and may hold writes. The reason is on the upgrade row (`GET /v1/databases/:id/upgrades`). If the panel restarts in the middle, it finishes on boot: before the switch it starts the old database; after it, it starts the verified copy.
 
 **Rollback and finalize.** After a completed upgrade the previous volume is kept.
 - **Roll back** (`ninedeploy databases upgrade rollback <dbId> <upgradeId>`) points the database back at it, on the old major. Writes made since the upgrade stay on the upgraded volume and are **not** carried back.
