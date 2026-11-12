@@ -1343,6 +1343,7 @@ async function swarmChecks(ctx) {
   const status = await api('/v1/swarm');
   if (!status.json?.nodes?.some((nd) => nd.serverId === ctx.serverId && nd.role === 'worker') || status.json.nodes.length < 2) fail(`${label}: GET /v1/swarm after the join: ${status.text.slice(0, 400)}`);
   if ((await serverEntry(ctx.serverId)).swarmNodeId !== join.json.nodeId) fail(`${label}: GET /v1/servers does not record swarm node ${join.json.nodeId}`);
+  await swarmWorkerTaskChecks(ctx, { svcId, stack });
   const del = await api(`/v1/servers/${ctx.serverId}?force=true`, { method: 'DELETE' });
   if (del.status !== 409) fail(`${label}: deleting a member server answered ${short(del)} (wanted 409)`);
   const leave = await api(`/v1/servers/${ctx.serverId}/swarm/leave`, { method: 'POST' });
@@ -1354,6 +1355,77 @@ async function swarmChecks(ctx) {
   await routeServes(DIND, hostname, `${label} route after the leave`);
   step(`${label}: agent restarted with NINEDEPLOY_AGENT_SWARM_MANAGER=${ctx.panelDindIp}:2377; joined as worker ${join.json.nodeId} (second join 409, member delete 409); left (drained: ${leave.json.drained}; second leave 409); the node is out of Swarm and the route still answers`);
   return { svcId, hostname, stack };
+}
+
+/**
+ * P1 (docs/plans/COMPETITIVE_ROADMAP_2026-11.md): a Swarm replica on a worker
+ * that joined through NineDeploy is reached through that node's agent for a
+ * terminal, inspect and files; a task that moves is never reached by a session
+ * opened for the old one.
+ */
+async function swarmWorkerTaskChecks(ctx, { svcId, stack }) {
+  const label = 'P1 Swarm task on the worker';
+  const svcName = `${stack}_web`;
+  const tasksOn = (daemon) => daemon(['ps', '--filter', `label=com.docker.swarm.service.name=${svcName}`, '--format', '{{.Names}}']).stdout.split(/\s+/).filter(Boolean).sort();
+  const pin = panelDaemon(['service', 'update', '--detach', '--update-parallelism', '2', '--constraint-add', 'node.role==worker', svcName]);
+  if (pin.status !== 0) fail(`${label}: pinning the tasks to the worker failed: ${pin.all.slice(0, 300)}`);
+  const moved = await until(() => {
+    const w = tasksOn(nodeDaemon);
+    return w.length === 2 && tasksOn(panelDaemon).length === 0 ? w : null;
+  }, { ms: 240_000, every: 3000 });
+  if (!moved) fail(`${label}: the tasks never moved to the worker (worker: ${tasksOn(nodeDaemon).join(', ') || 'none'}; panel host: ${tasksOn(panelDaemon).join(', ') || 'none'})`);
+  const first = moved.find((n) => n.startsWith(`${svcName}.1.`));
+  if (!first) fail(`${label}: no replica 1 among ${moved.join(', ')}`);
+
+  // A terminal on replica 1 runs in the worker's container.
+  const open = async (what) => {
+    const r = await api('/v1/terminals', { method: 'POST', body: { target: { kind: 'service', serviceId: svcId, replica: 1 } } });
+    if (r.status !== 201 || r.json?.session?.serverId !== ctx.serverId) fail(`${label}: ${what}: POST /v1/terminals answered ${short(r)} (wanted 201 on node #${ctx.serverId})`);
+    return r.json;
+  };
+  const hostnameOf = (name) => nodeDaemon(['inspect', '--format', '{{.Config.Hostname}}', name]).stdout.trim();
+  const shellReads = async (created, container, what) => {
+    const t = terminalAttach(created);
+    await t.ready(`${label}: ${what}`);
+    const marker = `nd-p1-${suffix}`;
+    t.type(`echo ${marker}-$(cat /etc/hostname)\r`);
+    const want = `${marker}-${hostnameOf(container)}`;
+    if (!(await waitFor(() => t.state.out.includes(want), 30_000))) fail(`${label}: ${what}: the shell never printed ${want} (tail: ${JSON.stringify(t.state.out.slice(-300))})`);
+    t.type('exit\r');
+    await waitFor(() => t.state.close, 10_000);
+    try { t.ws.close(); } catch { /* closed */ }
+  };
+  await shellReads(await open('before the move'), first, 'terminal on replica 1');
+
+  // Inspect and files through the panel's container routes.
+  const ins = await api(`/v1/containers/${svcName}/inspect`);
+  if (ins.status !== 200 || !moved.includes(ins.json?.name)) fail(`${label}: inspect answered ${short(ins)} (wanted a task container on the worker: ${moved.join(', ')})`);
+  const files = await api(`/v1/containers/${svcName}/files?path=${encodeURIComponent('/usr/share/nginx/html')}`);
+  if (files.status !== 200 || !(files.json?.entries ?? []).some((e) => e.name === 'index.html')) fail(`${label}: files answered ${short(files)}`);
+  step(`${label}: replicas pinned to the worker (${moved.join(', ')}); a terminal on replica 1 ran in ${first} on node #${ctx.serverId}; inspect named ${ins.json.name}; files listed /usr/share/nginx/html`);
+
+  // A session created for the old task, attached after Swarm replaced it, never reaches the new one.
+  const stale = await open('before the reschedule');
+  const force = panelDaemon(['service', 'update', '--detach', '--force', '--update-parallelism', '2', svcName]);
+  if (force.status !== 0) fail(`${label}: forcing a reschedule failed: ${force.all.slice(0, 300)}`);
+  const gone = await until(() => !tasksOn(nodeDaemon).includes(first), { ms: 25_000, every: 500 });
+  if (!gone) fail(`${label}: ${first} was not replaced within the ticket lifetime`);
+  const t = terminalAttach(stale);
+  await waitFor(() => t.state.ready || t.state.close, 30_000);
+  if (t.state.ready) fail(`${label}: a session created for ${first} attached after the task moved`);
+  try { t.ws.close(); } catch { /* closed */ }
+  const next = await until(() => {
+    const w = tasksOn(nodeDaemon);
+    return w.length === 2 && !w.includes(first) ? w : null;
+  }, { ms: 180_000, every: 3000 });
+  if (!next) fail(`${label}: the replaced tasks never came back on the worker`);
+  const newFirst = next.find((n) => n.startsWith(`${svcName}.1.`));
+  await shellReads(await open('after the move'), newFirst, 'terminal on the new replica 1');
+  step(`${label}: after a forced reschedule the session made for ${first} did not attach (close ${t.state.close?.code ?? '?'} ${t.state.close?.reason ?? ''}); a new session ran in ${newFirst}`);
+
+  // Back to both hosts, so the leave below drains as before.
+  const unpin = panelDaemon(['service', 'update', '--detach', '--constraint-rm', 'node.role==worker', svcName]);
+  if (unpin.status !== 0) fail(`${label}: removing the constraint failed: ${unpin.all.slice(0, 300)}`);
 }
 
 /**

@@ -7,7 +7,7 @@ import { audit } from '../lib/audit.js';
 import type { FastifyPluginAsync } from 'fastify';
 import { parseId as num, notFound, unprocessable } from '../lib/errors.js';
 import { loadDatabaseForUser, loadServiceForUser, visibleDatabaseIds, visibleServiceIdSet } from '../lib/resourceAccess.js';
-import { swarmContainerStat, swarmRuntimeOf } from '../lib/swarm.js';
+import { swarmRuntimeOf } from '../lib/swarm.js';
 import { NODE_METRIC_MAX_AGE_MS, nodeServiceStat } from '../lib/nodeMetrics.js';
 import { readMetricPoints } from '../lib/serviceMetricHistory.js';
 
@@ -93,9 +93,10 @@ export const statsRoutes: FastifyPluginAsync = async (app) => {
       if (s.serverId != null) continue;
       const cname = s.runtimeId ?? `nd-app-${s.slug}`;
       // 0.16 T7, R2: a Swarm service's figure is one task's worth, its local tasks averaged (design §7.4).
+      // P1: every running task, wherever it runs, as the collector last measured it (absent = unknown).
       const swarmRuntime = swarmRuntimeOf(s);
       const st = swarmRuntime
-        ? swarmContainerStat(containers, swarmRuntime)
+        ? app.stats.raw().swarmStats?.get(s.id)
         : ((s.runtimeId ? containers.get(s.runtimeId) : undefined) ?? containers.get(`nd-app-${s.slug}`));
       if (!st) continue;
       out.push({
@@ -158,10 +159,10 @@ export const metricRoutes: FastifyPluginAsync = async (app) => {
       const { containers } = app.stats.raw();
       const svc = await app.db.query.services.findFirst({ where: eq(services.id, id) });
       if (svc) {
-        // 0.16 T7, R2: a Swarm service's figure is its local tasks averaged.
+        // 0.16 T7, R2, P1: a Swarm service's figure is every running task, as the collector last measured it.
         const swarmRuntime = swarmRuntimeOf(svc);
         const st = svc.serverId != null ? nodeServiceStat(svc, app.stats.raw().nodeContainers?.get(svc.serverId)) : swarmRuntime
-          ? swarmContainerStat(containers, swarmRuntime)
+          ? app.stats.raw().swarmStats?.get(svc.id)
           : ((svc.runtimeId ? containers.get(svc.runtimeId) : undefined) ?? containers.get(`nd-app-${svc.slug}`));
         if (st) {
           points = [

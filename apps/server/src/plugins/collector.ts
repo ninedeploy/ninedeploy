@@ -1,5 +1,6 @@
 import { cpus } from 'node:os';
-import { databases, services } from '@ninedeploy/db';
+import { isNotNull } from 'drizzle-orm';
+import { databases, servers, services } from '@ninedeploy/db';
 import { persistServiceMetrics, pruneServiceMetrics } from '../lib/serviceMetricHistory.js';
 import fp from 'fastify-plugin';
 import { collectContainerStats, collectHostStats, type ContainerStat, type HostStat } from '../lib/stats.js';
@@ -7,8 +8,8 @@ import { evaluateAlerts, type MetricSnapshot } from '../lib/alerting.js';
 import { trafficAlertSnapshots } from '../lib/trafficAlerts.js';
 import { createNodeHealthWatch } from '../lib/nodeHealth.js';
 import { readCertificates } from '../engine/proxy.js';
-import { swarmContainerStat, swarmRuntimeOf } from '../lib/swarm.js';
-import { collectNodeMetrics, type NodeContainerStats, type NodeMetricSamples } from '../lib/nodeMetrics.js';
+import { runningSwarmTasks, swarmRuntimeOf, swarmServiceStat } from '../lib/swarm.js';
+import { collectNodeMetrics, NODE_METRIC_MAX_AGE_MS, type NodeContainerStats, type NodeMetricSamples } from '../lib/nodeMetrics.js';
 import { DISK_SAMPLE_SECONDS, sampleServiceDisk } from '../lib/diskUsage.js';
 import { measureNodeVolume } from '../lib/nodeVolumes.js';
 
@@ -37,6 +38,8 @@ export interface StatsCache {
   host: HostStat | null;
   nodeContainers?: NodeContainerStats;
   nodeSamples?: NodeMetricSamples;
+  /** P1: per Swarm service id, one task's worth over every running task; absent = unknown. */
+  swarmStats?: Map<number, ContainerStat>;
 }
 
 declare module 'fastify' {
@@ -67,23 +70,41 @@ export default fp(
         cache = { containers, sampledAt, host: await collectHostStats(), nodeContainers, nodeSamples };
 
         const all = await fastify.db.select().from(services);
+        // P1: a Swarm service's tasks on workers that joined through NineDeploy are measured through their agents.
+        const swarmServices = all.filter((s) => s.serverId == null && swarmRuntimeOf(s));
+        const swarmWorkers = swarmServices.length
+          ? (await fastify.db.select({ id: servers.id }).from(servers).where(isNotNull(servers.swarmNodeId))).map((r) => r.id)
+          : [];
         if (!nodeCycle && running) {
           const databaseRows = await fastify.db.select({ serverId: databases.serverId, status: databases.status }).from(databases);
           nodeCycle = collectNodeMetrics(fastify.db, all, nodeContainers, nodeAbort.signal,
             (err) => fastify.log.warn({ err }, 'node metrics collection failed'), {
-              serverIds: databaseRows.flatMap(row => row.serverId != null && row.status === 'running' ? [row.serverId] : []), samples: nodeSamples,
+              serverIds: [...databaseRows.flatMap(row => row.serverId != null && row.status === 'running' ? [row.serverId] : []), ...swarmWorkers], samples: nodeSamples,
             })
             .catch((err) => fastify.log.warn({ err }, 'node metrics collection failed'))
             .finally(() => { nodeCycle = undefined; });
         }
+        // P1: every running task of a Swarm service, from the panel host and each joined worker's fresh sample.
+        const swarmStats = new Map<number, ContainerStat>();
+        if (swarmServices.length) {
+          const fresh = [...nodeContainers].filter(([id]) => (nodeSamples.get(id)?.sampledAt ?? 0) > Date.now() - NODE_METRIC_MAX_AGE_MS).map(([, m]) => m);
+          for (const s of swarmServices) {
+            const runtime = swarmRuntimeOf(s)!;
+            const tasks = await runningSwarmTasks(runtime).catch(() => null);
+            const st = tasks ? swarmServiceStat(runtime, tasks, [containers, ...fresh], s.memLimitMb ?? 0) : undefined;
+            if (st) swarmStats.set(s.id, st);
+          }
+        }
+        cache = { ...cache, swarmStats };
+
         const now = new Date();
         const rows: Array<{ serviceId: number; kind: string; value: number; ts: Date }> = [];
         for (const s of all) {
           if (s.serverId != null) continue;
-          // 0.16 T7, R2: a Swarm service's metrics are one task's worth, its local tasks averaged (design §7.4).
+          // 0.16 T7, R2, P1: a Swarm service's metrics are one task's worth over every running task (unknown unless all were measured).
           const swarmRuntime = swarmRuntimeOf(s);
           const st = swarmRuntime
-            ? swarmContainerStat(containers, swarmRuntime)
+            ? swarmStats.get(s.id)
             : ((s.runtimeId ? containers.get(s.runtimeId) : undefined) ?? containers.get(`nd-app-${s.slug}`));
           if (!st) continue;
           rows.push({ serviceId: s.id, kind: 'cpu', value: Math.round(st.cpuPct * 100), ts: now });

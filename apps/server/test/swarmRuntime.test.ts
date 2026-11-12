@@ -172,15 +172,27 @@ describe('the runtime helpers (lib/swarm.ts)', () => {
     expect(await swarm.localSwarmTaskFor('nd-web_web')).toEqual({ refusal: expect.stringMatching(/No replica of this Swarm service runs on the panel host/) });
   });
 
-  it('stats: one task’s worth, the average of the local tasks; nothing for a service with no local task', () => {
-    const containers = new Map([
-      ['nd-web_web.1.a', { name: 'nd-web_web.1.a', cpuPct: 1.5, memBytes: 100, memLimitBytes: 1000 }],
-      ['nd-web_web.2.b', { name: 'nd-web_web.2.b', cpuPct: 2, memBytes: 50, memLimitBytes: 1000 }],
-      ['nd-web_webx.1.c', { name: 'x', cpuPct: 9, memBytes: 9, memLimitBytes: 9 }],
+  it('stats (P1): one task’s worth, the average of every running task wherever it runs; unknown unless each was measured', () => {
+    const A = 'a'.repeat(25), B = 'b'.repeat(25), OLD = 'o'.repeat(25);
+    const local = new Map([
+      [`nd-web_web.1.${A}`, { name: `nd-web_web.1.${A}`, cpuPct: 1.5, memBytes: 100, memLimitBytes: 1000 }],
+      [`nd-web_webx.1.${A}`, { name: 'x', cpuPct: 9, memBytes: 9, memLimitBytes: 9 }],
     ]);
+    const worker = new Map([
+      [`nd-web_web.2.${B}`, { name: `nd-web_web.2.${B}`, cpuPct: 2, memBytes: 50, memLimitBytes: 0 }],
+      // A stale sample of a replaced task: no running task matches it.
+      [`nd-web_web.2.${OLD}`, { name: `nd-web_web.2.${OLD}`, cpuPct: 90, memBytes: 9000, memLimitBytes: 0 }],
+    ]);
+    const running = [{ id: A }, { id: B }];
     // Compared with the per-task limit by alerts and sizing hints, like a container's primary.
-    expect(swarm.swarmContainerStat(containers, 'nd-web_web')).toEqual({ name: 'nd-web_web', cpuPct: 1.75, memBytes: 75, memLimitBytes: 1000 });
-    expect(swarm.swarmContainerStat(containers, 'nd-api_web')).toBeUndefined();
+    expect(swarm.swarmServiceStat('nd-web_web', running, [local, worker])).toEqual({ name: 'nd-web_web', cpuPct: 1.75, memBytes: 75, memLimitBytes: 1000 });
+    expect(swarm.swarmServiceStat('nd-web_web', running, [local, worker], 256)).toMatchObject({ memLimitBytes: 256 * 1024 * 1024 });
+    // The worker did not answer: unknown, not the panel host's half.
+    expect(swarm.swarmServiceStat('nd-web_web', running, [local])).toBeUndefined();
+    expect(swarm.swarmServiceStat('nd-web_web', [], [local, worker])).toBeUndefined();
+    expect(swarm.swarmServiceStat('nd-api_web', [{ id: A }], [local, worker])).toBeUndefined();
+    // runningSwarmTasks' short ids still match a full-length task container name.
+    expect(swarm.swarmServiceStat('nd-web_web', [{ id: A }], [new Map([[`nd-web_web.1.${A}`, local.get(`nd-web_web.1.${A}`)!]])])).toBeDefined();
   });
 
   it('GET /v1/services/:id/swarm view: null stack off Swarm; counts and tasks on it', async () => {
@@ -305,6 +317,7 @@ const READERS: Record<string, { branch: true } | { exempt: string }> = {
   'lib/imageScan.ts': { exempt: 'scans only docker services on the panel host that are not on Swarm (scannableOnPanel)' },
   'modules/imageScans.ts': { exempt: 'refuses a Swarm service (scannableOnPanel) before it reads its runtime' },
   'lib/restartLimit.ts': { exempt: 'skips a Swarm service (orchestrator swarm) before it reads its runtime' },
+  'lib/swarmTaskTarget.ts': { exempt: 'Swarm-only: its callers (the terminal service target and the container routes) pass it a runtime id they checked with swarmRuntimeOf / isSwarmRuntimeId' },
   'lib/nodeDeployHooks.ts': { exempt: 'reached only for a node docker service that is not on Swarm (nodeHookRefusal and the pipeline gate refuse orchestrator swarm before a hook runs)' },
   'lib/nodeRestartLimit.ts': { exempt: 'reached only from enforceRestartLimits, which skips a Swarm service before it reads its runtime; requestNodeRestartStop refuses orchestrator swarm itself' },
   'lib/inventory.ts': { exempt: 'names the owner of a volume or network for display; Swarm services own neither' },

@@ -523,26 +523,46 @@ export async function localSwarmTaskFor(runtimeId: string, replica = 1): Promise
 }
 
 /**
- * Stats of a Swarm service: one task's worth, the average of its tasks on
- * the panel host (design §7.4: local tasks only). A container service
- * reports its primary container, and the limits, alerts and sizing hints
- * that read this compare it with a per-task limit; a sum of three tasks
- * against one task's memory limit raised false "raise the limit" hints.
+ * Stats of a Swarm service: one task's worth, the average of EVERY running
+ * task (P1), wherever it runs: `sources` are the panel host's container stats
+ * and the fresh stats of each joined worker. A container service reports its
+ * primary container, and the limits, alerts and sizing hints that read this
+ * compare it with a per-task limit; a sum of three tasks against one task's
+ * memory limit raised false "raise the limit" hints.
+ *
+ * Unknown is not zero: unless each running task (`running`, from the manager)
+ * was measured — a worker that did not answer, a task on a node NineDeploy
+ * does not manage — the answer is undefined, never an average of the rest.
+ * A task's container is `<runtimeId>.<slot>.<task id>`; a stale sample of a
+ * replaced task matches no running task.
  */
-export function swarmContainerStat(containers: ReadonlyMap<string, ContainerStat>, runtimeId: string): ContainerStat | undefined {
-  let n = 0;
-  let cpuPct = 0;
-  let memBytes = 0;
-  let memLimitBytes = 0;
-  for (const [name, st] of containers) {
-    if (!name.startsWith(`${runtimeId}.`)) continue;
-    n += 1;
-    cpuPct += st.cpuPct;
-    memBytes += st.memBytes;
-    memLimitBytes += st.memLimitBytes;
+export function swarmServiceStat(
+  runtimeId: string,
+  running: ReadonlyArray<{ id: string }>,
+  sources: Iterable<ReadonlyMap<string, ContainerStat>>,
+  memLimitMb = 0,
+): ContainerStat | undefined {
+  if (running.length === 0) return undefined;
+  const measured = new Map<string, ContainerStat>();
+  for (const source of sources) {
+    for (const [name, st] of source) {
+      if (!name.startsWith(`${runtimeId}.`)) continue;
+      const [slot, taskPart, ...rest] = name.slice(runtimeId.length + 1).split('.');
+      if (!slot || !/^\d+$/.test(slot) || !taskPart || rest.length) continue;
+      const task = running.find((t) => t.id === taskPart || (taskPart.length >= 12 && t.id.startsWith(taskPart)));
+      if (task && !measured.has(task.id)) measured.set(task.id, st);
+    }
   }
-  if (n === 0) return undefined;
-  return { name: runtimeId, cpuPct: cpuPct / n, memBytes: Math.round(memBytes / n), memLimitBytes: Math.round(memLimitBytes / n) };
+  if (measured.size !== running.length) return undefined;
+  const all = [...measured.values()];
+  const limits = all.map((s) => s.memLimitBytes).filter((b) => b > 0);
+  const memLimitBytes = memLimitMb > 0 ? memLimitMb * 1024 * 1024 : limits.length ? Math.round(limits.reduce((a, b) => a + b, 0) / limits.length) : 0;
+  return {
+    name: runtimeId,
+    cpuPct: all.reduce((n, s) => n + s.cpuPct, 0) / all.length,
+    memBytes: Math.round(all.reduce((n, s) => n + s.memBytes, 0) / all.length),
+    memLimitBytes,
+  };
 }
 
 /** `GET /v1/services/:id/swarm` (design §7.5). A service not on Swarm has no stack. */

@@ -874,7 +874,7 @@ example with a leaked token, never runs a NineDeploy task.
   | Stop / Start | Scale to 0 and back to the service's replicas |
   | Restart | A rolling restart at the service's replica count, so a Restart after a Stop brings the tasks back |
   | Metrics, alerts, sizing hints | **Panel host only**: the average of the service's tasks on the panel host, compared with the per-task limits. Tasks on worker nodes are not measured; with none on the panel host the service has no metrics |
-  | Terminal, File Browser, Manifest tab | **Panel host only**: a task on the panel host; otherwise 422 `swarm_task_elsewhere` naming the node |
+  | Terminal, File Browser, Manifest tab | A task on the panel host as before. **P1:** a task on a worker that joined through NineDeploy is reached through that node's agent, with the node terminal gates (its owner's switch, the capability check). The manager names the task's node, state and container id; the worker inspects that container and it must carry this task's and this service's Swarm labels, and the terminal opens the name the worker reports. A session stays pinned to that task's container, so a task that moves (a new task and container) is never reached by an old session. A task on a Swarm node NineDeploy does not manage, or not running, is 422 `swarm_task_elsewhere` with the reason. One-off commands and jobs still use a task on the panel host |
   | Dashboard health | The port through Traefik; any status below 500 is up |
   | Canary | **Skipped**: the deploy log says so; Swarm's start-first rolling update with automatic rollback applies |
   | Autoscaling, scale to zero | **Not available**: the service runs the replica count set on it; the status and the panel say so |

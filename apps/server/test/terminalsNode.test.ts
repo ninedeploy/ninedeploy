@@ -90,6 +90,10 @@ vi.mock('../src/lib/agentClient.js', async (importOriginal) => {
   };
 });
 
+// P1: where a Swarm replica runs is the resolver's answer (lib/swarmTaskTarget.ts, unit-tested on its own).
+const swarmTask = vi.hoisted(() => ({ target: vi.fn() }));
+vi.mock('../src/lib/swarmTaskTarget.js', () => ({ swarmTaskTarget: swarmTask.target }));
+
 const { terminalRoutes } = await import('../src/modules/terminals.js');
 const { serverRoutes } = await import('../src/modules/servers.js');
 const S = await import('../src/lib/terminalSessions.js');
@@ -114,7 +118,7 @@ let panelPort: number;
 let agentApp: Awaited<ReturnType<typeof buildTestApp>>;
 let panelApp: Awaited<ReturnType<typeof buildTestApp>>;
 let bearer: string;
-let ids: { server: number; nodeSvc: number; fanout: number };
+let ids: { server: number; nodeSvc: number; fanout: number; swarm: number };
 const sockets: WebSocket[] = [];
 
 /** A scripted agent: ping answers `pingLine`; docker.inspect answers `state`. */
@@ -173,7 +177,8 @@ beforeEach(async () => {
   const [nodeSvc] = await db.insert(services).values({ name: 'remote', slug: 'remote', type: 'docker', runtimeId: 'remote-12', serverId: server!.id }).returning();
   const [fan] = await db.insert(services).values({ name: 'fan', slug: 'fan', type: 'docker', runtimeId: 'fan-local' }).returning();
   await db.insert(serviceTargets).values({ serviceId: fan!.id, serverId: server!.id, runtimeId: 'fan-t1-5', status: 'running' });
-  ids = { server: server!.id, nodeSvc: nodeSvc!.id, fanout: fan!.id };
+  const [swarmSvc] = await db.insert(services).values({ name: 'swarmy', slug: 'swarmy', type: 'docker', orchestrator: 'swarm', runtimeId: 'nd-swarmy_web' }).returning();
+  ids = { server: server!.id, nodeSvc: nodeSvc!.id, fanout: fan!.id, swarm: swarmSvc!.id };
 
   panelApp = await buildTestApp({ websocket: true, db });
   await panelApp.register(terminalRoutes, { prefix: '/v1/terminals' });
@@ -242,6 +247,31 @@ describe('POST /v1/terminals: node targets', () => {
     const fan = await create({ kind: 'service', serviceId: ids.fanout, serverId: ids.server });
     expect(fan.status).toBe(201);
     expect((await row(fan.body.session.id)).containerName).toBe('fan-t1-5');
+  });
+
+  it('P1: a Swarm replica on an enrolled worker opens as that node\'s terminal, on the container the worker named', async () => {
+    scripted(CAPS_015);
+    const name = `nd-swarmy_web.2.${'t'.repeat(25)}`;
+    swarmTask.target.mockResolvedValueOnce({ where: 'node', serverId: ids.server, nodeName: 'edge-1', container: name, containerId: 'c'.repeat(64), taskId: 't'.repeat(25) });
+    const res = await create({ kind: 'service', serviceId: ids.swarm, replica: 2 });
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
+    expect(swarmTask.target).toHaveBeenCalledWith(expect.anything(), 'nd-swarmy_web', 2);
+    expect(res.body.session).toMatchObject({ targetKind: 'service', serverId: ids.server, status: 'pending' });
+    // The node gates ran (capability, running check on the node), as for any node service.
+    expect(h.ops).toEqual(['agent.ping', 'docker.inspect']);
+    // Pinned to that task's container: a task that moves is a new container, which this session never reaches.
+    expect((await row(res.body.session.id)).containerName).toBe(name);
+    expect((await row(res.body.session.id)).serverId).toBe(ids.server);
+  });
+
+  it('P1: a Swarm replica the panel cannot reach is refused with the reason, and nothing is asked of a node', async () => {
+    scripted(CAPS_015);
+    swarmTask.target.mockResolvedValueOnce({ refusal: 'Replica 1 of this Swarm service runs on a Swarm node that is not enrolled in NineDeploy (node abc), so the panel cannot reach it.' });
+    const res = await create({ kind: 'service', serviceId: ids.swarm });
+    expect(res.status).toBe(422);
+    expect(res.body.error.code).toBe('swarm_task_elsewhere');
+    expect(res.body.error.message).toMatch(/not enrolled in NineDeploy/);
+    expect(h.ops).toEqual([]);
   });
 
   it('a 0.15 panel with a 0.14 agent refuses cleanly: 422 with an update message, nothing opened or stored', async () => {

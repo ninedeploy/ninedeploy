@@ -13,11 +13,8 @@ const engineMocks = vi.hoisted(() => ({
 }));
 const nodeTools = vi.hoisted(() => ({ run: vi.fn() }));
 vi.mock('../src/lib/nodeContainerTools.js', () => ({ nodeContainerTool: nodeTools.run }));
-const swarmTasks = vi.hoisted(() => ({ localSwarmTaskFor: vi.fn() }));
-vi.mock('../src/lib/swarm.js', async (original) => ({
-  ...(await original<typeof import('../src/lib/swarm.js')>()),
-  localSwarmTaskFor: swarmTasks.localSwarmTaskFor,
-}));
+const swarmTasks = vi.hoisted(() => ({ swarmTaskTarget: vi.fn() }));
+vi.mock('../src/lib/swarmTaskTarget.js', () => ({ swarmTaskTarget: swarmTasks.swarmTaskTarget }));
 
 vi.mock('../src/engine/containerFiles.js', async () => {
   const actual = await vi.importActual<typeof import('../src/engine/containerFiles.js')>(
@@ -394,12 +391,12 @@ describe('r665: containers of node-pinned services', () => {
 describe('R2: containers of Swarm services', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    swarmTasks.localSwarmTaskFor.mockReset();
+    swarmTasks.swarmTaskTarget.mockReset();
   });
   const swarmRow = { id: 1, slug: 'web', type: 'docker', orchestrator: 'swarm', runtimeId: 'nd-web_web', serverId: null };
 
   it('reaches the service’s task on the panel host', async () => {
-    swarmTasks.localSwarmTaskFor.mockResolvedValue({ container: 'nd-web_web.1.abcdef' });
+    swarmTasks.swarmTaskTarget.mockResolvedValue({ where: 'local', container: 'nd-web_web.1.abcdef' });
     engineMocks.inspectContainer.mockResolvedValueOnce({ id: 'task' });
     engineMocks.listContainerDir.mockResolvedValueOnce([]);
     const app = await buildTestApp({ db: createFakeDb({ findFirst: { services: swarmRow } }) });
@@ -408,17 +405,32 @@ describe('R2: containers of Swarm services', () => {
     expect((await app.inject({ method: 'GET', url: '/nd-web_web/files?path=/', headers: asUser() })).statusCode).toBe(200);
     expect(engineMocks.inspectContainer).toHaveBeenCalledWith('nd-web_web.1.abcdef');
     expect(engineMocks.listContainerDir).toHaveBeenCalledWith('nd-web_web.1.abcdef', '/');
-    expect(swarmTasks.localSwarmTaskFor).toHaveBeenCalledWith('nd-web_web');
+    expect(swarmTasks.swarmTaskTarget).toHaveBeenCalledWith(expect.anything(), 'nd-web_web');
+    expect(nodeTools.run).not.toHaveBeenCalled();
   });
 
-  it('no task on the panel host: 422 swarm_task_elsewhere naming the node, nothing run', async () => {
-    swarmTasks.localSwarmTaskFor.mockResolvedValue({ refusal: 'Replica 1 of this Swarm service runs on node edge-1, not on the panel host; open a node terminal there.' });
+  it('P1: a task on an enrolled worker is inspected and browsed through that node, by the name the worker reported', async () => {
+    swarmTasks.swarmTaskTarget.mockResolvedValue({ where: 'node', serverId: 7, nodeName: 'edge-7', container: 'nd-web_web.1.taskid', containerId: 'c'.repeat(64), taskId: 't'.repeat(25) });
+    nodeTools.run.mockResolvedValueOnce({ id: 'c'.repeat(64) }).mockResolvedValueOnce([]);
+    const app = await buildTestApp({ db: createFakeDb({ findFirst: { services: swarmRow } }) });
+    await app.register(containerRoutes);
+    expect((await app.inject({ method: 'GET', url: '/nd-web_web/inspect', headers: asUser() })).statusCode).toBe(200);
+    expect((await app.inject({ method: 'GET', url: '/nd-web_web/files?path=/etc', headers: asUser() })).statusCode).toBe(200);
+    expect(nodeTools.run).toHaveBeenNthCalledWith(1, expect.anything(), 7, 'nd-web_web.1.taskid', 'inspect');
+    expect(nodeTools.run).toHaveBeenNthCalledWith(2, expect.anything(), 7, 'nd-web_web.1.taskid', 'list', { path: '/etc' });
+    expect(engineMocks.inspectContainer).not.toHaveBeenCalled();
+    expect(engineMocks.listContainerDir).not.toHaveBeenCalled();
+  });
+
+  it('no task the panel can reach: 422 swarm_task_elsewhere with the reason, nothing run', async () => {
+    swarmTasks.swarmTaskTarget.mockResolvedValue({ refusal: 'Replica 1 of this Swarm service runs on a Swarm node that is not enrolled in NineDeploy (node abc), so the panel cannot reach it.' });
     const app = await buildTestApp({ db: createFakeDb({ findFirst: { services: swarmRow } }) });
     await app.register(containerRoutes);
     const res = await app.inject({ method: 'GET', url: '/nd-web_web/compose', headers: asUser() });
     expect(res.statusCode).toBe(422);
     expect(res.json().error.code).toBe('swarm_task_elsewhere');
-    expect(res.json().error.message).toBe('Replica 1 of this Swarm service runs on node edge-1, not on the panel host. Inspect, compose and file access only reach containers on the panel host.');
+    expect(res.json().error.message).toMatch(/not enrolled in NineDeploy/);
+    expect(nodeTools.run).not.toHaveBeenCalled();
     expect(engineMocks.getContainerComposeManifest).not.toHaveBeenCalled();
   });
 
@@ -427,7 +439,7 @@ describe('R2: containers of Swarm services', () => {
     const app = await buildTestApp({ db: createFakeDb({ findFirst: { services: { ...swarmRow, slug: 'attacker', type: 'compose', orchestrator: null } } }) });
     await app.register(containerRoutes);
     expect((await app.inject({ method: 'GET', url: '/nd-web_web/inspect', headers: asUser() })).statusCode).toBe(200);
-    expect(swarmTasks.localSwarmTaskFor).not.toHaveBeenCalled();
+    expect(swarmTasks.swarmTaskTarget).not.toHaveBeenCalled();
     expect(engineMocks.inspectContainer).toHaveBeenCalledWith('nd-web_web');
   });
 });

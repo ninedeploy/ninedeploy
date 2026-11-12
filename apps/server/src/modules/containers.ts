@@ -5,7 +5,8 @@ import { containerFileWrite, containerPathCreate } from '@ninedeploy/schemas';
 import { audit } from '../lib/audit.js';
 import { badRequest, forbidden, HttpError, parseId } from '../lib/errors.js';
 import { nodeContainerTool } from '../lib/nodeContainerTools.js';
-import { isSwarmRuntimeId, localSwarmTaskFor, swarmRuntimeOf } from '../lib/swarm.js';
+import { isSwarmRuntimeId, swarmRuntimeOf } from '../lib/swarm.js';
+import { swarmTaskTarget } from '../lib/swarmTaskTarget.js';
 import {
   deleteContainerPath,
   getContainerComposeManifest,
@@ -33,7 +34,7 @@ export const containerRoutes: FastifyPluginAsync<{ nodeRoute?: boolean }> = asyn
    * them up front with the reason (replicas `<runtimeId>-rN` and fan-out
    * target generations included).
    */
-  const guardLocalContainer = async (raw: string): Promise<string> => {
+  const guardLocalContainer = async (raw: string): Promise<{ container: string; serverId?: number }> => {
     const container = guardContainer(raw);
     // R2: a Swarm service's runtime id names the service, which no container
     // has: `docker exec nd-<slug>_web` answered a bare 500. Its first task on
@@ -41,11 +42,10 @@ export const containerRoutes: FastifyPluginAsync<{ nodeRoute?: boolean }> = asyn
     if (isSwarmRuntimeId(container)) {
       const swarmRow = await app.db.query.services.findFirst({ where: eq(services.runtimeId, container) });
       if (swarmRow && swarmRuntimeOf(swarmRow) === container) {
-        const task = await localSwarmTaskFor(container);
-        if ('refusal' in task) {
-          throw new HttpError(422, 'swarm_task_elsewhere', `${task.refusal.replace(/; open a node terminal.*$/, '')}. Inspect, compose and file access only reach containers on the panel host.`);
-        }
-        return task.container;
+        // P1: or its first task on an enrolled worker, through that node's agent.
+        const task = await swarmTaskTarget(app.db, container);
+        if ('refusal' in task) throw new HttpError(422, 'swarm_task_elsewhere', task.refusal);
+        return task.where === 'node' ? { container: task.container, serverId: task.serverId } : { container: task.container };
       }
     }
     const primary = container.replace(/-r\d+$/, '');
@@ -60,7 +60,7 @@ export const containerRoutes: FastifyPluginAsync<{ nodeRoute?: boolean }> = asyn
         'remote_container',
       );
     }
-    return container;
+    return { container };
   };
 
   const guardPath = (raw: unknown): string => {
@@ -79,7 +79,8 @@ export const containerRoutes: FastifyPluginAsync<{ nodeRoute?: boolean }> = asyn
       if (!req.user?.isOperator) throw forbidden('Only instance operators may use node container tools');
       return { container: guardContainer(params.container), serverId: parseId(params.serverId!, 'Invalid node id') };
     }
-    return { container: await guardLocalContainer(params.container), serverId: undefined };
+    const local = await guardLocalContainer(params.container);
+    return { container: local.container, serverId: local.serverId };
   };
   const auditIdentity = (container: string, serverId: number | undefined) => serverId == null ? container : `node #${serverId} ${container}`;
 

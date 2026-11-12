@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Terminal, file browser and inspect for Swarm replicas on worker nodes.** They used to work only for a replica on the panel host, and answered `swarm_task_elsewhere` for one on a worker. Now a replica on a worker that joined the swarm through NineDeploy is reached through that node's agent, with the same gates as any node terminal.
+  - The panel asks the Swarm manager which node runs the replica and which container it is. The worker must confirm that the container belongs to this task and this service before anything opens.
+  - A terminal stays pinned to that task. If Swarm moves the replica, the old session ends instead of attaching to the new one.
+  - A replica on a Swarm node NineDeploy does not manage, or one that is not running, is still refused, with the reason. One-off commands and jobs still run on a replica on the panel host. Metrics still count only replicas on the panel host; that comes next.
 - **Pre-deploy and post-deploy hooks for docker services on a node.** They used to be refused on a node, because hooks ran as a shell on the panel host. On a node they now run in a one-off container from the release image, with the service's environment, network and node databases, much like a release command on Heroku or Render.
   - Pre-deploy runs once the image is on the node and before any new container starts. If it fails, the deploy fails and the running release keeps serving. Post-deploy runs from the new release's image once it is healthy; as on the panel host, its failure is only logged.
   - The command runs as on the panel host: its first word replaces the image's entrypoint, with no shell. The container gets no port, volume or Docker socket, is not privileged, and is removed afterwards, also after a timeout or a cancel. Its output reaches the deploy log with secrets masked.
