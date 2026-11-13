@@ -214,6 +214,15 @@ export interface DatabaseUpgradeDeps {
 }
 
 /**
+ * A MySQL/MariaDB `[client]` option file holding the password. Quoted, with
+ * backslash and quote escaped: inside an option file an unquoted `#` starts a
+ * comment.
+ */
+export function mysqlClientOptions(password: string): Buffer {
+  return Buffer.from(`[client]\npassword="${password.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"\n`);
+}
+
+/**
  * MySQL/MariaDB: wait until root logs in over loopback TCP with the stored
  * password. A server upgrading its data directory on start (MySQL's data
  * dictionary, MariaDB's `mariadb-upgrade`) answers only afterwards, so the
@@ -265,8 +274,16 @@ export const databaseUpgradeDeps: DatabaseUpgradeDeps = {
     await run('docker', ['rm', '-f', container], {}, () => undefined).catch(() => undefined);
   },
   runIsolated: (d, spec, log) => runIsolatedDatabase(d, spec, log),
+  // The password travels as a `[client]` option file on stdin: never in argv
+  // (the host's and the container's process lists) nor in the environment.
+  // `--defaults-extra-file` must come first; checked on mysql 8.0/9.7 and mariadb 10.6/11.8.
   sql: (d, container, sql) =>
-    capture('docker', ['exec', container, d.engine === 'mariadb' ? 'mariadb' : 'mysql', '-h127.0.0.1', '-uroot', `--password=${decrypt(d.passwordEncrypted)}`, '-N', '-B', '-e', sql], { timeoutMs: 6 * 60 * 60 * 1000 }),
+    capture(
+      'docker',
+      ['exec', '-i', container, d.engine === 'mariadb' ? 'mariadb' : 'mysql', '--defaults-extra-file=/dev/stdin', '-h127.0.0.1', '-uroot', '-N', '-B', '-e', sql],
+      { timeoutMs: 6 * 60 * 60 * 1000 },
+      mysqlClientOptions(decrypt(d.passwordEncrypted)),
+    ),
   dataDirBytes: async (container, dir) => {
     const n = Number.parseInt((await capture('docker', ['exec', container, 'du', '-sb', dir])).trim().split(/\s+/)[0] ?? '', 10);
     if (!Number.isFinite(n)) throw new Error(`could not measure ${dir} in ${container}`);
@@ -542,7 +559,9 @@ export async function upgradeOptions(db: DB, d: Database, deps: DatabaseUpgradeD
       refusal: versions.length === 0 ? { code: 'database_upgrade_latest', message: `${label} ${current} is the newest release offered.` } : null,
     };
   } catch (err) {
-    return none({ code: 'database_upgrade_not_running', message: `Could not read the server version: ${err instanceof Error ? err.message : String(err)}` });
+    // The details (command output) stay in the panel log: the options route answers viewers.
+    logger.warn(`database #${d.id}: could not read the server version: ${err instanceof Error ? err.message : String(err)}`);
+    return none({ code: 'database_upgrade_not_running', message: 'Could not read the server version; the panel log has the details.' });
   }
 }
 

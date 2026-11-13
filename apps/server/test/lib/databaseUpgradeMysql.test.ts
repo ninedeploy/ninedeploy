@@ -147,6 +147,10 @@ describe('paths and series', () => {
     expect(upgradeSteps('mariadb', '11.4', '10.11')).toMatch(/newer release/);
   });
 
+  it('the password goes in a quoted option file (stdin), escaped, never in argv', () => {
+    expect(mod.mysqlClientOptions('a#"b\\c').toString()).toBe('[client]\npassword="a#\\"b\\\\c"\n');
+  });
+
   it('reads the series a row tag names; NULL is the engine default', () => {
     expect(rowSeries('mysql', null)).toBe('9.7');
     expect(rowSeries('mysql', '8.0.36')).toBe('8.0');
