@@ -10,6 +10,7 @@ import {
   volumeExists,
   connectionString,
   defaultPort,
+  defaultVersionTag,
   ENGINES,
   needsVolumeAdoption,
   startDatabase,
@@ -240,7 +241,14 @@ export const databasesRoutes: FastifyPluginAsync = async (app) => {
       throw badRequest('existingVolume must be a docker volume name (letters, digits, dot, dash, underscore)');
     }
     const volumeName = existingVolume || `nd-db-${slug}-data`;
-    const version = input.extensions?.includes('pgvector') && input.engine === 'postgres' ? 'vector' : (input.version ?? null);
+    const pgvector = input.extensions?.includes('pgvector') && input.engine === 'postgres';
+    // A row never stays without a version: the default it would follow moves
+    // with releases, and a moved default upgrades the data in place.
+    // An empty or blank version is no version (it, too, would follow the default).
+    const asked = input.version?.trim() || null;
+    const version = pgvector ? 'vector' : (asked ?? defaultVersionTag(input.engine));
+    // A retry that names no version resumes whatever the row was pinned to.
+    const sameVersion = (existingVersion: string | null) => existingVersion === version || (asked == null && !pgvector);
 
     // ── 0.16 T6 node databases (design §5.2, §5.7) ──
     // `serverId` places the database on a node, fixed for its life. The row
@@ -276,7 +284,7 @@ export const databasesRoutes: FastifyPluginAsync = async (app) => {
           existing.ownerUserId === req.user!.id &&
           existing.engine === input.engine &&
           existing.projectId === (input.projectId ?? null) &&
-          existing.version === version &&
+          sameVersion(existing.version) &&
           existing.serverId === serverId;
         if (!sameRequest) throw badRequest('A different database already uses this name');
         row = existing;
@@ -366,7 +374,7 @@ export const databasesRoutes: FastifyPluginAsync = async (app) => {
             existing.ownerUserId === req.user!.id &&
             existing.engine === input.engine &&
             existing.projectId === (input.projectId ?? null) &&
-            existing.version === version &&
+            sameVersion(existing.version) &&
             // 0.16 T6: a node row is never resumed by a panel-host request.
             existing.serverId == null;
           if (!sameRequest) throw badRequest('A different database already uses this name');

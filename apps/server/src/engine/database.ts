@@ -459,6 +459,36 @@ export const ENGINES: Record<string, EngineConfig> = {
   },
 };
 
+/**
+ * The `version` a row needs so that `ENGINES[engine].image(version)` yields
+ * exactly `image`, or null when no tag does. Matching by the round trip,
+ * not by parsing, keeps registries with a port and engines whose default is
+ * not a plain tag honest. (`vector` maps to a constant pgvector image: a bump
+ * of that constant is the same in-place jump a default bump would be.)
+ */
+export function versionForImage(engine: string, image: string): string | null {
+  const cfg = ENGINES[engine];
+  if (!cfg) return null;
+  const slash = image.lastIndexOf('/');
+  const colon = image.lastIndexOf(':');
+  const candidates = colon > slash ? [image.slice(colon + 1)] : [];
+  if (engine === 'postgres') candidates.push('vector');
+  return candidates.find((v) => v.length > 0 && cfg.image(v) === image) ?? null;
+}
+
+/**
+ * The tag a row without a version runs today. A row must never be left
+ * without one: the image factory falls back to the default, so a later bump
+ * of that default would start the new server on the old data directory, and
+ * MySQL, MariaDB, Redis and Meilisearch rewrite or refuse it in place. Null
+ * for KeyDB, whose default depends on the CPU of the host that runs it.
+ */
+export function defaultVersionTag(engine: string): string | null {
+  const cfg = ENGINES[engine];
+  if (!cfg || engine === 'keydb') return null;
+  return versionForImage(engine, cfg.image(undefined));
+}
+
 /** Check if database studio container is running. */
 export async function isDatabaseStudioRunning(d: Database): Promise<boolean> {
   const name = `nd-studio-${d.slug}`;

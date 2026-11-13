@@ -15,6 +15,7 @@ import { databaseRuntime } from '../lib/databaseRuntime.js';
 import { nodeVolumeExists } from '../lib/nodeVolumes.js';
 import {
   defaultPort,
+  defaultVersionTag,
   ENGINES,
   needsVolumeAdoption,
   volumeExists,
@@ -190,6 +191,7 @@ export async function reconcileTemplateDependencies(
         name: `${service.name} DB`,
         slug: dbSlug,
         engine: template.dbEngine,
+        version: defaultVersionTag(template.dbEngine),
         status: 'creating',
         ...placement,
         username: cfg.username() ?? null,

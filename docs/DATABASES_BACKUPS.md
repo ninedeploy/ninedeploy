@@ -6,18 +6,20 @@ NineDeploy provides provisioning and lifecycle management for databases, encrypt
 
 ## 🗄️ 1. Supported Managed Databases
 
-| Engine | Version / Flavor | Features |
+| Engine | Default version / Flavor | Features |
 | :--- | :--- | :--- |
-| **PostgreSQL** | 16 / 17 + `pgvector` | Full ACID, vector embeddings, relational indexing |
-| **MySQL** | 8.0 / 8.4 LTS | High throughput, InnoDB storage |
-| **MariaDB** | 11.4 LTS | Community SQL server with columnar support |
-| **Redis / Valkey** | 7.x | Low-latency in-memory caching and message pub/sub |
+| **PostgreSQL** | 18, or `pgvector` (PostgreSQL 18) | Full ACID, vector embeddings, relational indexing |
+| **MySQL** | 9.7 (set `8.0` or `8.4` for an LTS) | High throughput, InnoDB storage |
+| **MariaDB** | 12.3 (set `11.4` or `11.8` for an LTS) | Community SQL server with columnar support |
+| **Redis / Valkey** | Redis 8.8, Valkey 9.1 | Low-latency in-memory caching and message pub/sub |
 | **KeyDB** | 6.3 (`eqalpha/keydb`) | Multithreaded Redis-compatible server (section 9) |
 | **Dragonfly** | 1.x (`ghcr.io/dragonflydb/dragonfly`) | Multi-core Redis-compatible in-memory store (section 9) |
 | **MongoDB** | 8.0 Community (pin `7.0` for the previous LTS) | Document-oriented NoSQL database; starts on Linux 6.19–7.0.13 too (below) |
 | **ClickHouse** | 25.8 (`clickhouse/clickhouse-server`) | High-performance columnar analytics; backups since G1.8 (section 10) |
 | **Meilisearch** | v1.53 (`getmeili/meilisearch`) | Full-text search engine; backups since G1.8 (section 10) |
 | **RabbitMQ** | 4 Management (`rabbitmq:4-management`) | Message broker with AMQP; definitions backups since G1.8 (section 10) |
+
+**Every database keeps the version it was created with.** `version` takes any tag the upstream image publishes. A database created without one is given the engine's default tag at creation, and keeps it when a later NineDeploy release moves that default: a newer server started on older data would upgrade it in place (MySQL, MariaDB), write files the old one cannot read (Redis) or refuse to start (PostgreSQL, Meilisearch). Section 12 moves a database to a newer release on purpose. Databases created before 0.18.28 without a version are pinned when the panel starts: each gets the tag of the image its container runs, or today's default when it has no container yet (or runs on a node). The panel log names each one (`database-version-pin`). A database is left unpinned, and tried again at the next start, when Docker does not answer or when its container runs an image no tag of its engine reproduces; it then follows the default as before. KeyDB's default depends on the CPU, so a KeyDB database without a container stays unpinned.
 
 **MongoDB on Linux 6.19 through 7.0.13.** MongoDB 8.0 refuses to start on these kernels with the `mongo:8` image's own setting, `glibc.pthread.rseq=0`. The error is "Linux kernel versions 6.19 and newer has a known incompatibility" (SERVER-121912). The image's setting turns on TCMalloc's per-CPU caches, which crash there. NineDeploy starts MongoDB containers with `GLIBC_TUNABLES=glibc.pthread.rseq=1`, so TCMalloc uses per-thread caches, as in MongoDB 7. It starts on every kernel. Kernel 7.0.14 and later also fixes the incompatibility. An existing database picks the setting up the next time it is started (Stop, then Start); Restart keeps the container's old settings.
 

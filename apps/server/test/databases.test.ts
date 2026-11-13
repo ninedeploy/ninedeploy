@@ -127,6 +127,35 @@ describe('databases routes', () => {
     expect(engineMocks.defaultPort).toHaveBeenCalledWith('postgres');
   });
 
+  it('stores the default tag for a database created without a version, so a later default never moves it', async () => {
+    const { defaultVersionTag } = await import('../src/engine/database.js');
+    const inserted: Array<Record<string, unknown>> = [];
+    const app = await buildTestApp({
+      db: createFakeDb({
+        insert: { databases: ((values: Record<string, unknown>) => { inserted.push(values); return [dbRow({ id: 5, status: 'creating' })]; }) as never },
+        findFirst: { databases: dbRow({ id: 5, status: 'running' }) },
+      }),
+    });
+    await app.register(databasesRoutes);
+    for (const version of [undefined, '', '  ', '16']) {
+      const res = await app.inject({ method: 'POST', url: '/', headers: asUser(), payload: { name: 'My DB', engine: 'postgres', ...(version === undefined ? {} : { version }) } });
+      expect(res.statusCode).toBe(200);
+    }
+    expect(defaultVersionTag('postgres')).toBe('18');
+    expect(inserted.map((v) => v.version)).toEqual(['18', '18', '18', '16']);
+  });
+
+  it('a retry without a version resumes the pinned row; a retry naming another version is a different database', async () => {
+    const existing = dbRow({ id: 9, ownerUserId: 1, name: 'directus-db', slug: 'directus-db', status: 'stopped', version: '16', containerName: 'nd-db-directus-db', initializedAt: new Date('2026-08-30T00:00:00Z') });
+    const app = await buildTestApp({ db: createFakeDb({ findFirst: { databases: existing } }) });
+    await app.register(databasesRoutes);
+    const retry = (extra: Record<string, unknown>) =>
+      app.inject({ method: 'POST', url: '/', headers: asUser(), payload: { name: 'directus-db', engine: 'postgres', reuseExisting: true, ...extra } });
+    expect((await retry({})).statusCode).toBe(200);
+    expect((await retry({ version: '16' })).statusCode).toBe(200);
+    expect((await retry({ version: '17' })).statusCode).toBe(400);
+  });
+
   it('creates a database reusing an existing retained volume', async () => {
     const fakeDb = createFakeDb({
       // The INSERT stub mirrors what the route actually writes: a fresh row is

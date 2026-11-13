@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 **Highlights**
 - MySQL and MariaDB databases move to a newer release from the database page (MySQL 8.0 → 8.4 → 9.7, MariaDB 10.6+ → 12.3): the data directory is copied, upgraded in place and compared before the switch, with rollback until you finalize.
+- A database created without a version now keeps the release it runs when a later NineDeploy release moves the engine's default; existing ones are pinned at start.
 
 **Action needed:** No.
 
@@ -23,6 +24,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - An upgrade to MySQL 8.4 or later is refused, before anything stops, while an account still uses `mysql_native_password` (8.4 disables it, 9.0 removed it). The refusal names the accounts.
   - Checked on a real panel: MySQL 8.0 → 9.7 (through 8.4) in 35 s with identical rows, the trigger, procedure, view, event and AUTO_INCREMENT working and an app account logging in over the network; rollback to 8.0; 8.0 → 8.4 in 25 s; MariaDB 10.11 → 11.8 in 20 s with identical rows and its accounts.
   - The API adds `fromSeries`/`toSeries` to an upgrade, and `engine`, `currentSeries` and `versions` to the options; `toMajor` still works for PostgreSQL.
+
+### Fixed
+
+- **A database without a version no longer follows the engine's default across releases.** Such a database ran whatever default the panel had when its container was next recreated (a restart after a crash, a limit change, a restore), so a release that moved the default would start, for example, MySQL 9.7 on 8.4 data and upgrade it in place with no way back, or start a newer Redis that writes files the old one cannot read. New databases (from the API, the CLI, the Hub and templates) are created with the default tag. At start, the panel gives every existing database without a version the tag of the image its container runs, or today's default when there is no container yet or it runs on a node; Docker not answering, or an image no tag reproduces, leaves it for the next start. A `reuseExisting` retry without a version resumes the pinned row. The engine table in DATABASES_BACKUPS.md §1 now shows the real defaults (PostgreSQL 18, MySQL 9.7, MariaDB 12.3, Redis 8.8, Valkey 9.1).
 
 ## [0.18.27] - 2026-11-12
 

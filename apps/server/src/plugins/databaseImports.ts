@@ -12,6 +12,7 @@ import {
   recoverInterruptedVolumeImports,
 } from '../lib/volumeImport.js';
 import { pruneFinishedUpgrades, recoverInterruptedUpgrades } from '../lib/databaseUpgrade.js';
+import { pinUnversionedDatabases } from '../lib/databaseVersionPin.js';
 
 const HOUR_MS = 60 * 60 * 1000;
 
@@ -80,8 +81,11 @@ export default fp(
     // the previous process's.
     await step('recover-interrupted', () => recoverInterruptedImports(fastify.db));
     await step('volume-recover-interrupted', () => recoverInterruptedVolumeImports(fastify.db));
-    // Starts databases (Docker): never awaited, so a slow daemon cannot hold up boot.
-    void step('upgrade-recover-interrupted', () => recoverInterruptedUpgrades(fastify.db));
+    // Both talk to Docker: never awaited, so a slow daemon cannot hold up boot.
+    // Rows without a version get the tag their container runs BEFORE upgrade
+    // recovery starts anything (lib/databaseVersionPin.ts).
+    void step('version-pin', async () => (await pinUnversionedDatabases(fastify.db)).pinned)
+      .then(() => step('upgrade-recover-interrupted', () => recoverInterruptedUpgrades(fastify.db)));
     await sweep();
     timer = setTimeout(() => void tick(), interval);
     timer.unref();
