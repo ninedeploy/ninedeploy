@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { capture, sleep } from '../apps/server/src/lib/exec.js';
 import { verifyPostgresRestore, verifyRestore, type RestoreVerificationResult } from '../apps/server/src/lib/backupRestoreVerification.js';
-import { dumpCommands } from '../apps/server/src/lib/databaseCommands.js';
+import { type DbCommand, dbCommandEnv, dumpCommands } from '../apps/server/src/lib/databaseCommands.js';
 import { backupClickhouse, backupMeilisearch, backupRabbitmq, rabbitmqExpected, rabbitmqMissing } from '../apps/server/src/engine/extraEngineBackups.js';
 
 /** The managed engines' default images (ENGINES in engine/database.ts). */
@@ -39,6 +39,8 @@ const name = `nd-restore-source-${owner}`;
 const source = process.env.GITHUB_SHA;
 assert.match(source ?? '', /^[a-f0-9]{40}$/);
 const docker = (args: string[], timeoutMs = 30_000) => capture('docker', args, { timeoutMs, maxOutputBytes: 64 * 1024 });
+/** A panel builder's command: its argv, with the secrets it forwards by name (`docker exec -e NAME`) in the environment. */
+const dockerCommand = (command: DbCommand, timeoutMs = 30_000) => capture('docker', command.argv, { timeoutMs, maxOutputBytes: 64 * 1024, ...dbCommandEnv(command) });
 const query = (sql: string) => docker(['exec', name, 'psql', '-X', '-q', '-A', '-t', '-v', 'ON_ERROR_STOP=1', '-h', '127.0.0.1', '-U', 'nine', '-d', 'app', '-c', sql]);
 const hash = async (file: string) => createHash('sha256').update(await readFile(file)).digest('hex');
 const report: { source: string | undefined; publicApi: boolean; engines: string[]; images: Record<string, string>; cases: Array<{ case: string; verification: RestoreVerificationResult }>; sourceUntouched: boolean; backupBytesUnchanged: boolean; helperInventoryUnchanged: boolean; cleanup: boolean; failure?: string; setupError?: string; cleanupError?: string } = {
@@ -133,7 +135,7 @@ try {
     // The panel's own backup argv: --all-databases, so the restore also
     // replaces the helper's grant tables on disk, exactly as in production.
     const plan = dumpCommands(engine, sourceName, '/tmp/nd-backup.sql', password);
-    await docker(plan.dump, 180_000);
+    await dockerCommand(plan.dump, 180_000);
     const familyDump = join(scratch, `${engine}.sql`); files.push(familyDump);
     await docker(['cp', `${sourceName}:${plan.file}`, familyDump], 120_000);
     const digest = await hash(familyDump);
@@ -198,7 +200,7 @@ try {
     await mongoEval("db.getSiblingDB('shop').orders.insertMany([{ _id: 1, v: 'before' }, { _id: 2, v: null }])");
     phase = 'mongo-source-dump';
     const plan = dumpCommands('mongo', mongoSource, '/tmp/nd-backup.archive', mongoPassword);
-    await docker(plan.dump, 180_000);
+    await dockerCommand(plan.dump, 180_000);
     const mongoDump = join(scratch, 'mongo.archive'); files.push(mongoDump);
     await docker(['cp', `${mongoSource}:${plan.file}`, mongoDump], 120_000);
     const digest = await hash(mongoDump);
@@ -420,7 +422,7 @@ try {
     await redisCli('RPUSH', 'queue', 'a', 'b', 'c');
     phase = `${engine}-source-dump`;
     const plan = dumpCommands(engine, redisSource, '', redisPassword);
-    assert.equal((await docker(plan.dump, 120_000)).trim(), 'OK');
+    assert.equal((await dockerCommand(plan.dump, 120_000)).trim(), 'OK');
     const redisDump = join(scratch, `${engine}.rdb`); files.push(redisDump);
     await docker(['cp', `${redisSource}:${plan.file}`, redisDump], 120_000);
     const digest = await hash(redisDump);

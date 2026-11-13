@@ -2473,7 +2473,7 @@
           "nd-db-mysql",
           "sh",
           "-c",
-          "f=\"$1\"; c=\"$2\"; shift 2\nsed -i -e '/^SET @@GLOBAL.GTID_PURGED=/{\n:a\n/;$/!{\nN\nba\n}\nd\n}' \"$f\" &&\nexec \"$c\" --defaults-extra-file=/dev/fd/3 \"$@\" < \"$f\" 3<<ND_CNF\n$ND_MYSQL_CNF\nND_CNF",
+          "f=\"$1\"; c=\"$2\"; shift 2\nif grep -q '^SET @@GLOBAL.GTID_PURGED=' \"$f\"; then sed -i -e '/^SET @@GLOBAL.GTID_PURGED=/{\n:a\n/;$/!{\nN\nba\n}\nd\n}' \"$f\" || exit 1; fi\nexec \"$c\" --defaults-extra-file=/dev/fd/3 \"$@\" < \"$f\" 3<<ND_CNF\n$ND_MYSQL_CNF\nND_CNF",
           "sh",
           "/tmp/ninedeploy-restore-00000000-0000-4000-8000-000000000000",
           "mysql",

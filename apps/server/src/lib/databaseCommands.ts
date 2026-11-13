@@ -86,9 +86,13 @@ export function mysqlCommand(
  * POSIX sed; proven on mysql 8.0, 8.4 and 9.7.
  */
 const DROP_GTID_PURGED = ['/^SET @@GLOBAL.GTID_PURGED=/{', ':a', '/;$/!{', 'N', 'ba', '}', 'd', '}'].join('\n');
+// Rewritten only when the statement is there (a read-only grep first): a dump
+// without it (MySQL 8, new backups) is not copied again, which would need its
+// size once more in the container's writable layer. A failed rewrite stops
+// the restore.
 const MYSQL_WITH_CNF_FROM_FILE_NO_GTID = [
   'f="$1"; c="$2"; shift 2',
-  `sed -i -e '${DROP_GTID_PURGED}' "$f" &&`,
+  `if grep -q '^SET @@GLOBAL.GTID_PURGED=' "$f"; then sed -i -e '${DROP_GTID_PURGED}' "$f" || exit 1; fi`,
   'exec "$c" --defaults-extra-file=/dev/fd/3 "$@" < "$f" 3<<ND_CNF',
   `$${MYSQL_CNF_VAR}`,
   'ND_CNF',

@@ -228,10 +228,12 @@ describe('passwords never ride the argv (PostgreSQL, MySQL, MariaDB)', () => {
     const restore = restoreCommand('mysql', 'nd-db-my', '/tmp/r.sql', SECRET);
     expect(restore.argv.join(' ')).not.toContain('source');
     expect(restore.argv.slice(7)).toEqual(['sh', '/tmp/r.sql', 'mysql', '-uroot']);
-    // MySQL drops an older backup's GTID_PURGED statement first (`sed -i … &&`: a failed sed stops the restore);
-    // MariaDB has no such statement.
-    expect(restore.argv[6]).toMatch(/^f="\$1"; c="\$2"; shift 2\nsed -i -e '\/\^SET @@GLOBAL\.GTID_PURGED=\/\{/);
-    expect(restore.argv[6]).toContain('" &&\nexec "$c" --defaults-extra-file=/dev/fd/3');
+    // MySQL drops an older backup's GTID_PURGED statement first, rewriting the copy only when it holds one
+    // (a failed sed stops the restore); MariaDB has no such statement.
+    const lines = restore.argv[6]!.split('\n');
+    expect(lines[0]).toBe('f="$1"; c="$2"; shift 2');
+    expect(lines[1]).toMatch(/^if grep -q '\^SET @@GLOBAL\.GTID_PURGED=' "\$f"; then sed -i -e '\/\^SET @@GLOBAL\.GTID_PURGED=\/\{$/);
+    expect(restore.argv[6]).toContain(`' "$f" || exit 1; fi\nexec "$c" --defaults-extra-file=/dev/fd/3`);
     expect(restoreCommand('mariadb', 'nd-db-my', '/tmp/r.sql', SECRET).argv[6]).not.toContain('GTID');
     // Backups: MySQL's without the statement, MariaDB's without a flag it does not know.
     expect(dumpCommands('mysql', 'c', '/tmp/d', SECRET).dump.argv).toContain('--set-gtid-purged=OFF');
