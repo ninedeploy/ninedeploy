@@ -213,10 +213,13 @@ describe('passwords never ride the argv (PostgreSQL, MySQL, MariaDB, MongoDB, th
     });
   }
 
-  it('postgres forwards PGPASSWORD by name only', () => {
+  it('postgres forwards PGPASSWORD by name only, and signs in over its own address with no clear-text password', () => {
     const probe = probeCommand('postgres', 'nd-db-pg', SECRET)!;
-    expect(probe.argv.slice(0, 4)).toEqual(['exec', '-e', 'PGPASSWORD', 'nd-db-pg']);
-    expect(probe.env).toEqual({ PGPASSWORD: SECRET });
+    expect(probe.argv.slice(0, 8)).toEqual(['exec', '-e', 'PGPASSWORD', '-e', 'PGREQUIREAUTH', 'nd-db-pg', 'sh', '-c']);
+    // The address from the container's /etc/hosts, never Docker's DNS, never the trusted socket or 127.0.0.1.
+    expect(probe.argv[8]).toBe('h=$(hostname -i 2>/dev/null | cut -d" " -f1); [ -n "$h" ] || { echo "no container address" >&2; exit 2; }; exec psql -h "$h" "$@"');
+    expect(probe.argv.slice(9)).toEqual(['sh', '-U', 'nine', '-d', 'app', '-tAc', 'SELECT 1']);
+    expect(probe.env).toEqual({ PGPASSWORD: SECRET, PGREQUIREAUTH: 'scram-sha-256,md5' });
   });
 
   it('mysql and mariadb read an option file on fd 3, the dump (if any) on stdin', () => {

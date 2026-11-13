@@ -363,10 +363,13 @@
           "exec",
           "-e",
           "PGPASSWORD",
+          "-e",
+          "PGREQUIREAUTH",
           "nd-db-postgres",
-          "psql",
-          "-h",
-          "nd-db-postgres",
+          "sh",
+          "-c",
+          "h=$(hostname -i 2>/dev/null | cut -d\" \" -f1); [ -n \"$h\" ] || { echo \"no container address\" >&2; exit 2; }; exec psql -h \"$h\" \"$@\"",
+          "sh",
           "-U",
           "nine",
           "-d",
@@ -376,7 +379,8 @@
         ],
         "opts": {
           "env": {
-            "PGPASSWORD": "pw-secret"
+            "PGPASSWORD": "pw-secret",
+            "PGREQUIREAUTH": "scram-sha-256,md5"
           }
         }
       }
@@ -1083,10 +1087,13 @@
           "exec",
           "-e",
           "PGPASSWORD",
+          "-e",
+          "PGREQUIREAUTH",
           "nd-db-postgres-16",
-          "psql",
-          "-h",
-          "nd-db-postgres-16",
+          "sh",
+          "-c",
+          "h=$(hostname -i 2>/dev/null | cut -d\" \" -f1); [ -n \"$h\" ] || { echo \"no container address\" >&2; exit 2; }; exec psql -h \"$h\" \"$@\"",
+          "sh",
           "-U",
           "nine",
           "-d",
@@ -1096,7 +1103,8 @@
         ],
         "opts": {
           "env": {
-            "PGPASSWORD": "pw-secret"
+            "PGPASSWORD": "pw-secret",
+            "PGREQUIREAUTH": "scram-sha-256,md5"
           }
         }
       }
@@ -1787,10 +1795,13 @@
           "exec",
           "-e",
           "PGPASSWORD",
+          "-e",
+          "PGREQUIREAUTH",
           "nd-db-postgres-vector",
-          "psql",
-          "-h",
-          "nd-db-postgres-vector",
+          "sh",
+          "-c",
+          "h=$(hostname -i 2>/dev/null | cut -d\" \" -f1); [ -n \"$h\" ] || { echo \"no container address\" >&2; exit 2; }; exec psql -h \"$h\" \"$@\"",
+          "sh",
           "-U",
           "nine",
           "-d",
@@ -1800,7 +1811,8 @@
         ],
         "opts": {
           "env": {
-            "PGPASSWORD": "pw-secret"
+            "PGPASSWORD": "pw-secret",
+            "PGREQUIREAUTH": "scram-sha-256,md5"
           }
         }
       }

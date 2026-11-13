@@ -195,13 +195,15 @@ describe('probeDatabaseCredentials', () => {
   it('signs in for real on every engine', async () => {
     h.capture.mockResolvedValueOnce('1\n');
     expect(await probeDatabaseCredentials(db(), 1, 0)).toBe(true);
-    // postgres signs in over the container's own address (its name): the image trusts the local
-    // socket and 127.0.0.1, so either would accept any password. PGPASSWORD is forwarded by name.
+    // postgres signs in over the container's own address, read from its /etc/hosts (`hostname -i`):
+    // the image trusts the local socket and 127.0.0.1, so either would accept any password, and a
+    // name resolved through Docker's DNS could be answered by another container. PGPASSWORD is
+    // forwarded by name; libpq refuses a clear-text password request.
     const argv = h.capture.mock.calls[0]![1] as string[];
-    expect(argv).toEqual(expect.arrayContaining(['-e', 'PGPASSWORD']));
-    expect(argv[argv.indexOf('-h') + 1]).toBe(argv[3]);
+    expect(argv.slice(0, 5)).toEqual(['exec', '-e', 'PGPASSWORD', '-e', 'PGREQUIREAUTH']);
+    expect(argv[8]).toContain('hostname -i');
     expect(argv).not.toContain('127.0.0.1');
-    expect(h.capture.mock.calls[0]![2]).toEqual({ env: { PGPASSWORD: 'pw:enc' } });
+    expect(h.capture.mock.calls[0]![2]).toEqual({ env: { PGPASSWORD: 'pw:enc', PGREQUIREAUTH: 'scram-sha-256,md5' } });
     h.capture.mockResolvedValueOnce('1');
     expect(await probeDatabaseCredentials(db({ engine: 'mariadb' }), 1, 0)).toBe(true);
     h.capture.mockResolvedValueOnce('1');

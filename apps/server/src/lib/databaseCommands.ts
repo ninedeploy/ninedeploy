@@ -134,6 +134,9 @@ export function mongoshCommand(cn: string, password: string, expression: string)
   return { argv: ['exec', '-e', MONGO_PASSWORD_VAR, cn, 'mongosh', '--nodb', '--quiet', '--eval', script], env: { [MONGO_PASSWORD_VAR]: password } };
 }
 
+/** psql against the container's first own address (see `probeCommand`); proven on postgres 14, 16, 18, 17-alpine and pgvector pg18. */
+const PG_PROBE_OWN_ADDRESS = 'h=$(hostname -i 2>/dev/null | cut -d" " -f1); [ -n "$h" ] || { echo "no container address" >&2; exit 2; }; exec psql -h "$h" "$@"';
+
 /** Engines a managed database can run. */
 export const DATABASE_ENGINES = ['postgres', 'mysql', 'mariadb', 'redis', 'mongo', 'valkey', 'clickhouse', 'meilisearch', 'rabbitmq', 'keydb', 'dragonfly'] as const;
 export type DatabaseEngineName = (typeof DATABASE_ENGINES)[number];
@@ -218,10 +221,16 @@ export function parseSizeOutput(engine: string, out: string): number {
 /** `probeDatabaseCredentials`: one real sign-in with the stored credentials, or null (no probe: false). */
 export function probeCommand(engine: string, cn: string, password: string): DbCommand | null {
   if (engine === 'postgres') {
-    // Over the container's own network address (its name, through Docker's DNS on the database's
-    // bridge): the image trusts the local socket AND 127.0.0.1, so a probe there signs in with
-    // any password; every other address asks for it (scram-sha-256).
-    return { argv: ['exec', '-e', 'PGPASSWORD', cn, 'psql', '-h', cn, '-U', PG_USER, '-d', PG_DB, '-tAc', 'SELECT 1'], env: { PGPASSWORD: password } };
+    // Over the container's own network address: the image trusts the local socket AND 127.0.0.1,
+    // so a probe there signs in with any password; every other address asks for it. The address
+    // comes from the container's own /etc/hosts (`hostname -i`), not from Docker's DNS, where
+    // another container on a shared network could answer to the same name; and libpq refuses a
+    // server that asks for the password in clear text (PGREQUIREAUTH, libpq 16+; older clients
+    // ignore it). No address: fail, rather than fall back to the trusted socket.
+    return {
+      argv: ['exec', '-e', 'PGPASSWORD', '-e', 'PGREQUIREAUTH', cn, 'sh', '-c', PG_PROBE_OWN_ADDRESS, 'sh', '-U', PG_USER, '-d', PG_DB, '-tAc', 'SELECT 1'],
+      env: { PGPASSWORD: password, PGREQUIREAUTH: 'scram-sha-256,md5' },
+    };
   }
   if (engine === 'mysql' || engine === 'mariadb') {
     return mysqlCommand(cn, engine === 'mysql' ? 'mysql' : 'mariadb', password, ['-uroot', '-N', '-e', 'SELECT 1']);
