@@ -666,12 +666,16 @@ export async function stopContainerClean(name: string, log: (line: string) => vo
 /**
  * O2: copy every file of one volume into another (ownership, modes and links
  * kept) through a networkless helper of `image`, with the source mounted
- * read-only. The source must belong to no running container.
+ * read-only. The source must belong to no running container. The helper is
+ * NAMED: if the panel dies or the command times out, the container keeps
+ * copying, and the caller (or boot recovery) removes it by that name before
+ * it can remove the target volume.
  */
-export async function copyDockerVolume(from: string, to: string, image: string, log: (line: string) => void): Promise<void> {
+export async function copyDockerVolume(from: string, to: string, image: string, name: string, log: (line: string) => void): Promise<void> {
   log(`Copying volume ${from} → ${to} …`);
+  await run('docker', ['rm', '-f', name], {}, swallow).catch(() => undefined);
   await run('docker', [
-    'run', '--rm', '--network', 'none', '--entrypoint', 'sh',
+    'run', '--rm', '--name', name, '--network', 'none', '--entrypoint', 'sh',
     '--label', `${MANAGED_VOLUME_LABEL}=database-upgrade`,
     '-v', `${from}:/from:ro`, '-v', `${to}:/to`,
     image, '-c', 'cp -a /from/. /to/',

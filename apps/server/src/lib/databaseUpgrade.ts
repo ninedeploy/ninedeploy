@@ -197,7 +197,8 @@ export interface DatabaseUpgradeDeps {
   freeBytesIn(container: string, dir: string): Promise<number>;
   /** Stop (long bound), report the exit code (null = unknown or still running), remove. */
   stopClean(container: string, log: (line: string) => void): Promise<number | null>;
-  copyVolume(from: string, to: string, image: string, log: (line: string) => void): Promise<void>;
+  /** Copy through a helper container called `name` (removed by name if anything goes wrong). */
+  copyVolume(from: string, to: string, image: string, name: string, log: (line: string) => void): Promise<void>;
   waitReady(container: string, d: Database, log: (line: string) => void): Promise<boolean>;
   dump(d: Database, file: string, log: (line: string) => void): Promise<void>;
   restore(d: Database, file: string, log: (line: string) => void): Promise<void>;
@@ -278,7 +279,7 @@ export const databaseUpgradeDeps: DatabaseUpgradeDeps = {
     return n;
   },
   stopClean: (container, log) => stopContainerClean(container, log),
-  copyVolume: (from, to, image, log) => copyDockerVolume(from, to, image, log),
+  copyVolume: (from, to, image, name, log) => copyDockerVolume(from, to, image, name, log),
   waitReady: async (container, d, log) => {
     if (d.engine === 'mysql' || d.engine === 'mariadb') return waitForMysqlTcp(container, d, log);
     const cfg = ENGINES.postgres!;
@@ -311,6 +312,8 @@ export const databaseUpgradeDeps: DatabaseUpgradeDeps = {
 
 export const fenceName = (slug: string) => `nd-dbup-${slug}-old`;
 export const stagingName = (slug: string) => `nd-dbup-${slug}-new`;
+/** MySQL/MariaDB: the helper that copies the old volume into the new one. */
+export const copierName = (slug: string) => `nd-dbup-${slug}-copy`;
 /** The new volume. Resolves to its database in the inventory (lib/inventory.ts). */
 export const upgradeVolumeName = (slug: string, upgradeId: number) => `nd-db-${slug}-data-u${upgradeId}`;
 
@@ -865,7 +868,7 @@ export async function runDatabaseUpgrade(
         if (await deps.volumeExists(up0.targetVolume)) throw new Error(`volume ${up0.targetVolume} already exists`);
         await deps.createVolume(up0.targetVolume, databaseVolumeLabels(target), log);
         createdVolume = true;
-        await deps.copyVolume(up0.previousVolume, up0.targetVolume, cfg.image(steps[0]!), log);
+        await deps.copyVolume(up0.previousVolume, up0.targetVolume, cfg.image(steps[0]!), copierName(d0.slug), log);
 
         // Each step starts the next release on the COPY, which upgrades it in
         // place; between steps the server shuts down slowly again.
@@ -947,6 +950,8 @@ export async function runDatabaseUpgrade(
     if (stopped) {
       await deps.stopAndRemove(fence, log).catch(() => undefined);
       await deps.stopAndRemove(staging, log).catch(() => undefined);
+      // A copy that timed out still runs and holds the new volume.
+      if (spec.method === 'copy') await deps.stopAndRemove(copierName(d0.slug), log).catch(() => undefined);
     }
     let outcome: string;
     if (switched) {
@@ -1060,6 +1065,7 @@ export async function recoverInterruptedUpgrades(db: DB, deps: DatabaseUpgradeDe
     }
     await deps.stopAndRemove(fenceName(d.slug), log).catch(() => undefined);
     await deps.stopAndRemove(stagingName(d.slug), log).catch(() => undefined);
+    if (up.engine !== 'postgres') await deps.stopAndRemove(copierName(d.slug), log).catch(() => undefined);
     let note: string;
     if (up.switched && d.volumeName === up.targetVolume) {
       if (await bringUp(db, d, deps, log)) {

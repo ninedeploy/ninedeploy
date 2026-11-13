@@ -104,7 +104,7 @@ function fakeDeps(opts: {
       calls.push(`volume+ ${name}`);
       volumes.add(name);
     }),
-    copyVolume: vi.fn(async (from: string, to: string, image: string) => { calls.push(`copy ${from} ${to} ${image}`); }),
+    copyVolume: vi.fn(async (from: string, to: string, image: string, name: string) => { calls.push(`copy ${from} ${to} ${image} as ${name}`); }),
     volumeExists: vi.fn(async (name: string) => volumes.has(name)),
     removeVolume: vi.fn(async (name: string) => {
       calls.push(`volume- ${name}`);
@@ -205,7 +205,7 @@ describe('the run', () => {
       'slow-shutdown nd-dbup-shop-old',
       'clean-stop nd-dbup-shop-old',
       `volume+ ${vol}`,
-      `copy nd-db-shop-data ${vol} mysql:8.4`,
+      `copy nd-db-shop-data ${vol} mysql:8.4 as nd-dbup-shop-copy`,
       `isolated nd-dbup-shop-new mysql:8.4 ${vol}:/var/lib/mysql`,
       'slow-shutdown nd-dbup-shop-new',
       'clean-stop nd-dbup-shop-new',
@@ -250,6 +250,17 @@ describe('the run', () => {
     expect(up.error).toContain('table shop.orders: 42 before, 41 after');
   });
 
+  it('a copy that fails is removed by name before its volume', async () => {
+    const { deps, calls } = fakeDeps();
+    vi.mocked(deps.copyVolume).mockRejectedValueOnce(new Error('timed out after 21600000 ms'));
+    const up = await admitAndRun(deps, '8.4');
+    expect(up.status).toBe('failed');
+    expect(up.error).toContain('timed out');
+    expect(calls.indexOf('stop nd-dbup-shop-copy')).toBeGreaterThan(-1);
+    expect(calls.indexOf('stop nd-dbup-shop-copy')).toBeLessThan(calls.indexOf(`volume- nd-db-shop-data-u${up.id}`));
+    expect(await row()).toMatchObject({ status: 'running', version: '8.0', volumeName: 'nd-db-shop-data' });
+  });
+
   it('a step that does not come up on the copy fails before the switch', async () => {
     const { deps } = fakeDeps({ failReadyOf: '9.7' });
     const up = await admitAndRun(deps, '9.7');
@@ -289,7 +300,9 @@ describe('after the run', () => {
     calls.length = 0;
     await recoverInterruptedUpgrades(db, deps);
     expect(calls).toContain('start nd-db-shop v8.0 nd-db-shop-data');
-    expect(calls).toContain(`volume- ${admitted.targetVolume}`);
+    // A copy the restart cut short may still run: it goes before its volume does.
+    expect(calls.indexOf('stop nd-dbup-shop-copy')).toBeGreaterThan(-1);
+    expect(calls.indexOf('stop nd-dbup-shop-copy')).toBeLessThan(calls.indexOf(`volume- ${admitted.targetVolume}`));
     expect((await upgradeRow(admitted.id)).status).toBe('failed');
   });
 });
