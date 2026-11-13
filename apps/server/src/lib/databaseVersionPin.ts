@@ -15,9 +15,14 @@
  *    Not the volume's `ninedeploy.database.image` label: that names the image
  *    that INITIALIZED the data, which later recreates may already have
  *    upgraded, and pinning it would start an older server on newer data;
- *  - a container that positively does not exist, or a node row, takes today's
- *    default: that is what its next start runs anyway (node databases came
- *    after the last default change, 2026-08-23);
+ *  - a stopped row (Stop removes the container) takes today's default only
+ *    when its volume does not exist either, or when the volume was created by
+ *    today's default image: a row without a version only ever ran defaults,
+ *    and defaults only rose, so its data is not newer than that. A volume
+ *    created by an older default may hold data a later default has already
+ *    upgraded, or not: that row is left as it was, with a warning;
+ *  - a node row takes today's default: node databases came after the last
+ *    default change (2026-08-23);
  *  - anything else (Docker unreachable, an image no tag reproduces, KeyDB,
  *    whose default depends on the host's CPU) stays as it is and is retried
  *    on the next boot. Writing the default there could encode the very jump
@@ -35,9 +40,21 @@ const logger = createLogger('database-version-pin');
 /** What `docker inspect` says about a database container. */
 export type ContainerImage = { exists: false } | { exists: true; image: string };
 
+/** What `docker volume inspect` says about a database volume: the image its `ninedeploy.database.image` label names, '' without one. */
+export type VolumeImage = { exists: false } | { exists: true; image: string };
+
 export interface VersionPinDeps {
   /** Rejects when Docker cannot answer; resolves `exists: false` only when Docker says the container is not there. */
   containerImage(name: string): Promise<ContainerImage>;
+  /** Same contract for a volume. */
+  volumeImage(name: string): Promise<VolumeImage>;
+}
+
+/** The command's stderr when it exited 1, else null. */
+function exitedOneStderr(err: unknown): string | null {
+  const message = (err as Error).message ?? '';
+  const stderr = message.replace(/^`[^`]*` exited 1: /, '');
+  return stderr === message ? null : stderr.trim();
 }
 
 export const versionPinDeps: VersionPinDeps = {
@@ -46,9 +63,18 @@ export const versionPinDeps: VersionPinDeps = {
       const out = await capture('docker', ['inspect', '--type', 'container', '--format', '{{.Config.Image}}', name], { timeoutMs: 30_000 });
       return { exists: true, image: out.trim() };
     } catch (err) {
-      const message = (err as Error).message ?? '';
-      const stderr = message.replace(/^`[^`]*` exited 1: /, '');
-      if (stderr !== message && confirmsMissingContainer(stderr.split('\n'), name)) return { exists: false };
+      const stderr = exitedOneStderr(err);
+      if (stderr !== null && confirmsMissingContainer(stderr.split('\n'), name)) return { exists: false };
+      throw err;
+    }
+  },
+  volumeImage: async (name) => {
+    try {
+      const out = await capture('docker', ['volume', 'inspect', '--format', '{{index .Labels "ninedeploy.database.image"}}', name], { timeoutMs: 30_000 });
+      const image = out.trim();
+      return { exists: true, image: image === '<no value>' ? '' : image };
+    } catch (err) {
+      if (exitedOneStderr(err) === `Error response from daemon: get ${name}: no such volume`) return { exists: false };
       throw err;
     }
   },
@@ -96,7 +122,25 @@ export async function pinUnversionedDatabases(db: DB, deps: VersionPinDeps = ver
         }
       } else {
         version = defaultVersionTag(d.engine);
-        source = `the default (container ${d.containerName} does not exist)`;
+        source = `the default (container ${d.containerName} does not exist`;
+        if (d.volumeName) {
+          let volume: VolumeImage;
+          try {
+            volume = await deps.volumeImage(d.volumeName);
+          } catch (err) {
+            leave(`Docker did not answer for volume ${d.volumeName} (${(err as Error).message.slice(0, 200)})`);
+            continue;
+          }
+          if (volume.exists && (version == null || versionForImage(d.engine, volume.image) !== version)) {
+            leave(
+              `it is stopped and its volume ${d.volumeName} was created by ${volume.image || 'an unrecorded image'}, not by today's default, ` +
+                'so its data may be older or newer than the default; its next Start runs the default, as before',
+            );
+            continue;
+          }
+          source += volume.exists ? `; its volume was created by ${volume.image}` : '; nor does its volume';
+        }
+        source += ')';
       }
     } else {
       leave('it has neither a container nor a node');

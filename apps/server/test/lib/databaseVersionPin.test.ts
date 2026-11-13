@@ -9,6 +9,7 @@ const { defaultVersionTag, DRAGONFLY_DEFAULT_VERSION, ENGINES, versionForImage }
 const { pinUnversionedDatabases, versionPinDeps } = await import('../../src/lib/databaseVersionPin.js');
 type ContainerImage = import('../../src/lib/databaseVersionPin.js').ContainerImage;
 type VersionPinDeps = import('../../src/lib/databaseVersionPin.js').VersionPinDeps;
+type VolumeImage = import('../../src/lib/databaseVersionPin.js').VolumeImage;
 
 /**
  * A row without a version follows the engine default, which moves with
@@ -39,13 +40,20 @@ async function row(engine: string, fields: Record<string, unknown> = {}) {
 
 const versionOf = async (id: number) => (await db.query.databases.findFirst({ where: eq(databases.id, id) }))!.version;
 
-function docker(images: Record<string, ContainerImage | Error>): VersionPinDeps & { asked: string[] } {
+/** Containers and volumes Docker knows; anything else does not exist. */
+function docker(images: Record<string, ContainerImage | Error>, volumes: Record<string, VolumeImage | Error> = {}): VersionPinDeps & { asked: string[] } {
   const asked: string[] = [];
   return {
     asked,
     containerImage: vi.fn(async (name: string) => {
       asked.push(name);
       const v = images[name];
+      if (v instanceof Error) throw v;
+      return v ?? { exists: false };
+    }),
+    volumeImage: vi.fn(async (name: string) => {
+      asked.push(name);
+      const v = volumes[name];
       if (v instanceof Error) throw v;
       return v ?? { exists: false };
     }),
@@ -98,6 +106,17 @@ describe('versionPinDeps.containerImage (docker inspect)', () => {
     vi.mocked(capture).mockRejectedValueOnce(new Error('`docker inspect` timed out: Error: No such container: nd-db-a'));
     await expect(versionPinDeps.containerImage('nd-db-a')).rejects.toThrow('timed out');
   });
+
+  it('reads a volume’s image label, empty without one, and says a volume is missing only in Docker’s own words', async () => {
+    vi.mocked(capture).mockResolvedValueOnce('mysql:9.7\n');
+    expect(await versionPinDeps.volumeImage('nd-db-a-data')).toEqual({ exists: true, image: 'mysql:9.7' });
+    vi.mocked(capture).mockResolvedValueOnce('\n');
+    expect(await versionPinDeps.volumeImage('nd-db-a-data')).toEqual({ exists: true, image: '' });
+    vi.mocked(capture).mockRejectedValueOnce(new Error('`docker volume inspect` exited 1: Error response from daemon: get nd-db-a-data: no such volume'));
+    expect(await versionPinDeps.volumeImage('nd-db-a-data')).toEqual({ exists: false });
+    vi.mocked(capture).mockRejectedValueOnce(new Error('`docker volume inspect` exited 1: Error response from daemon: get nd-db-b-data: no such volume'));
+    await expect(versionPinDeps.volumeImage('nd-db-a-data')).rejects.toThrow('nd-db-b-data');
+  });
 });
 
 describe('pinUnversionedDatabases', () => {
@@ -117,7 +136,25 @@ describe('pinUnversionedDatabases', () => {
     expect(await pinUnversionedDatabases(db, deps)).toEqual({ pinned: 2, left: 0 });
     expect(await versionOf(gone)).toBe(defaultVersionTag('mariadb'));
     expect(await versionOf(node)).toBe(defaultVersionTag('redis'));
-    expect(deps.asked).toEqual([`nd-db-db${gone}`]);
+    expect(deps.asked).toEqual([`nd-db-db${gone}`, `nd-db-db${gone}-data`]);
+  });
+
+  it('pins a stopped row to the default only when its volume was created by the default image', async () => {
+    const mysqlDefault = ENGINES.mysql!.image(undefined);
+    const fresh = await row('mysql');
+    const older = await row('mysql');
+    const unlabeled = await row('mysql');
+    const unanswered = await row('mysql');
+    const deps = docker({}, {
+      [`nd-db-db${fresh}-data`]: { exists: true, image: mysqlDefault },
+      [`nd-db-db${older}-data`]: { exists: true, image: 'mysql:8.4' },
+      [`nd-db-db${unlabeled}-data`]: { exists: true, image: '' },
+      [`nd-db-db${unanswered}-data`]: new Error('Cannot connect to the Docker daemon'),
+    });
+    expect(await pinUnversionedDatabases(db, deps)).toEqual({ pinned: 1, left: 3 });
+    expect(await versionOf(fresh)).toBe(defaultVersionTag('mysql'));
+    // 8.4 data a recreate may or may not have moved to 9.7: neither tag is safe to write down.
+    for (const id of [older, unlabeled, unanswered]) expect(await versionOf(id)).toBeNull();
   });
 
   it('leaves a row when Docker does not answer, when no tag reproduces the image, and a KeyDB row without a container', async () => {
