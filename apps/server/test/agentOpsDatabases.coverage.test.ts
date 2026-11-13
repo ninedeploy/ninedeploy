@@ -272,7 +272,7 @@ describe('the import plan: boolean fields and the copy cleanup', () => {
     const tmp = h.calls[0]![2]!.split(':')[1]!;
     expect(h.calls).toEqual([
       ['cp', '/f', `nd-db-pg:${tmp}`],
-      importCommand('postgres', 'nd-db-pg', tmp, { ...plan, sandboxFlag: null }, 'pw'),
+      importCommand('postgres', 'nd-db-pg', tmp, { ...plan, sandboxFlag: null }, 'pw').argv,
       ['exec', 'nd-db-pg', 'rm', '-f', tmp],
     ]);
   });

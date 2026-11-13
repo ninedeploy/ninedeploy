@@ -19,6 +19,81 @@
  * mariadb `root`). Pure: no I/O, no import of the engine (the agent loads it).
  */
 
+/**
+ * A docker argv and the variables the docker CLI forwards into the container.
+ * A secret travels as `docker exec -e NAME` with the value in the CLI's own
+ * environment, never as an argv element: every argv is readable by any local
+ * user (`ps`, `/proc/<pid>/cmdline`), on the host and in the container, while
+ * a process's environment is readable only by its own user and root.
+ */
+export interface DbCommand {
+  argv: string[];
+  env: Record<string, string>;
+}
+
+/** Spawn options for a {@link DbCommand}: its variables, or nothing when it has none. */
+export const dbCommandEnv = (command: DbCommand): { env?: Record<string, string> } =>
+  Object.keys(command.env).length > 0 ? { env: command.env } : {};
+
+/** The variable that carries a mysql/mariadb `[client]` option file. */
+export const MYSQL_CNF_VAR = 'ND_MYSQL_CNF';
+
+/** A `[client]` option file that gives the password (backslash and double quote escaped). */
+export function mysqlClientConfig(password: string): string {
+  return `[client]\npassword="${password.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"\n`;
+}
+
+/**
+ * `sh -c` scripts that hand the option file in {@link MYSQL_CNF_VAR} to the
+ * client on fd 3 (`--defaults-extra-file=/dev/fd/3`, which must come first),
+ * so stdin stays free for a dump. A heredoc expands the variable once and
+ * never evaluates its value. Proven against mysql 8.0 / 9.7 and mariadb
+ * 10.6 / 12.3 with a password holding `#"\;$'` and spaces.
+ */
+const MYSQL_WITH_CNF = ['c="$1"; shift', 'exec "$c" --defaults-extra-file=/dev/fd/3 "$@" 3<<ND_CNF', `$${MYSQL_CNF_VAR}`, 'ND_CNF'].join('\n');
+const MYSQL_WITH_CNF_FROM_FILE = ['f="$1"; c="$2"; shift 2', 'exec "$c" --defaults-extra-file=/dev/fd/3 "$@" < "$f" 3<<ND_CNF', `$${MYSQL_CNF_VAR}`, 'ND_CNF'].join('\n');
+
+/**
+ * Run a mysql/mariadb client (`mysql`, `mariadb`, `mysqldump`, `mariadb-dump`)
+ * as root with the password from an option file, optionally reading `stdinFile`
+ * (a path inside the container) as its input. Feeding the file on stdin
+ * rather than `-e "source <file>"`: MySQL 9's client no longer runs client
+ * commands in `-e` unless given `--commands`, which older clients refuse.
+ */
+export function mysqlCommand(
+  cn: string,
+  binary: string,
+  password: string,
+  args: readonly string[],
+  stdinFile?: string,
+  opts: { dropGtidPurged?: boolean } = {},
+): DbCommand {
+  const script = !stdinFile ? MYSQL_WITH_CNF : opts.dropGtidPurged ? MYSQL_WITH_CNF_FROM_FILE_NO_GTID : MYSQL_WITH_CNF_FROM_FILE;
+  return {
+    argv: ['exec', '-e', MYSQL_CNF_VAR, cn, 'sh', '-c', script, 'sh', ...(stdinFile ? [stdinFile] : []), binary, ...args],
+    env: { [MYSQL_CNF_VAR]: mysqlClientConfig(password) },
+  };
+}
+
+/**
+ * MySQL with GTIDs on (the 9.x images' default) writes
+ * `SET @@GLOBAL.GTID_PURGED=…` into a dump unless told not to, and restoring
+ * that dump into the server that wrote it fails: "ERROR 3546 … must not
+ * overlap with @@GLOBAL.GTID_EXECUTED". Backups are taken with
+ * `--set-gtid-purged=OFF`; a restore also drops the statement (one line, or
+ * several for a multi-server set, up to the one ending in `;`) from the
+ * container's own temporary copy, so backups taken before that restore too.
+ * POSIX sed; proven on mysql 8.0, 8.4 and 9.7.
+ */
+const DROP_GTID_PURGED = ['/^SET @@GLOBAL.GTID_PURGED=/{', ':a', '/;$/!{', 'N', 'ba', '}', 'd', '}'].join('\n');
+const MYSQL_WITH_CNF_FROM_FILE_NO_GTID = [
+  'f="$1"; c="$2"; shift 2',
+  `sed -i -e '${DROP_GTID_PURGED}' "$f" &&`,
+  'exec "$c" --defaults-extra-file=/dev/fd/3 "$@" < "$f" 3<<ND_CNF',
+  `$${MYSQL_CNF_VAR}`,
+  'ND_CNF',
+].join('\n');
+
 /** Engines a managed database can run. */
 export const DATABASE_ENGINES = ['postgres', 'mysql', 'mariadb', 'redis', 'mongo', 'valkey', 'clickhouse', 'meilisearch', 'rabbitmq', 'keydb', 'dragonfly'] as const;
 export type DatabaseEngineName = (typeof DATABASE_ENGINES)[number];
@@ -77,21 +152,23 @@ const PG_DB = 'app';
 const MONGO_USER = 'nine';
 
 /** `databaseSize`: the engine's size query, or null when the engine has none (size 0). */
-export function sizeCommand(engine: string, cn: string, password: string): string[] | null {
-  if (engine === 'postgres') return ['exec', cn, 'psql', '-U', PG_USER, '-d', PG_DB, '-tAc', 'SELECT pg_database_size(current_database())'];
-  if (isRedisFamily(engine)) return redisCliArgv(engine, cn, password, 'INFO', 'memory');
+export function sizeCommand(engine: string, cn: string, password: string): DbCommand | null {
+  if (engine === 'postgres') return { argv: ['exec', cn, 'psql', '-U', PG_USER, '-d', PG_DB, '-tAc', 'SELECT pg_database_size(current_database())'], env: {} };
+  if (isRedisFamily(engine)) return { argv: redisCliArgv(engine, cn, password, 'INFO', 'memory'), env: {} };
   if (engine === 'mysql' || engine === 'mariadb') {
-    return [
-      'exec', cn, engine === 'mysql' ? 'mysql' : 'mariadb', '-uroot', `--password=${password}`, '-N',
-      '-e', 'SELECT IFNULL(SUM(data_length+index_length),0) FROM information_schema.tables',
-    ];
+    return mysqlCommand(cn, engine === 'mysql' ? 'mysql' : 'mariadb', password, [
+      '-uroot', '-N', '-e', 'SELECT IFNULL(SUM(data_length+index_length),0) FROM information_schema.tables',
+    ]);
   }
   if (engine === 'mongo') {
-    return [
-      'exec', cn, 'mongosh',
-      '-u', MONGO_USER, '-p', password, '--authenticationDatabase', 'admin',
-      '--quiet', '--eval', 'db.getSiblingDB("app").stats().dataSize',
-    ];
+    return {
+      argv: [
+        'exec', cn, 'mongosh',
+        '-u', MONGO_USER, '-p', password, '--authenticationDatabase', 'admin',
+        '--quiet', '--eval', 'db.getSiblingDB("app").stats().dataSize',
+      ],
+      env: {},
+    };
   }
   return null;
 }
@@ -107,20 +184,23 @@ export function parseSizeOutput(engine: string, out: string): number {
 }
 
 /** `probeDatabaseCredentials`: one real sign-in with the stored credentials, or null (no probe: false). */
-export function probeCommand(engine: string, cn: string, password: string): string[] | null {
+export function probeCommand(engine: string, cn: string, password: string): DbCommand | null {
   if (engine === 'postgres') {
-    return ['exec', '-e', `PGPASSWORD=${password}`, cn, 'psql', '-h', '127.0.0.1', '-U', PG_USER, '-d', PG_DB, '-tAc', 'SELECT 1'];
+    return { argv: ['exec', '-e', 'PGPASSWORD', cn, 'psql', '-h', '127.0.0.1', '-U', PG_USER, '-d', PG_DB, '-tAc', 'SELECT 1'], env: { PGPASSWORD: password } };
   }
   if (engine === 'mysql' || engine === 'mariadb') {
-    return ['exec', cn, engine === 'mysql' ? 'mysql' : 'mariadb', '-uroot', `--password=${password}`, '-N', '-e', 'SELECT 1'];
+    return mysqlCommand(cn, engine === 'mysql' ? 'mysql' : 'mariadb', password, ['-uroot', '-N', '-e', 'SELECT 1']);
   }
   if (engine === 'mongo') {
-    return [
-      'exec', cn, 'mongosh', '-u', MONGO_USER, '-p', password, '--authenticationDatabase', 'admin',
-      '--quiet', '--eval', 'db.getSiblingDB("app").runCommand({ ping: 1 }).ok',
-    ];
+    return {
+      argv: [
+        'exec', cn, 'mongosh', '-u', MONGO_USER, '-p', password, '--authenticationDatabase', 'admin',
+        '--quiet', '--eval', 'db.getSiblingDB("app").runCommand({ ping: 1 }).ok',
+      ],
+      env: {},
+    };
   }
-  if (isRedisFamily(engine)) return redisCliArgv(engine, cn, password, 'PING');
+  if (isRedisFamily(engine)) return { argv: redisCliArgv(engine, cn, password, 'PING'), env: {} };
   return null;
 }
 
@@ -152,10 +232,10 @@ export const SANDBOX_FLAGS: ReadonlySet<string> = new Set(['--sandbox', '--syste
  * host `docker cp`s it, the node streams it with `cat`); `cleanup` removes a
  * temporary dump (null: redis' own file stays).
  */
-export function dumpCommands(engine: string, cn: string, tmp: string, password: string): { dump: string[]; file: string; cleanup: string[] | null } {
+export function dumpCommands(engine: string, cn: string, tmp: string, password: string): { dump: DbCommand; file: string; cleanup: string[] | null } {
   if (engine === 'postgres') {
     return {
-      dump: ['exec', cn, 'pg_dump', '-U', PG_USER, '-d', PG_DB, '--clean', '--if-exists', `--file=${tmp}`],
+      dump: { argv: ['exec', cn, 'pg_dump', '-U', PG_USER, '-d', PG_DB, '--clean', '--if-exists', `--file=${tmp}`], env: {} },
       file: tmp,
       cleanup: ['exec', cn, 'rm', '-f', tmp],
     };
@@ -163,7 +243,10 @@ export function dumpCommands(engine: string, cn: string, tmp: string, password: 
   if (engine === 'mysql' || engine === 'mariadb') {
     const dumper = engine === 'mysql' ? 'mysqldump' : 'mariadb-dump';
     return {
-      dump: ['exec', cn, dumper, '-uroot', `--password=${password}`, '--single-transaction', '--quick', '--all-databases', `--result-file=${tmp}`],
+      // MySQL: no SET @@GLOBAL.GTID_PURGED (see DROP_GTID_PURGED); mariadb-dump has no such statement or flag.
+      dump: mysqlCommand(cn, dumper, password, [
+        '-uroot', '--single-transaction', '--quick', '--all-databases', ...(engine === 'mysql' ? ['--set-gtid-purged=OFF'] : []), `--result-file=${tmp}`,
+      ]),
       file: tmp,
       cleanup: ['exec', cn, 'rm', '-f', tmp],
     };
@@ -172,11 +255,11 @@ export function dumpCommands(engine: string, cn: string, tmp: string, password: 
     // Dragonfly: `SAVE RDB` names the format, so a changed `df_snapshot_format` default cannot turn the dump into a .dfs set.
     // (Dragonfly pads the file with zeros to a multiple of 4096 bytes; it is still a valid RDB file.)
     const save = engine === 'dragonfly' ? redisCliArgv(engine, cn, password, 'SAVE', 'RDB') : redisCliArgv(engine, cn, password, 'SAVE');
-    return { dump: save, file: REDIS_DUMP_PATH, cleanup: null };
+    return { dump: { argv: save, env: {} }, file: REDIS_DUMP_PATH, cleanup: null };
   }
   if (engine === 'mongo') {
     return {
-      dump: ['exec', cn, 'mongodump', '-u', MONGO_USER, '-p', password, '--authenticationDatabase', 'admin', `--archive=${tmp}`, '--gzip'],
+      dump: { argv: ['exec', cn, 'mongodump', '-u', MONGO_USER, '-p', password, '--authenticationDatabase', 'admin', `--archive=${tmp}`, '--gzip'], env: {} },
       file: tmp,
       cleanup: ['exec', cn, 'rm', '-f', tmp],
     };
@@ -189,13 +272,14 @@ export function dumpCommands(engine: string, cn: string, tmp: string, password: 
  * caller copied to `tmp` inside the container. redis/valkey have no command —
  * their restore is stop, copy over `/data/dump.rdb`, start.
  */
-export function restoreCommand(engine: string, cn: string, tmp: string, password: string): string[] {
-  if (engine === 'postgres') return ['exec', cn, 'psql', '-v', 'ON_ERROR_STOP=1', '--single-transaction', '-U', PG_USER, '-d', PG_DB, '-f', tmp];
+export function restoreCommand(engine: string, cn: string, tmp: string, password: string): DbCommand {
+  if (engine === 'postgres') return { argv: ['exec', cn, 'psql', '-v', 'ON_ERROR_STOP=1', '--single-transaction', '-U', PG_USER, '-d', PG_DB, '-f', tmp], env: {} };
   if (engine === 'mysql' || engine === 'mariadb') {
-    return ['exec', cn, engine === 'mysql' ? 'mysql' : 'mariadb', '-uroot', `--password=${password}`, '-e', `source ${tmp}`];
+    // The dump on stdin: a batch-mode client stops at the first failing statement and exits non-zero.
+    return mysqlCommand(cn, engine === 'mysql' ? 'mysql' : 'mariadb', password, ['-uroot'], tmp, { dropGtidPurged: engine === 'mysql' });
   }
   if (engine === 'mongo') {
-    return ['exec', cn, 'mongorestore', '-u', MONGO_USER, '-p', password, '--authenticationDatabase', 'admin', `--archive=${tmp}`, '--gzip', '--drop'];
+    return { argv: ['exec', cn, 'mongorestore', '-u', MONGO_USER, '-p', password, '--authenticationDatabase', 'admin', `--archive=${tmp}`, '--gzip', '--drop'], env: {} };
   }
   throw new Error(`restore not supported for ${engine}`);
 }

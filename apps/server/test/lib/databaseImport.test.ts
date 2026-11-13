@@ -310,7 +310,7 @@ describe('psql meta-command allowlist (operators and non-operators alike)', () =
     // the scanner treats it as data because ON_ERROR_STOP=1 (always passed,
     // never switchable off by the dump) stops psql at the failure instead.
     expect(await scan('COPY public.missing_table (a) FROM stdin;\n\\! id\n\\.\n')).toBeNull();
-    expect(importCommand('postgres', 'c', '/tmp/f', { format: 'pg_plain' }, 'pw')).toEqual(expect.arrayContaining(['-v', 'ON_ERROR_STOP=1']));
+    expect(importCommand('postgres', 'c', '/tmp/f', { format: 'pg_plain' }, 'pw').argv).toEqual(expect.arrayContaining(['-v', 'ON_ERROR_STOP=1']));
     expect(await scan('\\set ON_ERROR_STOP off\n')).toMatch(/ON_ERROR_STOP off/);
   });
 

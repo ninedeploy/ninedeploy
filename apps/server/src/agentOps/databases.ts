@@ -3,6 +3,8 @@ import { constants as fsc, createReadStream, fstatSync, mkdtempSync, openSync, r
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
+  type DbCommand,
+  dbCommandEnv,
   dumpCommands,
   dumpTmpPath,
   importTmpPath,
@@ -75,16 +77,20 @@ function knownKeys(params: Params, allowed: readonly string[]): void {
   for (const key of Object.keys(params)) if (!allowed.includes(key)) throw new Error(`Invalid database param: ${key}`);
 }
 
-/** Run docker, collecting its output (for the result line or the error message). */
-async function docker(argv: string[], timeoutMs = DB_SHORT_TIMEOUT_MS): Promise<{ code: number; lines: string[] }> {
+/**
+ * Run docker, collecting its output (for the result line or the error
+ * message). `env` holds the secrets a {@link DbCommand} forwards with
+ * `docker exec -e NAME`.
+ */
+async function docker(argv: string[], timeoutMs = DB_SHORT_TIMEOUT_MS, env?: Record<string, string>): Promise<{ code: number; lines: string[] }> {
   const lines: string[] = [];
-  const code = await spawnValidated('docker', argv, (l) => lines.push(l), { timeoutMs });
+  const code = await spawnValidated('docker', argv, (l) => lines.push(l), { timeoutMs, ...(env ? dbCommandEnv({ argv, env }) : {}) });
   return { code, lines };
 }
 
-/** Run docker or throw with the tail of its output (never the argv: it can carry the password). */
-async function mustDocker(argv: string[], what: string, timeoutMs = DB_SHORT_TIMEOUT_MS): Promise<string[]> {
-  const res = await docker(argv, timeoutMs);
+/** Run docker or throw with the tail of its output (never the argv). */
+async function mustDocker(argv: string[], what: string, timeoutMs = DB_SHORT_TIMEOUT_MS, env?: Record<string, string>): Promise<string[]> {
+  const res = await docker(argv, timeoutMs, env);
   if (res.code !== 0) throw new Error(`${what} exited with ${res.code}: ${res.lines.join(' ').slice(-500)}`);
   return res.lines;
 }
@@ -120,14 +126,15 @@ async function execOp(params: Params, onLine: (line: string) => void): Promise<n
   const query = params['query'];
   if (!DB_QUERIES.includes(query as (typeof DB_QUERIES)[number])) throw new Error('Invalid database query');
   const password = params['password'] === undefined ? '' : passwordOperand(params['password']);
-  const argv =
-    query === 'size' ? sizeCommand(engine, cn, password) : query === 'probe' ? probeCommand(engine, cn, password) : mysqlHelpCommand(engine, cn);
-  if (argv === null) {
+  const help = mysqlHelpCommand(engine, cn);
+  const command: DbCommand | null =
+    query === 'size' ? sizeCommand(engine, cn, password) : query === 'probe' ? probeCommand(engine, cn, password) : help && { argv: help, env: {} };
+  if (command === null) {
     onLine(`ND-DB-UNSUPPORTED ${query} ${engine}`);
     return 0;
   }
   await assertManagedDatabase(cn);
-  return spawnValidated('docker', argv, onLine, { timeoutMs: DB_SHORT_TIMEOUT_MS });
+  return spawnValidated('docker', command.argv, onLine, { timeoutMs: DB_SHORT_TIMEOUT_MS, ...dbCommandEnv(command) });
 }
 
 export const databaseOps: AgentOpModule = {
@@ -232,7 +239,7 @@ export const dbDumpKind: StreamKindHandler = {
       direction: 'agent-to-panel',
       async start() {
         try {
-          const reply = await mustDocker(plan.dump, 'the dump', DB_LONG_TIMEOUT_MS);
+          const reply = await mustDocker(plan.dump.argv, 'the dump', DB_LONG_TIMEOUT_MS, plan.dump.env);
           // Redis-family clients can exit 0 on a SAVE error reply; never stream a stale RDB.
           const problem = saveReplyProblem(engine, reply.join('\n'));
           if (problem) throw new Error(problem);
@@ -295,11 +302,11 @@ async function replaceRedisData(cn: string, file: string): Promise<void> {
   }
 }
 
-/** Copy `file` into the container at `tmp`, run `argv`, always remove `tmp`. */
-async function runAgainstCopy(cn: string, file: string, tmp: string, argv: string[], what: string): Promise<void> {
+/** Copy `file` into the container at `tmp`, run `command`, always remove `tmp`. */
+async function runAgainstCopy(cn: string, file: string, tmp: string, command: DbCommand, what: string): Promise<void> {
   try {
     await mustDocker(['cp', file, `${cn}:${tmp}`], 'docker cp', DB_LONG_TIMEOUT_MS);
-    await mustDocker(argv, what, DB_LONG_TIMEOUT_MS);
+    await mustDocker(command.argv, what, DB_LONG_TIMEOUT_MS, command.env);
   } finally {
     await docker(['exec', cn, 'rm', '-f', tmp]).catch(() => undefined);
   }

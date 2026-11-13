@@ -1,4 +1,5 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { mysqlCommand } from '../src/lib/databaseCommands.js';
 import { existsSync as existsSyncMock, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { createCipheriv, createDecipheriv } from 'node:crypto';
 import os from 'node:os';
@@ -763,9 +764,11 @@ describe('backupDatabase', () => {
     writeFileSync(file, '');
     const log = vi.fn();
     await backupDatabase(dbRow({ engine: 'mysql' }), file, log);
-    expect(h.run).toHaveBeenCalledWith('docker', [
-      'exec', 'c', 'mysqldump', '-uroot', '--password=pw:enc', '--single-transaction', '--quick', '--all-databases', expect.stringMatching(/^--result-file=\/tmp\/ninedeploy-dump-[a-f0-9-]+$/),
-    ], {}, log);
+    // The password in an option file the docker CLI forwards by name, never in the argv.
+    // --set-gtid-purged=OFF: a 9.x dump otherwise cannot be restored into the server that wrote it.
+    const dump = mysqlCommand('c', 'mysqldump', 'pw:enc', ['-uroot', '--single-transaction', '--quick', '--all-databases', '--set-gtid-purged=OFF', expect.stringMatching(/^--result-file=\/tmp\/ninedeploy-dump-[a-f0-9-]+$/) as unknown as string]);
+    expect(h.run).toHaveBeenCalledWith('docker', dump.argv, { env: dump.env }, log);
+    expect(JSON.stringify(h.run.mock.calls.map((c: unknown[]) => c[1]))).not.toContain('pw:enc');
     expect(h.run).toHaveBeenCalledWith('docker', ['cp', expect.stringMatching(/^c:\/tmp\/ninedeploy-dump-[a-f0-9-]+$/), file], {}, log);
     expect(h.decrypt).toHaveBeenCalledWith('enc');
     expect(h.capture).not.toHaveBeenCalled();
@@ -830,7 +833,7 @@ describe('backupDatabase', () => {
 
   it('r276: a failed dump still removes whatever it left in the container', async () => {
     h.run.mockImplementation(async (_cmd: string, args: unknown[]) => {
-      if ((args as string[])[2] === 'mysqldump') throw new Error('mysqldump: Got errno 28 on write');
+      if ((args as string[]).includes('mysqldump')) throw new Error('mysqldump: Got errno 28 on write');
     });
     await expect(backupDatabase(dbRow({ engine: 'mysql' }), path.join(tmp, 'dump-fails.sql'), vi.fn())).rejects.toThrow(
       'errno 28',
@@ -996,14 +999,14 @@ describe('restoreDatabase', () => {
     expect(h.run).toHaveBeenCalledWith('docker', ['cp', file, expect.stringMatching(/^c:\/tmp\/ninedeploy-restore-[a-f0-9-]+$/)], {}, log);
   });
 
-  it('restores mysql with the decrypted password via source (no shell interpolation)', async () => {
+  it('restores mysql with the decrypted password in an option file and the dump on stdin (MySQL 9 ignores `source` in -e)', async () => {
     const log = vi.fn();
     const file = encFile('USE app;');
     await restoreDatabase(dbRow({ engine: 'mysql' }), file, log);
     expect(h.run).toHaveBeenCalledWith('docker', ['cp', expect.stringMatching(/\.[a-f0-9-]+\.dec$/), expect.stringMatching(/^c:\/tmp\/ninedeploy-restore-[a-f0-9-]+$/)], {}, log);
-    expect(h.run).toHaveBeenCalledWith('docker', [
-      'exec', 'c', 'mysql', '-uroot', '--password=pw:enc', '-e', expect.stringMatching(/^source \/tmp\/ninedeploy-restore-[a-f0-9-]+$/),
-    ], {}, log);
+    const restore = mysqlCommand('c', 'mysql', 'pw:enc', ['-uroot'], expect.stringMatching(/^\/tmp\/ninedeploy-restore-[a-f0-9-]+$/) as unknown as string, { dropGtidPurged: true });
+    expect(restore.argv[6]).toContain('GTID_PURGED');
+    expect(h.run).toHaveBeenCalledWith('docker', restore.argv, { env: restore.env }, log);
     expect(h.decrypt).toHaveBeenCalledWith('enc');
   });
 
@@ -1012,9 +1015,8 @@ describe('restoreDatabase', () => {
     writeFileSync(file, '');
     const log = vi.fn();
     await backupDatabase(dbRow({ engine: 'mariadb' }), file, log);
-    expect(h.run).toHaveBeenCalledWith('docker', [
-      'exec', 'c', 'mariadb-dump', '-uroot', '--password=pw:enc', '--single-transaction', '--quick', '--all-databases', expect.stringMatching(/^--result-file=\/tmp\/ninedeploy-dump-[a-f0-9-]+$/),
-    ], {}, log);
+    const dump = mysqlCommand('c', 'mariadb-dump', 'pw:enc', ['-uroot', '--single-transaction', '--quick', '--all-databases', expect.stringMatching(/^--result-file=\/tmp\/ninedeploy-dump-[a-f0-9-]+$/) as unknown as string]);
+    expect(h.run).toHaveBeenCalledWith('docker', dump.argv, { env: dump.env }, log);
     expect(h.run).toHaveBeenCalledWith('docker', ['cp', expect.stringMatching(/^c:\/tmp\/ninedeploy-dump-[a-f0-9-]+$/), file], {}, log);
     expect(h.capture).not.toHaveBeenCalled();
     expect(readFileSync(file).subarray(0, 6).toString()).toBe('NDBK1:');
@@ -1024,18 +1026,15 @@ describe('restoreDatabase', () => {
     const log = vi.fn();
     const file = encFile('USE app;');
     await restoreDatabase(dbRow({ engine: 'mariadb' }), file, log);
-    expect(h.run).toHaveBeenCalledWith('docker', [
-      'exec', 'c', 'mariadb', '-uroot', '--password=pw:enc', '-e', expect.stringMatching(/^source \/tmp\/ninedeploy-restore-[a-f0-9-]+$/),
-    ], {}, log);
+    const restore = mysqlCommand('c', 'mariadb', 'pw:enc', ['-uroot'], expect.stringMatching(/^\/tmp\/ninedeploy-restore-[a-f0-9-]+$/) as unknown as string);
+    expect(h.run).toHaveBeenCalledWith('docker', restore.argv, { env: restore.env }, log);
   });
 
   it('queries the mariadb size like mysql', async () => {
     h.capture.mockResolvedValueOnce('4242');
     await expect(databaseSize(dbRow({ engine: 'mariadb' }))).resolves.toBe(4242);
-    expect(h.capture).toHaveBeenCalledWith('docker', [
-      'exec', 'c', 'mariadb', '-uroot', '--password=pw:enc', '-N',
-      '-e', 'SELECT IFNULL(SUM(data_length+index_length),0) FROM information_schema.tables',
-    ]);
+    const size = mysqlCommand('c', 'mariadb', 'pw:enc', ['-uroot', '-N', '-e', 'SELECT IFNULL(SUM(data_length+index_length),0) FROM information_schema.tables']);
+    expect(h.capture).toHaveBeenCalledWith('docker', size.argv, { env: size.env });
   });
 
   it('restores mongo via docker cp + mongorestore --archive=path', async () => {
@@ -1100,12 +1099,8 @@ describe('restoreDatabase', () => {
   it('restores a mariadb database using the mariadb CLI client', async () => {
     const file = encFile('mariadb-backup');
     await restoreDatabase(dbRow({ engine: 'mariadb', passwordEncrypted: 'enc-pass' }), file, vi.fn());
-    expect(h.run).toHaveBeenCalledWith(
-      'docker',
-      ['exec', 'c', 'mariadb', '-uroot', '--password=pw:enc-pass', '-e', expect.stringMatching(/^source \/tmp\/ninedeploy-restore-[a-f0-9-]+$/)],
-      {},
-      expect.any(Function),
-    );
+    const restore = mysqlCommand('c', 'mariadb', 'pw:enc-pass', ['-uroot'], expect.stringMatching(/^\/tmp\/ninedeploy-restore-[a-f0-9-]+$/) as unknown as string);
+    expect(h.run).toHaveBeenCalledWith('docker', restore.argv, { env: restore.env }, expect.any(Function));
   });
 
   it('restarts a running database container', async () => {

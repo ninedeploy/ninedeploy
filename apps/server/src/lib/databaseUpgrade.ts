@@ -48,6 +48,7 @@ import { capture, run } from './exec.js';
 import { createLogger } from './log.js';
 import { pullDockerImage } from './dockerPull.js';
 import { decrypt } from './crypto.js';
+import { mysqlClientConfig } from './databaseCommands.js';
 import {
   copyDockerVolume,
   createDockerVolume,
@@ -219,7 +220,7 @@ export interface DatabaseUpgradeDeps {
  * comment.
  */
 export function mysqlClientOptions(password: string): Buffer {
-  return Buffer.from(`[client]\npassword="${password.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"\n`);
+  return Buffer.from(mysqlClientConfig(password));
 }
 
 /**

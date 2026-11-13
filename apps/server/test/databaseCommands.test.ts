@@ -6,8 +6,12 @@ import {
   saveReplyProblem,
   DATABASE_ENGINES,
   DUMPABLE_ENGINES,
+  dbCommandEnv,
   dumpCommands,
   dumpTmpPath,
+  MYSQL_CNF_VAR,
+  mysqlClientConfig,
+  mysqlCommand,
   isDatabaseEngine,
   isRedisFamily,
   mysqlHelpCommand,
@@ -33,11 +37,13 @@ import {
  * size or credential probe asks the same question.
  */
 
-type Event = { fn: string; args?: string[] };
+type Event = { fn: string; args?: string[]; opts?: { env?: Record<string, string> } };
 const fixture = JSON.parse(readFileSync(new URL('./fixtures/databaseArgv015.json', import.meta.url), 'utf8')) as Record<string, { events: Event[] }>;
 const UUID = '00000000-0000-4000-8000-000000000000';
 const PW = 'pw-secret';
-const docker = (name: string, fn: 'run' | 'capture' = 'run') => fixture[name]!.events.filter((e) => e.fn === fn).map((e) => e.args!);
+/** The recorded docker calls of a scenario, as the command (argv and the variables it forwards) the builders return. */
+const docker = (name: string, fn: 'run' | 'capture' = 'run') =>
+  fixture[name]!.events.filter((e) => e.fn === fn).map((e) => ({ argv: e.args!, env: e.opts?.env ?? {} }));
 
 const ROWS = [
   ['postgres', 'nd-db-postgres'],
@@ -59,7 +65,7 @@ describe('the shared builders equal the v0.15.0 panel-host argv', () => {
       const probe = docker(`${engine} probe credentials`, 'capture');
       expect(probeCommand(engine, cn, PW)).toEqual(probe[0] ?? null);
       const help = docker(`${engine} probe sandbox`, 'capture');
-      expect(mysqlHelpCommand(engine, cn)).toEqual(help[0] ?? null);
+      expect(mysqlHelpCommand(engine, cn)).toEqual(help[0]?.argv ?? null);
     });
 
     it(`${engine}: the dump and the restore`, () => {
@@ -73,9 +79,9 @@ describe('the shared builders equal the v0.15.0 panel-host argv', () => {
       const plan = dumpCommands(engine, cn, dumpTmpPath(UUID), PW);
       // The dump command, then (panel host) `docker cp` of exactly plan.file, then the cleanup.
       expect(backup[0]).toEqual(plan.dump);
-      expect(backup[1]![0]).toBe('cp');
-      expect(backup[1]![1]).toBe(`${cn}:${plan.file}`);
-      expect(backup[2] ?? null).toEqual(plan.cleanup);
+      expect(backup[1]!.argv[0]).toBe('cp');
+      expect(backup[1]!.argv[1]).toBe(`${cn}:${plan.file}`);
+      expect(backup[2]?.argv ?? null).toEqual(plan.cleanup);
       if (engine === 'redis' || engine === 'valkey') return; // stop / cp / start: no command of its own
       const restore = docker(`${engine} restore`);
       expect(restore[1]).toEqual(restoreCommand(engine, cn, restoreTmpPath(UUID), PW));
@@ -132,7 +138,7 @@ describe('0.15.6: keydb and dragonfly share the redis family builders', () => {
     for (const engine of ['redis', 'valkey']) {
       expect(redisCliArgv(engine, 'c', PW, 'PING')).toEqual(['exec', 'c', 'redis-cli', '-a', PW, '--no-auth-warning', 'PING']);
       expect(dumpCommands(engine, 'c', dumpTmpPath(UUID), PW)).toEqual({
-        dump: ['exec', 'c', 'redis-cli', '-a', PW, '--no-auth-warning', 'SAVE'],
+        dump: { argv: ['exec', 'c', 'redis-cli', '-a', PW, '--no-auth-warning', 'SAVE'], env: {} },
         file: '/data/dump.rdb',
         cleanup: null,
       });
@@ -143,11 +149,11 @@ describe('0.15.6: keydb and dragonfly share the redis family builders', () => {
     it(`${engine}: size, probe and dump`, () => {
       // Every engine runs its client inside its own container: the Dragonfly image ships a real redis-cli.
       const run = (...cmd: string[]) => ['exec', cn, cli, '-a', PW, '--no-auth-warning', ...cmd];
-      expect(sizeCommand(engine, cn, PW)).toEqual(run('INFO', 'memory'));
-      expect(probeCommand(engine, cn, PW)).toEqual(run('PING'));
+      expect(sizeCommand(engine, cn, PW)).toEqual({ argv: run('INFO', 'memory'), env: {} });
+      expect(probeCommand(engine, cn, PW)).toEqual({ argv: run('PING'), env: {} });
       expect(mysqlHelpCommand(engine, cn)).toBeNull();
       const plan = dumpCommands(engine, cn, dumpTmpPath(UUID), PW);
-      expect(plan).toEqual({ dump: run('SAVE', ...(engine === 'dragonfly' ? ['RDB'] : [])), file: REDIS_DUMP_PATH, cleanup: null });
+      expect(plan).toEqual({ dump: { argv: run('SAVE', ...(engine === 'dragonfly' ? ['RDB'] : [])), env: {} }, file: REDIS_DUMP_PATH, cleanup: null });
       expect(REDIS_DUMP_PATH).toBe('/data/dump.rdb');
       // A restore has no command: it is stop / copy over dump.rdb / start (same as redis).
       expect(() => restoreCommand(engine, cn, restoreTmpPath(UUID), PW)).toThrow(`restore not supported for ${engine}`);
@@ -181,5 +187,64 @@ describe('0.15.6: keydb and dragonfly share the redis family builders', () => {
       expect(argv.indexOf('-a')).toBe(argv.indexOf(PW) - 1);
       expect(argv).not.toContain('run');
     }
+  });
+});
+
+describe('passwords never ride the argv (PostgreSQL, MySQL, MariaDB)', () => {
+  const SECRET = 'Sec#1"x;z $q';
+  const everyCommand = (engine: string, cn: string) => [
+    sizeCommand(engine, cn, SECRET),
+    probeCommand(engine, cn, SECRET),
+    dumpCommands(engine, cn, dumpTmpPath(UUID), SECRET).dump,
+    restoreCommand(engine, cn, restoreTmpPath(UUID), SECRET),
+  ].filter((c) => c !== null);
+
+  for (const engine of ['postgres', 'mysql', 'mariadb'] as const) {
+    it(`${engine}: no argv element holds the password; the probe's goes in env`, () => {
+      for (const command of everyCommand(engine, `nd-db-${engine}`)) {
+        for (const arg of command!.argv) expect(arg).not.toContain('Sec#1');
+      }
+      const probe = probeCommand(engine, `nd-db-${engine}`, SECRET)!;
+      const secretIn = Object.values(probe.env).join('\n');
+      expect(secretIn).toContain('Sec#1');
+    });
+  }
+
+  it('postgres forwards PGPASSWORD by name only', () => {
+    const probe = probeCommand('postgres', 'nd-db-pg', SECRET)!;
+    expect(probe.argv.slice(0, 4)).toEqual(['exec', '-e', 'PGPASSWORD', 'nd-db-pg']);
+    expect(probe.env).toEqual({ PGPASSWORD: SECRET });
+  });
+
+  it('mysql and mariadb read an option file on fd 3, the dump (if any) on stdin', () => {
+    const plain = mysqlCommand('nd-db-my', 'mysql', SECRET, ['-uroot', '-N', '-e', 'SELECT 1']);
+    expect(plain.argv.slice(0, 7)).toEqual(['exec', '-e', MYSQL_CNF_VAR, 'nd-db-my', 'sh', '-c', expect.stringContaining('--defaults-extra-file=/dev/fd/3')]);
+    expect(plain.argv.slice(7)).toEqual(['sh', 'mysql', '-uroot', '-N', '-e', 'SELECT 1']);
+    expect(plain.env).toEqual({ [MYSQL_CNF_VAR]: mysqlClientConfig(SECRET) });
+    const fromFile = mysqlCommand('nd-db-my', 'mariadb', SECRET, ['-uroot'], '/tmp/dump.sql');
+    expect(fromFile.argv[6]).toContain('< "$f"');
+    expect(fromFile.argv.slice(7)).toEqual(['sh', '/tmp/dump.sql', 'mariadb', '-uroot']);
+    // The restore of a backup: stdin, never `-e "source …"` (MySQL 9 ignores client commands in -e).
+    const restore = restoreCommand('mysql', 'nd-db-my', '/tmp/r.sql', SECRET);
+    expect(restore.argv.join(' ')).not.toContain('source');
+    expect(restore.argv.slice(7)).toEqual(['sh', '/tmp/r.sql', 'mysql', '-uroot']);
+    // MySQL drops an older backup's GTID_PURGED statement first (`sed -i … &&`: a failed sed stops the restore);
+    // MariaDB has no such statement.
+    expect(restore.argv[6]).toMatch(/^f="\$1"; c="\$2"; shift 2\nsed -i -e '\/\^SET @@GLOBAL\.GTID_PURGED=\/\{/);
+    expect(restore.argv[6]).toContain('" &&\nexec "$c" --defaults-extra-file=/dev/fd/3');
+    expect(restoreCommand('mariadb', 'nd-db-my', '/tmp/r.sql', SECRET).argv[6]).not.toContain('GTID');
+    // Backups: MySQL's without the statement, MariaDB's without a flag it does not know.
+    expect(dumpCommands('mysql', 'c', '/tmp/d', SECRET).dump.argv).toContain('--set-gtid-purged=OFF');
+    expect(dumpCommands('mariadb', 'c', '/tmp/d', SECRET).dump.argv).not.toContain('--set-gtid-purged=OFF');
+  });
+
+  it('the option file escapes backslash and double quote, and nothing else', () => {
+    const BS = String.fromCharCode(92);
+    expect(mysqlClientConfig(`a"b${BS}c#d;e $f'g`)).toBe(`[client]\npassword="a${BS}"b${BS}${BS}c#d;e $f'g"\n`);
+  });
+
+  it('spawn options carry the variables only when there are some', () => {
+    expect(dbCommandEnv({ argv: [], env: {} })).toEqual({});
+    expect(dbCommandEnv({ argv: [], env: { A: '1' } })).toEqual({ env: { A: '1' } });
   });
 });

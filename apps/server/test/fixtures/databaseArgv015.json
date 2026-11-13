@@ -362,7 +362,7 @@
         "args": [
           "exec",
           "-e",
-          "PGPASSWORD=pw-secret",
+          "PGPASSWORD",
           "nd-db-postgres",
           "psql",
           "-h",
@@ -374,7 +374,11 @@
           "-tAc",
           "SELECT 1"
         ],
-        "opts": {}
+        "opts": {
+          "env": {
+            "PGPASSWORD": "pw-secret"
+          }
+        }
       }
     ],
     "outcome": {
@@ -1078,7 +1082,7 @@
         "args": [
           "exec",
           "-e",
-          "PGPASSWORD=pw-secret",
+          "PGPASSWORD",
           "nd-db-postgres-16",
           "psql",
           "-h",
@@ -1090,7 +1094,11 @@
           "-tAc",
           "SELECT 1"
         ],
-        "opts": {}
+        "opts": {
+          "env": {
+            "PGPASSWORD": "pw-secret"
+          }
+        }
       }
     ],
     "outcome": {
@@ -1778,7 +1786,7 @@
         "args": [
           "exec",
           "-e",
-          "PGPASSWORD=pw-secret",
+          "PGPASSWORD",
           "nd-db-postgres-vector",
           "psql",
           "-h",
@@ -1790,7 +1798,11 @@
           "-tAc",
           "SELECT 1"
         ],
-        "opts": {}
+        "opts": {
+          "env": {
+            "PGPASSWORD": "pw-secret"
+          }
+        }
       }
     ],
     "outcome": {
@@ -2360,15 +2372,24 @@
         "cmd": "docker",
         "args": [
           "exec",
+          "-e",
+          "ND_MYSQL_CNF",
           "nd-db-mysql",
+          "sh",
+          "-c",
+          "c=\"$1\"; shift\nexec \"$c\" --defaults-extra-file=/dev/fd/3 \"$@\" 3<<ND_CNF\n$ND_MYSQL_CNF\nND_CNF",
+          "sh",
           "mysql",
           "-uroot",
-          "--password=pw-secret",
           "-N",
           "-e",
           "SELECT IFNULL(SUM(data_length+index_length),0) FROM information_schema.tables"
         ],
-        "opts": {}
+        "opts": {
+          "env": {
+            "ND_MYSQL_CNF": "[client]\npassword=\"pw-secret\"\n"
+          }
+        }
       }
     ],
     "outcome": {
@@ -2382,16 +2403,26 @@
         "cmd": "docker",
         "args": [
           "exec",
+          "-e",
+          "ND_MYSQL_CNF",
           "nd-db-mysql",
+          "sh",
+          "-c",
+          "c=\"$1\"; shift\nexec \"$c\" --defaults-extra-file=/dev/fd/3 \"$@\" 3<<ND_CNF\n$ND_MYSQL_CNF\nND_CNF",
+          "sh",
           "mysqldump",
           "-uroot",
-          "--password=pw-secret",
           "--single-transaction",
           "--quick",
           "--all-databases",
+          "--set-gtid-purged=OFF",
           "--result-file=/tmp/ninedeploy-dump-00000000-0000-4000-8000-000000000000"
         ],
-        "opts": {}
+        "opts": {
+          "env": {
+            "ND_MYSQL_CNF": "[client]\npassword=\"pw-secret\"\n"
+          }
+        }
       },
       {
         "fn": "run",
@@ -2437,14 +2468,22 @@
         "cmd": "docker",
         "args": [
           "exec",
-          "nd-db-mysql",
-          "mysql",
-          "-uroot",
-          "--password=pw-secret",
           "-e",
-          "source /tmp/ninedeploy-restore-00000000-0000-4000-8000-000000000000"
+          "ND_MYSQL_CNF",
+          "nd-db-mysql",
+          "sh",
+          "-c",
+          "f=\"$1\"; c=\"$2\"; shift 2\nsed -i -e '/^SET @@GLOBAL.GTID_PURGED=/{\n:a\n/;$/!{\nN\nba\n}\nd\n}' \"$f\" &&\nexec \"$c\" --defaults-extra-file=/dev/fd/3 \"$@\" < \"$f\" 3<<ND_CNF\n$ND_MYSQL_CNF\nND_CNF",
+          "sh",
+          "/tmp/ninedeploy-restore-00000000-0000-4000-8000-000000000000",
+          "mysql",
+          "-uroot"
         ],
-        "opts": {}
+        "opts": {
+          "env": {
+            "ND_MYSQL_CNF": "[client]\npassword=\"pw-secret\"\n"
+          }
+        }
       },
       {
         "fn": "run",
@@ -2470,15 +2509,24 @@
         "cmd": "docker",
         "args": [
           "exec",
+          "-e",
+          "ND_MYSQL_CNF",
           "nd-db-mysql",
+          "sh",
+          "-c",
+          "c=\"$1\"; shift\nexec \"$c\" --defaults-extra-file=/dev/fd/3 \"$@\" 3<<ND_CNF\n$ND_MYSQL_CNF\nND_CNF",
+          "sh",
           "mysql",
           "-uroot",
-          "--password=pw-secret",
           "-N",
           "-e",
           "SELECT 1"
         ],
-        "opts": {}
+        "opts": {
+          "env": {
+            "ND_MYSQL_CNF": "[client]\npassword=\"pw-secret\"\n"
+          }
+        }
       }
     ],
     "outcome": {
@@ -2694,20 +2742,24 @@
         "cmd": "docker",
         "args": [
           "exec",
+          "-e",
+          "ND_MYSQL_CNF",
           "nd-db-mysql",
           "sh",
           "-c",
-          "f=\"$1\"; shift; exec \"$@\" < \"$f\"",
+          "f=\"$1\"; c=\"$2\"; shift 2\nexec \"$c\" --defaults-extra-file=/dev/fd/3 \"$@\" < \"$f\" 3<<ND_CNF\n$ND_MYSQL_CNF\nND_CNF",
           "sh",
           "/tmp/ninedeploy-import-00000000-0000-4000-8000-000000000000",
           "mysql",
           "-uroot",
-          "--password=pw-secret",
           "--system-command=OFF",
           "--local-infile=0",
           "app"
         ],
         "opts": {
+          "env": {
+            "ND_MYSQL_CNF": "[client]\npassword=\"pw-secret\"\n"
+          },
           "timeoutMs": 21600000,
           "heartbeatMs": 60000,
           "heartbeatLabel": "import"
@@ -2983,15 +3035,24 @@
         "cmd": "docker",
         "args": [
           "exec",
+          "-e",
+          "ND_MYSQL_CNF",
           "nd-db-mariadb",
+          "sh",
+          "-c",
+          "c=\"$1\"; shift\nexec \"$c\" --defaults-extra-file=/dev/fd/3 \"$@\" 3<<ND_CNF\n$ND_MYSQL_CNF\nND_CNF",
+          "sh",
           "mariadb",
           "-uroot",
-          "--password=pw-secret",
           "-N",
           "-e",
           "SELECT IFNULL(SUM(data_length+index_length),0) FROM information_schema.tables"
         ],
-        "opts": {}
+        "opts": {
+          "env": {
+            "ND_MYSQL_CNF": "[client]\npassword=\"pw-secret\"\n"
+          }
+        }
       }
     ],
     "outcome": {
@@ -3005,16 +3066,25 @@
         "cmd": "docker",
         "args": [
           "exec",
+          "-e",
+          "ND_MYSQL_CNF",
           "nd-db-mariadb",
+          "sh",
+          "-c",
+          "c=\"$1\"; shift\nexec \"$c\" --defaults-extra-file=/dev/fd/3 \"$@\" 3<<ND_CNF\n$ND_MYSQL_CNF\nND_CNF",
+          "sh",
           "mariadb-dump",
           "-uroot",
-          "--password=pw-secret",
           "--single-transaction",
           "--quick",
           "--all-databases",
           "--result-file=/tmp/ninedeploy-dump-00000000-0000-4000-8000-000000000000"
         ],
-        "opts": {}
+        "opts": {
+          "env": {
+            "ND_MYSQL_CNF": "[client]\npassword=\"pw-secret\"\n"
+          }
+        }
       },
       {
         "fn": "run",
@@ -3060,14 +3130,22 @@
         "cmd": "docker",
         "args": [
           "exec",
-          "nd-db-mariadb",
-          "mariadb",
-          "-uroot",
-          "--password=pw-secret",
           "-e",
-          "source /tmp/ninedeploy-restore-00000000-0000-4000-8000-000000000000"
+          "ND_MYSQL_CNF",
+          "nd-db-mariadb",
+          "sh",
+          "-c",
+          "f=\"$1\"; c=\"$2\"; shift 2\nexec \"$c\" --defaults-extra-file=/dev/fd/3 \"$@\" < \"$f\" 3<<ND_CNF\n$ND_MYSQL_CNF\nND_CNF",
+          "sh",
+          "/tmp/ninedeploy-restore-00000000-0000-4000-8000-000000000000",
+          "mariadb",
+          "-uroot"
         ],
-        "opts": {}
+        "opts": {
+          "env": {
+            "ND_MYSQL_CNF": "[client]\npassword=\"pw-secret\"\n"
+          }
+        }
       },
       {
         "fn": "run",
@@ -3093,15 +3171,24 @@
         "cmd": "docker",
         "args": [
           "exec",
+          "-e",
+          "ND_MYSQL_CNF",
           "nd-db-mariadb",
+          "sh",
+          "-c",
+          "c=\"$1\"; shift\nexec \"$c\" --defaults-extra-file=/dev/fd/3 \"$@\" 3<<ND_CNF\n$ND_MYSQL_CNF\nND_CNF",
+          "sh",
           "mariadb",
           "-uroot",
-          "--password=pw-secret",
           "-N",
           "-e",
           "SELECT 1"
         ],
-        "opts": {}
+        "opts": {
+          "env": {
+            "ND_MYSQL_CNF": "[client]\npassword=\"pw-secret\"\n"
+          }
+        }
       }
     ],
     "outcome": {
@@ -3317,20 +3404,24 @@
         "cmd": "docker",
         "args": [
           "exec",
+          "-e",
+          "ND_MYSQL_CNF",
           "nd-db-mariadb",
           "sh",
           "-c",
-          "f=\"$1\"; shift; exec \"$@\" < \"$f\"",
+          "f=\"$1\"; c=\"$2\"; shift 2\nexec \"$c\" --defaults-extra-file=/dev/fd/3 \"$@\" < \"$f\" 3<<ND_CNF\n$ND_MYSQL_CNF\nND_CNF",
           "sh",
           "/tmp/ninedeploy-import-00000000-0000-4000-8000-000000000000",
           "mariadb",
           "-uroot",
-          "--password=pw-secret",
           "--sandbox",
           "--local-infile=0",
           "app"
         ],
         "opts": {
+          "env": {
+            "ND_MYSQL_CNF": "[client]\npassword=\"pw-secret\"\n"
+          },
           "timeoutMs": 21600000,
           "heartbeatMs": 60000,
           "heartbeatLabel": "import"
@@ -3372,19 +3463,23 @@
         "cmd": "docker",
         "args": [
           "exec",
+          "-e",
+          "ND_MYSQL_CNF",
           "nd-db-mariadb",
           "sh",
           "-c",
-          "f=\"$1\"; shift; exec \"$@\" < \"$f\"",
+          "f=\"$1\"; c=\"$2\"; shift 2\nexec \"$c\" --defaults-extra-file=/dev/fd/3 \"$@\" < \"$f\" 3<<ND_CNF\n$ND_MYSQL_CNF\nND_CNF",
           "sh",
           "/tmp/ninedeploy-import-00000000-0000-4000-8000-000000000000",
           "mariadb",
           "-uroot",
-          "--password=pw-secret",
           "--local-infile=0",
           "app"
         ],
         "opts": {
+          "env": {
+            "ND_MYSQL_CNF": "[client]\npassword=\"pw-secret\"\n"
+          },
           "timeoutMs": 21600000,
           "heartbeatMs": 60000,
           "heartbeatLabel": "import"

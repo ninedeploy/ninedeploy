@@ -43,6 +43,7 @@ const { databaseOps, dbDumpKind, dbRestoreKind } = await import('../src/agentOps
 const { STREAM_KIND_HANDLERS } = await import('../src/agentOps/stream.js');
 const { AGENT_STREAM_KINDS } = await import('../src/lib/agentStream.js');
 const { dumpCommands, restoreCommand } = await import('../src/lib/databaseCommands.js');
+const { spawnValidated } = await import('../src/lib/spawnValidated.js');
 
 const run = (op: string, params: Record<string, unknown>, sealed = true, env: NodeJS.ProcessEnv = {}) => {
   const lines: string[] = [];
@@ -114,7 +115,7 @@ describe('the db.dump stream kind', () => {
     expect(await source.done).toEqual({ engine: 'postgres' });
     const tmp = (h.calls[1]!.find((a) => a.startsWith('--file=')) ?? '').slice('--file='.length);
     expect(tmp).toMatch(/^\/tmp\/ninedeploy-dump-[0-9a-f-]{36}$/);
-    expect(h.calls[1]).toEqual(dumpCommands('postgres', 'nd-db-pg', tmp, 'pw').dump);
+    expect(h.calls[1]).toEqual(dumpCommands('postgres', 'nd-db-pg', tmp, 'pw').dump.argv);
     expect(h.streams).toEqual([['exec', 'nd-db-pg', 'cat', tmp]]);
     expect(h.calls.at(-1)).toEqual(['exec', 'nd-db-pg', 'rm', '-f', tmp]);
   });
@@ -165,7 +166,7 @@ describe('the db.restore stream kind', () => {
     const tmp = h.calls[0]![2]!.split(':')[1]!;
     expect(h.calls).toEqual([
       ['cp', '/agent/.transfer/abc.part', `nd-db-pg:${tmp}`],
-      restoreCommand('postgres', 'nd-db-pg', tmp, 'pw'),
+      restoreCommand('postgres', 'nd-db-pg', tmp, 'pw').argv,
       ['exec', 'nd-db-pg', 'rm', '-f', tmp],
     ]);
   });
@@ -190,7 +191,12 @@ describe('the db.restore stream kind', () => {
     await prepared.apply('/f');
     const tmp = h.calls[0]![2]!.split(':')[1]!;
     expect(tmp).toMatch(/^\/tmp\/ninedeploy-import-/);
-    expect(h.calls[1]).toEqual(importCommand('mariadb', 'nd-db-my', tmp, { format: 'mysql_sql', sandboxFlag: '--sandbox' }, 'pw'));
+    const command = importCommand('mariadb', 'nd-db-my', tmp, { format: 'mysql_sql', sandboxFlag: '--sandbox' }, 'pw');
+    expect(h.calls[1]).toEqual(command.argv);
+    expect(h.calls[1]).not.toContain('pw');
+    // The option file reaches the docker CLI's environment, never its argv.
+    const spawned = vi.mocked(spawnValidated).mock.calls.find((c) => c[1] === h.calls[1]);
+    expect(spawned?.[3]).toMatchObject({ env: command.env });
     const bad = (extra: Record<string, unknown>) =>
       dbRestoreKind.prepare({ container: 'nd-db-my', engine: 'mariadb', password: 'pw', mode: 'import', format: 'mysql_sql', ...extra }, { maxBytes: 1 });
     await expect(bad({ format: 'pg_custom' })).rejects.toThrow(/format/);

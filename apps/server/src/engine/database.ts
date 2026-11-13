@@ -15,7 +15,7 @@ import { writeSecretFile } from '../lib/secretFile.js';
 import { createKeyedOperationGuard } from '../lib/keyedOperationGuard.js';
 import { acquireCrossProcessLock, LockUnavailableError, type CrossProcessLock } from '../lib/crossProcessLock.js';
 import { conflict } from '../lib/errors.js';
-import { dumpCommands, isRedisFamily, redisCliArgv, saveReplyProblem } from '../lib/databaseCommands.js';
+import { type DbCommand, dbCommandEnv, dumpCommands, isRedisFamily, mysqlCommand, probeCommand, redisCliArgv, restoreCommand, saveReplyProblem } from '../lib/databaseCommands.js';
 import { backupClickhouse, backupMeilisearch, backupRabbitmq, restoreClickhouse, restoreMeilisearch, restoreRabbitmq } from './extraEngineBackups.js';
 import { redisStudioConfig, studioImageForEngine } from '../lib/databaseStudioImages.js';
 export { studioImageForEngine } from '../lib/databaseStudioImages.js';
@@ -1149,10 +1149,8 @@ export async function databaseSize(d: Database): Promise<number> {
     if (d.engine === 'mysql' || d.engine === 'mariadb') {
       const pass = decrypt(d.passwordEncrypted);
       const client = d.engine === 'mysql' ? 'mysql' : 'mariadb';
-      const out = await capture('docker', [
-        'exec', d.containerName, client, '-uroot', `--password=${pass}`, '-N',
-        '-e', 'SELECT IFNULL(SUM(data_length+index_length),0) FROM information_schema.tables',
-      ]);
+      const size = mysqlCommand(d.containerName, client, pass, ['-uroot', '-N', '-e', 'SELECT IFNULL(SUM(data_length+index_length),0) FROM information_schema.tables']);
+      const out = await capture('docker', size.argv, dbCommandEnv(size));
       return Number(out.trim()) || 0;
     }
     if (d.engine === 'mongo') {
@@ -1247,20 +1245,22 @@ async function backupDatabaseUnlocked(d: Database, file: string, log: (line: str
       await run('docker', ['cp', `${cn}:${DUMP_TMP}`, file], {}, log);
     } else if (d.engine === 'mysql' || d.engine === 'mariadb') {
       const pass = decrypt(d.passwordEncrypted);
-      const dumper = d.engine === 'mysql' ? 'mysqldump' : 'mariadb-dump';
       // --single-transaction: InnoDB dumps run inside one consistent snapshot
       // instead of taking per-table locks — without it a scheduled backup blocks
       // writes on the live databases it is supposed to protect, and a multi-DB
       // dump is not even a point-in-time-consistent restore. --quick streams
       // row-by-row instead of buffering each table.
       usesDumpTmp = true;
-      await run('docker', ['exec', cn, dumper, '-uroot', `--password=${pass}`, '--single-transaction', '--quick', '--all-databases', `--result-file=${DUMP_TMP}`], {}, log);
+      // The shared builder: mysqldump (without GTID_PURGED) or mariadb-dump.
+      const dump = dumpCommands(d.engine, cn, DUMP_TMP, pass).dump;
+      await run('docker', dump.argv, dbCommandEnv(dump), log);
       await run('docker', ['cp', `${cn}:${DUMP_TMP}`, file], {}, log);
     } else if (isRedisFamily(d.engine)) {
       const pass = decrypt(d.passwordEncrypted);
       // The shared builder: redis/valkey/keydb `SAVE`, dragonfly `SAVE RDB` (see ENGINES.dragonfly).
       const reply: string[] = [];
-      await run('docker', dumpCommands(d.engine, cn, '', pass).dump, {}, (line) => {
+      const save = dumpCommands(d.engine, cn, '', pass).dump;
+      await run('docker', save.argv, dbCommandEnv(save), (line) => {
         reply.push(line);
         log(line);
       });
@@ -1384,9 +1384,9 @@ async function restoreDatabaseUnlocked(d: Database, file: string, log: (line: st
         // before --clean still fail on existing objects, harmlessly.
         await run('docker', ['exec', cn, 'psql', '-v', 'ON_ERROR_STOP=1', '--single-transaction', '-U', cfg.username()!, '-d', cfg.dbName()!, '-f', RESTORE_TMP], {}, log);
       } else if (d.engine === 'mysql' || d.engine === 'mariadb') {
-        const pass = decrypt(d.passwordEncrypted);
-        const client = d.engine === 'mysql' ? 'mysql' : 'mariadb';
-        await run('docker', ['exec', cn, client, '-uroot', `--password=${pass}`, '-e', `source ${RESTORE_TMP}`], {}, log);
+        // The dump on stdin, not `-e "source …"`: MySQL 9's client ignores client commands in -e.
+        const restore = restoreCommand(d.engine, cn, RESTORE_TMP, decrypt(d.passwordEncrypted));
+        await run('docker', restore.argv, dbCommandEnv(restore), log);
       } else {
         // mongo
         const pass = decrypt(d.passwordEncrypted);
@@ -1478,13 +1478,13 @@ export interface DatabaseImportPlan {
 export const IMPORT_TIMEOUT_MS = 6 * 60 * 60 * 1000;
 
 /**
- * mysql/mariadb: feed the staged dump on stdin. `sh -c` takes the file and the
- * client argv POSITIONALLY ("$1", "$@") — nothing is interpolated into the
- * script, so no password or path can break out of it. stdin rather than the
- * client's `source` command because mariadb's `--sandbox` disables `source`
- * along with `system`, `tee` and `pager`.
+ * mysql/mariadb imports feed the staged dump on stdin (`mysqlCommand` with a
+ * file): the script takes the file and the client argv POSITIONALLY, so no
+ * path can break out of it, and the password comes from an option file in
+ * the environment. stdin rather than the client's `source` command because
+ * mariadb's `--sandbox` disables `source` along with `system`, `tee` and
+ * `pager`, and MySQL 9 ignores client commands in `-e`.
  */
-const MYSQL_STDIN_SCRIPT = 'f="$1"; shift; exec "$@" < "$f"';
 
 /** `docker exec -e` value for plain-SQL postgres imports. */
 export const PSQL_IMPORT_PGOPTIONS = 'PGOPTIONS=-c standard_conforming_strings=on';
@@ -1500,14 +1500,15 @@ export function importCommand(
   tmp: string,
   plan: DatabaseImportPlan,
   password: string,
-): string[] {
+): DbCommand {
+  const plain = (argv: string[]): DbCommand => ({ argv, env: {} });
   if (engine === 'postgres' && plan.format === 'pg_custom') {
-    return [
+    return plain([
       'exec', cn, 'pg_restore', '--no-owner', '--no-acl', '--exit-on-error',
       ...(plan.singleTransaction ? ['--single-transaction'] : []),
       ...(plan.clean ? ['--clean', '--if-exists'] : []),
       '-U', 'nine', '-d', 'app', tmp,
-    ];
+    ]);
   }
   if (engine === 'postgres' && plan.format === 'pg_plain') {
     // standard_conforming_strings is forced on at connect time (over any
@@ -1515,30 +1516,25 @@ export function importCommand(
     // lib/databaseImport.ts lexes string literals under that assumption.
     // ON_ERROR_STOP: a failed `COPY … FROM stdin` stops psql instead of
     // letting it read the COPY data that follows as commands.
-    return [
+    return plain([
       'exec', '-e', PSQL_IMPORT_PGOPTIONS, cn, 'psql', '-X', '-v', 'ON_ERROR_STOP=1',
       ...(plan.singleTransaction ? ['--single-transaction'] : []),
       '-U', 'nine', '-d', 'app', '-f', tmp,
-    ];
+    ]);
   }
   if ((engine === 'mysql' || engine === 'mariadb') && plan.format === 'mysql_sql') {
     const client = engine === 'mysql' ? 'mysql' : 'mariadb';
-    return [
-      'exec', cn, 'sh', '-c', MYSQL_STDIN_SCRIPT, 'sh', tmp,
-      client, '-uroot', `--password=${password}`,
-      ...(plan.sandboxFlag ? [plan.sandboxFlag] : []),
-      '--local-infile=0', 'app',
-    ];
+    return mysqlCommand(cn, client, password, ['-uroot', ...(plan.sandboxFlag ? [plan.sandboxFlag] : []), '--local-infile=0', 'app'], tmp);
   }
   if (engine === 'mongo' && plan.format === 'mongo_archive') {
-    return [
+    return plain([
       'exec', cn, 'mongorestore',
       '-u', 'nine', '-p', password, '--authenticationDatabase', 'admin',
       `--archive=${tmp}`,
       ...(plan.gzip ? ['--gzip'] : []),
       ...(plan.drop ? ['--drop'] : []),
       '--nsExclude=admin.*', '--nsExclude=config.*', '--nsExclude=local.*',
-    ];
+    ]);
   }
   throw new Error(`import of ${plan.format} is not supported for ${engine}`);
 }
@@ -1583,10 +1579,10 @@ async function importDatabaseUnlocked(d: Database, file: string, plan: DatabaseI
   const password = decrypt(d.passwordEncrypted);
   // Build (and so validate) the command before anything is copied.
   const tmp = `/tmp/ninedeploy-import-${randomUUID()}`;
-  const argv = importCommand(d.engine, cn, tmp, plan, password);
+  const command = importCommand(d.engine, cn, tmp, plan, password);
   try {
     await run('docker', ['cp', file, `${cn}:${tmp}`], { timeoutMs: IMPORT_TIMEOUT_MS }, log);
-    await run('docker', argv, { timeoutMs: IMPORT_TIMEOUT_MS, heartbeatMs: 60_000, heartbeatLabel: 'import' }, log);
+    await run('docker', command.argv, { ...dbCommandEnv(command), timeoutMs: IMPORT_TIMEOUT_MS, heartbeatMs: 60_000, heartbeatLabel: 'import' }, log);
   } finally {
     await run('docker', ['exec', cn, 'rm', '-f', tmp], {}, swallow).catch(() => {
       log(`⚠ could not remove the staged dump ${tmp} from ${cn} — delete it by hand`);
@@ -1626,16 +1622,10 @@ export async function probeDatabaseCredentials(d: Database, attempts = 5, delayM
   const cn = d.containerName;
   const password = decrypt(d.passwordEncrypted);
   const once = async (): Promise<boolean> => {
-    if (d.engine === 'postgres') {
-      const out = await capture('docker', [
-        'exec', '-e', `PGPASSWORD=${password}`, cn,
-        'psql', '-h', '127.0.0.1', '-U', cfg.username()!, '-d', cfg.dbName()!, '-tAc', 'SELECT 1',
-      ]);
-      return out.trim() === '1';
-    }
-    if (d.engine === 'mysql' || d.engine === 'mariadb') {
-      const client = d.engine === 'mysql' ? 'mysql' : 'mariadb';
-      const out = await capture('docker', ['exec', cn, client, '-uroot', `--password=${password}`, '-N', '-e', 'SELECT 1']);
+    if (d.engine === 'postgres' || d.engine === 'mysql' || d.engine === 'mariadb') {
+      // The shared builder: PGPASSWORD forwarded by name, the mysql password in an option file.
+      const probe = probeCommand(d.engine, cn, password)!;
+      const out = await capture('docker', probe.argv, dbCommandEnv(probe));
       return out.trim() === '1';
     }
     if (d.engine === 'mongo') {

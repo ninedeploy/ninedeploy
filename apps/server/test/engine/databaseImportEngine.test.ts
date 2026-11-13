@@ -9,6 +9,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { MYSQL_CNF_VAR, mysqlClientConfig } from '../../src/lib/databaseCommands.js';
 
 const h = vi.hoisted(() => ({
   run: vi.fn(async (_cmd: string, _args: string[], _opts: unknown, _sink?: (line: string) => void) => undefined),
@@ -53,44 +54,47 @@ const db = (over: Record<string, unknown> = {}) =>
 
 describe('importCommand (argv per engine)', () => {
   it('postgres custom format: pg_restore without owners or ACLs, stopping on the first error', () => {
-    expect(importCommand('postgres', 'c', '/tmp/f', { format: 'pg_custom', singleTransaction: true, clean: true }, 'pw')).toEqual([
-      'exec', 'c', 'pg_restore', '--no-owner', '--no-acl', '--exit-on-error', '--single-transaction', '--clean', '--if-exists',
-      '-U', 'nine', '-d', 'app', '/tmp/f',
-    ]);
-    expect(importCommand('postgres', 'c', '/tmp/f', { format: 'pg_custom' }, 'pw')).not.toContain('--single-transaction');
+    expect(importCommand('postgres', 'c', '/tmp/f', { format: 'pg_custom', singleTransaction: true, clean: true }, 'pw')).toEqual({
+      argv: [
+        'exec', 'c', 'pg_restore', '--no-owner', '--no-acl', '--exit-on-error', '--single-transaction', '--clean', '--if-exists',
+        '-U', 'nine', '-d', 'app', '/tmp/f',
+      ],
+      env: {},
+    });
+    expect(importCommand('postgres', 'c', '/tmp/f', { format: 'pg_custom' }, 'pw').argv).not.toContain('--single-transaction');
   });
 
   it('postgres plain SQL: psql with ON_ERROR_STOP and standard_conforming_strings forced on', () => {
-    const argv = importCommand('postgres', 'c', '/tmp/f', { format: 'pg_plain', singleTransaction: true }, 'pw');
+    const { argv } = importCommand('postgres', 'c', '/tmp/f', { format: 'pg_plain', singleTransaction: true }, 'pw');
     expect(argv).toEqual([
       'exec', '-e', PSQL_IMPORT_PGOPTIONS, 'c', 'psql', '-X', '-v', 'ON_ERROR_STOP=1', '--single-transaction', '-U', 'nine', '-d', 'app', '-f', '/tmp/f',
     ]);
     expect(PSQL_IMPORT_PGOPTIONS).toBe('PGOPTIONS=-c standard_conforming_strings=on');
-    expect(importCommand('postgres', 'c', '/tmp/f', { format: 'pg_plain', singleTransaction: false }, 'pw')).not.toContain('--single-transaction');
+    expect(importCommand('postgres', 'c', '/tmp/f', { format: 'pg_plain', singleTransaction: false }, 'pw').argv).not.toContain('--single-transaction');
   });
 
-  it('mysql/mariadb: stdin through a positional sh -c, with the sandbox flag when there is one', () => {
+  it('mysql/mariadb: stdin through a positional sh -c, the password in an option file on fd 3, the sandbox flag when there is one', () => {
     const mysql = importCommand('mysql', 'c', '/tmp/f', { format: 'mysql_sql', sandboxFlag: '--system-command=OFF' }, 'p$w');
-    expect(mysql).toEqual([
-      'exec', 'c', 'sh', '-c', 'f="$1"; shift; exec "$@" < "$f"', 'sh', '/tmp/f',
-      'mysql', '-uroot', '--password=p$w', '--system-command=OFF', '--local-infile=0', 'app',
-    ]);
+    expect(mysql.argv.slice(0, 6)).toEqual(['exec', '-e', MYSQL_CNF_VAR, 'c', 'sh', '-c']);
+    expect(mysql.argv[6]).toContain('exec "$c" --defaults-extra-file=/dev/fd/3 "$@" < "$f"');
+    expect(mysql.argv.slice(7)).toEqual(['sh', '/tmp/f', 'mysql', '-uroot', '--system-command=OFF', '--local-infile=0', 'app']);
+    expect(mysql.env).toEqual({ [MYSQL_CNF_VAR]: mysqlClientConfig('p$w') });
     const maria = importCommand('mariadb', 'c', '/tmp/f', { format: 'mysql_sql', sandboxFlag: '--sandbox' }, 'pw');
-    expect(maria.slice(7)).toEqual(['mariadb', '-uroot', '--password=pw', '--sandbox', '--local-infile=0', 'app']);
+    expect(maria.argv.slice(9)).toEqual(['mariadb', '-uroot', '--sandbox', '--local-infile=0', 'app']);
     // No flag (operator only — enforced by the caller): nothing in its place.
-    expect(importCommand('mariadb', 'c', '/tmp/f', { format: 'mysql_sql', sandboxFlag: null }, 'pw').slice(7)).toEqual([
-      'mariadb', '-uroot', '--password=pw', '--local-infile=0', 'app',
+    expect(importCommand('mariadb', 'c', '/tmp/f', { format: 'mysql_sql', sandboxFlag: null }, 'pw').argv.slice(9)).toEqual([
+      'mariadb', '-uroot', '--local-infile=0', 'app',
     ]);
-    // The script interpolates nothing: the password is never inside it.
-    expect(mysql[4]).not.toContain('p$w');
+    // The script interpolates nothing, and no argv element carries the password.
+    for (const arg of mysql.argv) expect(arg).not.toContain('p$w');
   });
 
   it('mongo: mongorestore excluding admin, config and local', () => {
-    expect(importCommand('mongo', 'c', '/tmp/f', { format: 'mongo_archive', gzip: true, drop: true }, 'pw')).toEqual([
+    expect(importCommand('mongo', 'c', '/tmp/f', { format: 'mongo_archive', gzip: true, drop: true }, 'pw').argv).toEqual([
       'exec', 'c', 'mongorestore', '-u', 'nine', '-p', 'pw', '--authenticationDatabase', 'admin', '--archive=/tmp/f',
       '--gzip', '--drop', '--nsExclude=admin.*', '--nsExclude=config.*', '--nsExclude=local.*',
     ]);
-    const plain = importCommand('mongo', 'c', '/tmp/f', { format: 'mongo_archive' }, 'pw');
+    const plain = importCommand('mongo', 'c', '/tmp/f', { format: 'mongo_archive' }, 'pw').argv;
     expect(plain).not.toContain('--gzip');
     expect(plain).not.toContain('--drop');
   });
@@ -186,8 +190,9 @@ describe('probeDatabaseCredentials', () => {
   it('signs in for real on every engine', async () => {
     h.capture.mockResolvedValueOnce('1\n');
     expect(await probeDatabaseCredentials(db(), 1, 0)).toBe(true);
-    // postgres goes over TCP with the password: the local socket is trust.
-    expect(h.capture.mock.calls[0]![1]).toEqual(expect.arrayContaining(['-e', 'PGPASSWORD=pw:enc', '-h', '127.0.0.1']));
+    // postgres goes over TCP with the password: the local socket is trust. PGPASSWORD is forwarded by name.
+    expect(h.capture.mock.calls[0]![1]).toEqual(expect.arrayContaining(['-e', 'PGPASSWORD', '-h', '127.0.0.1']));
+    expect(h.capture.mock.calls[0]![2]).toEqual({ env: { PGPASSWORD: 'pw:enc' } });
     h.capture.mockResolvedValueOnce('1');
     expect(await probeDatabaseCredentials(db({ engine: 'mariadb' }), 1, 0)).toBe(true);
     h.capture.mockResolvedValueOnce('1');
