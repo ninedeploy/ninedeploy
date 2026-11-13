@@ -619,7 +619,7 @@ export async function startDatabase(
  */
 export async function runIsolatedDatabase(
   d: Database,
-  spec: { name: string; image: string; volume: string; mount: string },
+  spec: { name: string; image: string; volume: string; mount: string; env?: Record<string, string> },
   log: (line: string) => void,
 ): Promise<void> {
   const cfg = ENGINES[d.engine];
@@ -628,7 +628,7 @@ export async function runIsolatedDatabase(
   const args = ['run', '-d', '--name', spec.name, '--network', 'none', '--restart', 'no', '--label', `${MANAGED_VOLUME_LABEL}=database-upgrade`, '--label', `ninedeploy.database.slug=${d.slug}`];
   if (d.memLimitMb > 0) args.push('--memory', `${d.memLimitMb}m`, '--memory-swap', `${d.memLimitMb}m`);
   args.push('-v', `${spec.volume}:${spec.mount}`);
-  const vars = cfg.env(decrypt(d.passwordEncrypted));
+  const vars = { ...cfg.env(decrypt(d.passwordEncrypted)), ...spec.env };
   const envFile = Object.keys(vars).length > 0
     ? writeSecretFile('nd-db', 'database.env', `${Object.entries(vars).map(([k, v]) => `${k}=${v}`).join('\n')}\n`)
     : null;
@@ -640,6 +640,42 @@ export async function runIsolatedDatabase(
   } finally {
     envFile?.cleanup();
   }
+}
+
+/**
+ * O2: stop a helper container and report how it exited. MySQL and MariaDB
+ * shut down cleanly on SIGTERM; the long bound leaves room for a slow InnoDB
+ * shutdown (`innodb_fast_shutdown = 0`) of a large database. A stop that runs
+ * out of time ends in SIGKILL (exit code 137): the caller must not copy that
+ * data directory. The container is removed either way.
+ */
+export async function stopContainerClean(name: string, log: (line: string) => void, timeoutSec = 3600): Promise<number | null> {
+  await run('docker', ['stop', '--time', String(timeoutSec), name], { timeoutMs: (timeoutSec + 120) * 1000 }, log).catch(() => undefined);
+  let code: number | null = null;
+  try {
+    const out = (await capture('docker', ['inspect', name, '--format', '{{.State.Running}}|{{.State.ExitCode}}'])).trim();
+    const [running, exit] = out.split('|');
+    code = running === 'false' && exit !== undefined && /^\d+$/.test(exit) ? Number(exit) : null;
+  } catch {
+    code = null;
+  }
+  await run('docker', ['rm', '-f', name], {}, swallow).catch(() => undefined);
+  return code;
+}
+
+/**
+ * O2: copy every file of one volume into another (ownership, modes and links
+ * kept) through a networkless helper of `image`, with the source mounted
+ * read-only. The source must belong to no running container.
+ */
+export async function copyDockerVolume(from: string, to: string, image: string, log: (line: string) => void): Promise<void> {
+  log(`Copying volume ${from} → ${to} …`);
+  await run('docker', [
+    'run', '--rm', '--network', 'none', '--entrypoint', 'sh',
+    '--label', `${MANAGED_VOLUME_LABEL}=database-upgrade`,
+    '-v', `${from}:/from:ro`, '-v', `${to}:/to`,
+    image, '-c', 'cp -a /from/. /to/',
+  ], { timeoutMs: 6 * 60 * 60 * 1000, heartbeatMs: 60_000, onProgress: log }, log);
 }
 
 /** The mount path for a postgres volume whose data belongs to `image` (see {@link postgresImageLayout}). */

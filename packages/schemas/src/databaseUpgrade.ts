@@ -1,20 +1,32 @@
 import { z } from 'zod';
 
 // ── Database major upgrade (O2) ────────────────────────────────────────────
-// Request and response shapes for `/v1/databases/:id/upgrades`. A PostgreSQL
-// database on the panel host moves to a newer major by dump and restore into a
-// new volume; the previous volume stays until the upgrade is finalized, so it
-// can be rolled back. Server side: apps/server/src/lib/databaseUpgrade.ts.
+// Request and response shapes for `/v1/databases/:id/upgrades`. A database on
+// the panel host moves to a newer release in a new volume: PostgreSQL by dump
+// and restore, MySQL and MariaDB by copying the stopped data directory and
+// upgrading the copy in place. The previous volume stays until the upgrade is
+// finalized, so it can be rolled back. Server side:
+// apps/server/src/lib/databaseUpgrade.ts.
 
 /** Mirrors `databaseUpgradeStatus` in `@ninedeploy/db`. */
 export const databaseUpgradeStatus = z.enum(['running', 'completed', 'failed', 'rolled_back', 'finalized']);
 export type DatabaseUpgradeStatus = z.infer<typeof databaseUpgradeStatus>;
 
-export const databaseUpgradePhase = z.enum(['pull', 'stop', 'dump', 'restore', 'verify', 'switch', 'start']);
+export const databaseUpgradePhase = z.enum(['pull', 'stop', 'dump', 'copy', 'upgrade', 'restore', 'verify', 'switch', 'start']);
 export type DatabaseUpgradePhase = z.infer<typeof databaseUpgradePhase>;
 
-/** POST /v1/databases/:id/upgrades */
-export const databaseUpgradeStart = z.object({ toMajor: z.number().int().min(1).max(99) }).strict();
+/**
+ * POST /v1/databases/:id/upgrades. `toVersion` names the target series
+ * (`18`, `8.4`, `11.8`); `toMajor` is the PostgreSQL major, kept for clients
+ * from before MySQL and MariaDB. Exactly one of the two.
+ */
+export const databaseUpgradeStart = z
+  .object({
+    toMajor: z.number().int().min(1).max(99).optional(),
+    toVersion: z.string().regex(/^\d{1,2}(\.\d{1,2})?$/, 'toVersion is a release series such as 18, 8.4 or 11.8').optional(),
+  })
+  .strict()
+  .refine((b) => (b.toMajor === undefined) !== (b.toVersion === undefined), { message: 'Give exactly one of toMajor and toVersion' });
 export type DatabaseUpgradeStart = z.infer<typeof databaseUpgradeStart>;
 
 /** What the restored copy was compared on (row counts are exact, per user table). */
@@ -29,7 +41,12 @@ export const databaseUpgradeVerification = z.object({
     triggers: z.number().int(),
     functions: z.number().int(),
     extensions: z.string(),
+    /** MySQL/MariaDB: scheduled events and user databases. */
+    events: z.number().int().optional(),
+    schemas: z.number().int().optional(),
   }),
+  /** MySQL/MariaDB: accounts checked (each must still exist after). */
+  users: z.number().int().optional(),
   mismatches: z.array(z.string()),
 });
 export type DatabaseUpgradeVerification = z.infer<typeof databaseUpgradeVerification>;
@@ -40,6 +57,9 @@ export const databaseUpgrade = z.object({
   engine: z.string(),
   fromMajor: z.number().int(),
   toMajor: z.number().int(),
+  /** The release series: the PostgreSQL major as text, or `8.0` → `8.4` for MySQL/MariaDB (where the major alone is ambiguous). */
+  fromSeries: z.string(),
+  toSeries: z.string(),
   previousVersion: z.string().nullable(),
   targetVersion: z.string(),
   previousVolume: z.string(),
@@ -59,9 +79,15 @@ export type DatabaseUpgrade = z.infer<typeof databaseUpgrade>;
 /** GET /v1/databases/:id/upgrades/options: what this database can move to now. */
 export const databaseUpgradeOptions = z.object({
   databaseId: z.number().int(),
-  /** The major the running cluster reports; null when it could not be read. */
+  engine: z.string(),
+  /** The major the running cluster reports (MySQL/MariaDB: the leading number of its series); null when it could not be read. */
   currentMajor: z.number().int().nullable(),
+  /** PostgreSQL majors it can move to (empty for MySQL/MariaDB: read `versions`). */
   targets: z.array(z.number().int()),
+  /** The series the running server reports: `16`, `8.0`, `11.4`. */
+  currentSeries: z.string().nullable(),
+  /** Every series it can move to, oldest first: pass one as `toVersion`. */
+  versions: z.array(z.string()),
   /** Why no upgrade can start now (null = one can). */
   refusal: z.object({ code: z.string(), message: z.string() }).nullable(),
 });

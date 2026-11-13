@@ -1437,8 +1437,9 @@ export const volumeImports = sqliteTable(
 );
 
 /**
- * O2 (competitive roadmap): a major-version upgrade of a managed database by
- * dump and restore into a new volume. The container name (the hostname every
+ * O2 (competitive roadmap): a major-version upgrade of a managed database into
+ * a new volume: PostgreSQL by dump and restore, MySQL and MariaDB by copying
+ * the cleanly stopped data directory and upgrading the copy in place. The container name (the hostname every
  * attached service uses) never changes; the row's `version` and `volume_name`
  * switch only after the restored copy matched the old cluster. The previous
  * volume stays until the upgrade is finalized, so a rollback can point the row
@@ -1455,6 +1456,14 @@ export const databaseUpgrades = sqliteTable(
     /** The major the old cluster reported (`server_version_num`), not the row's tag. */
     fromMajor: integer('from_major').notNull(),
     toMajor: integer('to_major').notNull(),
+    /**
+     * The release series the cluster ran and moves to: the PostgreSQL major
+     * (`16`), or the MySQL/MariaDB series (`8.0`, `11.4`), where the integer
+     * major alone is ambiguous (8.0 and 8.4). NULL on rows from before 0126:
+     * read `from_major`/`to_major` then.
+     */
+    fromSeries: text('from_series'),
+    toSeries: text('to_series'),
     /** The row's `version` before the switch (NULL = the engine default), restored on rollback. */
     previousVersion: text('previous_version'),
     /** The row's `version` after the switch. */
@@ -1465,7 +1474,7 @@ export const databaseUpgrades = sqliteTable(
     previousVolume: text('previous_volume').notNull(),
     targetVolume: text('target_volume').notNull(),
     status: text('status', { enum: databaseUpgradeStatus }).notNull().default('running'),
-    /** Where a running upgrade is: preflight, dump, restore, verify, switch, start. */
+    /** Where a running upgrade is: pull, stop, dump, copy, restore (or upgrade), verify, switch, start. */
     phase: text('phase'),
     /** Whether the row already points at the target volume (boot recovery decides by it). */
     switched: integer('switched', { mode: 'boolean' }).notNull().default(false),

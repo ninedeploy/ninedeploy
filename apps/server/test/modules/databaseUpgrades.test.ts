@@ -98,7 +98,7 @@ describe('database upgrade routes', () => {
     const calls = fakeDocker();
     const a = await app();
     const options = await a.inject({ method: 'GET', url: '/v1/databases/10/upgrades/options', headers: as });
-    expect(options.json()).toEqual({ databaseId: 10, currentMajor: 16, targets: [17, 18], refusal: null });
+    expect(options.json()).toEqual({ databaseId: 10, engine: 'postgres', currentMajor: 16, targets: [17, 18], currentSeries: '16', versions: ['17', '18'], refusal: null });
 
     const started = await a.inject({ method: 'POST', url: '/v1/databases/10/upgrades', headers: as, payload: { toMajor: 18 } });
     expect(started.statusCode).toBe(202);

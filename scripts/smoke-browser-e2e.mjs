@@ -112,7 +112,8 @@ main()
   .catch((err) => { console.error(`\n✗ browser journeys failed: ${err?.message ?? err}`); process.exitCode = 1; })
   .finally(() => {
     if (KEEP) return;
-    for (const c of [PANEL, DIND]) spawnSync('docker', ['rm', '-f', c], { encoding: 'utf8' });
+    // -v: the dind image declares /var/lib/docker a volume; without it every run left that anonymous volume behind.
+    for (const c of [PANEL, DIND]) spawnSync('docker', ['rm', '-f', '-v', c], { encoding: 'utf8' });
     spawnSync('docker', ['volume', 'rm', VOLUME], { encoding: 'utf8' });
     spawnSync('docker', ['network', 'rm', NET], { encoding: 'utf8' });
   });

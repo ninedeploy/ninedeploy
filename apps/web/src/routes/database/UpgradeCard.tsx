@@ -10,21 +10,30 @@ import { useT } from '../../lib/i18n.js';
 
 const message = (err: unknown, fallback: string) => (err instanceof Error ? err.message : fallback);
 
+const ENGINE_LABELS: Record<string, string> = { postgres: 'PostgreSQL', mysql: 'MySQL', mariadb: 'MariaDB' };
+/** Rows from panels before 0.18.28 carry only the majors. */
+const fromOf = (u: DatabaseUpgrade) => u.fromSeries ?? String(u.fromMajor);
+const toOf = (u: DatabaseUpgrade) => u.toSeries ?? String(u.toMajor);
+
 /**
- * O2, Database → Settings: move a PostgreSQL database to a newer major. The
- * panel checks the running cluster, stops the database, dumps it (kept as a
- * backup, labelled `pre-upgrade` in the database), restores into a new volume and compares the copy
- * before the switch. The previous volume stays until "Finalize"; until then
- * "Roll back" points the database back at it. Admin on the database.
+ * O2, Database → Settings: move a PostgreSQL, MySQL or MariaDB database to a
+ * newer release. The panel checks the running server, stops the database,
+ * dumps it (kept as a backup, labelled `pre-upgrade` in the database), then
+ * restores (PostgreSQL) or copies and upgrades in place (MySQL, MariaDB) into
+ * a new volume and compares the copy before the switch. The previous volume
+ * stays until "Finalize"; until then "Roll back" points the database back at
+ * it. Admin on the database.
  */
 export function UpgradeCard({ db }: { db: DatabaseDetail }) {
   const t = useT();
   const qc = useQueryClient();
   const { toast } = useToast();
-  const [target, setTarget] = useState<number | null>(null);
+  const [target, setTarget] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<null | 'start' | 'rollback' | 'finalize'>(null);
 
-  const enabled = db.engine === 'postgres';
+  const enabled = db.engine in ENGINE_LABELS;
+  const engine = ENGINE_LABELS[db.engine] ?? db.engine;
+  const copies = db.engine !== 'postgres';
   const history = useQuery({
     queryKey: ['database-upgrades', db.id],
     queryFn: () => api.databases.upgrades.list(db.id),
@@ -46,13 +55,13 @@ export function UpgradeCard({ db }: { db: DatabaseDetail }) {
   };
 
   const start = useMutation({
-    mutationFn: (toMajor: number) => api.databases.upgrades.start(db.id, { toMajor }),
-    onSuccess: (u) => { refresh(); setConfirm(null); toast(t('Upgrade to PostgreSQL {major} started', { major: u.toMajor }), 'success'); },
+    mutationFn: (toVersion: string) => api.databases.upgrades.start(db.id, { toVersion }),
+    onSuccess: (u) => { refresh(); setConfirm(null); toast(t('Upgrade to {engine} {version} started', { engine, version: toOf(u) }), 'success'); },
     onError: (err) => { setConfirm(null); toast(message(err, t('Could not start the upgrade')), 'error'); },
   });
   const rollback = useMutation({
     mutationFn: (id: number) => api.databases.upgrades.rollback(db.id, id),
-    onSuccess: (u) => { refresh(); setConfirm(null); toast(t('Back on PostgreSQL {major}', { major: u.fromMajor }), 'success'); },
+    onSuccess: (u) => { refresh(); setConfirm(null); toast(t('Back on {engine} {version}', { engine, version: fromOf(u) }), 'success'); },
     onError: (err) => { setConfirm(null); toast(message(err, t('Could not roll back')), 'error'); },
   });
   const finalize = useMutation({
@@ -66,6 +75,8 @@ export function UpgradeCard({ db }: { db: DatabaseDetail }) {
     pull: t('Pulling the new image'),
     stop: t('Stopping the database'),
     dump: t('Dumping the old cluster'),
+    copy: t('Copying the data directory'),
+    upgrade: t('Upgrading the copy'),
     restore: t('Restoring into the new major'),
     verify: t('Comparing the copy with the original'),
     switch: t('Switching over'),
@@ -73,7 +84,10 @@ export function UpgradeCard({ db }: { db: DatabaseDetail }) {
   };
   const latest = history.data?.[0];
   const open = latest && (latest.status === 'running' || latest.status === 'completed' || latest.status === 'rolled_back') ? latest : null;
-  const chosen = target ?? options.data?.targets.at(-1) ?? null;
+  // `versions` arrives from 0.18.28; an older panel lists PostgreSQL majors only.
+  const versions = options.data ? (options.data.versions ?? options.data.targets.map(String)) : [];
+  const current = options.data ? (options.data.currentSeries ?? (options.data.currentMajor != null ? String(options.data.currentMajor) : null)) : null;
+  const chosen = target ?? versions.at(-1) ?? null;
   const busy = start.isPending || rollback.isPending || finalize.isPending;
 
   return (
@@ -82,34 +96,40 @@ export function UpgradeCard({ db }: { db: DatabaseDetail }) {
         <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-slate-400">
           <ArrowUpCircle size={14} /> {t('Major version upgrade')}
         </h2>
-        {options.data?.currentMajor != null && <span className="text-xs text-slate-400">{t('PostgreSQL {major}', { major: options.data.currentMajor })}</span>}
+        {current != null && <span className="text-xs text-slate-400">{t('{engine} {version}', { engine, version: current })}</span>}
       </div>
       <CardBody className="space-y-4">
         <p className="text-xs text-slate-400">
-          {t('Moves this database to a newer PostgreSQL major. The database stops while it is dumped and restored into a new volume; the copy is compared with the original before the switch. The hostname and password stay the same, and the previous volume is kept until you finalize.')}
+          {copies
+            ? t('Moves this database to a newer {engine} release. The database stops while its data directory is copied into a new volume and upgraded there; the copy is compared with the original before the switch. The hostname and password stay the same, and the previous volume is kept until you finalize.', { engine })
+            : t('Moves this database to a newer PostgreSQL major. The database stops while it is dumped and restored into a new volume; the copy is compared with the original before the switch. The hostname and password stay the same, and the previous volume is kept until you finalize.')}
         </p>
 
         {history.isLoading ? (
           <Skeleton className="h-12" />
         ) : open?.status === 'running' ? (
           <p className="rounded-lg bg-sky-500/10 p-2 text-xs text-sky-300" data-testid="upgrade-running">
-            {t('Upgrading to PostgreSQL {major}: {phase}…', { major: open.toMajor, phase: phaseLabel[open.phase ?? ''] ?? t('starting') })}
+            {t('Upgrading to {engine} {version}: {phase}…', { engine, version: toOf(open), phase: phaseLabel[open.phase ?? ''] ?? t('starting') })}
           </p>
         ) : open?.status === 'completed' ? (
           <div className="space-y-2 rounded-lg bg-emerald-500/10 p-3 text-xs text-emerald-200">
-            <p>{t('Upgraded from PostgreSQL {from} to {to}.', { from: open.fromMajor, to: open.toMajor })}</p>
+            <p>{t('Upgraded from {engine} {from} to {to}.', { engine, from: fromOf(open), to: toOf(open) })}</p>
             {open.verification && (
-              <p className="text-emerald-300/80">{t('Compared before the switch: {tables} tables, {rows} rows, {sequences} sequences.', { tables: open.verification.tables, rows: open.verification.rows, sequences: open.verification.sequences })}</p>
+              <p className="text-emerald-300/80">
+                {open.verification.users != null
+                  ? t('Compared before the switch: {tables} tables, {rows} rows, {users} accounts.', { tables: open.verification.tables, rows: open.verification.rows, users: open.verification.users })
+                  : t('Compared before the switch: {tables} tables, {rows} rows, {sequences} sequences.', { tables: open.verification.tables, rows: open.verification.rows, sequences: open.verification.sequences })}
+              </p>
             )}
             <p className="text-slate-300">{t('The previous volume {volume} is kept. Check your services, then finalize to delete it.', { volume: open.previousVolume })}</p>
             <div className="flex flex-wrap gap-2">
               <Button size="sm" onClick={() => setConfirm('finalize')} disabled={busy}>{t('Finalize')}</Button>
-              <Button size="sm" variant="secondary" onClick={() => setConfirm('rollback')} disabled={busy}>{t('Roll back to PostgreSQL {major}', { major: open.fromMajor })}</Button>
+              <Button size="sm" variant="secondary" onClick={() => setConfirm('rollback')} disabled={busy}>{t('Roll back to {engine} {version}', { engine, version: fromOf(open) })}</Button>
             </div>
           </div>
         ) : open?.status === 'rolled_back' ? (
           <div className="space-y-2 rounded-lg bg-amber-500/10 p-3 text-xs text-amber-200">
-            <p>{t('Rolled back to PostgreSQL {major}. The upgraded volume {volume} still holds the writes made after the upgrade.', { major: open.fromMajor, volume: open.targetVolume })}</p>
+            <p>{t('Rolled back to {engine} {version}. The upgraded volume {volume} still holds the writes made after the upgrade.', { engine, version: fromOf(open), volume: open.targetVolume })}</p>
             <Button size="sm" variant="secondary" onClick={() => setConfirm('finalize')} disabled={busy}>{t('Delete the upgraded volume')}</Button>
           </div>
         ) : options.isLoading ? (
@@ -118,9 +138,9 @@ export function UpgradeCard({ db }: { db: DatabaseDetail }) {
           <p className="text-sm text-slate-500" data-testid="upgrade-refusal">{options.data.refusal.message}</p>
         ) : options.data ? (
           <div className="flex flex-wrap items-center gap-3">
-            <Select aria-label={t('Target major')} value={chosen ?? ''} onChange={(e) => setTarget(Number(e.target.value))} className="h-9 w-48 text-xs">
-              {options.data.targets.map((m) => (
-                <option key={m} value={m}>{t('PostgreSQL {major}', { major: m })}</option>
+            <Select aria-label={t('Target release')} value={chosen ?? ''} onChange={(e) => setTarget(e.target.value)} className="h-9 w-48 text-xs">
+              {versions.map((v) => (
+                <option key={v} value={v}>{t('{engine} {version}', { engine, version: v })}</option>
               ))}
             </Select>
             <Button size="sm" onClick={() => setConfirm('start')} disabled={busy || chosen == null}>
@@ -139,7 +159,7 @@ export function UpgradeCard({ db }: { db: DatabaseDetail }) {
           <ul className="space-y-1 text-xs text-slate-400" aria-label={t('Upgrade history')}>
             {history.data.map((u) => (
               <li key={u.id} className="flex flex-wrap items-center gap-2">
-                <span className="font-mono">{u.fromMajor} → {u.toMajor}</span>
+                <span className="font-mono">{fromOf(u)} → {toOf(u)}</span>
                 <Badge tone={u.status === 'completed' || u.status === 'finalized' ? 'emerald' : u.status === 'failed' ? 'rose' : u.status === 'running' ? 'sky' : 'amber'}>{u.status}</Badge>
                 <span>{formatDateTime(u.createdAt)}</span>
               </li>
@@ -150,8 +170,10 @@ export function UpgradeCard({ db }: { db: DatabaseDetail }) {
 
       <ConfirmDialog
         open={confirm === 'start'}
-        title={t('Upgrade to PostgreSQL {major}?', { major: chosen ?? '' })}
-        message={t('The database stops for the whole upgrade: dump, restore into the new major, comparison. Attached services lose their connection until it is back. A pre-upgrade backup is kept.')}
+        title={t('Upgrade to {engine} {version}?', { engine, version: chosen ?? '' })}
+        message={copies
+          ? t('The database stops for the whole upgrade: a safety dump, a copy of its data directory, the upgrade of the copy, comparison. Attached services lose their connection until it is back. A pre-upgrade backup is kept.')
+          : t('The database stops for the whole upgrade: dump, restore into the new major, comparison. Attached services lose their connection until it is back. A pre-upgrade backup is kept.')}
         confirmLabel={t('Upgrade')}
         confirmWord={db.name}
         confirmDisabled={busy}
@@ -160,7 +182,7 @@ export function UpgradeCard({ db }: { db: DatabaseDetail }) {
       />
       <ConfirmDialog
         open={confirm === 'rollback'}
-        title={t('Roll back to PostgreSQL {major}?', { major: open?.fromMajor ?? '' })}
+        title={t('Roll back to {engine} {version}?', { engine, version: open ? fromOf(open) : '' })}
         message={t('The database restarts on its previous volume. Writes made since the upgrade stay on the upgraded volume and are not carried back.')}
         confirmLabel={t('Roll back')}
         confirmDisabled={busy}

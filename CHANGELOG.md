@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+**Highlights**
+- MySQL and MariaDB databases move to a newer release from the database page (MySQL 8.0 → 8.4 → 9.7, MariaDB 10.6+ → 12.3): the data directory is copied, upgraded in place and compared before the switch, with rollback until you finalize.
+
+**Action needed:** No.
+
+### Added
+
+- **Major version upgrades for MySQL and MariaDB databases.** Settings → Major version upgrade, `ninedeploy databases upgrade start <dbId> --to 8.4`, or `POST /v1/databases/:id/upgrades` with `{ "toVersion": "8.4" }`. MySQL goes to 8.4 or 9.7 from 8.0 or later; MariaDB to 10.11, 11.4, 11.8 or 12.3 from 10.6 or later. See DATABASES_BACKUPS.md §12.
+  - They move by copy, not by dump: a dump of every database carries the `mysql` system schema, which neither project supports loading into another series. The database stops; a networkless container of its own image takes the safety dump and the fingerprint, shuts down slowly and must exit cleanly; its data directory is copied into a new volume, and the new release upgrades the copy in place on start. The old volume is never written to, so a rollback is possible until you finalize. Users, grants and every database come along.
+  - MySQL never skips an LTS series: 8.0 → 9.7 starts 8.4 on the copy first.
+  - Before the switch the copy is compared with the original: the exact row count of every table, the number of indexes, constraints, views, triggers, routines, events and databases, and every account. Root must log in over TCP with the stored password.
+  - An upgrade to MySQL 8.4 or later is refused, before anything stops, while an account still uses `mysql_native_password` (8.4 disables it, 9.0 removed it). The refusal names the accounts.
+  - Checked on a real panel: MySQL 8.0 → 9.7 (through 8.4) in 35 s with identical rows, the trigger, procedure, view, event and AUTO_INCREMENT working and an app account logging in over the network; rollback to 8.0; 8.0 → 8.4 in 25 s; MariaDB 10.11 → 11.8 in 20 s with identical rows and its accounts.
+  - The API adds `fromSeries`/`toSeries` to an upgrade, and `engine`, `currentSeries` and `versions` to the options; `toMajor` still works for PostgreSQL.
+
 ## [0.18.27] - 2026-11-12
 
 **Highlights**

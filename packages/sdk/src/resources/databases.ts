@@ -107,11 +107,14 @@ export interface DatabasesApi {
       recovery: (id: number, recoveryId: number) => Promise<PitrRecovery>;
     };
     /**
-     * O2: major-version upgrades (PostgreSQL on the panel host). `options`
-     * reads the running cluster's major and what it can move to. `start`
-     * checks the cluster, then answers 202 with the running upgrade: the
-     * database is stopped, dumped (the dump is kept in its backups), restored
-     * into a new volume on the target major and compared before the switch.
+     * O2: major-version upgrades (PostgreSQL, MySQL and MariaDB on the panel
+     * host). `options` reads the running server's release and what it can
+     * move to (`versions`). `start` takes one of them as `toVersion` (or a
+     * PostgreSQL major as `toMajor`), checks the server, then answers 202 with
+     * the running upgrade: the database is stopped and dumped (the dump is
+     * kept in its backups), then PostgreSQL is restored into a new volume on
+     * the target major, and MySQL/MariaDB are copied into one and upgraded
+     * there in place; the copy is compared before the switch.
      * The previous volume stays until `finalize`; until then `rollback`
      * points the database back at it. Starting, rolling back and finalizing
      * need `admin` on the database.
@@ -119,7 +122,7 @@ export interface DatabasesApi {
     upgrades: {
       list: (id: number) => Promise<DatabaseUpgrade[]>;
       options: (id: number) => Promise<DatabaseUpgradeOptions>;
-      start: (id: number, input: { toMajor: number }) => Promise<DatabaseUpgrade>;
+      start: (id: number, input: { toMajor: number } | { toVersion: string }) => Promise<DatabaseUpgrade>;
       rollback: (id: number, upgradeId: number) => Promise<DatabaseUpgrade>;
       finalize: (id: number, upgradeId: number) => Promise<DatabaseUpgrade & { removedVolume: string }>;
       /** Poll until the upgrade is no longer `running` (default every 2 s, for up to 2 h). */

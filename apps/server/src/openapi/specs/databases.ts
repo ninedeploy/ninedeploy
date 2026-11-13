@@ -311,16 +311,16 @@ export const databasesSpecs: RouteSpecMap = {
     responseType: 'DatabaseUpgrade[]',
   },
   'GET /v1/databases/:id/upgrades/options': {
-    summary: 'The majors this database can be upgraded to now, read from the running cluster',
+    summary: 'The releases this database can be upgraded to now, read from the running server',
     tag: 'databases',
     floor: 'viewer',
     responseType: 'DatabaseUpgradeOptions',
   },
   'POST /v1/databases/:id/upgrades': {
-    summary: 'Start a major-version upgrade (PostgreSQL on the panel host)',
+    summary: 'Start a major-version upgrade (PostgreSQL, MySQL or MariaDB on the panel host)',
     tag: 'databases',
     description:
-      'Checks the running cluster first (its major, other databases or roles, free disk), then stops the database, dumps it, restores into a new volume on the target major and compares the copy before switching. Returns 202 with the running upgrade; the previous volume is kept until finalize.',
+      'Checks the running server first (its release, what the move would not carry, free disk), then stops the database. PostgreSQL is dumped and restored into a new volume on the target major; MySQL and MariaDB are copied into a new volume after a clean shutdown and upgraded there in place (MySQL steps through 8.4 from 8.0). The copy is compared with the original before the switch. Returns 202 with the running upgrade; the previous volume is kept until finalize.',
     floor: 'admin',
     body: databaseUpgradeStart,
     validation: 'zod',

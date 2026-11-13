@@ -54,7 +54,7 @@ describe('UpgradeCard', () => {
   it('offers the newer majors, newest first selected, and starts after the name is typed', async () => {
     up.start.mockResolvedValue(row({ status: 'running', phase: 'pull' }));
     renderCard();
-    const select = await screen.findByLabelText('Target major');
+    const select = await screen.findByLabelText('Target release');
     expect((select as HTMLSelectElement).value).toBe('18');
     fireEvent.change(select, { target: { value: '17' } });
     fireEvent.click(screen.getByRole('button', { name: 'Upgrade' }));
@@ -63,8 +63,34 @@ describe('UpgradeCard', () => {
     expect((confirm as HTMLButtonElement).disabled).toBe(true);
     fireEvent.change(screen.getByPlaceholderText('orders'), { target: { value: 'orders' } });
     fireEvent.click(confirm);
-    await waitFor(() => expect(up.start).toHaveBeenCalledWith(7, { toMajor: 17 }));
+    await waitFor(() => expect(up.start).toHaveBeenCalledWith(7, { toVersion: '17' }));
     expect(await screen.findByText('Upgrade to PostgreSQL 18 started')).toBeTruthy();
+  });
+
+  it('MySQL: offers the series from the options, sends toVersion, and names the copy', async () => {
+    up.options.mockResolvedValue({ databaseId: 7, engine: 'mysql', currentMajor: 8, targets: [], currentSeries: '8.0', versions: ['8.4', '9.7'], refusal: null });
+    up.start.mockResolvedValue(row({ engine: 'mysql', fromMajor: 8, toMajor: 8, fromSeries: '8.0', toSeries: '8.4', status: 'running', phase: 'copy' }));
+    renderCard({ id: 7, name: 'shop', engine: 'mysql' });
+    expect(await screen.findByText('MySQL 8.0')).toBeTruthy();
+    const select = await screen.findByLabelText('Target release');
+    expect((select as HTMLSelectElement).value).toBe('9.7');
+    expect(screen.getByText(/data directory is copied into a new volume and upgraded there/)).toBeTruthy();
+    fireEvent.change(select, { target: { value: '8.4' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Upgrade' }));
+    expect(await screen.findByText('Upgrade to MySQL 8.4?')).toBeTruthy();
+    fireEvent.change(screen.getByPlaceholderText('shop'), { target: { value: 'shop' } });
+    fireEvent.click(screen.getAllByRole('button', { name: 'Upgrade' }).at(-1)!);
+    await waitFor(() => expect(up.start).toHaveBeenCalledWith(7, { toVersion: '8.4' }));
+    expect(await screen.findByText('Upgrade to MySQL 8.4 started')).toBeTruthy();
+  });
+
+  it('a completed MariaDB upgrade names its series and the accounts it compared', async () => {
+    up.list.mockResolvedValue([row({ engine: 'mariadb', fromMajor: 10, toMajor: 11, fromSeries: '10.11', toSeries: '11.8', verification: { tables: 2, rows: 9, sequences: 0, users: 5, objects: { indexes: 1, constraints: 1, views: 0, triggers: 0, functions: 0, extensions: '', events: 0, schemas: 1 }, mismatches: [] } })]);
+    renderCard({ id: 7, name: 'shop', engine: 'mariadb' });
+    expect(await screen.findByText('Upgraded from MariaDB 10.11 to 11.8.')).toBeTruthy();
+    expect(screen.getByText('Compared before the switch: 2 tables, 9 rows, 5 accounts.')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Roll back to MariaDB 10.11' })).toBeTruthy();
+    expect(screen.getByText('10.11 → 11.8')).toBeTruthy();
   });
 
   it('shows why no upgrade can start', async () => {

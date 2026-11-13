@@ -100,6 +100,26 @@ describe('databases upgrade', () => {
     expect(text()).toContain('still running');
   });
 
+  it('MySQL: --to 8.4 goes as toVersion and the outcome names the series; a whole number still goes as toMajor', async () => {
+    const mysql = (over: Record<string, unknown> = {}) => upgrade({ engine: 'mysql', fromMajor: 8, toMajor: 8, fromSeries: '8.0', toSeries: '8.4', previousVolume: 'nd-db-shop-data', ...over });
+    const done = mysql({ status: 'completed', phase: null, verification: { tables: 2, rows: 50, sequences: 0, users: 4, objects: { indexes: 2, constraints: 1, views: 0, triggers: 0, functions: 0, extensions: '', events: 0, schemas: 1 }, mismatches: [] } });
+    const { client: c, upgrades } = client({ start: vi.fn(async () => mysql()), wait: vi.fn(async () => done) });
+    await upgradeStart(c, '9', { to: '8.4', yes: true, pollMs: 1 });
+    expect(upgrades.start).toHaveBeenCalledWith(9, { toVersion: '8.4' });
+    expect(text()).toContain('Upgraded to MySQL 8.4.');
+    expect(text()).toContain('4 account(s)');
+    expect(text()).toContain('To go back to MySQL 8.0');
+    await upgradeStart(c, '9', { to: '18', yes: true, pollMs: 1 });
+    expect(upgrades.start).toHaveBeenLastCalledWith(9, { toMajor: 18 });
+  });
+
+  it('status of a MariaDB database lists its series', async () => {
+    const { client: c } = client({ options: vi.fn(async () => ({ databaseId: 9, engine: 'mariadb', currentMajor: 10, targets: [], currentSeries: '10.11', versions: ['11.4', '11.8', '12.3'], refusal: null })), list: vi.fn(async () => []) });
+    await upgradeStatus(c, '9');
+    expect(text()).toContain('MariaDB 10.11');
+    expect(text()).toContain('MariaDB 11.4, MariaDB 11.8, MariaDB 12.3');
+  });
+
   it('validates the ids and the target', async () => {
     const { client: c, upgrades } = client();
     await upgradeStart(c, 'x', { to: '18', yes: true });
@@ -110,7 +130,7 @@ describe('databases upgrade', () => {
     await upgradeRollback(c, 'x', '4', { yes: true });
     await upgradeFinalize(c, '9', 'x', { yes: true });
     expect(upgrades.start).not.toHaveBeenCalled();
-    expect(text()).toContain('--to must be a PostgreSQL major');
+    expect(text()).toContain('--to must be a release');
     expect(process.exitCode).toBe(1);
   });
 

@@ -314,9 +314,11 @@ A dump restores the database as it was when the dump was taken. Point-in-time re
 - **Rolling back the panel** to a version without PITR keeps the database archiving, because the container keeps its flags until it is recreated. Nothing prunes the archive in that version. Disable PITR before rolling back.
 
 
-## ⬆️ 12. Major version upgrades (PostgreSQL, O2)
+## ⬆️ 12. Major version upgrades (PostgreSQL, MySQL, MariaDB; O2)
 
-A PostgreSQL database can move to a newer major (for example 16 → 18) from **Settings → Major version upgrade**. The CLI is `ninedeploy databases upgrade start <dbId> --to 18`, and the API is `POST /v1/databases/:id/upgrades` with `{ "toMajor": 18 }`. Starting, rolling back and finalizing need `admin` on the database. Reading the options (`GET /v1/databases/:id/upgrades/options`) and the history needs `viewer`.
+A PostgreSQL, MySQL or MariaDB database can move to a newer release (for example PostgreSQL 16 → 18, MySQL 8.0 → 9.7, MariaDB 10.11 → 11.8) from **Settings → Major version upgrade**. The CLI is `ninedeploy databases upgrade start <dbId> --to 18` (or `--to 8.4`), and the API is `POST /v1/databases/:id/upgrades` with `{ "toVersion": "18" }` (`{ "toMajor": 18 }` still works for PostgreSQL). The options route lists the targets in `versions`.
+
+PostgreSQL moves by dump and restore (below). MySQL and MariaDB move by copy: see [MySQL and MariaDB](#mysql-and-mariadb). Starting, rolling back and finalizing need `admin` on the database. Reading the options (`GET /v1/databases/:id/upgrades/options`) and the history needs `viewer`.
 
 **What happens, in order.**
 1. **Checks against the running database, before anything stops.** The panel reads the real major from the cluster (`server_version_num`), not from the configured tag. It refuses, naming what to change, when:
@@ -348,7 +350,23 @@ The CLI waits for the result (`--no-wait` returns at once). The card shows the p
 
 **While an upgrade runs**, the database's stop, start, restart, limits, delete and PITR switch answer 409, and the Doctor will not start it. Backups and restores wait for it.
 
+### MySQL and MariaDB
+
+A dump of every database carries the `mysql` system schema, and loading that into another series is the path both projects advise against. So these two move by **copy**, with an in-place upgrade on the copy:
+
+1. **Checks against the running server.** The panel reads the real series (`SELECT VERSION()`). MySQL 8.4 disables `mysql_native_password` and 9.0 removed it, so an upgrade to 8.4 or later is refused while any account still uses it; the refusal names the accounts. Move them first with `ALTER USER … IDENTIFIED WITH caching_sha2_password BY '…'`. There must be room for about twice the data directory where Docker keeps volumes (the copy and the safety dump), and for the dump in the backups directory.
+2. **The new images are pulled** while the database still runs.
+3. **The database stops.** A networkless container of its own image (the fence) recovers whatever the stop left, gives the fingerprint and the safety dump, then shuts down slowly (`innodb_fast_shutdown = 0`) and must exit cleanly. If it does not, nothing is copied and the database starts as it was.
+4. **The data directory is copied** into the new volume, read-only from the old one. The old volume is never written to: neither server can downgrade a data directory, so this copy is what makes the rollback possible.
+5. **The new release starts on the copy and upgrades it in place** (MySQL upgrades its data dictionary and system tables on start; MariaDB runs `mariadb-upgrade` through the image's `MARIADB_AUTO_UPGRADE`). MySQL never skips an LTS series, so 8.0 → 9.7 starts 8.4 on the copy first, shuts it down slowly, then starts 9.7.
+6. **The copy is compared with the original:** the exact row count of every table (`COUNT(*)`, not the estimate), the number of indexes, constraints, views, triggers, routines, events and databases, and every account (`user@host`; the new image may add its own). Then the switch, the start under the same name and the bridges, as for PostgreSQL. Root logs in over TCP with the stored password before the upgrade counts as done.
+
+Users, grants and every database in the server come along. Rollback and finalize work as above.
+
+**Targets.** MySQL 8.4 (LTS) and 9.7 (the engine default), from 8.0 or later. MariaDB 10.11, 11.4, 11.8 and 12.3, from 10.6 or later, directly.
+
 **Limits.**
-- **PostgreSQL on the panel host only, to 14–18.** Databases on nodes, pgvector databases and preview copies are refused. Other engines have no major upgrade yet.
+- **On the panel host only.** PostgreSQL goes to 14–18. Databases on nodes, pgvector databases and preview copies are refused. MongoDB and the other engines have no major upgrade yet.
+- **MySQL 5.7 and MariaDB before 10.6** are refused: upgrade them by hand to 8.0 or 10.6 first.
 - **PITR must be off** (its archive and base backups belong to one cluster). Turn it off, upgrade, turn it on again. A rollback is refused while PITR is on.
 - **Deleting the database keeps both volumes**, like any data volume. A new database created later with the same name would pick up the old `nd-db-<slug>-data` volume. If that volume holds another major's data, the create is refused with the major named, instead of starting a server that cannot read it.

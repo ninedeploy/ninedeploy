@@ -114,11 +114,12 @@ async function admitAndRun(deps: Deps, toMajor = 18) {
 }
 
 describe('refusals before anything stops', () => {
-  it('offers PostgreSQL on the panel host only, and not pgvector, preview copies or PITR', async () => {
+  it('offers PostgreSQL, MySQL and MariaDB on the panel host only, and not pgvector, preview copies or PITR', async () => {
     const base = await row();
     expect(upgradeRefusal(base)).toBeNull();
     expect(upgradeRefusal({ ...base, serverId: 3 })?.code).toBe('database_upgrade_node');
-    expect(upgradeRefusal({ ...base, engine: 'mysql' })?.code).toBe('database_upgrade_engine');
+    expect(upgradeRefusal({ ...base, engine: 'mysql' })).toBeNull();
+    expect(upgradeRefusal({ ...base, engine: 'mongo' })?.code).toBe('database_upgrade_engine');
     expect(upgradeRefusal({ ...base, version: 'vector' })?.code).toBe('database_upgrade_pgvector');
     expect(upgradeRefusal({ ...base, previewCopyOf: 2 })?.code).toBe('database_upgrade_preview');
     expect(upgradeRefusal({ ...base, pitrEnabled: true })?.code).toBe('database_upgrade_pitr');
@@ -130,7 +131,7 @@ describe('refusals before anything stops', () => {
     // The row says nothing (engine default); the cluster says 16.
     await db.update(databases).set({ version: null }).where(eq(databases.id, 10));
     const opts = await upgradeOptions(db, await row(), deps);
-    expect(opts).toEqual({ currentMajor: 16, targets: [17, 18], refusal: null });
+    expect(opts).toEqual({ currentMajor: 16, targets: [17, 18], currentSeries: '16', versions: ['17', '18'], refusal: null });
     await expect(planUpgrade(db, await row(), 16, deps)).rejects.toMatchObject({ code: 'database_upgrade_target' });
     await expect(planUpgrade(db, await row(), 19, deps)).rejects.toMatchObject({ code: 'database_upgrade_target' });
   });
@@ -387,7 +388,7 @@ describe('boot recovery and retention', () => {
     const d = await row();
     const ids: number[] = [];
     for (const status of ['failed', 'finalized', 'completed', 'rolled_back'] as const) {
-      const a = await admitUpgrade(db, d, await planUpgrade(db, d, 18, deps).catch(() => ({ facts: { major: 16, sizeBytes: 0, otherDatabases: [], otherRoles: [], tablesInPostgresDb: 0 }, fromImage: { id: 'x', tag: 'postgres:16' }, toImage: 'postgres:18', targetVersion: '18' })), 7);
+      const a = await admitUpgrade(db, d, await planUpgrade(db, d, 18, deps).catch(() => ({ facts: { major: 16, sizeBytes: 0, otherDatabases: [], otherRoles: [], tablesInPostgresDb: 0 }, fromImage: { id: 'x', tag: 'postgres:16' }, toImage: 'postgres:18', targetVersion: '18', fromSeries: '16', toSeries: '18', steps: ['18'] })), 7);
       await db.update(databaseUpgrades).set({ status, completedAt: new Date(Date.now() - 400 * 86_400_000) }).where(eq(databaseUpgrades.id, a.id));
       ids.push(a.id);
     }

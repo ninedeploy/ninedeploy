@@ -55,7 +55,7 @@ export const databaseUpgradeRoutes: FastifyPluginAsync = async (app) => {
 
   app.get('/:id/upgrades/options', async (req) => {
     const d = await load(req, 'viewer');
-    return { databaseId: d.id, ...(await upgradeOptions(app.db, d)) };
+    return { databaseId: d.id, engine: d.engine, ...(await upgradeOptions(app.db, d)) };
   });
 
   app.post('/:id/upgrades', async (req, reply) => {
@@ -66,12 +66,12 @@ export const databaseUpgradeRoutes: FastifyPluginAsync = async (app) => {
     admitting.add(d.id);
     let admitted: Awaited<ReturnType<typeof admitUpgrade>>;
     try {
-      const plan = await planUpgrade(app.db, d, body.data.toMajor);
+      const plan = await planUpgrade(app.db, d, body.data.toVersion ?? body.data.toMajor!);
       admitted = await admitUpgrade(app.db, d, plan, req.user!.id);
     } finally {
       admitting.delete(d.id);
     }
-    void audit(app.db, req.user!.id, 'database.upgrade.start', d.name, { databaseId: d.id, upgradeId: admitted.id, fromMajor: admitted.fromMajor, toMajor: admitted.toMajor });
+    void audit(app.db, req.user!.id, 'database.upgrade.start', d.name, { databaseId: d.id, upgradeId: admitted.id, fromMajor: admitted.fromMajor, toMajor: admitted.toMajor, fromSeries: admitted.fromSeries, toSeries: admitted.toSeries });
     void runDatabaseUpgrade(app.db, admitted.id, {
       actorId: req.user!.id,
       fromImageTag: admitted.fromImageTag,

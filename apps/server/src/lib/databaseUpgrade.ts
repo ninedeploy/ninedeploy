@@ -1,6 +1,6 @@
 /**
  * O2 (competitive roadmap): a one-click major-version upgrade of a managed
- * PostgreSQL database on the panel host, by dump and restore into a NEW volume.
+ * database on the panel host into a NEW volume; PostgreSQL by dump and restore.
  *
  * The order is what keeps it safe:
  *  1. preflight against the RUNNING cluster, before any downtime: its real
@@ -24,6 +24,18 @@
  * previous volume stays until the upgrade is finalized; until then a rollback
  * points the row back at it (writes made since the upgrade stay on the new
  * volume, which a later finalize of the rollback deletes).
+ *
+ * MySQL and MariaDB move by COPY instead (`method: 'copy'` below): a dump of
+ * every database carries the `mysql` system schema, and loading that into
+ * another series is the path both projects say not to take. The fence takes
+ * the fingerprint and the safety dump, then shuts down slowly
+ * (`innodb_fast_shutdown = 0`) and must exit cleanly; its data directory is
+ * copied into the new volume, and the new image upgrades the COPY in place on
+ * start (MySQL's `--upgrade=AUTO`; MariaDB's `MARIADB_AUTO_UPGRADE`). Users
+ * and grants come along as they are. MySQL never skips an LTS series, so 8.0
+ * reaches 9.x through an 8.4 step on the same copy. The old volume is never
+ * written to, which is what makes the rollback possible: neither server can
+ * downgrade a data directory.
  */
 import { mkdir, statfs } from 'node:fs/promises';
 import path from 'node:path';
@@ -35,7 +47,9 @@ import { badRequest, conflict, HttpError } from './errors.js';
 import { capture, run } from './exec.js';
 import { createLogger } from './log.js';
 import { pullDockerImage } from './dockerPull.js';
+import { decrypt } from './crypto.js';
 import {
+  copyDockerVolume,
   createDockerVolume,
   databaseVolumeLabels,
   dumpDatabaseHeld,
@@ -46,6 +60,7 @@ import {
   restoreDatabaseHeld,
   runIsolatedDatabase,
   startDatabase,
+  stopContainerClean,
   attachDatabaseToServiceBridges,
   volumeExists,
   waitForPostgresTcp,
@@ -62,14 +77,17 @@ const FREE_SPACE_MARGIN_BYTES = 1024 * 1024 * 1024;
 const SEP = '\u001f';
 const SYSTEM_SCHEMAS = `('pg_catalog','information_schema')`;
 
-export type UpgradePhase = 'pull' | 'stop' | 'dump' | 'restore' | 'verify' | 'switch' | 'start';
+export type UpgradePhase = 'pull' | 'stop' | 'dump' | 'copy' | 'upgrade' | 'restore' | 'verify' | 'switch' | 'start';
 
 export interface ClusterFingerprint {
   /** `schema.table` → exact row count, user tables only (extension-owned excluded). */
   rows: Record<string, string>;
   /** `schema.sequence` → last_value (`null` when never called). */
   sequences: Record<string, string>;
-  objects: { indexes: number; constraints: number; views: number; triggers: number; functions: number; extensions: string };
+  /** MySQL/MariaDB add `events` (scheduled events) and `schemas` (user databases). */
+  objects: { indexes: number; constraints: number; views: number; triggers: number; functions: number; extensions: string; events?: number; schemas?: number };
+  /** MySQL/MariaDB: every account (`user@host`). Each must still exist after; the new image may add its own. */
+  users?: string[];
 }
 
 export interface UpgradeVerification {
@@ -77,7 +95,90 @@ export interface UpgradeVerification {
   rows: number;
   sequences: number;
   objects: ClusterFingerprint['objects'];
+  users?: number;
 }
+
+/** The engines a major upgrade is offered for. */
+export type UpgradeEngine = 'postgres' | 'mysql' | 'mariadb';
+
+interface EngineUpgradeSpec {
+  label: string;
+  /** `dump`: dump and restore into an empty cluster. `copy`: copy the stopped data directory and upgrade the copy in place. */
+  method: 'dump' | 'copy';
+  /** The series an upgrade can target, oldest first. The newest is the engine default. */
+  targets: readonly string[];
+  /** Below this series a copy upgrade is refused (older images lack what it relies on). */
+  floor?: string;
+}
+
+/**
+ * MySQL: 8.4 is the LTS, 9.7 the Innovation release the engine defaults to.
+ * MariaDB: the LTS releases and the default. Every target must be a tag the
+ * engine's image factory resolves (`mysql:8.4`, `mariadb:11.8`).
+ */
+export const UPGRADE_ENGINES: Record<UpgradeEngine, EngineUpgradeSpec> = {
+  postgres: { label: 'PostgreSQL', method: 'dump', targets: ['14', '15', '16', '17', '18'] },
+  mysql: { label: 'MySQL', method: 'copy', targets: ['8.4', '9.7'], floor: '8.0' },
+  mariadb: { label: 'MariaDB', method: 'copy', targets: ['10.11', '11.4', '11.8', '12.3'], floor: '10.6' },
+};
+
+const MYSQL_DATA_DIR = '/var/lib/mysql';
+/** MySQL's own accounts, present in every 8.x and 9.x data directory. */
+const MYSQL_SYSTEM_USERS = `('mysql.sys','mysql.session','mysql.infoschema')`;
+const MYSQL_SYSTEM_SCHEMAS = `('mysql','information_schema','performance_schema','sys')`;
+
+export const isUpgradeEngine = (engine: string): engine is UpgradeEngine => Object.hasOwn(UPGRADE_ENGINES, engine);
+export const engineLabel = (engine: string) => (isUpgradeEngine(engine) ? UPGRADE_ENGINES[engine].label : engine);
+
+/** `8.0.36` → [8, 0]; null when the text does not start with a version. */
+function seriesParts(v: string): [number, number] | null {
+  const m = v.trim().match(/^(\d+)(?:\.(\d+))?/);
+  return m ? [Number(m[1]), m[2] === undefined ? 0 : Number(m[2])] : null;
+}
+
+/** Negative when a is the older series. PostgreSQL series are single numbers. */
+export function compareSeries(a: string, b: string): number {
+  const pa = seriesParts(a) ?? [0, 0];
+  const pb = seriesParts(b) ?? [0, 0];
+  return pa[0] - pb[0] || pa[1] - pb[1];
+}
+
+/** The series a server version string belongs to: `16`, `8.4`, `11.4`. */
+export function seriesOf(engine: string, serverVersion: string): string | null {
+  const p = seriesParts(serverVersion);
+  if (!p) return null;
+  return engine === 'postgres' ? String(p[0]) : `${p[0]}.${p[1]}`;
+}
+
+/** The series a row's `version` tag starts (NULL = the engine default), or null when the tag does not say. */
+export function rowSeries(engine: string, version: string | null): string | null {
+  if (engine === 'postgres') return String(postgresMajor(version));
+  if (!isUpgradeEngine(engine)) return null;
+  if (version == null || version === '') return UPGRADE_ENGINES[engine].targets.at(-1)!;
+  return /^\d+\.\d+/.test(version) ? seriesOf(engine, version) : null;
+}
+
+/**
+ * The series a copy upgrade passes through, ending at `to`; a string says why
+ * it cannot. MySQL never skips an LTS series: anything before 8.4 steps
+ * through 8.4 first (8.0 → 8.4 → 9.7 on the same copy). MariaDB upgrades
+ * from any earlier release directly.
+ */
+export function upgradeSteps(engine: UpgradeEngine, from: string, to: string): string[] | string {
+  const spec = UPGRADE_ENGINES[engine];
+  if (!spec.targets.includes(to)) return `${spec.label} ${to} is not a supported target (supported: ${spec.targets.join(', ')}).`;
+  if (compareSeries(to, from) <= 0) return `The database already runs ${spec.label} ${from}; an upgrade must go to a newer release.`;
+  if (spec.floor && compareSeries(from, spec.floor) < 0) return `${spec.label} ${from} is older than ${spec.floor}, the oldest release this upgrade starts from. Upgrade it to ${spec.floor} by hand first.`;
+  if (engine === 'mysql' && compareSeries(from, '8.4') < 0 && compareSeries(to, '8.4') > 0) return ['8.4', to];
+  return [to];
+}
+
+/** The leading integer of a series (`8.4` → 8), for the `fromMajor`/`toMajor` columns. */
+const majorOf = (series: string) => (seriesParts(series) ?? [0, 0])[0];
+
+/** How an upgrade row names its series (rows from before 0126 have only the majors). */
+export const fromSeriesOf = (r: Pick<DatabaseUpgrade, 'fromSeries' | 'fromMajor'>) => r.fromSeries ?? String(r.fromMajor);
+export const toSeriesOf = (r: Pick<DatabaseUpgrade, 'toSeries' | 'toMajor'>) => r.toSeries ?? String(r.toMajor);
 
 /** Everything that touches Docker, injectable for tests. */
 export interface DatabaseUpgradeDeps {
@@ -87,7 +188,16 @@ export interface DatabaseUpgradeDeps {
   pull(image: string, log: (line: string) => void): Promise<void>;
   /** Graceful stop, then remove (the volume stays). */
   stopAndRemove(container: string, log: (line: string) => void): Promise<void>;
-  runIsolated(d: Database, spec: { name: string; image: string; volume: string; mount: string }, log: (line: string) => void): Promise<void>;
+  runIsolated(d: Database, spec: { name: string; image: string; volume: string; mount: string; env?: Record<string, string> }, log: (line: string) => void): Promise<void>;
+  /** MySQL/MariaDB: one statement as root over loopback TCP (so the stored password is what logs in); tab-separated rows, no header. */
+  sql(d: Database, container: string, sql: string): Promise<string>;
+  /** Bytes under `dir` inside a running container (`du -sb`). */
+  dataDirBytes(container: string, dir: string): Promise<number>;
+  /** Free bytes on the filesystem holding `dir` inside a running container: where Docker keeps the volume. */
+  freeBytesIn(container: string, dir: string): Promise<number>;
+  /** Stop (long bound), report the exit code (null = unknown or still running), remove. */
+  stopClean(container: string, log: (line: string) => void): Promise<number | null>;
+  copyVolume(from: string, to: string, image: string, log: (line: string) => void): Promise<void>;
   waitReady(container: string, d: Database, log: (line: string) => void): Promise<boolean>;
   dump(d: Database, file: string, log: (line: string) => void): Promise<void>;
   restore(d: Database, file: string, log: (line: string) => void): Promise<void>;
@@ -100,6 +210,31 @@ export interface DatabaseUpgradeDeps {
   freeBytes(dir: string): Promise<number>;
   maintenance<T>(d: Database, log: (line: string) => void, op: () => Promise<T>): Promise<T>;
   fileSize(file: string): Promise<number>;
+}
+
+/**
+ * MySQL/MariaDB: wait until root logs in over loopback TCP with the stored
+ * password. A server upgrading its data directory on start (MySQL's data
+ * dictionary, MariaDB's `mariadb-upgrade`) answers only afterwards, so the
+ * bound is long; a container that exited (a failed upgrade) ends the wait.
+ */
+async function waitForMysqlTcp(container: string, d: Database, log: (line: string) => void, timeoutSec = 1800): Promise<boolean> {
+  const deadline = Date.now() + timeoutSec * 1000;
+  let last = '';
+  while (Date.now() < deadline) {
+    try {
+      if ((await databaseUpgradeDeps.sql(d, container, 'SELECT 1')).trim() === '1') return true;
+    } catch (err) {
+      last = err instanceof Error ? err.message : String(err);
+    }
+    if (!(await databaseUpgradeDeps.containerRunning(container))) {
+      log(`${container} exited before it accepted connections${last ? ` (${clip(last)})` : ''}`);
+      return false;
+    }
+    await new Promise((r) => setTimeout(r, 2_000));
+  }
+  log(`${container} did not accept connections within ${timeoutSec} s${last ? ` (${clip(last)})` : ''}`);
+  return false;
 }
 
 export const databaseUpgradeDeps: DatabaseUpgradeDeps = {
@@ -129,7 +264,23 @@ export const databaseUpgradeDeps: DatabaseUpgradeDeps = {
     await run('docker', ['rm', '-f', container], {}, () => undefined).catch(() => undefined);
   },
   runIsolated: (d, spec, log) => runIsolatedDatabase(d, spec, log),
-  waitReady: async (container, _d, log) => {
+  sql: (d, container, sql) =>
+    capture('docker', ['exec', container, d.engine === 'mariadb' ? 'mariadb' : 'mysql', '-h127.0.0.1', '-uroot', `--password=${decrypt(d.passwordEncrypted)}`, '-N', '-B', '-e', sql], { timeoutMs: 6 * 60 * 60 * 1000 }),
+  dataDirBytes: async (container, dir) => {
+    const n = Number.parseInt((await capture('docker', ['exec', container, 'du', '-sb', dir])).trim().split(/\s+/)[0] ?? '', 10);
+    if (!Number.isFinite(n)) throw new Error(`could not measure ${dir} in ${container}`);
+    return n;
+  },
+  freeBytesIn: async (container, dir) => {
+    const last = lines(await capture('docker', ['exec', container, 'df', '-PB1', dir])).at(-1) ?? '';
+    const n = Number.parseInt(last.trim().split(/\s+/)[3] ?? '', 10);
+    if (!Number.isFinite(n)) throw new Error(`could not read the free space of ${dir} in ${container}`);
+    return n;
+  },
+  stopClean: (container, log) => stopContainerClean(container, log),
+  copyVolume: (from, to, image, log) => copyDockerVolume(from, to, image, log),
+  waitReady: async (container, d, log) => {
+    if (d.engine === 'mysql' || d.engine === 'mariadb') return waitForMysqlTcp(container, d, log);
     const cfg = ENGINES.postgres!;
     // TCP, not the socket: a fresh cluster's init server listens on the socket
     // only and is restarted by the entrypoint; TCP answers only once the real
@@ -168,7 +319,7 @@ const refuse = (code: string, message: string) => new HttpError(409, code, messa
 /** Why this database cannot be upgraded at all (before any cluster query), or null. */
 export function upgradeRefusal(d: Database): { code: string; message: string } | null {
   if (d.serverId != null) return { code: 'database_upgrade_node', message: 'A major upgrade runs on the panel host only for now; this database lives on a node.' };
-  if (d.engine !== 'postgres') return { code: 'database_upgrade_engine', message: `A major upgrade is available for PostgreSQL only for now, not ${d.engine}.` };
+  if (!isUpgradeEngine(d.engine)) return { code: 'database_upgrade_engine', message: `A major upgrade is available for PostgreSQL, MySQL and MariaDB, not ${d.engine}.` };
   if (d.version === 'vector' || d.version === 'pgvector') return { code: 'database_upgrade_pgvector', message: 'This database runs the pgvector image, which follows its own release line; a major upgrade is not offered for it.' };
   if (d.previewCopyOf != null || d.previewServiceId != null) return { code: 'database_upgrade_preview', message: 'A preview copy follows its source database; upgrade the source instead.' };
   if (d.pitrEnabled) return { code: 'database_upgrade_pitr', message: 'Point-in-time recovery is on: its WAL archive and base backups belong to the current cluster. Turn it off, upgrade, then turn it on again.' };
@@ -188,7 +339,7 @@ export async function openUpgrade(db: DB, databaseId: number) {
 export async function assertNoRunningUpgrade(db: DB, databaseId: number): Promise<void> {
   const open = await openUpgrade(db, databaseId);
   if (open?.status === 'running') {
-    throw conflict(`A major upgrade of this database is running (to PostgreSQL ${open.toMajor}); wait for it to finish.`);
+    throw conflict(`A major upgrade of this database is running (to ${engineLabel(open.engine)} ${toSeriesOf(open)}); wait for it to finish.`);
   }
 }
 
@@ -224,29 +375,43 @@ export interface UpgradePlan {
   fromImage: { id: string; tag: string };
   toImage: string;
   targetVersion: string;
+  fromSeries: string;
+  toSeries: string;
+  /** The series the copy is started on in turn (copy engines); the last is the target. */
+  steps: string[];
+}
+
+/** MySQL/MariaDB: the running server's series. */
+async function readServerSeries(deps: DatabaseUpgradeDeps, d: Database, container: string): Promise<string> {
+  const raw = (await deps.sql(d, container, 'SELECT VERSION()')).trim();
+  const series = seriesOf(d.engine, raw);
+  if (!series) throw new Error(`could not read the server version (${clip(raw)})`);
+  return series;
 }
 
 /**
  * Everything checked before an upgrade is admitted — against the RUNNING
  * cluster, so a refusal never costs downtime. Throws an HttpError naming what
- * to change.
+ * to change. `to` is the PostgreSQL major, or the series (`8.4`, `11.8`).
  */
-export async function planUpgrade(db: DB, d: Database, toMajor: number, deps: DatabaseUpgradeDeps = databaseUpgradeDeps): Promise<UpgradePlan> {
+export async function planUpgrade(db: DB, d: Database, to: number | string, deps: DatabaseUpgradeDeps = databaseUpgradeDeps): Promise<UpgradePlan> {
   const refusal = upgradeRefusal(d);
   if (refusal) throw refuse(refusal.code, refusal.message);
   const open = await openUpgrade(db, d.id);
-  if (open?.status === 'running') throw refuse('database_upgrade_running', `An upgrade to PostgreSQL ${open.toMajor} is already running.`);
+  if (open?.status === 'running') throw refuse('database_upgrade_running', `An upgrade to ${engineLabel(open.engine)} ${toSeriesOf(open)} is already running.`);
   if (open?.status === 'completed') {
-    throw refuse('database_upgrade_unfinalized', `The upgrade to PostgreSQL ${open.toMajor} still keeps the previous volume ${open.previousVolume}. Finalize it (or roll it back) before another upgrade.`);
+    throw refuse('database_upgrade_unfinalized', `The upgrade to ${engineLabel(open.engine)} ${toSeriesOf(open)} still keeps the previous volume ${open.previousVolume}. Finalize it (or roll it back) before another upgrade.`);
   }
   if (d.status !== 'running' || !(await deps.containerRunning(d.containerName!))) {
     throw refuse('database_upgrade_not_running', 'The database must be running: the upgrade reads the live cluster before it stops anything.');
   }
   const fromImage = await deps.containerImage(d.containerName!);
   if (!fromImage) throw refuse('database_upgrade_not_running', `Could not inspect ${d.containerName}.`);
+  if (d.engine !== 'postgres') return planCopyUpgrade(d, String(to), fromImage, deps);
+  const toMajor = typeof to === 'number' ? to : /^\d+$/.test(to) ? Number.parseInt(to, 10) : Number.NaN;
   const facts = await readClusterFacts(deps, d.containerName!);
   if (!(POSTGRES_UPGRADE_MAJORS as readonly number[]).includes(toMajor)) {
-    throw badRequest(`PostgreSQL ${toMajor} is not a supported target (supported: ${POSTGRES_UPGRADE_MAJORS.join(', ')}).`, 'database_upgrade_target');
+    throw badRequest(`PostgreSQL ${to} is not a supported target (supported: ${POSTGRES_UPGRADE_MAJORS.join(', ')}).`, 'database_upgrade_target');
   }
   if (toMajor <= facts.major) {
     throw badRequest(`The cluster already runs PostgreSQL ${facts.major}; an upgrade must go to a newer major.`, 'database_upgrade_target');
@@ -266,26 +431,115 @@ export async function planUpgrade(db: DB, d: Database, toMajor: number, deps: Da
     throw refuse('database_upgrade_disk', `Not enough free disk: the dump and the new volume need about ${Math.ceil(needed / 1024 / 1024)} MiB, ${Math.floor(free / 1024 / 1024)} MiB is free.`);
   }
   const targetVersion = String(toMajor);
-  return { facts, fromImage, toImage: ENGINES.postgres!.image(targetVersion), targetVersion };
+  return { facts, fromImage, toImage: ENGINES.postgres!.image(targetVersion), targetVersion, fromSeries: String(facts.major), toSeries: targetVersion, steps: [targetVersion] };
+}
+
+/**
+ * MySQL/MariaDB preflight: the real series, an allowed path, accounts the
+ * target can still log in, and room for the copy and the safety dump.
+ */
+async function planCopyUpgrade(d: Database, to: string, fromImage: { id: string; tag: string }, deps: DatabaseUpgradeDeps): Promise<UpgradePlan> {
+  const engine = d.engine as UpgradeEngine;
+  const container = d.containerName!;
+  const fromSeries = await readServerSeries(deps, d, container);
+  const steps = upgradeSteps(engine, fromSeries, to);
+  if (typeof steps === 'string') throw badRequest(steps, 'database_upgrade_target');
+  if (engine === 'mysql' && compareSeries(to, '8.4') >= 0) {
+    // 8.4 starts with mysql_native_password off and 9.0 removed it: such an
+    // account would no longer log in after the upgrade.
+    const native = lines(await deps.sql(d, container, `SELECT CONCAT(user, '@', host) FROM mysql.user WHERE plugin = 'mysql_native_password' AND user NOT IN ${MYSQL_SYSTEM_USERS} ORDER BY 1`));
+    if (native.length > 0) {
+      throw refuse(
+        'database_upgrade_native_password',
+        `These accounts use mysql_native_password, which MySQL 8.4 disables and 9.0 removed, so they could not log in after the upgrade: ${native.slice(0, 10).join(', ')}${native.length > 10 ? ` (+${native.length - 10} more)` : ''}. Move each to caching_sha2_password first (ALTER USER … IDENTIFIED WITH caching_sha2_password BY '…').`,
+      );
+    }
+  }
+  const sizeBytes = await deps.dataDirBytes(container, MYSQL_DATA_DIR);
+  // The copy lands where Docker keeps volumes; the safety dump in the backups
+  // directory, which may be the same filesystem: ask room for both there.
+  const volumeFree = await deps.freeBytesIn(container, MYSQL_DATA_DIR);
+  const volumeNeeded = sizeBytes * 2 + FREE_SPACE_MARGIN_BYTES;
+  if (volumeFree < volumeNeeded) {
+    throw refuse('database_upgrade_disk', `Not enough free disk where Docker keeps volumes: the copy and the safety dump need about ${Math.ceil(volumeNeeded / 1024 / 1024)} MiB, ${Math.floor(volumeFree / 1024 / 1024)} MiB is free.`);
+  }
+  const backupsFree = await deps.freeBytes(config.paths.backupsDir);
+  if (backupsFree < sizeBytes + FREE_SPACE_MARGIN_BYTES) {
+    throw refuse('database_upgrade_disk', `Not enough free disk for the safety dump: about ${Math.ceil((sizeBytes + FREE_SPACE_MARGIN_BYTES) / 1024 / 1024)} MiB is needed, ${Math.floor(backupsFree / 1024 / 1024)} MiB is free.`);
+  }
+  return {
+    facts: { major: majorOf(fromSeries), sizeBytes, otherDatabases: [], otherRoles: [], tablesInPostgresDb: 0 },
+    fromImage,
+    toImage: ENGINES[engine]!.image(to),
+    targetVersion: to,
+    fromSeries,
+    toSeries: to,
+    steps,
+  };
 }
 
 /** What the options route shows: the live major, the targets, and why none can start now. */
-export async function upgradeOptions(db: DB, d: Database, deps: DatabaseUpgradeDeps = databaseUpgradeDeps): Promise<{ currentMajor: number | null; targets: number[]; refusal: { code: string; message: string } | null }> {
+export interface UpgradeOptions {
+  /** The PostgreSQL major the running cluster reports (MySQL/MariaDB: the leading number of its series). */
+  currentMajor: number | null;
+  /** PostgreSQL majors it can move to (empty for MySQL/MariaDB: read `versions`). */
+  targets: number[];
+  /** The series the running server reports: `16`, `8.0`, `11.4`. */
+  currentSeries: string | null;
+  /** Every series it can move to, oldest first (a PostgreSQL major as text). */
+  versions: string[];
+  refusal: { code: string; message: string } | null;
+}
+
+/** What the options route shows: the live series, the targets, and why none can start now. */
+export async function upgradeOptions(db: DB, d: Database, deps: DatabaseUpgradeDeps = databaseUpgradeDeps): Promise<UpgradeOptions> {
+  const none = (refusal: UpgradeOptions['refusal'], current: string | null = null): UpgradeOptions => ({
+    currentMajor: current === null ? null : majorOf(current),
+    targets: [],
+    currentSeries: current,
+    versions: [],
+    refusal,
+  });
   const refusal = upgradeRefusal(d);
-  if (refusal) return { currentMajor: null, targets: [], refusal };
+  if (refusal) return none(refusal);
+  const label = engineLabel(d.engine);
   const open = await openUpgrade(db, d.id);
-  if (open?.status === 'running') return { currentMajor: open.fromMajor, targets: [], refusal: { code: 'database_upgrade_running', message: `An upgrade to PostgreSQL ${open.toMajor} is running.` } };
-  if (open?.status === 'completed') return { currentMajor: open.toMajor, targets: [], refusal: { code: 'database_upgrade_unfinalized', message: `Finalize (or roll back) the upgrade to PostgreSQL ${open.toMajor} before another one.` } };
+  if (open?.status === 'running') return none({ code: 'database_upgrade_running', message: `An upgrade to ${label} ${toSeriesOf(open)} is running.` }, fromSeriesOf(open));
+  if (open?.status === 'completed') return none({ code: 'database_upgrade_unfinalized', message: `Finalize (or roll back) the upgrade to ${label} ${toSeriesOf(open)} before another one.` }, toSeriesOf(open));
   if (d.status !== 'running' || !(await deps.containerRunning(d.containerName!))) {
-    return { currentMajor: null, targets: [], refusal: { code: 'database_upgrade_not_running', message: 'Start the database first: the upgrade reads the live cluster.' } };
+    return none({ code: 'database_upgrade_not_running', message: 'Start the database first: the upgrade reads the live cluster.' });
   }
   try {
-    const versionNum = Number.parseInt((await deps.psql(d.containerName!, `SELECT current_setting('server_version_num')`)).trim(), 10);
-    const currentMajor = Math.floor(versionNum / 10_000);
-    const targets = upgradeTargets(currentMajor);
-    return { currentMajor, targets, refusal: targets.length === 0 ? { code: 'database_upgrade_latest', message: `PostgreSQL ${currentMajor} is the newest major offered.` } : null };
+    let current: string;
+    let versions: string[];
+    let targets: number[] = [];
+    if (d.engine === 'postgres') {
+      const versionNum = Number.parseInt((await deps.psql(d.containerName!, `SELECT current_setting('server_version_num')`)).trim(), 10);
+      const currentMajor = Math.floor(versionNum / 10_000);
+      if (!Number.isFinite(currentMajor)) throw new Error('no server_version_num');
+      current = String(currentMajor);
+      targets = upgradeTargets(currentMajor);
+      versions = targets.map(String);
+    } else {
+      const engine = d.engine as UpgradeEngine;
+      current = await readServerSeries(deps, d, d.containerName!);
+      versions = UPGRADE_ENGINES[engine].targets.filter((t) => Array.isArray(upgradeSteps(engine, current, t)));
+      if (versions.length === 0) {
+        const why = upgradeSteps(engine, current, UPGRADE_ENGINES[engine].targets.at(-1)!);
+        if (typeof why === 'string' && compareSeries(current, UPGRADE_ENGINES[engine].floor ?? '0') < 0) {
+          return { currentMajor: majorOf(current), targets: [], currentSeries: current, versions: [], refusal: { code: 'database_upgrade_target', message: why } };
+        }
+      }
+    }
+    return {
+      currentMajor: majorOf(current),
+      targets,
+      currentSeries: current,
+      versions,
+      refusal: versions.length === 0 ? { code: 'database_upgrade_latest', message: `${label} ${current} is the newest release offered.` } : null,
+    };
   } catch (err) {
-    return { currentMajor: null, targets: [], refusal: { code: 'database_upgrade_not_running', message: `Could not read the server version: ${err instanceof Error ? err.message : String(err)}` } };
+    return none({ code: 'database_upgrade_not_running', message: `Could not read the server version: ${err instanceof Error ? err.message : String(err)}` });
   }
 }
 
@@ -300,6 +554,8 @@ export function serializeUpgrade(r: DatabaseUpgrade) {
     engine: r.engine,
     fromMajor: r.fromMajor,
     toMajor: r.toMajor,
+    fromSeries: fromSeriesOf(r),
+    toSeries: toSeriesOf(r),
     previousVersion: r.previousVersion,
     targetVersion: r.targetVersion,
     previousVolume: r.previousVolume,
@@ -324,12 +580,16 @@ export async function admitUpgrade(db: DB, d: Database, plan: UpgradePlan, actor
       databaseId: d.id,
       engine: d.engine,
       fromMajor: plan.facts.major,
-      toMajor: Number.parseInt(plan.targetVersion, 10),
+      toMajor: majorOf(plan.toSeries),
+      fromSeries: plan.fromSeries,
+      toSeries: plan.toSeries,
       // The row's tag can disagree with the data (a NULL version follows the
       // engine default, which may have moved on since the cluster was made):
       // every way back starts the image this value names, so it must be the
-      // major the cluster really runs.
-      previousVersion: postgresMajor(d.version) === plan.facts.major ? d.version : String(plan.facts.major),
+      // series the cluster really runs. For MySQL and MariaDB a wrong one is
+      // worse than a crash loop: a newer server upgrades the old volume in
+      // place, and there is no way down.
+      previousVersion: rowSeries(d.engine, d.version) === plan.fromSeries ? d.version : plan.fromSeries,
       targetVersion: plan.targetVersion,
       fromImage: plan.fromImage.id,
       toImage: plan.toImage,
@@ -403,6 +663,11 @@ export function compareFingerprints(before: ClusterFingerprint, after: ClusterFi
   for (const key of Object.keys(before.objects) as Array<keyof ClusterFingerprint['objects']>) {
     if (before.objects[key] !== after.objects[key]) out.push(`${key}: ${before.objects[key]} before, ${after.objects[key]} after`);
   }
+  // Accounts: each must survive; the new image may add its own system accounts.
+  if (before.users) {
+    const kept = new Set(after.users ?? []);
+    for (const u of before.users) if (!kept.has(u)) out.push(`account ${u} is missing after the upgrade`);
+  }
   return out;
 }
 
@@ -412,6 +677,65 @@ export function verificationSummary(fp: ClusterFingerprint): UpgradeVerification
     rows: Object.values(fp.rows).reduce((sum, n) => sum + (Number(n) || 0), 0),
     sequences: Object.keys(fp.sequences).length,
     objects: fp.objects,
+    ...(fp.users ? { users: fp.users.length } : {}),
+  };
+}
+
+// ── MySQL / MariaDB fingerprint ─────────────────────────────────────────
+
+const fromHex = (h: string) => Buffer.from(h, 'hex').toString('utf8');
+const mysqlIdent = (name: string) => `\`${name.replace(/`/g, '``')}\``;
+/** Tables counted per statement: one UNION ALL of exact counts. */
+const COUNT_CHUNK = 100;
+
+/**
+ * What the upgraded copy must match: every user table's exact row count
+ * (COUNT(*), never the TABLE_ROWS estimate), the count of indexes,
+ * constraints, views, triggers, routines and events, the databases, and the
+ * accounts. Names travel as hex, so no name can break the parsing.
+ */
+export async function mysqlFingerprint(deps: DatabaseUpgradeDeps, d: Database, container: string): Promise<ClusterFingerprint> {
+  const tables = lines(await deps.sql(d, container,
+    `SELECT HEX(TABLE_SCHEMA), HEX(TABLE_NAME) FROM information_schema.TABLES WHERE TABLE_TYPE IN ('BASE TABLE', 'SYSTEM VERSIONED') AND TABLE_SCHEMA NOT IN ${MYSQL_SYSTEM_SCHEMAS} ORDER BY TABLE_SCHEMA, TABLE_NAME`))
+    .map((l) => {
+      const [schema, table] = l.split('\t');
+      return { schema: fromHex(schema ?? ''), table: fromHex(table ?? '') };
+    });
+  const rows: Record<string, string> = {};
+  for (let i = 0; i < tables.length; i += COUNT_CHUNK) {
+    const chunk = tables.slice(i, i + COUNT_CHUNK);
+    const sql = chunk.map((t, k) => `SELECT ${i + k}, COUNT(*) FROM ${mysqlIdent(t.schema)}.${mysqlIdent(t.table)}`).join(' UNION ALL ');
+    for (const l of lines(await deps.sql(d, container, sql))) {
+      const [idx, count] = l.split('\t');
+      const t = tables[Number(idx)];
+      if (t) rows[`${t.schema}.${t.table}`] = count ?? '';
+    }
+  }
+  const notSystem = (col: string) => `${col} NOT IN ${MYSQL_SYSTEM_SCHEMAS}`;
+  const [o] = lines(await deps.sql(d, container, `SELECT
+    (SELECT COUNT(*) FROM (SELECT DISTINCT TABLE_SCHEMA, TABLE_NAME, INDEX_NAME FROM information_schema.STATISTICS WHERE ${notSystem('TABLE_SCHEMA')}) x),
+    (SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE ${notSystem('CONSTRAINT_SCHEMA')}),
+    (SELECT COUNT(*) FROM information_schema.VIEWS WHERE ${notSystem('TABLE_SCHEMA')}),
+    (SELECT COUNT(*) FROM information_schema.TRIGGERS WHERE ${notSystem('TRIGGER_SCHEMA')}),
+    (SELECT COUNT(*) FROM information_schema.ROUTINES WHERE ${notSystem('ROUTINE_SCHEMA')}),
+    (SELECT COUNT(*) FROM information_schema.EVENTS WHERE ${notSystem('EVENT_SCHEMA')}),
+    (SELECT COUNT(*) FROM information_schema.SCHEMATA WHERE ${notSystem('SCHEMA_NAME')})`));
+  const f = (o ?? '').split('\t');
+  const users = lines(await deps.sql(d, container, `SELECT HEX(CONCAT(user, '@', host)) FROM mysql.user ORDER BY 1`)).map(fromHex);
+  return {
+    rows,
+    sequences: {},
+    objects: {
+      indexes: Number(f[0] ?? 0),
+      constraints: Number(f[1] ?? 0),
+      views: Number(f[2] ?? 0),
+      triggers: Number(f[3] ?? 0),
+      functions: Number(f[4] ?? 0),
+      extensions: '',
+      events: Number(f[5] ?? 0),
+      schemas: Number(f[6] ?? 0),
+    },
+    users,
   };
 }
 
@@ -476,6 +800,31 @@ export async function runDatabaseUpgrade(
   // Once the new cluster was started on the network it may hold writes: its volume is never deleted after that.
   let everSwitched = false;
   let stopped = false;
+  const spec = UPGRADE_ENGINES[up0.engine as UpgradeEngine] ?? UPGRADE_ENGINES.postgres;
+  const label = spec.label;
+  const fromS = fromSeriesOf(up0);
+  const toS = toSeriesOf(up0);
+  /** The pre-upgrade dump, kept as an ordinary backup of the database. */
+  const safetyDump = async (container: string) => {
+    await mkdir(config.paths.backupsDir, { recursive: true });
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const file = path.join(config.paths.backupsDir, `${d0.slug}-${stamp}-pre-upgrade.dump`);
+    const [b] = await db.insert(backups).values({ databaseId: d0.id, scope: 'db', label: 'pre-upgrade', status: 'running', path: file }).returning({ id: backups.id });
+    try {
+      await deps.dump({ ...d0, containerName: container }, file, log);
+    } catch (err) {
+      await db.update(backups).set({ status: 'failed' }).where(eq(backups.id, b!.id));
+      throw err;
+    }
+    await db.update(backups).set({ status: 'completed', sizeBytes: await deps.fileSize(file) }).where(eq(backups.id, b!.id));
+    await db.update(databaseUpgrades).set({ safetyBackupId: b!.id }).where(eq(databaseUpgrades.id, upgradeId));
+    return file;
+  };
+  const recordVerification = async (before: ClusterFingerprint, after: ClusterFingerprint) => {
+    const diff = compareFingerprints(before, after);
+    await db.update(databaseUpgrades).set({ verification: JSON.stringify({ ...verificationSummary(before), mismatches: diff.slice(0, 50) }) }).where(eq(databaseUpgrades.id, upgradeId));
+    if (diff.length > 0) throw new Error(`the ${spec.method === 'copy' ? 'upgraded' : 'restored'} copy does not match the old cluster: ${diff.slice(0, 5).join('; ')}${diff.length > 5 ? ` (+${diff.length - 5} more)` : ''}`);
+  };
 
   try {
     await deps.maintenance(d0, log, async () => {
@@ -485,50 +834,93 @@ export async function runDatabaseUpgrade(
       if (!current || current.volumeName !== up0.previousVolume || current.status !== 'running') {
         throw new Error('the database changed since the upgrade was admitted; start it again');
       }
-      await phase('pull');
-      await deps.pull(up0.toImage, log);
+      if (spec.method === 'copy') {
+        const steps = upgradeSteps(up0.engine as UpgradeEngine, fromS, toS);
+        if (typeof steps === 'string') throw new Error(steps);
+        const cfg = ENGINES[up0.engine]!;
+        await phase('pull');
+        for (const step of steps) await deps.pull(cfg.image(step), log);
 
-      // Downtime starts here: nothing writes to the old cluster after the stop.
-      await phase('stop');
-      await db.update(databases).set({ status: 'stopped' }).where(eq(databases.id, d0.id));
-      stopped = true;
-      await deps.stopAndRemove(d0.containerName!, log);
+        // Downtime starts here: nothing writes to the old data directory after the stop.
+        await phase('stop');
+        await db.update(databases).set({ status: 'stopped' }).where(eq(databases.id, d0.id));
+        stopped = true;
+        await deps.stopAndRemove(d0.containerName!, log);
 
-      await phase('dump');
-      const fromMount = postgresMountForImage(ctx.fromImageTag, up0.previousVersion ?? d0.version);
-      await deps.runIsolated(d0, { name: fence, image: up0.fromImage, volume: up0.previousVolume, mount: fromMount }, log);
-      if (!(await deps.waitReady(fence, d0, log))) throw new Error('the old cluster did not come up for the dump');
-      const before = await clusterFingerprint(deps, fence);
-      await mkdir(config.paths.backupsDir, { recursive: true });
-      const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const file = path.join(config.paths.backupsDir, `${d0.slug}-${stamp}-pre-upgrade.dump`);
-      const [b] = await db.insert(backups).values({ databaseId: d0.id, scope: 'db', label: 'pre-upgrade', status: 'running', path: file }).returning({ id: backups.id });
-      try {
-        await deps.dump({ ...d0, containerName: fence }, file, log);
-      } catch (err) {
-        await db.update(backups).set({ status: 'failed' }).where(eq(backups.id, b!.id));
-        throw err;
+        // The fence: the old container's own image on the old volume, no
+        // network. It recovers whatever a hard stop left, gives the
+        // fingerprint and the safety dump, then shuts down slowly and must
+        // exit cleanly: only that data directory is fit to be copied.
+        await phase('dump');
+        await deps.runIsolated(d0, { name: fence, image: up0.fromImage, volume: up0.previousVolume, mount: MYSQL_DATA_DIR }, log);
+        if (!(await deps.waitReady(fence, d0, log))) throw new Error(`the old ${label} server did not come up for the dump`);
+        const before = await mysqlFingerprint(deps, d0, fence);
+        await safetyDump(fence);
+        await deps.sql(d0, fence, 'SET GLOBAL innodb_fast_shutdown = 0');
+        const fenceExit = await deps.stopClean(fence, log);
+        if (fenceExit !== 0) throw new Error(`the old ${label} server did not shut down cleanly (exit code ${fenceExit ?? 'unknown'}); its data directory was not copied`);
+
+        await phase('copy');
+        const target: Database = { ...d0, version: up0.targetVersion, volumeName: up0.targetVolume };
+        if (await deps.volumeExists(up0.targetVolume)) throw new Error(`volume ${up0.targetVolume} already exists`);
+        await deps.createVolume(up0.targetVolume, databaseVolumeLabels(target), log);
+        createdVolume = true;
+        await deps.copyVolume(up0.previousVolume, up0.targetVolume, cfg.image(steps[0]!), log);
+
+        // Each step starts the next release on the COPY, which upgrades it in
+        // place; between steps the server shuts down slowly again.
+        await phase('upgrade');
+        for (const [n, step] of steps.entries()) {
+          const stepRow: Database = { ...target, version: step };
+          const env: Record<string, string> = up0.engine === 'mariadb' ? { MARIADB_AUTO_UPGRADE: '1' } : {};
+          await deps.runIsolated(stepRow, { name: staging, image: cfg.image(step), volume: up0.targetVolume, mount: MYSQL_DATA_DIR, env }, log);
+          if (!(await deps.waitReady(staging, stepRow, log))) throw new Error(`${label} ${step} did not come up on the copy (its upgrade on start failed; see the panel log)`);
+          if (n < steps.length - 1) {
+            await deps.sql(stepRow, staging, 'SET GLOBAL innodb_fast_shutdown = 0');
+            const exit = await deps.stopClean(staging, log);
+            if (exit !== 0) throw new Error(`${label} ${step} did not shut down cleanly on the copy (exit code ${exit ?? 'unknown'})`);
+          }
+        }
+
+        await phase('verify');
+        const after = await mysqlFingerprint(deps, target, staging);
+        await recordVerification(before, after);
+        const exit = await deps.stopClean(staging, log);
+        if (exit !== 0) throw new Error(`${label} ${toS} did not shut down cleanly after the check (exit code ${exit ?? 'unknown'})`);
+      } else {
+        await phase('pull');
+        await deps.pull(up0.toImage, log);
+
+        // Downtime starts here: nothing writes to the old cluster after the stop.
+        await phase('stop');
+        await db.update(databases).set({ status: 'stopped' }).where(eq(databases.id, d0.id));
+        stopped = true;
+        await deps.stopAndRemove(d0.containerName!, log);
+
+        await phase('dump');
+        const fromMount = postgresMountForImage(ctx.fromImageTag, up0.previousVersion ?? d0.version);
+        await deps.runIsolated(d0, { name: fence, image: up0.fromImage, volume: up0.previousVolume, mount: fromMount }, log);
+        if (!(await deps.waitReady(fence, d0, log))) throw new Error('the old cluster did not come up for the dump');
+        const before = await clusterFingerprint(deps, fence);
+        const file = await safetyDump(fence);
+        await deps.stopAndRemove(fence, log);
+
+        await phase('restore');
+        const target: Database = { ...d0, version: up0.targetVersion, volumeName: up0.targetVolume };
+        if (await deps.volumeExists(up0.targetVolume)) throw new Error(`volume ${up0.targetVolume} already exists`);
+        await deps.createVolume(up0.targetVolume, databaseVolumeLabels(target), log);
+        createdVolume = true;
+        await deps.runIsolated(target, { name: staging, image: up0.toImage, volume: up0.targetVolume, mount: resolveVolumePath(ENGINES.postgres!, up0.targetVersion) }, log);
+        if (!(await deps.waitReady(staging, target, log))) throw new Error(`${label} ${toS} did not come up on the new volume`);
+        await deps.restore({ ...target, containerName: staging }, file, log);
+        await deps.psql(staging, 'ANALYZE').catch(() => undefined);
+
+        await phase('verify');
+        const after = await clusterFingerprint(deps, staging);
+        await recordVerification(before, after);
+        await deps.stopAndRemove(staging, log);
+
       }
-      await db.update(backups).set({ status: 'completed', sizeBytes: await deps.fileSize(file) }).where(eq(backups.id, b!.id));
-      await db.update(databaseUpgrades).set({ safetyBackupId: b!.id }).where(eq(databaseUpgrades.id, upgradeId));
-      await deps.stopAndRemove(fence, log);
-
-      await phase('restore');
-      const target: Database = { ...d0, version: up0.targetVersion, volumeName: up0.targetVolume };
-      if (await deps.volumeExists(up0.targetVolume)) throw new Error(`volume ${up0.targetVolume} already exists`);
-      await deps.createVolume(up0.targetVolume, databaseVolumeLabels(target), log);
-      createdVolume = true;
-      await deps.runIsolated(target, { name: staging, image: up0.toImage, volume: up0.targetVolume, mount: resolveVolumePath(ENGINES.postgres!, up0.targetVersion) }, log);
-      if (!(await deps.waitReady(staging, target, log))) throw new Error(`PostgreSQL ${up0.toMajor} did not come up on the new volume`);
-      await deps.restore({ ...target, containerName: staging }, file, log);
-      await deps.psql(staging, 'ANALYZE').catch(() => undefined);
-
-      await phase('verify');
-      const after = await clusterFingerprint(deps, staging);
-      const diff = compareFingerprints(before, after);
-      await db.update(databaseUpgrades).set({ verification: JSON.stringify({ ...verificationSummary(before), mismatches: diff.slice(0, 50) }) }).where(eq(databaseUpgrades.id, upgradeId));
-      if (diff.length > 0) throw new Error(`the restored copy does not match the old cluster: ${diff.slice(0, 5).join('; ')}${diff.length > 5 ? ` (+${diff.length - 5} more)` : ''}`);
-      await deps.stopAndRemove(staging, log);
 
       await phase('switch');
       await db.transaction(async (tx) => {
@@ -542,11 +934,11 @@ export async function runDatabaseUpgrade(
       const fresh = (await db.query.databases.findFirst({ where: eq(databases.id, d0.id) }))!;
       await deps.start(fresh, log);
       await joinBridges(db, fresh, deps, log);
-      if (!(await deps.waitReady(fresh.containerName!, fresh, log))) throw new Error(`PostgreSQL ${up0.toMajor} did not accept connections after the switch`);
+      if (!(await deps.waitReady(fresh.containerName!, fresh, log))) throw new Error(`${label} ${toS} did not accept connections after the switch`);
       await db.update(databases).set({ status: 'running' }).where(eq(databases.id, d0.id));
       await db.update(databaseUpgrades).set({ status: 'completed', phase: null, completedAt: new Date() }).where(eq(databaseUpgrades.id, upgradeId));
     });
-    log(`upgraded ${d0.name} to PostgreSQL ${up0.toMajor}; the previous volume ${up0.previousVolume} is kept until the upgrade is finalized`);
+    log(`upgraded ${d0.name} to ${label} ${toS}; the previous volume ${up0.previousVolume} is kept until the upgrade is finalized`);
     void audit(db, ctx.actorId, 'database.upgrade.complete', d0.name, meta);
   } catch (err) {
     const message = clip(err instanceof Error ? err.message : String(err));
@@ -578,7 +970,7 @@ export async function runDatabaseUpgrade(
       await db.update(databases).set({ version: up0.previousVersion, volumeName: up0.previousVolume }).where(eq(databases.id, d0.id));
       const back = (await db.query.databases.findFirst({ where: eq(databases.id, d0.id) }))!;
       const up = await bringUp(db, back, deps, log);
-      outcome = (up ? `The database runs on PostgreSQL ${up0.fromMajor} as before.` : `The database could not be started again on PostgreSQL ${up0.fromMajor}; start it from the database page.`) + kept;
+      outcome = (up ? `The database runs on ${label} ${fromS} as before.` : `The database could not be started again on ${label} ${fromS}; start it from the database page.`) + kept;
     } else {
       outcome = 'Nothing was stopped.';
     }
@@ -615,7 +1007,7 @@ export async function rollbackDatabaseUpgrade(db: DB, upgrade: UpgradeRow, actor
     await db.update(databases).set({ version: up.previousVersion, volumeName: up.previousVolume }).where(eq(databases.id, d.id));
     const back = (await db.query.databases.findFirst({ where: eq(databases.id, d.id) }))!;
     if (!(await bringUp(db, back, deps, log))) {
-      throw new HttpError(500, 'database_upgrade_rollback_start', `The row points at ${up.previousVolume} again, but PostgreSQL ${up.fromMajor} did not start; start it from the database page.`);
+      throw new HttpError(500, 'database_upgrade_rollback_start', `The row points at ${up.previousVolume} again, but ${engineLabel(up.engine)} ${fromSeriesOf(up)} did not start; start it from the database page.`);
     }
   });
   void audit(db, actorId, 'database.upgrade.rollback', d0.name, { databaseId: d0.id, upgradeId: upgrade.id, fromMajor: upgrade.fromMajor, toMajor: upgrade.toMajor });

@@ -71,7 +71,7 @@ describe('scripts/smoke-browser-e2e.mjs', () => {
   it('sets the public URL to the browser origin, removes only what it created, and never prunes', () => {
     expect(src).toContain('`NINEDEPLOY_PUBLIC_URL=${ORIGIN}`');
     expect(src).not.toMatch(/\bprune\b/);
-    expect(src).toMatch(/\['rm', '-f', c\]/);
+    expect(src).toMatch(/\['rm', '-f', '-v', c\]/);
     expect(src).toContain("['volume', 'rm', VOLUME]");
   });
 
