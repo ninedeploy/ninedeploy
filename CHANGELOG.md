@@ -9,12 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.28] - 2026-11-13
+
 **Highlights**
 - MySQL and MariaDB databases move to a newer release from the database page (MySQL 8.0 → 8.4 → 9.7, MariaDB 10.6+ → 12.3): the data directory is copied, upgraded in place and compared before the switch, with rollback until you finalize.
 - A database created without a version now keeps the release it runs when a later NineDeploy release moves the engine's default; existing ones are pinned at start.
 - Restoring a backup of a MySQL 9 database works again, and database passwords no longer appear in process lists while the panel or a node backs up, restores, imports or measures a database.
 
-**Action needed:** No.
+**Action needed:** No. Update each node agent to this release so that database passwords stay out of its process list too.
+
+<!-- stable: security -->
 
 ### Added
 
@@ -28,7 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **The PostgreSQL credential check accepted any password.** After a dump import, and before a recovered (PITR) database or a preview copy is reported ready, the panel checks that it can still sign in with the password it holds. For PostgreSQL it asked over 127.0.0.1, which the official image trusts like the local socket, so the check passed whatever the password was, and an import that changed the `nine` role's password ended `completed` instead of warning. It now signs in over the container's own network address (its name on the database's bridge), where the password is required; a changed password ends the import `completed_with_warnings`. Checked live in both directions.
+- **The PostgreSQL credential check accepted any password.** After a dump import, and before a recovered (PITR) database or a preview copy is reported ready, the panel checks that it can still sign in with the password it holds. For PostgreSQL it asked over 127.0.0.1, which the official image trusts like the local socket, so the check passed whatever the password was, and an import that changed the `nine` role's password ended `completed` instead of warning. It now signs in over the container's own network address, where the password is required, read from the container's own `/etc/hosts` rather than Docker's DNS (another container on a shared network could answer to the database's name), and it refuses a server that asks for the password in clear text (`PGREQUIREAUTH=scram-sha-256,md5`). A changed password ends the import `completed_with_warnings`. Checked live in both directions, and against PostgreSQL 14, 16, 17 (Alpine), 18 and pgvector.
 - **Restoring a backup of a MySQL 9 database failed.** The restore ran `mysql -e "source <file>"`, and MySQL 9's client no longer runs client commands such as `source` in `-e` (it answers a syntax error) unless given `--commands`, which older clients refuse. MySQL's default is 9.7, so a backup of a database created with the default could not be restored from the panel or on a node. The dump now goes to the client on stdin, as dump imports already did. A second fault hid behind the first: MySQL 9's images run with GTIDs on, so `mysqldump` wrote `SET @@GLOBAL.GTID_PURGED=…` into every backup, and restoring it into the server that wrote it fails ("ERROR 3546 … must not overlap with @@GLOBAL.GTID_EXECUTED"). Backups are now taken with `--set-gtid-purged=OFF`, and a restore drops that statement from its temporary copy first, so backups taken before this release restore too. MariaDB and MySQL 8 were not affected.
 - **Database passwords no longer appear in process lists.** The size query, the credential check, the backup, the restore and the dump import of every engine that has a password put it in the command line (`--password=…`, `-p …`, `-a …`, `-e PGPASSWORD=…`), which any local user on the host can read for as long as the command runs (`ps`, `/proc/<pid>/cmdline`), on the panel host and on a node. The password now travels in the environment of the `docker` command, which `docker exec -e NAME` forwards by name: PostgreSQL reads `PGPASSWORD`, the Redis family `REDISCLI_AUTH` and ClickHouse `CLICKHOUSE_PASSWORD`; the MySQL and MariaDB clients read a `[client]` option file and `mongodump`/`mongorestore` a YAML config, both on file descriptor 3, so stdin stays free for a dump; `mongosh` signs in from a script that reads the password from its environment. Checked against MySQL 8.0 and 9.7, MariaDB 10.6 and 12.3, PostgreSQL 18, MongoDB 7.0 and 8.0, Redis 8.8, Valkey 9.1, KeyDB 6.3.4, Dragonfly 1.34.2 and ClickHouse 23.8, 24.8 and 25.8, with a password holding `#"\;$'` and spaces, and with a wrong password refused. On a node this takes the new agent. Not yet covered: the Redis family's server still receives its password as `--requirepass` in its container command, which Redis hides from its process title but Valkey (through its entrypoint) and Dragonfly show.
 

@@ -1,5 +1,17 @@
 [
   {
+    "version": "0.18.28",
+    "date": "2026-11-13",
+    "title": "MySQL and MariaDB major upgrades, MySQL 9 restores, database passwords out of process lists",
+    "changes": [
+      "Databases → Settings → Major version upgrade now moves MySQL (8.0 → 8.4 → 9.7) and MariaDB (10.6+ → 12.3) databases to a newer release: the data directory is copied, upgraded on the copy and compared before the switch, with rollback until you finalize.",
+      "Restoring a backup of a MySQL 9 database works again (it failed on the default MySQL 9.7); backups taken before this release restore too.",
+      "Security: database passwords no longer appear in process lists while the panel or a node agent backs up, restores, imports, sizes or checks a database. Update each node agent to this release.",
+      "A database created without a version keeps the release it runs when a later NineDeploy release moves the engine default; existing ones are pinned when the panel starts.",
+      "The PostgreSQL credential check after an import, a point-in-time recovery or a preview copy really checks the password now. See CHANGELOG.md."
+    ]
+  },
+  {
     "version": "0.18.27",
     "date": "2026-11-12",
     "title": "PostgreSQL major upgrades, node parity, and importers from Coolify, Dokploy, CapRover and Heroku",

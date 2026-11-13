@@ -128,7 +128,7 @@ Re-running the installation script performs a seamless, zero-data-loss upgrade:
 curl -fsSL https://raw.githubusercontent.com/NineDeploy/NineDeploy/main/install.sh | bash
 
 # Pin to a specific version
-bash install.sh --version v0.18.27
+bash install.sh --version v0.18.28
 
 # Stable channel: the newest release that has been out for 7 days
 # (a security release at once). The panel can follow it too:

@@ -10,7 +10,7 @@ the databases, certificates, secrets, backups and access rules around it — fro
 terminal CLI, a typed SDK, or an AI agent over MCP.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
-[![Release](https://img.shields.io/badge/Release-0.18.27-blue.svg)](./CHANGELOG.md)
+[![Release](https://img.shields.io/badge/Release-0.18.28-blue.svg)](./CHANGELOG.md)
 [![Node.js](https://img.shields.io/badge/Node.js-22.23.4%2B%20%7C%2024.22.1%2B%20%7C%2026.12.1%2B-green.svg)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-7-blue.svg)](https://www.typescriptlang.org)
 [![Docker](https://img.shields.io/badge/Docker-required-blue.svg)](https://docker.com)
@@ -102,7 +102,7 @@ runs the SQLite migrations, and starts a hardened `systemd` unit (`ProtectSystem
 Re-running the same command is the upgrade path; it snapshots `.data` before touching anything.
 
 ```bash
-./install.sh --version v0.18.27     # pin an exact tag
+./install.sh --version v0.18.28     # pin an exact tag
 ./install.sh --domain panel.example.com --email you@example.com   # panel on its own domain, HTTPS from the first boot
 ./install.sh --channel stable     # newest release that has soaked for 7 days (security fixes at once)
 ./install.sh --channel main       # track edge
