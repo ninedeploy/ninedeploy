@@ -3729,15 +3729,18 @@
         "cmd": "docker",
         "args": [
           "exec",
+          "-e",
+          "REDISCLI_AUTH",
           "nd-db-redis",
           "redis-cli",
-          "-a",
-          "pw-secret",
-          "--no-auth-warning",
           "INFO",
           "memory"
         ],
-        "opts": {}
+        "opts": {
+          "env": {
+            "REDISCLI_AUTH": "pw-secret"
+          }
+        }
       }
     ],
     "outcome": {
@@ -3751,14 +3754,17 @@
         "cmd": "docker",
         "args": [
           "exec",
+          "-e",
+          "REDISCLI_AUTH",
           "nd-db-redis",
           "redis-cli",
-          "-a",
-          "pw-secret",
-          "--no-auth-warning",
           "SAVE"
         ],
-        "opts": {}
+        "opts": {
+          "env": {
+            "REDISCLI_AUTH": "pw-secret"
+          }
+        }
       },
       {
         "fn": "run",
@@ -3817,14 +3823,17 @@
         "cmd": "docker",
         "args": [
           "exec",
+          "-e",
+          "REDISCLI_AUTH",
           "nd-db-redis",
           "redis-cli",
-          "-a",
-          "pw-secret",
-          "--no-auth-warning",
           "PING"
         ],
-        "opts": {}
+        "opts": {
+          "env": {
+            "REDISCLI_AUTH": "pw-secret"
+          }
+        }
       }
     ],
     "outcome": {
@@ -4273,15 +4282,18 @@
         "cmd": "docker",
         "args": [
           "exec",
+          "-e",
+          "REDISCLI_AUTH",
           "nd-db-valkey",
           "redis-cli",
-          "-a",
-          "pw-secret",
-          "--no-auth-warning",
           "INFO",
           "memory"
         ],
-        "opts": {}
+        "opts": {
+          "env": {
+            "REDISCLI_AUTH": "pw-secret"
+          }
+        }
       }
     ],
     "outcome": {
@@ -4295,14 +4307,17 @@
         "cmd": "docker",
         "args": [
           "exec",
+          "-e",
+          "REDISCLI_AUTH",
           "nd-db-valkey",
           "redis-cli",
-          "-a",
-          "pw-secret",
-          "--no-auth-warning",
           "SAVE"
         ],
-        "opts": {}
+        "opts": {
+          "env": {
+            "REDISCLI_AUTH": "pw-secret"
+          }
+        }
       },
       {
         "fn": "run",
@@ -4361,14 +4376,17 @@
         "cmd": "docker",
         "args": [
           "exec",
+          "-e",
+          "REDISCLI_AUTH",
           "nd-db-valkey",
           "redis-cli",
-          "-a",
-          "pw-secret",
-          "--no-auth-warning",
           "PING"
         ],
-        "opts": {}
+        "opts": {
+          "env": {
+            "REDISCLI_AUTH": "pw-secret"
+          }
+        }
       }
     ],
     "outcome": {
@@ -4835,19 +4853,20 @@
         "cmd": "docker",
         "args": [
           "exec",
+          "-e",
+          "ND_MONGO_PASSWORD",
           "nd-db-mongo",
           "mongosh",
-          "-u",
-          "nine",
-          "-p",
-          "pw-secret",
-          "--authenticationDatabase",
-          "admin",
+          "--nodb",
           "--quiet",
           "--eval",
-          "db.getSiblingDB(\"app\").stats().dataSize"
+          "const c = connect('mongodb://127.0.0.1:27017/admin'); c.auth('nine', process.env.ND_MONGO_PASSWORD); db = c; print(db.getSiblingDB(\"app\").stats().dataSize);"
         ],
-        "opts": {}
+        "opts": {
+          "env": {
+            "ND_MONGO_PASSWORD": "pw-secret"
+          }
+        }
       }
     ],
     "outcome": {
@@ -4861,18 +4880,26 @@
         "cmd": "docker",
         "args": [
           "exec",
+          "-e",
+          "ND_MONGO_CONFIG",
           "nd-db-mongo",
+          "sh",
+          "-c",
+          "c=\"$1\"; shift\nexec \"$c\" --config=/dev/fd/3 \"$@\" 3<<ND_CFG\n$ND_MONGO_CONFIG\nND_CFG",
+          "sh",
           "mongodump",
           "-u",
           "nine",
-          "-p",
-          "pw-secret",
           "--authenticationDatabase",
           "admin",
           "--archive=/tmp/ninedeploy-dump-00000000-0000-4000-8000-000000000000",
           "--gzip"
         ],
-        "opts": {}
+        "opts": {
+          "env": {
+            "ND_MONGO_CONFIG": "password: \"pw-secret\"\n"
+          }
+        }
       },
       {
         "fn": "run",
@@ -4918,19 +4945,27 @@
         "cmd": "docker",
         "args": [
           "exec",
+          "-e",
+          "ND_MONGO_CONFIG",
           "nd-db-mongo",
+          "sh",
+          "-c",
+          "c=\"$1\"; shift\nexec \"$c\" --config=/dev/fd/3 \"$@\" 3<<ND_CFG\n$ND_MONGO_CONFIG\nND_CFG",
+          "sh",
           "mongorestore",
           "-u",
           "nine",
-          "-p",
-          "pw-secret",
           "--authenticationDatabase",
           "admin",
           "--archive=/tmp/ninedeploy-restore-00000000-0000-4000-8000-000000000000",
           "--gzip",
           "--drop"
         ],
-        "opts": {}
+        "opts": {
+          "env": {
+            "ND_MONGO_CONFIG": "password: \"pw-secret\"\n"
+          }
+        }
       },
       {
         "fn": "run",
@@ -4956,19 +4991,20 @@
         "cmd": "docker",
         "args": [
           "exec",
+          "-e",
+          "ND_MONGO_PASSWORD",
           "nd-db-mongo",
           "mongosh",
-          "-u",
-          "nine",
-          "-p",
-          "pw-secret",
-          "--authenticationDatabase",
-          "admin",
+          "--nodb",
           "--quiet",
           "--eval",
-          "db.getSiblingDB(\"app\").runCommand({ ping: 1 }).ok"
+          "const c = connect('mongodb://127.0.0.1:27017/admin'); c.auth('nine', process.env.ND_MONGO_PASSWORD); db = c; print(db.getSiblingDB(\"app\").runCommand({ ping: 1 }).ok);"
         ],
-        "opts": {}
+        "opts": {
+          "env": {
+            "ND_MONGO_PASSWORD": "pw-secret"
+          }
+        }
       }
     ],
     "outcome": {
@@ -5170,12 +5206,16 @@
         "cmd": "docker",
         "args": [
           "exec",
+          "-e",
+          "ND_MONGO_CONFIG",
           "nd-db-mongo",
+          "sh",
+          "-c",
+          "c=\"$1\"; shift\nexec \"$c\" --config=/dev/fd/3 \"$@\" 3<<ND_CFG\n$ND_MONGO_CONFIG\nND_CFG",
+          "sh",
           "mongorestore",
           "-u",
           "nine",
-          "-p",
-          "pw-secret",
           "--authenticationDatabase",
           "admin",
           "--archive=/tmp/ninedeploy-import-00000000-0000-4000-8000-000000000000",
@@ -5186,6 +5226,9 @@
           "--nsExclude=local.*"
         ],
         "opts": {
+          "env": {
+            "ND_MONGO_CONFIG": "password: \"pw-secret\"\n"
+          },
           "timeoutMs": 21600000,
           "heartbeatMs": 60000,
           "heartbeatLabel": "import"

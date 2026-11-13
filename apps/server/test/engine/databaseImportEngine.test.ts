@@ -9,7 +9,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { MYSQL_CNF_VAR, mysqlClientConfig } from '../../src/lib/databaseCommands.js';
+import { MONGO_CONFIG_VAR, mongoToolConfig, MYSQL_CNF_VAR, mysqlClientConfig } from '../../src/lib/databaseCommands.js';
 
 const h = vi.hoisted(() => ({
   run: vi.fn(async (_cmd: string, _args: string[], _opts: unknown, _sink?: (line: string) => void) => undefined),
@@ -90,10 +90,15 @@ describe('importCommand (argv per engine)', () => {
   });
 
   it('mongo: mongorestore excluding admin, config and local', () => {
-    expect(importCommand('mongo', 'c', '/tmp/f', { format: 'mongo_archive', gzip: true, drop: true }, 'pw').argv).toEqual([
-      'exec', 'c', 'mongorestore', '-u', 'nine', '-p', 'pw', '--authenticationDatabase', 'admin', '--archive=/tmp/f',
+    const full = importCommand('mongo', 'c', '/tmp/f', { format: 'mongo_archive', gzip: true, drop: true }, 'pw');
+    expect(full.argv.slice(0, 6)).toEqual(['exec', '-e', MONGO_CONFIG_VAR, 'c', 'sh', '-c']);
+    expect(full.argv[6]).toContain('exec "$c" --config=/dev/fd/3 "$@"');
+    expect(full.argv.slice(7)).toEqual([
+      'sh', 'mongorestore', '-u', 'nine', '--authenticationDatabase', 'admin', '--archive=/tmp/f',
       '--gzip', '--drop', '--nsExclude=admin.*', '--nsExclude=config.*', '--nsExclude=local.*',
     ]);
+    expect(full.env).toEqual({ [MONGO_CONFIG_VAR]: mongoToolConfig('pw') });
+    expect(full.argv).not.toContain('pw');
     const plain = importCommand('mongo', 'c', '/tmp/f', { format: 'mongo_archive' }, 'pw').argv;
     expect(plain).not.toContain('--gzip');
     expect(plain).not.toContain('--drop');

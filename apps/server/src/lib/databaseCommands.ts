@@ -98,6 +98,42 @@ const MYSQL_WITH_CNF_FROM_FILE_NO_GTID = [
   'ND_CNF',
 ].join('\n');
 
+/** The variables that carry the managed mongo root user's password: for mongosh, and as mongo-tools YAML config. */
+export const MONGO_PASSWORD_VAR = 'ND_MONGO_PASSWORD';
+export const MONGO_CONFIG_VAR = 'ND_MONGO_CONFIG';
+
+/** A mongo-tools `--config` file that gives the password (YAML double-quoted: backslash and quote escaped). */
+export function mongoToolConfig(password: string): string {
+  return `password: "${password.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"\n`;
+}
+
+/** `mongodump` / `mongorestore` with `--config=/dev/fd/3`, fed like the mysql option file (stdin stays free). */
+const MONGO_TOOL_WITH_CONFIG = ['c="$1"; shift', 'exec "$c" --config=/dev/fd/3 "$@" 3<<ND_CFG', `$${MONGO_CONFIG_VAR}`, 'ND_CFG'].join('\n');
+
+/**
+ * Run a mongo tool (`mongodump`, `mongorestore`) as the managed root user `nine`
+ * with the password from a YAML config on fd 3. Proven on mongo 7.0 and 8.0
+ * with a password holding `#"\;$'` and spaces, a wrong one refused.
+ */
+export function mongoToolCommand(cn: string, tool: string, password: string, args: readonly string[]): DbCommand {
+  return {
+    argv: ['exec', '-e', MONGO_CONFIG_VAR, cn, 'sh', '-c', MONGO_TOOL_WITH_CONFIG, 'sh', tool, '-u', MONGO_USER, '--authenticationDatabase', 'admin', ...args],
+    env: { [MONGO_CONFIG_VAR]: mongoToolConfig(password) },
+  };
+}
+
+/**
+ * Evaluate `expression` in mongosh as the managed root user and print its
+ * value: mongosh starts without a connection, connects, and authenticates
+ * with the password it reads from {@link MONGO_PASSWORD_VAR} (mongosh has no
+ * password variable or file of its own). A failed sign-in throws: a non-zero
+ * exit and no value. Prints exactly what `--eval <expression>` printed.
+ */
+export function mongoshCommand(cn: string, password: string, expression: string): DbCommand {
+  const script = `const c = connect('mongodb://127.0.0.1:27017/admin'); c.auth('${MONGO_USER}', process.env.${MONGO_PASSWORD_VAR}); db = c; print(${expression});`;
+  return { argv: ['exec', '-e', MONGO_PASSWORD_VAR, cn, 'mongosh', '--nodb', '--quiet', '--eval', script], env: { [MONGO_PASSWORD_VAR]: password } };
+}
+
 /** Engines a managed database can run. */
 export const DATABASE_ENGINES = ['postgres', 'mysql', 'mariadb', 'redis', 'mongo', 'valkey', 'clickhouse', 'meilisearch', 'rabbitmq', 'keydb', 'dragonfly'] as const;
 export type DatabaseEngineName = (typeof DATABASE_ENGINES)[number];
@@ -140,15 +176,16 @@ export const AGENT_REDIS_FAMILY_VERSION = '0.15.6';
 export const NODE_ENGINES_NEEDING_NEWER_AGENT: ReadonlySet<string> = new Set(['keydb', 'dragonfly']);
 
 /**
- * The `docker` argv that runs one Redis-protocol command inside a managed
- * redis-family database's own container with the stored password:
- * `docker exec <cn> <cli> -a <pw> --no-auth-warning …`, where `<cli>` is
- * `redis-cli` for redis, valkey and dragonfly (the Dragonfly image ships a
- * real `/usr/bin/redis-cli`) and `keydb-cli` for keydb. The redis / valkey
- * argv is unchanged since 0.2.
+ * One Redis-protocol command inside a managed redis-family database's own
+ * container with the stored password: `docker exec -e REDISCLI_AUTH <cn>
+ * <cli> …`, where `<cli>` is `redis-cli` for redis, valkey and dragonfly (the
+ * Dragonfly image ships a real `/usr/bin/redis-cli`) and `keydb-cli` for
+ * keydb. Every one of them reads the password from `REDISCLI_AUTH` (proven
+ * on redis 8.8, valkey 9.1, keydb 6.3.4 and dragonfly 1.34.2, a wrong one
+ * refused); until 0.18.28 it rode the argv as `-a <pw>`.
  */
-export function redisCliArgv(engine: string, cn: string, password: string, ...command: string[]): string[] {
-  return ['exec', cn, engine === 'keydb' ? 'keydb-cli' : 'redis-cli', '-a', password, '--no-auth-warning', ...command];
+export function redisCliCommand(engine: string, cn: string, password: string, ...command: string[]): DbCommand {
+  return { argv: ['exec', '-e', 'REDISCLI_AUTH', cn, engine === 'keydb' ? 'keydb-cli' : 'redis-cli', ...command], env: { REDISCLI_AUTH: password } };
 }
 
 const PG_USER = 'nine';
@@ -158,22 +195,13 @@ const MONGO_USER = 'nine';
 /** `databaseSize`: the engine's size query, or null when the engine has none (size 0). */
 export function sizeCommand(engine: string, cn: string, password: string): DbCommand | null {
   if (engine === 'postgres') return { argv: ['exec', cn, 'psql', '-U', PG_USER, '-d', PG_DB, '-tAc', 'SELECT pg_database_size(current_database())'], env: {} };
-  if (isRedisFamily(engine)) return { argv: redisCliArgv(engine, cn, password, 'INFO', 'memory'), env: {} };
+  if (isRedisFamily(engine)) return redisCliCommand(engine, cn, password, 'INFO', 'memory');
   if (engine === 'mysql' || engine === 'mariadb') {
     return mysqlCommand(cn, engine === 'mysql' ? 'mysql' : 'mariadb', password, [
       '-uroot', '-N', '-e', 'SELECT IFNULL(SUM(data_length+index_length),0) FROM information_schema.tables',
     ]);
   }
-  if (engine === 'mongo') {
-    return {
-      argv: [
-        'exec', cn, 'mongosh',
-        '-u', MONGO_USER, '-p', password, '--authenticationDatabase', 'admin',
-        '--quiet', '--eval', 'db.getSiblingDB("app").stats().dataSize',
-      ],
-      env: {},
-    };
-  }
+  if (engine === 'mongo') return mongoshCommand(cn, password, 'db.getSiblingDB("app").stats().dataSize');
   return null;
 }
 
@@ -195,16 +223,8 @@ export function probeCommand(engine: string, cn: string, password: string): DbCo
   if (engine === 'mysql' || engine === 'mariadb') {
     return mysqlCommand(cn, engine === 'mysql' ? 'mysql' : 'mariadb', password, ['-uroot', '-N', '-e', 'SELECT 1']);
   }
-  if (engine === 'mongo') {
-    return {
-      argv: [
-        'exec', cn, 'mongosh', '-u', MONGO_USER, '-p', password, '--authenticationDatabase', 'admin',
-        '--quiet', '--eval', 'db.getSiblingDB("app").runCommand({ ping: 1 }).ok',
-      ],
-      env: {},
-    };
-  }
-  if (isRedisFamily(engine)) return { argv: redisCliArgv(engine, cn, password, 'PING'), env: {} };
+  if (engine === 'mongo') return mongoshCommand(cn, password, 'db.getSiblingDB("app").runCommand({ ping: 1 }).ok');
+  if (isRedisFamily(engine)) return redisCliCommand(engine, cn, password, 'PING');
   return null;
 }
 
@@ -258,12 +278,12 @@ export function dumpCommands(engine: string, cn: string, tmp: string, password: 
   if (isRedisFamily(engine)) {
     // Dragonfly: `SAVE RDB` names the format, so a changed `df_snapshot_format` default cannot turn the dump into a .dfs set.
     // (Dragonfly pads the file with zeros to a multiple of 4096 bytes; it is still a valid RDB file.)
-    const save = engine === 'dragonfly' ? redisCliArgv(engine, cn, password, 'SAVE', 'RDB') : redisCliArgv(engine, cn, password, 'SAVE');
-    return { dump: { argv: save, env: {} }, file: REDIS_DUMP_PATH, cleanup: null };
+    const save = engine === 'dragonfly' ? redisCliCommand(engine, cn, password, 'SAVE', 'RDB') : redisCliCommand(engine, cn, password, 'SAVE');
+    return { dump: save, file: REDIS_DUMP_PATH, cleanup: null };
   }
   if (engine === 'mongo') {
     return {
-      dump: { argv: ['exec', cn, 'mongodump', '-u', MONGO_USER, '-p', password, '--authenticationDatabase', 'admin', `--archive=${tmp}`, '--gzip'], env: {} },
+      dump: mongoToolCommand(cn, 'mongodump', password, [`--archive=${tmp}`, '--gzip']),
       file: tmp,
       cleanup: ['exec', cn, 'rm', '-f', tmp],
     };
@@ -283,7 +303,7 @@ export function restoreCommand(engine: string, cn: string, tmp: string, password
     return mysqlCommand(cn, engine === 'mysql' ? 'mysql' : 'mariadb', password, ['-uroot'], tmp, { dropGtidPurged: engine === 'mysql' });
   }
   if (engine === 'mongo') {
-    return { argv: ['exec', cn, 'mongorestore', '-u', MONGO_USER, '-p', password, '--authenticationDatabase', 'admin', `--archive=${tmp}`, '--gzip', '--drop'], env: {} };
+    return mongoToolCommand(cn, 'mongorestore', password, [`--archive=${tmp}`, '--gzip', '--drop']);
   }
   throw new Error(`restore not supported for ${engine}`);
 }

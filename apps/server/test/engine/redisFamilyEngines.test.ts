@@ -217,23 +217,23 @@ describe('size, probe, backup, restore and import', () => {
   it('keydb: the commands run in the database container through keydb-cli', async () => {
     h.capture.mockResolvedValueOnce('used_memory:2048');
     expect(await databaseSize(row('keydb'))).toBe(2048);
-    expect(h.capture.mock.calls[0]![1]).toEqual(['exec', 'nd-db-x', 'keydb-cli', '-a', 'pw:enc', '--no-auth-warning', 'INFO', 'memory']);
+    expect(h.capture.mock.calls[0]![1]).toEqual(['exec', '-e', 'REDISCLI_AUTH', 'nd-db-x', 'keydb-cli', 'INFO', 'memory']);
 
     h.capture.mockResolvedValueOnce('PONG');
     expect(await probeDatabaseCredentials(row('keydb'), 1, 0)).toBe(true);
-    expect(h.capture.mock.calls[1]![1]).toEqual(['exec', 'nd-db-x', 'keydb-cli', '-a', 'pw:enc', '--no-auth-warning', 'PING']);
+    expect(h.capture.mock.calls[1]![1]).toEqual(['exec', '-e', 'REDISCLI_AUTH', 'nd-db-x', 'keydb-cli', 'PING']);
 
     const file = path.join(tmp, 'keydb.dump');
     landDumpOnCp();
     await backupDatabase(row('keydb'), file, vi.fn());
     expect(dockerCalls()).toEqual([
-      ['exec', 'nd-db-x', 'keydb-cli', '-a', 'pw:enc', '--no-auth-warning', 'SAVE'],
+      ['exec', '-e', 'REDISCLI_AUTH', 'nd-db-x', 'keydb-cli', 'SAVE'],
       ['cp', 'nd-db-x:/data/dump.rdb', file],
     ]);
   });
 
   it('dragonfly: the commands run in the database container through its own redis-cli, with the engine-specific SAVE RDB', async () => {
-    const cli = (...cmd: string[]) => ['exec', 'nd-db-x', 'redis-cli', '-a', 'pw:enc', '--no-auth-warning', ...cmd];
+    const cli = (...cmd: string[]) => ['exec', '-e', 'REDISCLI_AUTH', 'nd-db-x', 'redis-cli', ...cmd];
     h.capture.mockResolvedValueOnce('used_memory:4096');
     expect(await databaseSize(row('dragonfly'))).toBe(4096);
     expect(h.capture.mock.calls[0]![1]).toEqual(cli('INFO', 'memory'));
@@ -264,7 +264,7 @@ describe('size, probe, backup, restore and import', () => {
       const file = path.join(tmp, `${engine}-unchecked.dump`);
       landDumpOnCp('(error) ERR whatever');
       await expect(backupDatabase(row(engine), file, vi.fn())).rejects.toThrow('SAVE did not answer OK: (error) ERR whatever');
-      expect(dockerCalls()).toEqual([['exec', 'nd-db-x', 'redis-cli', '-a', 'pw:enc', '--no-auth-warning', 'SAVE']]);
+      expect(dockerCalls()).toEqual([['exec', '-e', 'REDISCLI_AUTH', 'nd-db-x', 'redis-cli', 'SAVE']]);
     }
   });
 

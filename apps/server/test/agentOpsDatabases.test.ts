@@ -126,7 +126,7 @@ describe('the db.dump stream kind', () => {
     const source = await prepared.start();
     for await (const _ of source.stream) void _;
     await source.done;
-    expect(h.calls.slice(1)).toEqual([['exec', 'nd-db-cache', 'redis-cli', '-a', 'pw', '--no-auth-warning', 'SAVE']]);
+    expect(h.calls.slice(1)).toEqual([['exec', '-e', 'REDISCLI_AUTH', 'nd-db-cache', 'redis-cli', 'SAVE']]);
     expect(h.streams).toEqual([['exec', 'nd-db-cache', 'cat', '/data/dump.rdb']]);
   });
 
@@ -208,13 +208,13 @@ describe('the db.restore stream kind', () => {
 });
 
 describe('0.15.6: keydb and dragonfly on a node (the shared redis-family builders)', () => {
-  const DFLY = (cn: string, ...cmd: string[]) => ['exec', cn, 'redis-cli', '-a', 'pw', '--no-auth-warning', ...cmd];
+  const DFLY = (cn: string, ...cmd: string[]) => ['exec', '-e', 'REDISCLI_AUTH', cn, 'redis-cli', ...cmd];
 
   it('db.exec: size and probe use keydb-cli in the keydb container and redis-cli in the dragonfly container', async () => {
     await run('db.exec', { container: 'nd-db-kdb', engine: 'keydb', query: 'size', password: 'pw' });
-    expect(h.calls.at(-1)).toEqual(['exec', 'nd-db-kdb', 'keydb-cli', '-a', 'pw', '--no-auth-warning', 'INFO', 'memory']);
+    expect(h.calls.at(-1)).toEqual(['exec', '-e', 'REDISCLI_AUTH', 'nd-db-kdb', 'keydb-cli', 'INFO', 'memory']);
     await run('db.exec', { container: 'nd-db-kdb', engine: 'keydb', query: 'probe', password: 'pw' });
-    expect(h.calls.at(-1)).toEqual(['exec', 'nd-db-kdb', 'keydb-cli', '-a', 'pw', '--no-auth-warning', 'PING']);
+    expect(h.calls.at(-1)).toEqual(['exec', '-e', 'REDISCLI_AUTH', 'nd-db-kdb', 'keydb-cli', 'PING']);
     await run('db.exec', { container: 'nd-db-dfly', engine: 'dragonfly', query: 'size', password: 'pw' });
     expect(h.calls.at(-1)).toEqual(DFLY('nd-db-dfly', 'INFO', 'memory'));
     await run('db.exec', { container: 'nd-db-dfly', engine: 'dragonfly', query: 'probe', password: 'pw' });
@@ -225,7 +225,7 @@ describe('0.15.6: keydb and dragonfly on a node (the shared redis-family builder
 
   it('db.dump: the same SAVE and the same /data/dump.rdb as redis', async () => {
     for (const [cn, engine, save] of [
-      ['nd-db-kdb', 'keydb', ['exec', 'nd-db-kdb', 'keydb-cli', '-a', 'pw', '--no-auth-warning', 'SAVE']],
+      ['nd-db-kdb', 'keydb', ['exec', '-e', 'REDISCLI_AUTH', 'nd-db-kdb', 'keydb-cli', 'SAVE']],
       ['nd-db-dfly', 'dragonfly', DFLY('nd-db-dfly', 'SAVE', 'RDB')],
     ] as const) {
       h.calls.length = 0;

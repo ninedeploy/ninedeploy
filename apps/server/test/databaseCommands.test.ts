@@ -21,7 +21,7 @@ import {
   probeSucceeded,
   REDIS_DUMP_PATH,
   REDIS_FAMILY_ENGINES,
-  redisCliArgv,
+  redisCliCommand,
   restoreCommand,
   restoreTmpPath,
   sandboxFlagFrom,
@@ -134,11 +134,11 @@ describe('0.15.6: keydb and dragonfly share the redis family builders', () => {
     expect(AGENT_REDIS_FAMILY_VERSION).toBe('0.15.6');
   });
 
-  it('redis and valkey keep their v0.15.0 argv byte for byte', () => {
+  it('redis and valkey: redis-cli with the password forwarded as REDISCLI_AUTH (it rode -a until 0.18.28)', () => {
     for (const engine of ['redis', 'valkey']) {
-      expect(redisCliArgv(engine, 'c', PW, 'PING')).toEqual(['exec', 'c', 'redis-cli', '-a', PW, '--no-auth-warning', 'PING']);
+      expect(redisCliCommand(engine, 'c', PW, 'PING')).toEqual({ argv: ['exec', '-e', 'REDISCLI_AUTH', 'c', 'redis-cli', 'PING'], env: { REDISCLI_AUTH: PW } });
       expect(dumpCommands(engine, 'c', dumpTmpPath(UUID), PW)).toEqual({
-        dump: { argv: ['exec', 'c', 'redis-cli', '-a', PW, '--no-auth-warning', 'SAVE'], env: {} },
+        dump: { argv: ['exec', '-e', 'REDISCLI_AUTH', 'c', 'redis-cli', 'SAVE'], env: { REDISCLI_AUTH: PW } },
         file: '/data/dump.rdb',
         cleanup: null,
       });
@@ -148,12 +148,12 @@ describe('0.15.6: keydb and dragonfly share the redis family builders', () => {
   for (const [engine, cn, cli] of NEW) {
     it(`${engine}: size, probe and dump`, () => {
       // Every engine runs its client inside its own container: the Dragonfly image ships a real redis-cli.
-      const run = (...cmd: string[]) => ['exec', cn, cli, '-a', PW, '--no-auth-warning', ...cmd];
-      expect(sizeCommand(engine, cn, PW)).toEqual({ argv: run('INFO', 'memory'), env: {} });
-      expect(probeCommand(engine, cn, PW)).toEqual({ argv: run('PING'), env: {} });
+      const run = (...cmd: string[]) => ['exec', '-e', 'REDISCLI_AUTH', cn, cli, ...cmd];
+      expect(sizeCommand(engine, cn, PW)).toEqual({ argv: run('INFO', 'memory'), env: { REDISCLI_AUTH: PW } });
+      expect(probeCommand(engine, cn, PW)).toEqual({ argv: run('PING'), env: { REDISCLI_AUTH: PW } });
       expect(mysqlHelpCommand(engine, cn)).toBeNull();
       const plan = dumpCommands(engine, cn, dumpTmpPath(UUID), PW);
-      expect(plan).toEqual({ dump: { argv: run('SAVE', ...(engine === 'dragonfly' ? ['RDB'] : [])), env: {} }, file: REDIS_DUMP_PATH, cleanup: null });
+      expect(plan).toEqual({ dump: { argv: run('SAVE', ...(engine === 'dragonfly' ? ['RDB'] : [])), env: { REDISCLI_AUTH: PW } }, file: REDIS_DUMP_PATH, cleanup: null });
       expect(REDIS_DUMP_PATH).toBe('/data/dump.rdb');
       // A restore has no command: it is stop / copy over dump.rdb / start (same as redis).
       expect(() => restoreCommand(engine, cn, restoreTmpPath(UUID), PW)).toThrow(`restore not supported for ${engine}`);
@@ -179,27 +179,30 @@ describe('0.15.6: keydb and dragonfly share the redis family builders', () => {
     expect(saveReplyProblem('postgres', '(error) ERR nope')).toBeNull();
   });
 
-  it('dragonfly goes through docker exec redis-cli like redis (no client container), keydb through keydb-cli; the password rides after -a', () => {
-    expect(redisCliArgv('dragonfly', 'nd-db-x', PW, 'PING')).toEqual(['exec', 'nd-db-x', 'redis-cli', '-a', PW, '--no-auth-warning', 'PING']);
-    expect(redisCliArgv('dragonfly', 'nd-db-x', PW, 'PING')).toEqual(redisCliArgv('redis', 'nd-db-x', PW, 'PING'));
-    expect(redisCliArgv('keydb', 'nd-db-x', PW, 'PING')).toEqual(['exec', 'nd-db-x', 'keydb-cli', '-a', PW, '--no-auth-warning', 'PING']);
-    for (const argv of [redisCliArgv('dragonfly', 'c', PW, 'PING'), redisCliArgv('keydb', 'c', PW, 'PING')]) {
-      expect(argv.indexOf('-a')).toBe(argv.indexOf(PW) - 1);
-      expect(argv).not.toContain('run');
+  it('dragonfly goes through docker exec redis-cli like redis (no client container), keydb through keydb-cli; the password never rides the argv', () => {
+    expect(redisCliCommand('dragonfly', 'nd-db-x', PW, 'PING').argv).toEqual(['exec', '-e', 'REDISCLI_AUTH', 'nd-db-x', 'redis-cli', 'PING']);
+    expect(redisCliCommand('dragonfly', 'nd-db-x', PW, 'PING')).toEqual(redisCliCommand('redis', 'nd-db-x', PW, 'PING'));
+    expect(redisCliCommand('keydb', 'nd-db-x', PW, 'PING').argv).toEqual(['exec', '-e', 'REDISCLI_AUTH', 'nd-db-x', 'keydb-cli', 'PING']);
+    for (const command of [redisCliCommand('dragonfly', 'c', PW, 'PING'), redisCliCommand('keydb', 'c', PW, 'PING')]) {
+      expect(command.argv).not.toContain(PW);
+      expect(command.argv).not.toContain('-a');
+      expect(command.env).toEqual({ REDISCLI_AUTH: PW });
+      expect(command.argv).not.toContain('run');
     }
   });
 });
 
-describe('passwords never ride the argv (PostgreSQL, MySQL, MariaDB)', () => {
+describe('passwords never ride the argv (PostgreSQL, MySQL, MariaDB, MongoDB, the Redis family)', () => {
   const SECRET = 'Sec#1"x;z $q';
   const everyCommand = (engine: string, cn: string) => [
     sizeCommand(engine, cn, SECRET),
     probeCommand(engine, cn, SECRET),
     dumpCommands(engine, cn, dumpTmpPath(UUID), SECRET).dump,
-    restoreCommand(engine, cn, restoreTmpPath(UUID), SECRET),
+    // The Redis family restores by copying dump.rdb: no command of its own.
+    ...(isRedisFamily(engine) ? [] : [restoreCommand(engine, cn, restoreTmpPath(UUID), SECRET)]),
   ].filter((c) => c !== null);
 
-  for (const engine of ['postgres', 'mysql', 'mariadb'] as const) {
+  for (const engine of ['postgres', 'mysql', 'mariadb', 'mongo', 'redis', 'valkey', 'keydb', 'dragonfly'] as const) {
     it(`${engine}: no argv element holds the password; the probe's goes in env`, () => {
       for (const command of everyCommand(engine, `nd-db-${engine}`)) {
         for (const arg of command!.argv) expect(arg).not.toContain('Sec#1');

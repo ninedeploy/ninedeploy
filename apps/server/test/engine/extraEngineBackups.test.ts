@@ -74,7 +74,11 @@ describe('ClickHouse', () => {
     h.capture.mockResolvedValueOnce('app\ndefault\nsecond\n');
     await backupClickhouse(ch, path.join(tmp, 'b.zip'), log);
     const listQuery = h.capture.mock.calls[0]![1];
-    expect(listQuery).toEqual(expect.arrayContaining(['exec', 'nd-db-ch', 'clickhouse-client', '-u', 'nine', '--password=pw']));
+    // The password is forwarded by name as CLICKHOUSE_PASSWORD, never in the argv.
+    expect(listQuery).toEqual(expect.arrayContaining(['exec', '-e', 'CLICKHOUSE_PASSWORD', 'nd-db-ch', 'clickhouse-client', '-u', 'nine']));
+    expect(listQuery).not.toContain('--password=pw');
+    expect(h.capture.mock.calls[0]![2]).toEqual({ env: { CLICKHOUSE_PASSWORD: 'pw' } });
+    for (const call of h.run.mock.calls) expect((call[1] as string[]).join(' ')).not.toContain('--password');
     expect(listQuery.at(-1)).toContain("NOT IN ('system', 'information_schema', 'INFORMATION_SCHEMA')");
     const backup = chQueries()[0]!;
     expect(backup).toMatch(/^BACKUP DATABASE `app`, DATABASE `default`, DATABASE `second` TO File\('nd-backup-[0-9a-f-]+\.zip'\)$/);

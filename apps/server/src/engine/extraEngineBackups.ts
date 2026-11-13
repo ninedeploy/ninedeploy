@@ -66,18 +66,28 @@ const CLICKHOUSE_OLD_SUFFIX = '__nd_old';
 /** A BACKUP or RESTORE of a large database runs for as long as the copy takes. */
 const LONG_OPERATION_MS = 6 * 60 * 60 * 1000;
 
-function clickhouseClient(t: EngineBackupTarget, query: string): string[] {
-  return ['exec', t.cn, 'clickhouse-client', '-u', t.username, `--password=${t.password}`, '-q', query];
+/**
+ * One clickhouse-client query as the managed user. The password reaches the
+ * client as `CLICKHOUSE_PASSWORD`, forwarded by name (`docker exec -e`), never
+ * in the argv (proven on 23.8, 24.8 and 25.8, a wrong one refused).
+ */
+export function clickhouseClient(t: Pick<EngineBackupTarget, 'cn' | 'username' | 'password'>, query: string): { argv: string[]; env: Record<string, string> } {
+  return { argv: ['exec', '-e', 'CLICKHOUSE_PASSWORD', t.cn, 'clickhouse-client', '-u', t.username, '-q', query], env: { CLICKHOUSE_PASSWORD: t.password } };
 }
+const clickhouseRun = (t: EngineBackupTarget, query: string, opts: { timeoutMs?: number }, sink: (line: string) => void) => {
+  const c = clickhouseClient(t, query);
+  return run('docker', c.argv, { ...opts, env: c.env }, sink);
+};
+const clickhouseCapture = (t: EngineBackupTarget, query: string) => {
+  const c = clickhouseClient(t, query);
+  return capture('docker', c.argv, { env: c.env });
+};
 
 /** The user databases of a running ClickHouse, refusing names the statements could not quote safely. */
 async function clickhouseUserDatabases(t: EngineBackupTarget): Promise<string[]> {
-  const out = await capture(
-    'docker',
-    clickhouseClient(
-      t,
-      `SELECT name FROM system.databases WHERE name NOT IN (${CLICKHOUSE_SYSTEM_DATABASES.map((n) => `'${n}'`).join(', ')}) ORDER BY name FORMAT TSVRaw`,
-    ),
+  const out = await clickhouseCapture(
+    t,
+    `SELECT name FROM system.databases WHERE name NOT IN (${CLICKHOUSE_SYSTEM_DATABASES.map((n) => `'${n}'`).join(', ')}) ORDER BY name FORMAT TSVRaw`,
   );
   const names = out.split('\n').map((l) => l.trim()).filter(Boolean);
   const odd = names.filter((n) => !CLICKHOUSE_DB_NAME.test(n));
@@ -90,7 +100,7 @@ export async function backupClickhouse(t: EngineBackupTarget, file: string, log:
   const name = `nd-backup-${randomUUID()}.zip`;
   log(`Backing up ClickHouse databases: ${dbs.join(', ')}`);
   try {
-    await run('docker', clickhouseClient(t, `BACKUP ${dbs.map((d) => `DATABASE \`${d}\``).join(', ')} TO File('${name}')`), { timeoutMs: LONG_OPERATION_MS }, log);
+    await clickhouseRun(t, `BACKUP ${dbs.map((d) => `DATABASE \`${d}\``).join(', ')} TO File('${name}')`, { timeoutMs: LONG_OPERATION_MS }, log);
     await run('docker', ['cp', `${t.cn}:${CLICKHOUSE_BACKUPS_DIR}/${name}`, file], {}, log);
     assertCopiedFile(file);
   } finally {
@@ -112,7 +122,7 @@ export function clickhouseArchiveDatabases(listing: string): string[] {
 
 /** Whether a database exists right now. */
 async function clickhouseDatabaseExists(t: EngineBackupTarget, db: string): Promise<boolean> {
-  const count = (await capture('docker', clickhouseClient(t, `SELECT count() FROM system.databases WHERE name = '${db}'`))).trim();
+  const count = (await clickhouseCapture(t, `SELECT count() FROM system.databases WHERE name = '${db}'`)).trim();
   if (count !== '0' && count !== '1') throw new Error(`ClickHouse database existence is unconfirmed for ${db}`);
   return count === '1';
 }
@@ -150,20 +160,20 @@ export async function restoreClickhouse(t: EngineBackupTarget, file: string, log
     log(`Restoring ClickHouse databases: ${dbs.join(', ')}`);
     for (const db of dbs) {
       const tmp = `${db}${CLICKHOUSE_RESTORE_SUFFIX}`;
-      await run('docker', clickhouseClient(t, `RESTORE DATABASE \`${db}\` AS \`${tmp}\` FROM File('${name}')`), { timeoutMs: LONG_OPERATION_MS }, log);
+      await clickhouseRun(t, `RESTORE DATABASE \`${db}\` AS \`${tmp}\` FROM File('${name}')`, { timeoutMs: LONG_OPERATION_MS }, log);
     }
     for (const db of dbs) {
       const old = `${db}${CLICKHOUSE_OLD_SUFFIX}`;
       if (await clickhouseDatabaseExists(t, db)) {
-        await run('docker', clickhouseClient(t, `RENAME DATABASE \`${db}\` TO \`${old}\``), {}, log);
+        await clickhouseRun(t, `RENAME DATABASE \`${db}\` TO \`${old}\``, {}, log);
         setAside.push(db);
       }
-      await run('docker', clickhouseClient(t, `RENAME DATABASE \`${db}${CLICKHOUSE_RESTORE_SUFFIX}\` TO \`${db}\``), {}, log);
+      await clickhouseRun(t, `RENAME DATABASE \`${db}${CLICKHOUSE_RESTORE_SUFFIX}\` TO \`${db}\``, {}, log);
       promoted.add(db);
     }
     swapped = true;
     for (const db of setAside) {
-      await run('docker', clickhouseClient(t, `DROP DATABASE IF EXISTS \`${db}${CLICKHOUSE_OLD_SUFFIX}\` SYNC`), {}, log).catch(() => {
+      await clickhouseRun(t, `DROP DATABASE IF EXISTS \`${db}${CLICKHOUSE_OLD_SUFFIX}\` SYNC`, {}, log).catch(() => {
         log(`⚠ could not drop the previous copy ${db}${CLICKHOUSE_OLD_SUFFIX}; drop it by hand`);
       });
     }
@@ -171,7 +181,7 @@ export async function restoreClickhouse(t: EngineBackupTarget, file: string, log
     if (!swapped) {
       // An original that was set aside but whose copy never went live comes back.
       for (const db of setAside.filter((d) => !promoted.has(d))) {
-        await run('docker', clickhouseClient(t, `RENAME DATABASE \`${db}${CLICKHOUSE_OLD_SUFFIX}\` TO \`${db}\``), {}, swallow).catch(() => {
+        await clickhouseRun(t, `RENAME DATABASE \`${db}${CLICKHOUSE_OLD_SUFFIX}\` TO \`${db}\``, {}, swallow).catch(() => {
           log(`⚠ the original of ${db} is kept as ${db}${CLICKHOUSE_OLD_SUFFIX}; rename it back by hand`);
         });
       }

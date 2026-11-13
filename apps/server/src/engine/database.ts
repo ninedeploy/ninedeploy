@@ -15,7 +15,7 @@ import { writeSecretFile } from '../lib/secretFile.js';
 import { createKeyedOperationGuard } from '../lib/keyedOperationGuard.js';
 import { acquireCrossProcessLock, LockUnavailableError, type CrossProcessLock } from '../lib/crossProcessLock.js';
 import { conflict } from '../lib/errors.js';
-import { type DbCommand, dbCommandEnv, dumpCommands, isRedisFamily, mysqlCommand, probeCommand, redisCliArgv, restoreCommand, saveReplyProblem } from '../lib/databaseCommands.js';
+import { type DbCommand, dbCommandEnv, dumpCommands, isRedisFamily, mongoshCommand, mongoToolCommand, mysqlCommand, probeCommand, redisCliCommand, restoreCommand, saveReplyProblem } from '../lib/databaseCommands.js';
 import { backupClickhouse, backupMeilisearch, backupRabbitmq, restoreClickhouse, restoreMeilisearch, restoreRabbitmq } from './extraEngineBackups.js';
 import { redisStudioConfig, studioImageForEngine } from '../lib/databaseStudioImages.js';
 export { studioImageForEngine } from '../lib/databaseStudioImages.js';
@@ -1142,7 +1142,8 @@ export async function databaseSize(d: Database): Promise<number> {
     }
     if (isRedisFamily(d.engine)) {
       const pass = decrypt(d.passwordEncrypted);
-      const out = await capture('docker', redisCliArgv(d.engine, d.containerName, pass, 'INFO', 'memory'));
+      const info = redisCliCommand(d.engine, d.containerName, pass, 'INFO', 'memory');
+      const out = await capture('docker', info.argv, dbCommandEnv(info));
       const m = /used_memory:(\d+)/.exec(out);
       return m ? Number(m[1]) : 0;
     }
@@ -1157,12 +1158,8 @@ export async function databaseSize(d: Database): Promise<number> {
       // Managed mongo always has a root user (MONGO_INITDB_ROOT_*), so the
       // stats command needs the same credentials the dump/restore paths use —
       // an unauthenticated dbStats is rejected and the size silently reads 0.
-      const pass = decrypt(d.passwordEncrypted);
-      const out = await capture('docker', [
-        'exec', d.containerName, 'mongosh',
-        '-u', cfg.username()!, '-p', pass, '--authenticationDatabase', 'admin',
-        '--quiet', '--eval', 'db.getSiblingDB("app").stats().dataSize',
-      ]);
+      const stats = mongoshCommand(d.containerName, decrypt(d.passwordEncrypted), 'db.getSiblingDB("app").stats().dataSize');
+      const out = await capture('docker', stats.argv, dbCommandEnv(stats));
       return Number(out.match(/[\d.]+/)?.[0]) || 0;
     }
   } catch {
@@ -1269,16 +1266,12 @@ async function backupDatabaseUnlocked(d: Database, file: string, log: (line: str
       await run('docker', ['cp', `${cn}:/data/dump.rdb`, file], {}, log);
     } else if (d.engine === 'mongo') {
       // mongodump can write its binary archive straight to a file via
-      // --archive=<path> — no shell, no stdout plumbing. Auth is mandatory (the
-      // container is initialized with a root user), so credentials travel via
-      // argv exactly like the mysqldump path.
-      const pass = decrypt(d.passwordEncrypted);
+      // --archive=<path> — no stdout plumbing. Auth is mandatory (the
+      // container is initialized with a root user); the password reaches it
+      // in a config file on fd 3, never the argv (the shared builder).
       usesDumpTmp = true;
-      await run('docker', [
-        'exec', cn, 'mongodump',
-        '-u', cfg.username()!, '-p', pass, '--authenticationDatabase', 'admin',
-        `--archive=${DUMP_TMP}`, '--gzip',
-      ], {}, log);
+      const dump = dumpCommands('mongo', cn, DUMP_TMP, decrypt(d.passwordEncrypted)).dump;
+      await run('docker', dump.argv, dbCommandEnv(dump), log);
       await run('docker', ['cp', `${cn}:${DUMP_TMP}`, file], {}, log);
     } else if (d.engine === 'clickhouse') {
       // G1.8: the three engines below (engine/extraEngineBackups.ts).
@@ -1388,27 +1381,9 @@ async function restoreDatabaseUnlocked(d: Database, file: string, log: (line: st
         const restore = restoreCommand(d.engine, cn, RESTORE_TMP, decrypt(d.passwordEncrypted));
         await run('docker', restore.argv, dbCommandEnv(restore), log);
       } else {
-        // mongo
-        const pass = decrypt(d.passwordEncrypted);
-        await run(
-          'docker',
-          [
-            'exec',
-            cn,
-            'mongorestore',
-            '-u',
-            cfg.username()!,
-            '-p',
-            pass,
-            '--authenticationDatabase',
-            'admin',
-            `--archive=${RESTORE_TMP}`,
-            '--gzip',
-            '--drop',
-          ],
-          {},
-          log,
-        );
+        // mongo: the shared builder (the password in a config file on fd 3)
+        const restore = restoreCommand('mongo', cn, RESTORE_TMP, decrypt(d.passwordEncrypted));
+        await run('docker', restore.argv, dbCommandEnv(restore), log);
       }
     }
   } finally {
@@ -1527,9 +1502,7 @@ export function importCommand(
     return mysqlCommand(cn, client, password, ['-uroot', ...(plan.sandboxFlag ? [plan.sandboxFlag] : []), '--local-infile=0', 'app'], tmp);
   }
   if (engine === 'mongo' && plan.format === 'mongo_archive') {
-    return plain([
-      'exec', cn, 'mongorestore',
-      '-u', 'nine', '-p', password, '--authenticationDatabase', 'admin',
+    return mongoToolCommand(cn, 'mongorestore', password, [
       `--archive=${tmp}`,
       ...(plan.gzip ? ['--gzip'] : []),
       ...(plan.drop ? ['--drop'] : []),
@@ -1629,14 +1602,13 @@ export async function probeDatabaseCredentials(d: Database, attempts = 5, delayM
       return out.trim() === '1';
     }
     if (d.engine === 'mongo') {
-      const out = await capture('docker', [
-        'exec', cn, 'mongosh', '-u', cfg.username()!, '-p', password, '--authenticationDatabase', 'admin',
-        '--quiet', '--eval', 'db.getSiblingDB("app").runCommand({ ping: 1 }).ok',
-      ]);
+      const ping = probeCommand('mongo', cn, password)!;
+      const out = await capture('docker', ping.argv, dbCommandEnv(ping));
       return out.trim() === '1';
     }
     if (isRedisFamily(d.engine)) {
-      const out = await capture('docker', redisCliArgv(d.engine, cn, password, 'PING'));
+      const ping = redisCliCommand(d.engine, cn, password, 'PING');
+      const out = await capture('docker', ping.argv, dbCommandEnv(ping));
       return out.trim() === 'PONG';
     }
     return false;

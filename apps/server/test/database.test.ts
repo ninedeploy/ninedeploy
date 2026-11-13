@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mysqlCommand } from '../src/lib/databaseCommands.js';
+import { mongoToolCommand, mysqlCommand } from '../src/lib/databaseCommands.js';
 import { existsSync as existsSyncMock, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { createCipheriv, createDecipheriv } from 'node:crypto';
 import os from 'node:os';
@@ -655,7 +655,7 @@ describe('databaseSize', () => {
   it('parses redis used_memory (authed) and returns 0 when absent', async () => {
     h.capture.mockResolvedValueOnce('used_memory:456\n');
     await expect(databaseSize(dbRow({ engine: 'redis' }))).resolves.toBe(456);
-    expect(h.capture).toHaveBeenCalledWith('docker', ['exec', 'c', 'redis-cli', '-a', 'pw:enc', '--no-auth-warning', 'INFO', 'memory']);
+    expect(h.capture).toHaveBeenCalledWith('docker', ['exec', '-e', 'REDISCLI_AUTH', 'c', 'redis-cli', 'INFO', 'memory'], { env: { REDISCLI_AUTH: 'pw:enc' } });
     expect(h.decrypt).toHaveBeenCalledWith('enc');
 
     h.capture.mockResolvedValueOnce('no match here');
@@ -780,7 +780,7 @@ describe('backupDatabase', () => {
     writeFileSync(file, 'RDB-BYTES'); // the (mocked) docker cp lands here
     const log = vi.fn();
     await backupDatabase(dbRow({ engine: 'redis' }), file, log);
-    expect(h.run).toHaveBeenCalledWith('docker', ['exec', 'c', 'redis-cli', '-a', 'pw:enc', '--no-auth-warning', 'SAVE'], {}, expect.any(Function));
+    expect(h.run).toHaveBeenCalledWith('docker', ['exec', '-e', 'REDISCLI_AUTH', 'c', 'redis-cli', 'SAVE'], { env: { REDISCLI_AUTH: 'pw:enc' } }, expect.any(Function));
     expect(log).toHaveBeenCalledWith('OK');
     expect(h.run).toHaveBeenCalledWith('docker', ['cp', 'c:/data/dump.rdb', file], {}, log);
     expect(h.decrypt).toHaveBeenCalledWith('enc');
@@ -803,11 +803,10 @@ describe('backupDatabase', () => {
     writeFileSync(file, 'MONGO-BYTES');
     const log = vi.fn();
     await backupDatabase(dbRow({ engine: 'mongo' }), file, log);
-    expect(h.run).toHaveBeenCalledWith('docker', [
-      'exec', 'c', 'mongodump',
-      '-u', 'nine', '-p', 'pw:enc', '--authenticationDatabase', 'admin',
-      expect.stringMatching(/^--archive=\/tmp\/ninedeploy-dump-[a-f0-9-]+$/), '--gzip',
-    ], {}, log);
+    // The password in a config file on fd 3, forwarded by name: never in the argv.
+    const dump = mongoToolCommand('c', 'mongodump', 'pw:enc', [expect.stringMatching(/^--archive=\/tmp\/ninedeploy-dump-[a-f0-9-]+$/) as unknown as string, '--gzip']);
+    expect(h.run).toHaveBeenCalledWith('docker', dump.argv, { env: dump.env }, log);
+    expect(JSON.stringify(h.run.mock.calls.map((c: unknown[]) => c[1]))).not.toContain('pw:enc');
     expect(h.run).toHaveBeenCalledWith('docker', ['cp', expect.stringMatching(/^c:\/tmp\/ninedeploy-dump-[a-f0-9-]+$/), file], {}, log);
     expect(h.run).toHaveBeenCalledWith('docker', ['exec', 'c', 'rm', '-f', expect.stringMatching(/^\/tmp\/ninedeploy-dump-[a-f0-9-]+$/)], {}, expect.any(Function));
     expect(readFileSync(file).includes(Buffer.from('MONGO-BYTES'))).toBe(true);
@@ -1042,11 +1041,8 @@ describe('restoreDatabase', () => {
     const file = encFile('MONGO');
     await restoreDatabase(dbRow({ engine: 'mongo' }), file, log);
     expect(h.run).toHaveBeenCalledWith('docker', ['cp', expect.stringMatching(/\.[a-f0-9-]+\.dec$/), expect.stringMatching(/^c:\/tmp\/ninedeploy-restore-[a-f0-9-]+$/)], {}, log);
-    expect(h.run).toHaveBeenCalledWith('docker', [
-      'exec', 'c', 'mongorestore',
-      '-u', 'nine', '-p', 'pw:enc', '--authenticationDatabase', 'admin',
-      expect.stringMatching(/^--archive=\/tmp\/ninedeploy-restore-[a-f0-9-]+$/), '--gzip', '--drop',
-    ], {}, log);
+    const restore = mongoToolCommand('c', 'mongorestore', 'pw:enc', [expect.stringMatching(/^--archive=\/tmp\/ninedeploy-restore-[a-f0-9-]+$/) as unknown as string, '--gzip', '--drop']);
+    expect(h.run).toHaveBeenCalledWith('docker', restore.argv, { env: restore.env }, log);
   });
 
   it('restores redis via docker cp to /data/dump.rdb + docker restart', async () => {
@@ -1260,7 +1256,7 @@ describe('restoreDatabase', () => {
     // Backup
     const backupTarget = encFile('valkey-b');
     await backupDatabase(dbRow({ engine: 'valkey', containerName: 'c' }), backupTarget, vi.fn());
-    expect(h.run).toHaveBeenCalledWith('docker', ['exec', 'c', 'redis-cli', '-a', 'pw:enc', '--no-auth-warning', 'SAVE'], {}, expect.any(Function));
+    expect(h.run).toHaveBeenCalledWith('docker', ['exec', '-e', 'REDISCLI_AUTH', 'c', 'redis-cli', 'SAVE'], { env: { REDISCLI_AUTH: 'pw:enc' } }, expect.any(Function));
 
     // Restore
     await restoreDatabase(dbRow({ engine: 'valkey', containerName: 'c' }), backupTarget, vi.fn());
