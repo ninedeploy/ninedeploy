@@ -1585,8 +1585,9 @@ export async function probeMysqlSandboxFlag(d: Database): Promise<string | null>
 /**
  * After an import: can NineDeploy still sign in with the credentials it
  * holds? A dump can carry `ALTER USER`, `mysql.user` rows or an admin-db user
- * that change them. Every probe authenticates for real (postgres over TCP —
- * the image's local socket is `trust` and would prove nothing). A few
+ * that change them. Every probe authenticates for real (postgres over the
+ * container's own network address: the image trusts the local socket and
+ * 127.0.0.1, which would prove nothing — until 0.18.28 it asked 127.0.0.1). A few
  * attempts, because redis/valkey come back from the restart still loading.
  */
 export async function probeDatabaseCredentials(d: Database, attempts = 5, delayMs = 2_000): Promise<boolean> {

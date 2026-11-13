@@ -218,7 +218,10 @@ export function parseSizeOutput(engine: string, out: string): number {
 /** `probeDatabaseCredentials`: one real sign-in with the stored credentials, or null (no probe: false). */
 export function probeCommand(engine: string, cn: string, password: string): DbCommand | null {
   if (engine === 'postgres') {
-    return { argv: ['exec', '-e', 'PGPASSWORD', cn, 'psql', '-h', '127.0.0.1', '-U', PG_USER, '-d', PG_DB, '-tAc', 'SELECT 1'], env: { PGPASSWORD: password } };
+    // Over the container's own network address (its name, through Docker's DNS on the database's
+    // bridge): the image trusts the local socket AND 127.0.0.1, so a probe there signs in with
+    // any password; every other address asks for it (scram-sha-256).
+    return { argv: ['exec', '-e', 'PGPASSWORD', cn, 'psql', '-h', cn, '-U', PG_USER, '-d', PG_DB, '-tAc', 'SELECT 1'], env: { PGPASSWORD: password } };
   }
   if (engine === 'mysql' || engine === 'mariadb') {
     return mysqlCommand(cn, engine === 'mysql' ? 'mysql' : 'mariadb', password, ['-uroot', '-N', '-e', 'SELECT 1']);

@@ -195,8 +195,12 @@ describe('probeDatabaseCredentials', () => {
   it('signs in for real on every engine', async () => {
     h.capture.mockResolvedValueOnce('1\n');
     expect(await probeDatabaseCredentials(db(), 1, 0)).toBe(true);
-    // postgres goes over TCP with the password: the local socket is trust. PGPASSWORD is forwarded by name.
-    expect(h.capture.mock.calls[0]![1]).toEqual(expect.arrayContaining(['-e', 'PGPASSWORD', '-h', '127.0.0.1']));
+    // postgres signs in over the container's own address (its name): the image trusts the local
+    // socket and 127.0.0.1, so either would accept any password. PGPASSWORD is forwarded by name.
+    const argv = h.capture.mock.calls[0]![1] as string[];
+    expect(argv).toEqual(expect.arrayContaining(['-e', 'PGPASSWORD']));
+    expect(argv[argv.indexOf('-h') + 1]).toBe(argv[3]);
+    expect(argv).not.toContain('127.0.0.1');
     expect(h.capture.mock.calls[0]![2]).toEqual({ env: { PGPASSWORD: 'pw:enc' } });
     h.capture.mockResolvedValueOnce('1');
     expect(await probeDatabaseCredentials(db({ engine: 'mariadb' }), 1, 0)).toBe(true);
