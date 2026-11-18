@@ -66,7 +66,9 @@ Base commit evidence: [main CI 43463890083](https://github.com/ninedeploy/ninede
 
 ## 0.19.0 release preparation
 
-The proposed minor groups the opt-in remote PostgreSQL archives, proxy-confirmed settings and disaster recovery work in the [Unreleased changelog](../CHANGELOG.md#unreleased). The versioned draft uses a frozen copy of the tree above `f238463e` and keeps the published version at [0.18.28](https://github.com/ninedeploy/ninedeploy/releases/tag/v0.18.28) during verification.
+The proposed minor groups the opt-in remote PostgreSQL archives, proxy-confirmed settings and disaster recovery work. The local release commit is `d8bd2db7` on `codex/ninedeploy-0.19.0`. Its product and release metadata match the frozen candidate. The latest published release remains [0.18.28](https://github.com/ninedeploy/ninedeploy/releases/tag/v0.18.28).
+
+On November 18, 2026, the frozen `0.19.0` candidate passed the Linux `pnpm release:check` with **20,155 tests, zero failures or skips**, all coverage thresholds, and **362 contract tests**. The built image passed the stock upgrade smoke from `v0.18.28`, including a fresh deployment and all 126 migrations recorded once. The first upgrade attempt stopped on a missing SQLite client in the smoke driver's copied tree. The retry used the installed workspace with the same candidate image and unchanged smoke source. The image also passed all **11 private N05 recovery and cutover checks**. Local evidence is under `.temp_files/package-13-20261118/`.
 
 The release workflow requires successful CI on the commit being tagged. It exercises the candidate image, including an upgrade from the previous release, before promotion. Cloudflare and Let's Encrypt staging acceptance remains open for the N05 test hostname and must be reported separately from the isolated private cutover. [Maintainer release workflow](../CONTRIBUTING.md#releases-and-the-stable-channel) · [N05 runbook](DISASTER_RECOVERY.md#verify-public-dns-and-acme-staging)
 
