@@ -94,6 +94,8 @@ Implementation update: panel checkpoints and continuous archives passed the full
 - Work: define representative service/node/deployment/log volumes; measure API p95, event-loop delay, SQLite busy errors, disk growth, log backlog, recovery duration, and queue wait. Include full disk, a slow node, and an unreachable log destination.
 - Acceptance: a repeatable fixture, fixed workload, predefined acceptance thresholds, and recorded measurements. Select architectural changes only for measured bottlenecks.
 
+The first slice covers normal load and a controlled panel restart. The [capacity baseline](../CAPACITY_BASELINE.md) records the exact workload, budgets, candidate, and results. The slow-node, full-disk, and unreachable-log-destination cases remain in N06.
+
 **N07 — Restart behavior for user-visible in-memory state. P2 / M. Former S6.**
 
 - Source: [canaryState.ts](../../apps/server/src/engine/canaryState.ts) intentionally keeps measurements in memory; the durable runtime recovery journal is separate. Recovery is therefore not entirely absent.

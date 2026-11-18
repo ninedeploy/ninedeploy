@@ -41,6 +41,7 @@ The guides are grouped by what you are doing. The last group holds the project's
 
 **Observability**
 - [Resource history, metrics export and durable logs](OBSERVABILITY.md)
+- [Capacity baseline](CAPACITY_BASELINE.md)
 - [Uptime monitors and status pages](UPTIME.md)
 - [AI assistant](AI.md)
 
