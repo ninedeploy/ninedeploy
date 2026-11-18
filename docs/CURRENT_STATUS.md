@@ -48,7 +48,7 @@ The separate cutover run passed **11 checks** in **75.7 seconds**. A surviving n
 
 The clean-node drill passed **11 checks** in **193.1 seconds** from node removal to application verification. Verified SSH bootstrap kept the node ID and issued a fresh agent credential. The replacement restored its remote volume and PostgreSQL dump and served the recovered workload. [Node replacement evidence](DISASTER_RECOVERY.md#verified-node-replacement-on-november-17-2026)
 
-The Cloudflare and Let's Encrypt staging preflight verified public DNS and the staging trust chain. A zone-scoped token is still required to run the disposable public cutover and request a new staging certificate. [Public staging preflight](DISASTER_RECOVERY.md#public-cutover-preflight-on-november-17-2026)
+The published v0.19.0 preflight confirmed authoritative Cloudflare DNS and access to the Let's Encrypt staging directory and trust roots. A zone-scoped token is still required to run the disposable public cutover and request a new staging certificate. [Published v0.19.0 preflight](DISASTER_RECOVERY.md#published-v0190-preflight-on-november-18-2026)
 
 ## R2 acceptance checklist
 

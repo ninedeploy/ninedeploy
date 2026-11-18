@@ -114,7 +114,13 @@ The recovery used a **767-byte node volume archive** and a **1,520-byte PostgreS
 
 ## Verify public DNS and ACME staging
 
-Set `N05_DNS_ZONE` to an authorized Cloudflare zone and `N05_DNS_SUFFIX` to a test suffix within it. Provide `CLOUDFLARE_DNS_API_TOKEN` through the environment with **Zone DNS Edit** and **Zone Read** scoped to that zone. The drill generates a random name under the suffix and creates a DNS-only record. It keeps existing names out of the cutover. [Cloudflare DNS record API](https://developers.cloudflare.com/api/resources/dns/subresources/records/)
+Set `N05_DNS_ZONE` to an authorized Cloudflare zone and `N05_DNS_SUFFIX` to a test suffix within it. Provide `CLOUDFLARE_DNS_API_TOKEN` through the environment with **Zone DNS Edit** and **Zone Read** scoped to that zone. Use a Linux Docker context and pull or build the image before running the drill. The drill generates a random name under the suffix and creates a DNS-only record. It keeps existing names out of the cutover. [Cloudflare DNS record API](https://developers.cloudflare.com/api/resources/dns/subresources/records/)
+
+PowerShell sessions that were already open when a Windows user environment variable was saved can load it directly without printing the token.
+
+```powershell
+$env:CLOUDFLARE_DNS_API_TOKEN = [Environment]::GetEnvironmentVariable('CLOUDFLARE_DNS_API_TOKEN', 'User')
+```
 
 ```sh
 node scripts/smoke-disaster-recovery.mjs --image=ninedeploy-review:n05 --cloudflare-staging --proof=.temp_files/n05-cloudflare-staging
@@ -127,3 +133,9 @@ The drill checks both assigned authoritative nameservers and a public recursive 
 The suggested hostname, `ninedeploy.vm.oxog.net`, resolved through public DNS and returned HTTPS 200 from `/health`. Cloudflare was authoritative for `oxog.net`. The Let's Encrypt staging directory returned a replay nonce, and a separate HTTPS request verified the certificate chain of the CA's official staging test site. The public cutover and a new staging order for the drill hostname await a zone-scoped Cloudflare token. The preflight made zero DNS changes. Evidence is in `.temp_files/package-11-20261117/dns-preflight.json` and `staging-preflight.log` in the same directory. [Official staging CA and test sites](https://letsencrypt.org/docs/staging-environment/#root-cas)
 
 On November 18, both Cloudflare authoritative nameservers again agreed on the existing deployment's address, `/health` returned HTTPS 200, and the staging endpoint returned a replay nonce. The candidate image built and 164 focused server and documentation tests passed. The Cloudflare token was unavailable to the drill process, so this attempt stopped before creating a DNS record or opening an ACME order.
+
+### Published v0.19.0 preflight on November 18, 2026
+
+The two authoritative nameservers for `oxog.net` returned the same A record for `ninedeploy.vm.oxog.net`. The staging directory returned HTTP 200 and its nonce endpoint supplied a replay nonce. All four official staging root certificate files used by the drill were available. The local Linux Docker context could run the published [v0.19.0 image](https://github.com/ninedeploy/ninedeploy/releases/tag/v0.19.0) built from `0a59b5ed4068334b5ee0d1ad36e43959e92525ba`. All 66 focused documentation, Cloudflare provider, and proxy settings tests passed.
+
+The public cutover stopped at credential validation because `CLOUDFLARE_DNS_API_TOKEN` was absent from the process, Windows user, and machine environments. This attempt made zero DNS writes, sent no HTTP requests to the live hostname, and placed no staging order. The remaining acceptance check is the DNS-01 cutover and cleanup of the randomized test hostname after an authorized token is available. The DNS and staging preflight receipt is `.temp_files/n05-cloudflare-20261118/public-read-only-preflight.json`.
