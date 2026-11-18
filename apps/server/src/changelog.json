@@ -1,5 +1,17 @@
 [
   {
+    "version": "0.19.0",
+    "date": "2026-11-18",
+    "title": "Remote PostgreSQL recovery, proxy safeguards and disaster recovery",
+    "changes": [
+      "PostgreSQL PITR can ship encrypted recovery checkpoints or continuous WAL to HTTPS S3 from the panel host and managed nodes.",
+      "Panel sign-in, maintenance mode and custom error pages wait for proxy confirmation and recover safely from interrupted saves.",
+      "The disaster recovery runbook covers recovery of the panel, application volumes, PostgreSQL dumps and nodes after local state loss.",
+      "Remote PostgreSQL archives are opt-in. Update the node agent before using remote archives on a managed node.",
+      "Remote-only volume backups can be restored after source-host loss. Traefik remounts the recovered configuration after panel import."
+    ]
+  },
+  {
     "version": "0.18.28",
     "date": "2026-11-13",
     "title": "MySQL and MariaDB major upgrades, MySQL 9 restores, database passwords out of process lists",

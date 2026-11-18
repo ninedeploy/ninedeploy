@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-11-18
+
 **Highlights**
 - PostgreSQL PITR can ship encrypted recovery checkpoints or continuous WAL to HTTPS S3 from the panel host and managed nodes.
 - Panel sign-in, maintenance mode and custom error pages wait for proxy confirmation and recover safely from interrupted saves.
