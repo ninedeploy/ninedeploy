@@ -62,6 +62,8 @@ export function agentChildTimeoutMs(op: string): number | undefined {
 
 /** How long the panel waits for `op`'s answer. */
 export function agentRequestTimeoutMs(op: string, params: Record<string, unknown> = {}): number {
+  if (op === 'db.pitr' && params['action'] === 'baseBackup') return 6 * 60 * 60_000 + 240_000;
+  if (op === 'db.pitr' && params['action'] === 'prune') return 13 * 60_000;
   if (op === 'docker.lifecycle') return 35_000;
   if (op === 'db.studio.start') return 205_000;
   // Clear can wait for an outstanding preparation plus both cleanup passes.
@@ -259,7 +261,7 @@ async function supportsSealed(serverId: number, host: string, port: number, sign
  * the first place.
  */
 export const SEALED_ONLY_AGENT_OPS: ReadonlySet<string> = new Set(['swarm.info', 'swarm.join', 'swarm.leave', 'docker.probe', 'docker.readiness', 'docker.logsSince', 'proxy.confirmRouting', 'proxy.writeOrderedConfig', 'docker.identity', 'docker.retire', 'docker.containerTool', 'volume.fileTool', 'db.client.prepare', 'terminal.open']);
-export const isSealedOnlyAgentOp = (op: string): boolean => SEALED_ONLY_AGENT_OPS.has(op) || op.startsWith('swarm.') || op.startsWith('db.studio.') ||
+export const isSealedOnlyAgentOp = (op: string): boolean => SEALED_ONLY_AGENT_OPS.has(op) || op === 'db.pitr' || op.startsWith('swarm.') || op.startsWith('db.studio.') ||
   op.startsWith('proxy.traffic.') || op.startsWith('proxy.servingTraffic.') || op.startsWith('proxy.idleWatch.') || op.startsWith('wake.');
 
 /**

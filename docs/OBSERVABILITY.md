@@ -1,8 +1,8 @@
 # Resource history, metrics export and durable logs
 
-Status: resource history, Prometheus and OTLP export shipped in 0.18.2;
-error-rate and latency alerts are on main for the next release. Validation is
-tracked in [competitive delivery](COMPETITIVE_DELIVERY.md).
+Resource history, Prometheus and OTLP export are implemented. For current
+acceptance and publication status, see [Current status](CURRENT_STATUS.md).
+Dated validation receipts remain in [competitive delivery](COMPETITIVE_DELIVERY.md).
 
 ## Configure resource history
 
@@ -27,9 +27,11 @@ setting. Reducing retention deletes older summaries during the next cleanup.
 The existing per-service visibility checks still apply.
 
 This covers currently collected local and ordinary node-service CPU/memory.
-A Swarm service records the average of its tasks on the panel host; tasks on
-worker nodes are not measured. Remote Swarm task aggregation, fan-out
-destination history and node-only database history remain separate work. Monitoring's panel-host totals stay local.
+A Swarm service records the average of its Running tasks on the panel host
+and workers enrolled through NineDeploy. Worker samples arrive through their
+agents; the service is unknown unless every Running task can be measured.
+Fan-out destination history and node-only database history remain separate
+work. Monitoring's panel-host totals stay local.
 
 ## Prometheus
 

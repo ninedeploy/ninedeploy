@@ -22,6 +22,7 @@ import type {
   BackupReplicasView,
 } from '@ninedeploy/schemas';
 import type { ImportWaitOptions, ImportFileData, ImportFileOptions } from '../databaseImport.js';
+import type { RemotePitrConfig, RemotePitrStatus } from '../types.js';
 import type { BackupDrillResult, BackupDrillEntry, BackupRestoreProbe, PgbouncerStatus, DatabaseCredentialsWithPublic, PitrRecovery, PitrRecoveryAdmission, PitrStatus } from '../types.js';
 import type { Transport } from '../transport.js';
 import { createImportHelpers } from '../databaseImport.js';
@@ -85,6 +86,11 @@ export interface DatabasesApi {
      * need `admin` on the database.
      */
     pitr: {
+      remote: {
+        get: (id: number) => Promise<RemotePitrStatus>;
+        set: (id: number, input: Omit<RemotePitrConfig, 'archiveId'> & { passphrase?: string; resetStream?: boolean }) => Promise<RemotePitrStatus>;
+        checkpoint: (id: number) => Promise<{ started: true }>;
+      };
       get: (id: number) => Promise<PitrStatus>;
       /**
        * Enabling (the database must be running) restarts it with WAL
@@ -237,6 +243,11 @@ export function databasesApi(t: Transport): DatabasesApi {
       drills: (id) => get<BackupDrillEntry[]>(`/v1/databases/${id}/drills`),
       drill: (id, drillId) => get<BackupDrillEntry>(`/v1/databases/${id}/drills/${drillId}`),
       pitr: {
+        remote: {
+          get: (id) => get<RemotePitrStatus>(`/v1/databases/${id}/pitr/remote`),
+          set: (id, input) => send<RemotePitrStatus>('PUT', `/v1/databases/${id}/pitr/remote`, input),
+          checkpoint: (id) => send<{ started: true }>('POST', `/v1/databases/${id}/pitr/remote/checkpoint`, {}),
+        },
         get: (id) => get<PitrStatus>(`/v1/databases/${id}/pitr`),
         set: (id, input) => send<PitrStatus>('PUT', `/v1/databases/${id}/pitr`, input),
         baseBackup: (id) => send<{ started: true }>('POST', `/v1/databases/${id}/pitr/base-backup`, {}),

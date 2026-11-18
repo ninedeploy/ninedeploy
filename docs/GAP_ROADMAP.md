@@ -1,5 +1,7 @@
 # Competitor gap roadmap: 2026-10-27
 
+This is the historical October gap plan. For current runtime decisions and acceptance/publication status, use [Current status](CURRENT_STATUS.md) and the generated [support matrix](SUPPORT_MATRIX.md). An older "unreleased" or "not supported" checkpoint is not the status of the current checkout.
+
 This plan comes from a code-level analysis of the current releases of Coolify v4.5.0, Dokploy v0.30.10, CapRover v1.15.5, Dokku v0.38.32, Kamal v2.12.0 / kamal-proxy v0.10.2 and Komodo v2.3.4, plus Kubero, Canine, Tsuru, ZaneOps, Uncloud, Disco, Haloy and piku. Their repositories were cloned and read, not just their docs. Each gap below was checked against NineDeploy `main` (0.18.4). An item is counted as present only when it is reachable from the UI or the CLI, not merely implemented. The working notes and per-competitor evidence (file paths) are kept outside the repository.
 
 The work runs **next to** the R2–R6 release sequence in [ROADMAP.md](ROADMAP.md); it does not replace it. Items ship as **patch releases**, each a coherent slice. They follow the rule every release follows: additive migrations only, new behaviour opt-in or defaulting to the old behaviour, and `smoke:upgrade` extended to exercise the item after an upgrade.

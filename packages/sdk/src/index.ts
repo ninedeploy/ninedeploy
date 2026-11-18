@@ -46,6 +46,8 @@ export type {
   PitrRecovery,
   PitrRecoveryAdmission,
   PitrStatus,
+  RemotePitrConfig,
+  RemotePitrStatus,
   ImageInfo,
   PruneImagesInput,
   PruneImagesResult,

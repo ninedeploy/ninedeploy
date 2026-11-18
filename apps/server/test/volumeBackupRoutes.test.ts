@@ -416,8 +416,9 @@ describe('volume backup routes', () => {
     expect(res.statusCode).toBe(404);
   });
 
-  it('fetches a remote-only backup, restores it and removes the temp copy', async () => {
-    const missing = path.join(tmp, 'gone.tar.gz');
+  it('restores a remote-only backup after host loss and removes the temp copy', async () => {
+    const missing = path.join(tmp, 'lost-host', 'backups', 'volumes', VOLUME, 'gone.tar.gz');
+    expect(existsSync(path.dirname(missing))).toBe(false);
     remoteMocks.fetchRemoteBackup.mockImplementation(async (...args: unknown[]) => {
       writeFileSync(String(args[2]), 'tarball');
     });
@@ -434,10 +435,12 @@ describe('volume backup routes', () => {
     // r647: a unique temp name per request (concurrent restores of one backup
     // shared `<file>.remote` before the operation lock).
     const temp = String(remoteMocks.fetchRemoteBackup.mock.calls[0]?.[2]);
-    expect(temp.startsWith(`${missing}.`) && temp.endsWith('.remote')).toBe(true);
-    expect(temp).not.toBe(`${missing}.remote`);
+    expect(path.dirname(temp)).toBe(tmp);
+    expect(path.basename(temp)).toMatch(/^gone\.tar\.gz\.[a-f0-9-]{36}\.remote$/);
     expect(remoteMocks.fetchRemoteBackup).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ remoteKey: 'r/10' }), temp);
     expect(engineMocks.restoreVolume).toHaveBeenCalledWith(VOLUME, temp, expect.any(Function));
+    expect(existsSync(temp)).toBe(false);
+    expect(existsSync(path.dirname(missing))).toBe(false);
   });
 
   it('404s a restore whose file is gone locally and remotely', async () => {

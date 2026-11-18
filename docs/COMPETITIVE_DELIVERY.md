@@ -1,5 +1,7 @@
 # Competitive delivery work
 
+For the current implementation, acceptance and publication summary, including the remaining R2 checklist, see [Current status](CURRENT_STATUS.md). The records below are dated checkpoints: their versions, open items and scope limits belong to the recorded source, not necessarily today's checkout. Preserve their receipts when updating the current summary.
+
 Baseline: NineDeploy 0.17.1, main abf5a39a. This is an implementation and acceptance tracker, not a statement of competitor parity.
 
 Latest recovery work, 2026-11-03: the internal PostgreSQL restore/query adapter passed [real hosted acceptance 41649048270](https://github.com/ninedeploy/ninedeploy/actions/runs/41649048270) on frozen source `608fe3f094d952d0aff4b9073a340e2d708b2bee`. Plain/custom dumps restored the known earlier data after the source changed; wrong data, invalid SQL and a missing extension were refused. Independent receipts confirm source/backup preservation and owned cleanup. Local covering checks passed 91 tests in four files, server typecheck and lint. Public drill integration, other engines, PostgreSQL PITR and final full-source certification remain required. See [Isolated restore verification](RESTORE_VERIFICATION.md).

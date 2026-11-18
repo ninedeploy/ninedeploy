@@ -82,9 +82,13 @@ describe('release delivery invariants', () => {
     expect(verify).toBeDefined();
     expect(script).toContain("job='Typecheck · Lint · Build · Test'");
     const runs = verify!.steps.map((step) => step.run);
-    const order = ['pnpm install --frozen-lockfile', 'pnpm typecheck', 'pnpm lint', 'pnpm build', 'pnpm turbo run test --concurrency=1'].map((cmd) => runs.indexOf(cmd));
+    const order = ['pnpm install --frozen-lockfile', 'pnpm typecheck', 'pnpm lint', 'pnpm build', 'pnpm check:contracts', 'pnpm turbo run test --concurrency=1 --force'].map((cmd) => runs.indexOf(cmd));
     for (const at of order) expect(at).toBeGreaterThan(-1);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
+    const preflight = verify!.steps.find(step => step.run === 'pnpm check:contracts');
+    expect(preflight?.env?.['DOCKER_HOST']).toBe('tcp://127.0.0.1:9');
+    const launcher = readFileSync(new URL('../../../scripts/check-contracts.mjs', import.meta.url), 'utf8');
+    expect(launcher).toContain("'test/swarmRuntime.test.ts'");
     const node = verify!.steps.find((step) => String(step.uses ?? '').startsWith('actions/setup-node'));
     const releaseNode = job.steps.find((step) => String(step.uses ?? '').startsWith('actions/setup-node'));
     expect(node?.with?.['node-version']).toBe(releaseNode?.with?.['node-version']);
@@ -128,7 +132,8 @@ describe('release delivery invariants', () => {
     // turbo has no edges between those tasks, so local green could diverge
     // from CI's sequential invocations (the 0.10.30 escape class).
     const pkg = JSON.parse(readFileSync(new URL('../../../package.json', import.meta.url), 'utf8'));
-    expect(pkg.scripts['release:check']).toBe('node scripts/check-node-version.mjs && pnpm typecheck && pnpm lint && pnpm build && pnpm turbo run test --concurrency=1');
+    expect(pkg.scripts['check:contracts']).toBe('node scripts/check-contracts.mjs');
+    expect(pkg.scripts['release:check']).toBe('node scripts/check-node-version.mjs && pnpm typecheck && pnpm lint && pnpm build && pnpm check:contracts && pnpm turbo run test --concurrency=1 --force');
   });
 
   it('r475: the pnpm pins in the Dockerfile and installer track packageManager', () => {

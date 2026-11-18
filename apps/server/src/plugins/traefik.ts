@@ -8,6 +8,7 @@ import {
 } from '../engine/proxy.js';
 import { materialiseCustomConfig } from '../lib/traefikCustomConfig.js';
 import { detectPanelOnNetwork } from '../lib/panelUpstream.js';
+import { recoverProxySettings } from '../lib/proxySettingApply.js';
 
 /**
  * Ensures the shared Docker network, the Traefik reverse proxy, and the dynamic
@@ -44,6 +45,7 @@ export default fp(
       // 0.16.11: read only — whether an earlier wake set-up put the panel
       // container on the network, so a sleeping service's routes stay right.
       await detectPanelOnNetwork();
+      await recoverProxySettings(fastify.db).catch((err: unknown) => fastify.log.error({ err }, 'proxy setting restoration remains unconfirmed'));
       await writeDynamicConfig(fastify.db).catch((err) =>
         fastify.log.error({ err }, 'failed to write traefik dynamic config'),
       );
@@ -60,6 +62,7 @@ export default fp(
         if (await healTraefik('traefik-watchdog')) {
           await writeDynamicConfig(fastify.db);
         }
+        await recoverProxySettings(fastify.db);
       } catch (err) {
         fastify.log.warn({ err }, 'traefik watchdog check failed');
       }

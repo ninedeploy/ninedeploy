@@ -55,7 +55,7 @@ export function MaintenanceCard({ svc }: { svc: ServiceDetail }) {
       qc.setQueryData(['maintenance', svc.id], view);
       toast(view.maintenance ? t('Maintenance mode is on') : t('Maintenance mode is off'), 'success');
     },
-    onError: (err: Error) => toast(err.message, 'error'),
+    onError: (err: Error) => { toast(err.message, 'error'); void qc.invalidateQueries({ queryKey: ['maintenance', svc.id] }); },
   });
   const savePages = useMutation({
     mutationFn: () => api.services.errorPages.set(svc.id, pages),
@@ -63,10 +63,17 @@ export function MaintenanceCard({ svc }: { svc: ServiceDetail }) {
       qc.setQueryData(['error-pages', svc.id], view);
       toast(t('Error pages saved'), 'success');
     },
-    onError: (err: Error) => toast(err.message, 'error'),
+    onError: (err: Error) => { toast(err.message, 'error'); void qc.invalidateQueries({ queryKey: ['error-pages', svc.id] }); },
   });
 
-  if (!onHost || !q.data || !pagesQ.data) return null;
+  if (!onHost) return null;
+  if (q.isError || pagesQ.isError) return <Card><CardBody>
+    <div role="alert" className="space-y-2 text-xs text-amber-300">
+      <p>{t('Routing status is unconfirmed.')} {(q.error ?? pagesQ.error)?.message}</p>
+      <Button size="sm" onClick={() => { void q.refetch(); void pagesQ.refetch(); }}>{t('Reload status')}</Button>
+    </div>
+  </CardBody></Card>;
+  if (!q.data || !pagesQ.data) return null;
   const on = q.data.maintenance !== null;
 
   return (

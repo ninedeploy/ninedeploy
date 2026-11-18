@@ -93,6 +93,8 @@ export const MULTI_NODE_CAPABILITIES = [
   'proxy.pages',
   // P2: pre-deploy and post-deploy hooks in a one-off container from the release image (agentOps/deployHooks.ts)
   'docker.hooks',
+  // N04: typed PostgreSQL WAL archive control and sealed snapshot export.
+  'db.pitr.archive',
 ] as const;
 export const multiNodeCapability = z.enum(MULTI_NODE_CAPABILITIES);
 export type MultiNodeCapability = z.infer<typeof multiNodeCapability>;

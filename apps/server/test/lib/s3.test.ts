@@ -20,6 +20,21 @@ describe('s3Request signing', () => {
     fetchMock.mockReset();
   });
 
+  it.each([{ ifMatch: '"previous-etag"' } as const, { ifNoneMatch: '*' } as const])('signs index write preconditions %j', async (condition) => {
+    fetchMock.mockResolvedValue(new Response('', { headers: { etag: '"next"' } })); vi.stubGlobal('fetch', fetchMock);
+    await s3Request(CFG, 'PUT', 'head', 'data', undefined, undefined, undefined, condition);
+    const headers = fetchMock.mock.calls[0]![1].headers as Record<string, string>;
+    const name = 'ifMatch' in condition ? 'if-match' : 'if-none-match';
+    expect(headers[name]).toBe('ifMatch' in condition ? condition.ifMatch : condition.ifNoneMatch);
+    expect(headers.authorization).toContain(`SignedHeaders=content-type;host;${name};x-amz-content-sha256;x-amz-date`);
+  });
+
+  it('refuses write preconditions on a read without sending a request', async () => {
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(s3Request(CFG, 'GET', 'head', undefined, undefined, undefined, undefined, { ifNoneMatch: '*' })).rejects.toThrow(/require PUT/);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it('sends a SigV4-signed path-style request', async () => {
     fetchMock.mockResolvedValue({ ok: true, status: 200, text: async () => '' });
     vi.stubGlobal('fetch', fetchMock);
@@ -274,6 +289,18 @@ describe('s3PutFile / s3GetToFile (streamed transfers)', () => {
     await s3GetToFile(CFG, 'k', target);
     expect(readFileSync(target, 'utf8')).toBe('streamed-bytes');
     rmSync(target, { force: true });
+  });
+
+  it('bounds streamed downloads and exposes the response ETag at the exact byte limit', async () => {
+    vi.stubGlobal('fetch', fetchMock);
+    const target = path.join(tmpdir(), `s3-bound-${Date.now()}`), response = vi.fn();
+    fetchMock.mockResolvedValueOnce(new Response('1234', { headers: { etag: 'opaque' } }));
+    await s3GetToFile(CFG, 'k', target, undefined, { maxBytes: 4, onResponse: response });
+    expect(readFileSync(target, 'utf8')).toBe('1234');
+    expect(response.mock.calls[0]![0].headers.get('etag')).toBe('opaque');
+    fetchMock.mockResolvedValueOnce(new Response('12345'));
+    await expect(s3GetToFile(CFG, 'k', target, undefined, { maxBytes: 4 })).rejects.toThrow(/size|limit|exceed/i);
+    expect(existsSync(target)).toBe(false);
   });
 
   it('r188: a slow download that keeps making progress is not cut off', async () => {

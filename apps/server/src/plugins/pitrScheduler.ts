@@ -1,5 +1,6 @@
 import fp from 'fastify-plugin';
 import { failInterruptedPitrRecoveries, pitrDatabases, pitrMaintenance } from '../lib/pitr.js';
+import { drainRemotePitrCheckpoints, remotePitrTick } from '../lib/pitrRemote.js';
 
 /** One pass an hour; the first ten minutes after boot (a restart storm takes no base backups). */
 const TICK_MS = 60 * 60_000;
@@ -39,10 +40,21 @@ export default fp(
     first.unref?.();
     const timer = setInterval(() => void tick(), TICK_MS);
     timer.unref?.();
+    let remoteTask: Promise<void> | null = null;
+    const remoteTimer = setInterval(() => {
+      if (!running || remoteTask) return;
+      remoteTask = remotePitrTick(fastify.db, log, () => !running)
+        .catch(() => fastify.log.warn('remote PITR scheduler failed; checkpoint status has details'))
+        .finally(() => { remoteTask = null; });
+    }, 60_000);
+    remoteTimer.unref?.();
     fastify.addHook('onClose', async () => {
       running = false;
       clearTimeout(first);
       clearInterval(timer);
+      clearInterval(remoteTimer);
+      await remoteTask;
+      await drainRemotePitrCheckpoints();
     });
   },
   { name: 'ninedeploy-pitr' },

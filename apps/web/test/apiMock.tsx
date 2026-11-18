@@ -338,6 +338,11 @@ export function createFakeApiModule() {
       drillBackup: vi.fn(),
       // R3: point-in-time recovery is off by default.
       pitr: {
+        remote: {
+          get: vi.fn().mockResolvedValue({ settings: null, hasPassphrase: false, running: false, state: null, stream: null, archiveLagSeconds: null, retention: 'Remote checkpoints are not deleted automatically.' }),
+          set: vi.fn(),
+          checkpoint: vi.fn(),
+        },
         get: vi.fn().mockResolvedValue({
           databaseId: 1, available: true, unavailableReason: null, enabled: false, retentionDays: 7, lastBaseBackupAt: null, lastError: null,
           baseBackupRunning: false, recoveryRunning: false, archiving: null, recoverable: [], baseBackups: [], archiveBytes: 0, segmentCount: 0,

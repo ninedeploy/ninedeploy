@@ -4,7 +4,7 @@ import type { ForwardAuthView, ServiceDetail } from '@ninedeploy/sdk';
 import { api } from '../../lib/api.js';
 import { useToast } from '../../components/Toast.js';
 import { useT } from '../../lib/i18n.js';
-import { Card, CardBody, Select, Switch } from '../../components/ui.js';
+import { Button, Card, CardBody, Select, Switch } from '../../components/ui.js';
 import { capabilityUsable, useServiceCapabilities } from '../../lib/capabilities.js';
 
 type Role = 'viewer' | 'member' | 'admin' | 'owner';
@@ -51,8 +51,12 @@ function DomainRow({ domainId, hostname }: { domainId: number; hostname: string 
       qc.setQueryData(['forward-auth', domainId], view);
       toast(view.forwardAuth ? t('{host} is behind panel sign-in', { host: hostname }) : t('{host} is open again', { host: hostname }), 'success');
     },
-    onError: (err: Error) => toast(err.message, 'error'),
+    onError: (err: Error) => { toast(err.message, 'error'); void qc.invalidateQueries({ queryKey: ['forward-auth', domainId] }); },
   });
+  if (q.isError) return <div role="alert" className="space-y-2 text-xs text-amber-300">
+    <p>{hostname}: {t('Routing status is unconfirmed.')} {q.error.message}</p>
+    <Button size="sm" onClick={() => void q.refetch()}>{t('Reload status')}</Button>
+  </div>;
   if (!q.data) return null;
   const fa = q.data.forwardAuth;
   return (

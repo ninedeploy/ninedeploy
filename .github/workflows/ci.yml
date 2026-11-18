@@ -80,16 +80,16 @@ jobs:
       # Note: no separate migration step — the server self-migrates at startup
       # and the db package tests apply the real migrations to a fresh SQLite
       # file (see packages/db/test/migrate.test.ts).
-      - name: Check Swarm runtime reader coverage before the full suite
+      - name: Contract preflight (including Swarm runtime reader coverage)
         env:
           DOCKER_HOST: tcp://127.0.0.1:9
-        run: pnpm --filter @ninedeploy/server exec vitest run test/swarmRuntime.test.ts --no-coverage --maxWorkers=1
+        run: pnpm check:contracts
 
       - name: Test
         # Serialized: server+web coverage suites starve each other on the
         # 2-core runner when turbo runs them in parallel (intermittent
         # 30s-waitFor false failures that grow with the test count).
-        run: pnpm turbo run test --concurrency=1
+        run: pnpm turbo run test --concurrency=1 --force
 
       # Schema↔snapshot drift guard: 'drizzle-kit generate' must be a no-op.
       # Any change (edited snapshot, new migration) means schema.ts and the

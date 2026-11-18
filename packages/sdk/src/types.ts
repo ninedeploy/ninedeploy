@@ -337,11 +337,54 @@ export interface PgbouncerStatus {
  * in the archive splits it. `to` is when the newest segment was archived, an
  * upper bound of the last transaction it holds.
  */
+/** N04 operator-only remote checkpoints or continuous closed-WAL archiving. */
+export interface RemotePitrConfig {
+  enabled: boolean;
+  destinationId: number;
+  intervalMinutes: number;
+  mode?: 'checkpoint' | 'continuous';
+  remoteRetentionDays?: number;
+  /** Opt-in, bounded orphan discovery in this continuous archive namespace. */
+  collectOrphans?: boolean;
+  /** Allocated by the server; a new destination/passphrase/reset starts a separate namespace. */
+  archiveId?: string;
+}
+export interface RemotePitrStatus {
+  settings: RemotePitrConfig | null;
+  hasPassphrase: boolean;
+  running: boolean;
+  state: {
+    status: 'running' | 'completed' | 'failed';
+    attemptedAt: string;
+    error: string | null;
+    missingSegment: string | null;
+    lastSuccess: { key: string; destinationId: number; verifiedAt: string; from: string; through: string; sha256: string; bytes: number } | null;
+  } | null;
+  archiveLagSeconds: number | null;
+  retention: string;
+  stream?: {
+    archiveId: string;
+    status: 'running' | 'completed' | 'failed';
+    attemptedAt: string;
+    error: string | null;
+    missingSegment: string | null;
+    gcPending: number;
+    orphanSweep?: { cursor: string | null; scannedAt: string; found: number };
+    protection: {
+      sequence: number; headKey: string; catalogKey: string; verifiedAt: string;
+      headSha256: string; headBytes: number; baseLabel: string; lastSegment: string;
+      from: string; through: string; ranges: Array<{ from: string; through: string }>;
+    } | null;
+  } | null;
+}
+
 export interface PitrStatus {
   databaseId: number;
-  /** False for other engines, databases on a node and preview copies (`unavailableReason`). */
+  /** False for other engines, preview copies or a node without the required agent capability. */
   available: boolean;
   unavailableReason: string | null;
+  /** Node archive control is available; managed replay still requires a separate adapter. */
+  recoveryUnavailableReason?: string;
   enabled: boolean;
   /** Base backups older than this are pruned with the WAL only they need; the newest stays. */
   retentionDays: number;

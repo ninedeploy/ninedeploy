@@ -43,6 +43,7 @@ export default fp(
     let timer: NodeJS.Timeout | undefined;
 
     const step = async (name: string, fn: () => Promise<unknown>) => {
+      if (!running) return;
       try {
         const result = await fn();
         const count = Array.isArray(result) ? result.length : typeof result === 'number' ? result : 0;

@@ -25,11 +25,18 @@ For a native Mac setup, the separate desktop lockfile and Keychain/DMG acceptanc
 
 ## Checks
 
+After building the workspace, `pnpm check:contracts` runs the release summary,
+documentation, capabilities, environment, ownership, OpenAPI, Swarm reader and
+cache guards directly, before the long coverage run. It bypasses Turbo's task
+cache. CI and `pnpm release:check` run this preflight and then force the full
+serialized coverage suites; a cached result is not release verification.
+
 ```bash
 pnpm typecheck && pnpm lint && pnpm test
 ```
 
 - Biome formats and lints. Vitest runs the tests. Turborepo caches both.
+- Test inputs include root documentation, installer, workflows, scripts and cross-package source/test contracts. Environment-file hashing is limited to the workspace root and app/package roots; unrelated `.temp_files` research checkouts do not invalidate tasks. Preserve these inputs when changing `turbo.json`.
 - Run one test file with `pnpm exec vitest run test/<file>.test.ts` inside `apps/server` or `apps/web`.
 - Some guard tests only fail in a full `apps/server` run, so run it before a pull request that adds a route, an environment variable or a module. These guards cover:
   - every mutating route reaching `audit()`;

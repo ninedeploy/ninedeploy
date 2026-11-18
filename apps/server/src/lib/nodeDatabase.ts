@@ -4,6 +4,8 @@ import type { Readable } from 'node:stream';
 import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { type Database, databases, type DB } from '@ninedeploy/db';
+import { NODE_PITR_CAPABILITY, NODE_PITR_REPLY, nodePitrTarget } from './nodePitrContract.js';
+import { PITR_ARCHIVE_MOUNT, pitrArchiveVolume, pitrServerArgs } from '../engine/pitrArchive.js';
 import { isNotNull } from 'drizzle-orm';
 import type { MultiNodeCapability } from '@ninedeploy/schemas';
 import {
@@ -226,8 +228,16 @@ export function nodeDatabaseRuntime(db: DB, d: Database, deps: NodeDatabaseDeps 
     async start(log: (line: string) => void, opts: { labels?: Record<string, string> } = {}): Promise<void> {
       const cfg = ENGINES[d.engine];
       if (!cfg) throw new Error(`Unknown engine: ${d.engine}`);
-      await (deps.assertCapable ?? defaultAssert)(db, serverId, ['db.manage', 'docker.runSpec', 'volume.manage'], NODE_DATABASE_FEATURE);
+      const archiving = d.engine === 'postgres' && d.pitrEnabled;
+      await (deps.assertCapable ?? defaultAssert)(db, serverId, ['db.manage', 'docker.runSpec', 'volume.manage', ...(archiving ? [NODE_PITR_CAPABILITY] : [])], NODE_DATABASE_FEATURE);
+      const archiveOp = async (action: 'prepare' | 'verify') => {
+        const result = await agent('db.pitr', { database: nodePitrTarget(d), action });
+        const line = result.lines.find((l) => l.startsWith(NODE_PITR_REPLY));
+        const reply = line ? JSON.parse(line.slice(NODE_PITR_REPLY.length)) as Record<string, unknown> : null;
+        if (result.exitCode !== 0 || reply?.[action === 'prepare' ? 'prepared' : 'verified'] !== true) throw new Error('The node did not confirm its PostgreSQL WAL archive');
+      };
       if ((await nodeContainerState(agent, container)) === 'running') {
+        if (archiving) await archiveOp('verify');
         log(`${container} already running on node #${serverId} — reusing`);
         return;
       }
@@ -242,6 +252,7 @@ export function nodeDatabaseRuntime(db: DB, d: Database, deps: NodeDatabaseDeps 
       const image = cfg.image(d.version ?? undefined);
       log(`Pulling database image ${image} on node #${serverId} …`);
       await agent('docker.pull', { image });
+      if (archiving) await archiveOp('prepare');
       // Remove a stale (stopped) container of the same name; the volume keeps the data.
       await agent('docker.rm', { name: container }).catch(() => undefined);
       const pw = password();
@@ -258,12 +269,13 @@ export function nodeDatabaseRuntime(db: DB, d: Database, deps: NodeDatabaseDeps 
         image,
         restart: 'unless-stopped',
         network,
-        volumes: [{ name: volume, mount: resolveVolumePath(cfg, d.version) }],
+        volumes: [{ name: volume, mount: resolveVolumePath(cfg, d.version) }, ...(archiving ? [{ name: pitrArchiveVolume(volume), mount: PITR_ARCHIVE_MOUNT }] : [])],
         labels,
         managed: 'database',
         ...(envFile ? { envFile } : {}),
         // redis/valkey/keydb/dragonfly: the password follows the image (r644), then the engine's own flags, as on the panel host.
         ...(cfg.authViaArg ? { cmd: ['--requirepass', pw, ...(cfg.extraArgs ?? [])] } : {}),
+        ...(archiving ? { cmd: pitrServerArgs() } : {}),
         ...(d.cpuShares > 0 ? { cpuShares: d.cpuShares } : {}),
         ...(d.cpuLimitMilli > 0 ? { cpuLimitMilli: d.cpuLimitMilli } : {}),
         ...(d.memLimitMb > 0 ? { memLimitMb: d.memLimitMb } : {}),

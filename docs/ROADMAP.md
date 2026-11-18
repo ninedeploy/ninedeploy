@@ -1,8 +1,10 @@
 # NineDeploy roadmap
 
+For the **current** implementation, scoped acceptance, publication status and remaining R2 certification checklist, use [Current status](CURRENT_STATUS.md) and the generated [support matrix](SUPPORT_MATRIX.md). The tables below preserve the dated release plan and its historical checkpoints; they are not the current checkout version or an aggregate R2 acceptance claim.
+
 This plan was drawn up on 2026-10-08 from a feature-gap analysis against Dokploy v0.30.0 and Coolify v4.4.x. Every gap listed here was checked against the NineDeploy source code.
 
-## Current release sequence — updated 2026-10-27
+## Historical release sequence — updated 2026-10-27
 
 Ship independently accepted increments regularly. The owner replaced the single large 0.18.0 scope with the sequence below. Published 0.18.4 includes R1 and the accepted deployment-safety/node-lifecycle maintenance work. R2 is the next feature package; later packages do not block validated maintenance releases.
 

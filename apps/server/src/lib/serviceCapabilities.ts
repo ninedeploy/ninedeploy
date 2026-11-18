@@ -6,6 +6,7 @@ import { AGENT_CAPABILITY_VERSION } from './agentCapabilities.js';
 import { badRequest } from './errors.js';
 import { restartLimitSupported } from './restartLimit.js';
 import { FILE_MOUNTS_UNSUPPORTED, fileMountsSupported } from './serviceFiles.js';
+import { config } from '../config.js';
 
 /**
  * C1 (docs/plans/COMPETITIVE_ROADMAP_2026-11.md): one answer per feature to
@@ -14,8 +15,8 @@ import { FILE_MOUNTS_UNSUPPORTED, fileMountsSupported } from './serviceFiles.js'
  * generated docs/SUPPORT_MATRIX.md read `serviceCapabilities`, so the panel,
  * the API and the docs cannot disagree.
  *
- * Only structural facts are judged here: type, image, compose file, server,
- * orchestrator and fan-out targets. Checks of the live environment (can
+ * Structural facts and the panel's node-automation switch are judged here.
+ * Checks of the live environment (can
  * Traefik reach the panel, does a node's agent advertise an operation) stay
  * where they run today, at save or deploy time.
  */
@@ -106,7 +107,9 @@ function evaluate(id: ServiceCapabilityId, svc: CapabilityService, f: Facts): Se
     case 'scaleToZero':
       if (svc.type !== 'docker') return no(r.node);
       if (f.onSwarm) return { status: 'limited', reason: 'Scale to zero does not apply to Swarm services; the setting is kept but nothing sleeps' };
-      if (f.onNode) return { status: 'in_progress', reason: 'Scale to zero on nodes is being built (R2); until it is accepted, a node service does not sleep' };
+      if (f.onNode && f.fanout) return { status: 'limited', reason: 'Automatic node sleep does not admit services with fan-out targets; the setting is kept but nothing sleeps' };
+      if (f.onNode && !config.nodeSleepAutomation) return { status: 'limited', reason: 'Automatic node sleep and wake are disabled on this panel (NINEDEPLOY_NODE_SLEEP_AUTOMATION=off); the setting is kept' };
+      if (f.onNode) return { status: 'limited', reason: 'On a node, automatic sleep needs continuous idle observation and wake catcher capabilities advertised by the agent, sealed transport and NINEDEPLOY_AGENT_PROXY_TRAFFIC=on. Routing, readiness and runtime ownership are checked before sleep or wake settles' };
       return ok;
     case 'canary':
       if (svc.type !== 'docker') return no(r.node);

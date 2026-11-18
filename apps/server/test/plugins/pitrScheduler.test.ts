@@ -12,7 +12,9 @@ const lib = vi.hoisted(() => ({
   dbs: [{ slug: 'a' }, { slug: 'b' }] as Array<{ slug: string; id?: number }>,
   failSweep: false,
   failList: false,
+  remoteTicks: 0,
 }));
+vi.mock('../../src/lib/pitrRemote.js', () => ({ remotePitrTick: vi.fn(async () => { lib.remoteTicks++; }), drainRemotePitrCheckpoints: vi.fn(async () => undefined) }));
 vi.mock('../../src/lib/pitr.js', () => ({
   failInterruptedPitrRecoveries: vi.fn(async () => { if (lib.failSweep) throw new Error('db locked'); lib.swept++; return 0; }),
   pitrDatabases: vi.fn(async () => { if (lib.failList) throw new Error('db gone'); return lib.dbs; }),
@@ -35,10 +37,19 @@ beforeEach(() => {
   lib.passes = [];
   lib.failSweep = false;
   lib.failList = false;
+  lib.remoteTicks = 0;
 });
 afterEach(() => { vi.useRealTimers(); });
 
 describe('pitrScheduler', () => {
+  it('checks remote checkpoint schedules every minute and stops after close', async () => {
+    const app = await boot();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(lib.remoteTicks).toBe(1);
+    await app.close();
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(lib.remoteTicks).toBe(1);
+  });
   it('sweeps interrupted recoveries at boot, then passes over every database ten minutes in and hourly', async () => {
     const app = await boot();
     expect(lib.swept).toBe(1);

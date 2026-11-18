@@ -60,6 +60,17 @@ describe('localInputToIso', () => {
 });
 
 describe('PitrCard', () => {
+  it('keeps node archive controls available while explaining why managed replay is unavailable', async () => {
+    const reason = 'Recover this node archive with the offline recovery tool on a clean host.';
+    pitr.get.mockResolvedValue({ ...on, recoveryUnavailableReason: reason });
+    pitr.baseBackup.mockResolvedValue({ started: true });
+    renderCard({ id: 7, name: 'main', engine: 'postgres', serverId: 3 });
+    expect(await screen.findByRole('button', { name: 'Recover to a point in time…' })).toBeDisabled();
+    expect(screen.getByText(reason)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Take base backup' }));
+    await waitFor(() => expect(pitr.baseBackup).toHaveBeenCalledWith(7));
+    expect(pitr.recover).not.toHaveBeenCalled();
+  });
   it('renders nothing, and asks nothing, for another engine', () => {
     renderCard({ id: 8, name: 'm', engine: 'mysql' });
     expect(screen.queryByText('Point-in-time recovery')).not.toBeInTheDocument();

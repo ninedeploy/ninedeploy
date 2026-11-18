@@ -50,6 +50,7 @@ import { DatabaseTopologyTab } from './database/DatabaseTopologyTab.js';
 import { BackupScheduleCard } from './database/BackupScheduleCard.js';
 import { BackupReplicasCard } from './database/BackupReplicasCard.js';
 import { PitrCard } from './database/PitrCard.js';
+import { RemotePitrCard } from './database/RemotePitrCard.js';
 import { UpgradeCard } from './database/UpgradeCard.js';
 import { ImportCard } from './database/ImportCard.js';
 import { RestoreVerifyDialog } from './database/RestoreVerifyDialog.js';
@@ -357,6 +358,7 @@ export function DatabaseDetail() {
           <BackupScheduleCard dbId={db.id} />
           <BackupReplicasCard dbId={db.id} />
           <PitrCard db={db} />
+          <RemotePitrCard db={db} />
           <ImportCard db={db} />
           <BackupsPanel dbId={db.id} dbName={db.name} engine={db.engine} />
         </div>

@@ -217,6 +217,41 @@ describe('P2: on a node, the node serves the pages', () => {
     return { ops, call };
   };
 
+  it.each([
+    { path: 'maintenance', old: { maintenance: { title: 'Old page' } }, next: { maintenance: { title: 'New page' } } },
+    { path: 'error-pages', old: { pages: { '502': '<h1>Old page</h1>' } }, next: { pages: { '502': '<h1>New page</h1>' } } },
+  ].flatMap(feature => ['missing', 'stale-page-ack'].map(fault => ({ ...feature, fault }))))('keeps a failed restoration of existing node pages unconfirmed: $path / $fault', async (feature) => {
+    await onNode();
+    const { syncNodePages } = await import('../src/lib/nodePagesSync.js');
+    const { getMaintenance, getErrorPages } = await import('../src/lib/maintenance.js');
+    const good = agent(['proxy.pages']);
+    rerender.writeDynamicConfig.mockImplementation(async () => { await syncNodePages(db, 7, good.call, () => undefined); });
+    const a = await app();
+    try {
+      const url = `/services/5/${feature.path}`;
+      const read = () => feature.path === 'maintenance' ? getMaintenance(db, 5) : getErrorPages(db, 5);
+      const before = await a.inject({ method: 'PUT', url, headers: asUser(1), payload: feature.old });
+      expect(before.statusCode, before.body).toBe(200); // Healthy-node control.
+      const stored = await read();
+      // The node cannot take either the new page or the restored old page.
+      rerender.writeDynamicConfig.mockImplementation(async () => undefined);
+      if (feature.fault === 'stale-page-ack') rerender.writeDynamicConfig.mockImplementationOnce(async () => {
+        await syncNodePages(db, 7, good.call, () => undefined);
+        throw new Error('routing acknowledgement lost after writing the new pages');
+      });
+      const failed = await a.inject({ method: 'PUT', url, headers: asUser(1), payload: feature.next });
+      expect(failed.statusCode, failed.body).toBe(503);
+      expect((await a.inject({ url, headers: asUser(1) })).statusCode).toBe(503);
+      expect(await read()).toEqual(stored);
+      // A retry must restore and acknowledge the old page before saving again.
+      rerender.writeDynamicConfig.mockImplementation(async () => { await syncNodePages(db, 7, good.call, () => undefined); });
+      const retry = await a.inject({ method: 'PUT', url, headers: asUser(1), payload: feature.next });
+      expect(retry.statusCode, retry.body).toBe(200);
+      expect(retry.json()).toMatchObject(feature.next);
+      if (feature.path === 'maintenance') expect(retry.json().since).toBe(before.json().since);
+    } finally { await a.close(); }
+  });
+
   it('saves maintenance for a node service once its agent can serve the pages, without asking whether Traefik reaches the panel', async () => {
     await onNode();
     reach.reason = 'Traefik cannot reach the panel';
@@ -274,13 +309,16 @@ describe('P2: on a node, the node serves the pages', () => {
     rerender.writeDynamicConfig.mockImplementation(async () => undefined);
     const a = await app();
     const maint = await a.inject({ method: 'PUT', url: '/services/5/maintenance', headers: asUser(1), payload: { maintenance: { title: 'New title' } } });
-    expect(maint.statusCode).toBe(502);
-    expect(maint.json().error.message).toMatch(/was not changed: node #7 could not serve it \(the node was not synced/);
+    expect(maint.statusCode).toBe(503);
+    expect(maint.json().error.code).toBe('proxy_setting_unconfirmed');
+    expect((await a.inject({ url: '/services/5/maintenance', headers: asUser(1) })).statusCode).toBe(503);
     expect(await getMaintenance(db, 5)).toEqual(before);
     const pages = await a.inject({ method: 'PUT', url: '/services/5/error-pages', headers: asUser(1), payload: { pages: { '502': '<h1>new</h1>' } } });
-    expect(pages.statusCode).toBe(502);
+    expect(pages.statusCode).toBe(503);
     expect((await getErrorPages(db, 5)).pages).toEqual({ '502': '<h1>old</h1>' });
-    // Switching off never needs the node.
+    // An unconfirmed previous state is restored before another change is accepted.
+    expect((await a.inject({ method: 'PUT', url: '/services/5/maintenance', headers: asUser(1), payload: { maintenance: null } })).statusCode).toBe(503);
+    rerender.writeDynamicConfig.mockImplementation(async () => { await syncNodePages(db, 7, agent(['proxy.pages']).call, () => undefined); });
     expect((await a.inject({ method: 'PUT', url: '/services/5/maintenance', headers: asUser(1), payload: { maintenance: null } })).statusCode).toBe(200);
     await a.close();
     resetNodePagesOutcomes();

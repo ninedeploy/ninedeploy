@@ -4,6 +4,8 @@ NineDeploy can back up **the panel itself** on a schedule: its database, its mas
 
 It is **off by default**. An upgraded panel behaves exactly as before until an operator turns it on under **Settings → Panel backup**.
 
+For a full recovery sequence that restores application volumes and database payloads from remote storage, follow the [combined disaster recovery drill](DISASTER_RECOVERY.md).
+
 ---
 
 ## 🔑 1. What you must keep (read this first)

@@ -167,11 +167,24 @@ export const databasesSpecs: RouteSpecMap = {
     floor: 'viewer',
     responseType: 'PitrStatus',
   },
+  'GET /v1/databases/:id/pitr/remote': {
+    summary: 'Read remote checkpoint configuration, verified recovery bounds, archive lag and last failure',
+    tag: 'backups', floor: 'operator', responseType: 'RemotePitrStatus',
+  },
+  'PUT /v1/databases/:id/pitr/remote': {
+    summary: 'Configure encrypted PostgreSQL archives from the panel host or a supported node to HTTPS S3',
+    description: 'Opt-in checkpoint or continuous closed-WAL mode. Continuous mode ships each minute, retains the boundary base and newer generations for remoteRetentionDays (1–35), and delays deletion by one hour. Optional collectOrphans scans at most 200 managed keys per pass, stages unreferenced objects at least 24 hours old through conditional head publication, and waits one further hour before deletion. It requires ListBucket permission; existing configurations do not opt in. Requires HTTPS S3 ETags and conditional PUT support. Keep the passphrase and head key off-host. Legacy checkpoints are never automatically deleted. Nodes require sealed transport and db.pitr.archive; additional tablespaces are refused.',
+    tag: 'backups', floor: 'operator', responseType: 'RemotePitrStatus', localBody: 'pitr.ts#remoteSettingsBody', validation: 'zod',
+  },
+  'POST /v1/databases/:id/pitr/remote/checkpoint': {
+    summary: 'Admit a remote checkpoint (202); poll remote status until read-back verification succeeds',
+    tag: 'backups', floor: 'operator', responseType: '{ started: true }',
+  },
   'PUT /v1/databases/:id/pitr': {
     summary: 'Turn point-in-time recovery on or off, or change its retention',
     tag: 'backups',
     description:
-      'R3. Enabling (the database must be running, on the panel host) restarts it with WAL archiving into a second volume and takes the first base backup in the background. Disabling restarts it without archiving and deletes the archive. Audited database.pitr_enable / database.pitr_disable / database.pitr_retention.',
+      'R3. Enabling (the database must be running, on the panel host or a node advertising db.pitr.archive) restarts it with WAL archiving into a second volume and takes the first base backup in the background. Disabling restarts it without archiving and deletes the archive. Audited database.pitr_enable / database.pitr_disable / database.pitr_retention.',
     floor: 'admin',
     localBody: 'pitr.ts#settingsBody',
     responseType: 'PitrStatus',
@@ -187,7 +200,7 @@ export const databasesSpecs: RouteSpecMap = {
     summary: 'Recover the database to a point in time into a NEW database (answered 202; poll the recovery)',
     tag: 'backups',
     description:
-      'R3. `targetTime` (ISO 8601 with a zone) or omitted for the latest archived point. The source is never touched: a base backup is restored into the new database and the archived WAL replayed in an isolated helper. A target the archive cannot reach, or a missing or damaged segment, fails the recovery with a fixed reason and removes the new database again.',
+      'R3. Managed replay is panel-host only; node archives use offline remote recovery. `targetTime` (ISO 8601 with a zone) or omitted for the latest archived point. The source is never touched: a base backup is restored into the new database and the archived WAL replayed in an isolated helper. A target the archive cannot reach, or a missing or damaged segment, fails the recovery with a fixed reason and removes the new database again.',
     floor: 'admin',
     localBody: 'pitr.ts#recoverBody',
     responseType: 'PitrRecoveryAdmission',

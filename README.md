@@ -14,7 +14,7 @@ terminal CLI, a typed SDK, or an AI agent over MCP.
 [![Node.js](https://img.shields.io/badge/Node.js-22.23.4%2B%20%7C%2024.22.1%2B%20%7C%2026.12.1%2B-green.svg)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-7-blue.svg)](https://www.typescriptlang.org)
 [![Docker](https://img.shields.io/badge/Docker-required-blue.svg)](https://docker.com)
-[![Tests](https://img.shields.io/badge/Tests-13%2C000%20passing-brightgreen.svg)](#testing)
+[![Tests](https://img.shields.io/badge/Tests-unit%20%2B%20integration-blue.svg)](#testing)
 [![CI](https://github.com/NineDeploy/NineDeploy/actions/workflows/ci.yml/badge.svg)](https://github.com/NineDeploy/NineDeploy/actions/workflows/ci.yml)
 
 [Website](https://ninedeploy.com) · [Quickstart](./docs/QUICKSTART.md) · [Docs](./docs/README.md) · [Support matrix](./docs/SUPPORT_MATRIX.md) · [Architecture](./ARCHITECTURE.md) · [Templates](https://ninedeploy.com/templates) · [Changelog](./CHANGELOG.md)

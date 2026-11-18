@@ -42,6 +42,12 @@ function makeDb(rowsByTable: Map<unknown, Array<Record<string, unknown>>>, updat
 }
 
 describe('rotateSecrets', () => {
+  it('rotates remote PITR passphrases without touching checkpoint status', async () => {
+    const updates: Array<{ table: unknown; values: Record<string, unknown> }> = [];
+    const db = makeDb(new Map([[settings, [{ key: 'pitr_remote_passphrase:7', v: 'sealed' }, { key: 'pitr_remote_state:7', v: { status: 'completed' } }]]]), updates);
+    await rotateSecrets(db as never);
+    expect(updates.filter((u) => u.table === settings).map((u) => u.values.value)).toEqual(['re:sealed']);
+  });
   it('rotates encrypted native provenance while preserving ordinary Docker snapshots', async () => {
     const previous = { runtimeId: 'nd-web_web', containers: [], native: 'native-enc' };
     const updates: Array<{ table: unknown; values: Record<string, unknown> }> = [];

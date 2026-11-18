@@ -1,4 +1,5 @@
 ﻿import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { statSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -469,9 +470,10 @@ describe('ensureNetwork', () => {
 });
 
 describe('ensureTraefik', () => {
-  const psWith = (ps: string, inspect = '{}', mountSource = traefikDir) =>
+  const psWith = (ps: string, inspect = '{}', mountSource = traefikDir, mountIdentity = '') =>
     h.capture.mockImplementation((_cmd: string, args: string[]) => {
       if (args[0] === 'ps') return Promise.resolve(ps);
+      if (args[0] === 'exec' && args[2] === 'stat') return Promise.resolve(mountIdentity);
       if (args[0] === 'inspect' && args[3]?.includes('.Mounts')) return Promise.resolve(`${mountSource}\n`);
       if (args[0] === 'inspect' && args[3]?.includes('.State.Running')) {
         return Promise.resolve(`true|{"${NETWORK}":{}}`);
@@ -544,6 +546,22 @@ describe('ensureTraefik', () => {
     await ensureTraefik(log);
 
     expect(log).toHaveBeenCalledWith('traefik already running on shared network');
+    expect(h.run).not.toHaveBeenCalled();
+  });
+
+  it('recreates a proxy pinned to the previous config directory at the restored path', async () => {
+    writeFileSync(path.join(traefikDir, 'traefik.yml'), renderStaticConfig(null, null));
+    const { dev, ino } = statSync(traefikDir, { bigint: true });
+    const log = vi.fn();
+    psWith('abc123\n', `{"${NETWORK}":{}}`, traefikDir, `${dev}:${ino + 1n}\n`);
+
+    await ensureTraefik(log);
+
+    expect(h.run).toHaveBeenCalledWith('docker', ['rm', '-f', 'ninedeploy-traefik'], {}, expect.any(Function));
+    h.run.mockClear();
+    psWith('def456\n', `{"${NETWORK}":{}}`, traefikDir, `${dev}:${ino}\n`);
+
+    await expect(ensureTraefik(log)).resolves.toBe(false);
     expect(h.run).not.toHaveBeenCalled();
   });
 

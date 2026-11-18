@@ -15,7 +15,7 @@ Which service features work where. The panel reads the same evaluation from `GET
 | Inline Dockerfile | ✅ | — [8] | — [8] | — [8] | 🟡 [9] | — [8] | — [8] | ✅ |
 | File mounts | ✅ | ✅ | — [10] | — [10] | ✅ | — [10] | ✅ | ✅ |
 | Autoscaling | ✅ | ✅ | — [11] | — [11] | 🟡 [12] | — [11] | 🟡 [13] | ✅ |
-| Scale to zero | ✅ | ✅ | — [14] | — [14] | 🚧 [15] | — [14] | 🟡 [16] | ✅ |
+| Scale to zero | ✅ | ✅ | — [14] | — [14] | 🟡 [15] | — [14] | 🟡 [16] | ✅ |
 | Canary releases | ✅ | ✅ | — [17] | — [17] | 🟡 [18] | — [17] | 🟡 [19] | ✅ |
 
 ## Notes
@@ -34,10 +34,46 @@ Which service features work where. The panel reads the same evaluation from `GET
 12. On a node, requests-per-second scaling needs an agent with proxy traffic observation turned on (NINEDEPLOY_AGENT_PROXY_TRAFFIC=on)
 13. Swarm services are not autoscaled: they run the replica count set on the service
 14. Scale to zero applies to docker services only
-15. Scale to zero on nodes is being built (R2); until it is accepted, a node service does not sleep
+15. On a node, automatic sleep needs continuous idle observation and wake catcher capabilities advertised by the agent, sealed transport and NINEDEPLOY_AGENT_PROXY_TRAFFIC=on. Routing, readiness and runtime ownership are checked before sleep or wake settles
 16. Scale to zero does not apply to Swarm services; the setting is kept but nothing sleeps
 17. Canary releases apply to docker services only
 18. On a node, a canary needs a single replica, the strict HTTP healthcheck and an agent with proxy traffic observation
 19. Swarm services skip the canary and use Docker’s native rolling update
 
 Checks of the live environment are not in this table. They run when you save or deploy. Examples: whether Traefik can reach the panel for maintenance pages and forward auth, and whether a node agent advertises an operation.
+
+## Database decisions
+
+Each pair is **panel host / node**. These are structural eligibility checks for an ordinary running managed database with a container and volume, with PITR off. The database API uses the same PITR and upgrade guards; the preview producer uses the same copy guard. Upgrade targets, free disk, privileges, agent capabilities and other live preflights still apply.
+
+| Engine | PITR | Major upgrade eligibility | Preview copy | Isolated restore adapter |
+|---|---|---|---|---|
+| postgres | ✅ / ✅ | ✅ / — | ✅ / — | ✅ |
+| mysql | — / — | ✅ / — | — / — | ✅ |
+| mariadb | — / — | ✅ / — | — / — | ✅ |
+| mongo | — / — | — / — | — / — | ✅ |
+| redis | — / — | — / — | ✅ / — | ✅ |
+| valkey | — / — | — / — | ✅ / — | ✅ |
+| keydb | — / — | — / — | ✅ / — | ✅ |
+| dragonfly | — / — | — / — | ✅ / — | ✅ |
+| clickhouse | — / — | — / — | — / — | ✅ |
+| meilisearch | — / — | — / — | — / — | ✅ |
+| rabbitmq | — / — | — / — | — / — | ✅ |
+
+PITR keeps a live archive on the database's host. Node archiving/export requires a sealed agent advertising `db.pitr.archive`; managed replay remains panel-host only. Opt-in remote checkpoints/continuous WAL provide off-host recovery; see [Remote PITR archives](PITR_REMOTE_CHECKPOINTS.md). Major upgrades exclude pgvector, previews and databases with PITR enabled. Preview copies require the source to be running. Restore verification runs in an isolated helper on the panel host and measures the supplied backup, not high availability or recovery after host loss. RabbitMQ backups contain definitions, not queued messages.
+
+Read the actual database state through `GET /v1/databases/:id/pitr` and `GET /v1/databases/:id/upgrades/options`; live refusals are authoritative. See [Databases and backups](DATABASES_BACKUPS.md) and [Restore verification](RESTORE_VERIFICATION.md).
+
+## Build placement decisions
+
+Queue-time eligibility for a Docker service from a public Git repository, using a sealed agent advertising `build.nixpacks`. The evaluation calls `remoteServiceRefusalDetail`, the same guard used by deployment admission. A check mark does not promise a successful build: the tool, image, architecture, source and credentials must pass job-time checks too.
+
+| Pack | Panel host | Node, build on target | Node, build on panel |
+|---|---|---|---|
+| nixpacks | ✅ | ✅ | ✅ |
+| paketo | ✅ | — | ✅ |
+| heroku | ✅ | — | ✅ |
+
+Building on the panel sends the resulting image to the node. Paketo/Heroku have no node-side builder. Dockerfile, Railpack, static and automatic pack resolution have additional job-time rules; see [Deployments](DEPLOYMENTS.md).
+
+For implementation, acceptance and publication status, see [Current status](CURRENT_STATUS.md).

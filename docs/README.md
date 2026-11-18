@@ -6,6 +6,7 @@ The guides are grouped by what you are doing. The last group holds the project's
 
 - [Quickstart](QUICKSTART.md): install, first sign-in, first deploy, upgrades.
 - [Support matrix](SUPPORT_MATRIX.md): which service features work on the panel host, on nodes, on Swarm, and for Compose and PM2.
+- [Current status](CURRENT_STATUS.md): implementation, acceptance and publication status, the remaining R2 certification checklist, and operational switches.
 - [Troubleshooting](TROUBLESHOOTING.md): common failures and how to recover.
 - [Moving from Coolify, Dokploy, CapRover or Heroku](IMPORTING.md): a read-only import plan (`ninedeploy import plan`), then `ninedeploy import apply` to create the services and databases, `ninedeploy import data` to move database contents and service volumes, and `ninedeploy import cutover` to add the domains once DNS points here.
 
@@ -21,8 +22,10 @@ The guides are grouped by what you are doing. The last group holds the project's
 
 **Data**
 - [Databases and backups](DATABASES_BACKUPS.md)
+- [Remote PITR archives](PITR_REMOTE_CHECKPOINTS.md): panel/node checkpoints or continuous WAL, safe generation retention, operator API/SDK and clean-host recovery.
 - [Restore verification and point-in-time recovery](RESTORE_VERIFICATION.md)
 - [Panel self-backup](PANEL_BACKUP.md)
+- [Combined disaster recovery drill](DISASTER_RECOVERY.md)
 
 **Networking**
 - [Ingress, routing and tunnels](TRAEFIK_INGRESS.md)
@@ -57,6 +60,7 @@ The guides are grouped by what you are doing. The last group holds the project's
 These documents are kept for transparency. They are dated, and parts of them describe work in progress.
 
 - [Roadmap](ROADMAP.md) and the current plan, [plans/COMPETITIVE_ROADMAP_2026-11.md](plans/COMPETITIVE_ROADMAP_2026-11.md)
+- [Project review and next work, 2026-11-16](plans/PROJECT_REVIEW_2026-11-16.md): current source limits, evidence gaps and a prioritized implementation plan.
 - [Competitor gap roadmap, 2026-10](GAP_ROADMAP.md)
 - [Competitive delivery: acceptance evidence](COMPETITIVE_DELIVERY.md)
 - Node work in progress: [request-rate autoscaling](NODE_RPS_AUTOSCALING.md) and [scale to zero and wake](NODE_SLEEP_WAKE.md)

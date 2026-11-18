@@ -21,6 +21,10 @@ import { conflict, forbidden, HttpError, notFound, parseId as num, unprocessable
 import { pitrBusy, pitrStatus, pitrUnavailable, runPitrBaseBackup, setPitr, startPitrRecovery } from '../lib/pitr.js';
 import { assertNoRunningUpgrade } from '../lib/databaseUpgrade.js';
 import { assertDatabaseRole, assertProjectRole, isWorkspaceMember, loadDatabaseForUser } from '../lib/resourceAccess.js';
+import { configureRemotePitr, remotePitrStatus, startRemotePitrCheckpoint } from '../lib/pitrRemote.js';
+import { pitrRemoteConfig } from '../lib/pitrRemoteState.js';
+
+const remoteSettingsBody = pitrRemoteConfig.omit({ archiveId: true }).extend({ passphrase: z.string().min(16).max(1024).optional(), resetStream: z.boolean().optional() }).strict();
 
 const settingsBody = z.object({
   enabled: z.boolean(),
@@ -62,7 +66,26 @@ export const pitrRoutes: FastifyPluginAsync = async (app) => {
 
   app.get<{ Params: { id: string } }>('/:id/pitr', async (req) => {
     const d = await load(req.params.id, req.user!, 'viewer');
-    return { databaseId: d.id, ...(await pitrStatus(d)) };
+    return { databaseId: d.id, ...(await pitrStatus(d, undefined, app.db)) };
+  });
+
+  app.get<{ Params: { id: string } }>('/:id/pitr/remote', { preHandler: app.requireOperator }, async (req) => {
+    const d = await load(req.params.id, req.user!, 'admin');
+    return remotePitrStatus(app.db, d.id);
+  });
+  app.put<{ Params: { id: string } }>('/:id/pitr/remote', { preHandler: app.requireOperator }, async (req) => {
+    const d = await load(req.params.id, req.user!, 'admin');
+    const body = remoteSettingsBody.safeParse(req.body ?? {});
+    if (!body.success) throw unprocessable(body.error.issues[0]!.message);
+    return configureRemotePitr(app.db, d, body.data, req.user!.id);
+  });
+  app.post<{ Params: { id: string } }>('/:id/pitr/remote/checkpoint', { preHandler: app.requireOperator }, async (req, reply) => {
+    const d = await load(req.params.id, req.user!, 'admin');
+    await assertNoRunningUpgrade(app.db, d.id);
+    await startRemotePitrCheckpoint(app.db, d, log);
+    void audit(app.db, req.user!.id, 'database.pitr_remote_checkpoint_start', `${d.name}: remote checkpoint admitted`);
+    reply.code(202);
+    return { started: true };
   });
 
   app.put<{ Params: { id: string } }>('/:id/pitr', async (req) => {
@@ -72,7 +95,7 @@ export const pitrRoutes: FastifyPluginAsync = async (app) => {
     const body = settingsBody.safeParse(req.body ?? {});
     if (!body.success) throw unprocessable(body.error.issues[0]!.message);
     const updated = await setPitr(app.db, d, body.data, req.user!.id, log);
-    return { databaseId: d.id, ...(await pitrStatus(updated)) };
+    return { databaseId: d.id, ...(await pitrStatus(updated, undefined, app.db)) };
   });
 
   app.post<{ Params: { id: string } }>('/:id/pitr/base-backup', async (req, reply) => {
@@ -81,7 +104,7 @@ export const pitrRoutes: FastifyPluginAsync = async (app) => {
     if (unavailable) throw unprocessable(unavailable, 'pitr_unavailable');
     if (!d.pitrEnabled) throw unprocessable('Point-in-time recovery is not enabled for this database.', 'pitr_disabled');
     if (d.status !== 'running') throw conflict('The database must be running to take a base backup');
-    if (pitrBusy.prune(d.id)) throw new HttpError(409, 'pitr_busy', 'WAL archive retention is running; try again when it finishes.');
+    if (pitrBusy.prune(d.id) || pitrBusy.archiveRead(d.id)) throw new HttpError(409, 'pitr_busy', 'The WAL archive is busy; try again when the current operation finishes.');
     if (pitrBusy.baseBackup(d.id)) throw new HttpError(409, 'pitr_base_backup_running', 'A base backup of this database is already running.');
     // The outcome lands on the row (pitr_base_backup_at / pitr_last_error) and in the audit log.
     void runPitrBaseBackup(app.db, d, req.user!.id, log).catch(() => undefined);

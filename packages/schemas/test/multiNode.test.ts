@@ -91,8 +91,10 @@ describe('agent capabilities (multi-node §1.1)', () => {
       'wake.catcher.inventory',
       'proxy.pages',
       'docker.hooks',
+      'db.pitr.archive',
     ]);
     expect(multiNodeCapability.parse('db.manage')).toBe('db.manage');
+    expect(multiNodeCapability.parse('db.pitr.archive')).toBe('db.pitr.archive');
     expect(multiNodeCapability.parse('docker.retireHandoff')).toBe('docker.retireHandoff');
     // A 0.15 capability is not one of them.
     expect(multiNodeCapability.safeParse('terminal').success).toBe(false);

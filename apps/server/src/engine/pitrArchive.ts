@@ -99,13 +99,14 @@ export async function ensurePitrArchive(
   image: string,
   log: (line: string) => void,
   exists: (name: string) => Promise<boolean>,
+  labels: Record<string, string> = {},
 ): Promise<void> {
   if (!d.volumeName) throw new Error('database has no volume name');
   const volume = pitrArchiveVolume(d.volumeName);
   if (!(await exists(volume))) {
     log(`Creating WAL archive volume ${volume} …`);
     const args = ['volume', 'create'];
-    for (const [key, value] of Object.entries(pitrArchiveLabels(d, image))) if (value !== '') args.push('--label', `${key}=${value}`);
+    for (const [key, value] of Object.entries({ ...pitrArchiveLabels(d, image), ...labels })) if (value !== '') args.push('--label', `${key}=${value}`);
     await run('docker', [...args, volume], {}, log);
   }
   await run(

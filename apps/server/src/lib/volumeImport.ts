@@ -186,15 +186,16 @@ export async function recoverInterruptedVolumeImports(db: DB): Promise<number[]>
 
 /** `uploading` / `pending` imports idle for 24h become `expired`; their staging is deleted. */
 export async function expireStaleVolumeImports(db: DB, now = Date.now()): Promise<number[]> {
+  const cutoff = new Date(now - STALE_VOLUME_IMPORT_MS);
   const stale = await db.query.volumeImports.findMany({
-    where: and(inArray(volumeImports.status, ['uploading', 'pending']), lt(volumeImports.updatedAt, new Date(now - STALE_VOLUME_IMPORT_MS))),
+    where: and(inArray(volumeImports.status, ['uploading', 'pending']), lt(volumeImports.updatedAt, cutoff)),
   });
   const expired: number[] = [];
   for (const r of stale) {
     const [hit] = await db
       .update(volumeImports)
       .set({ status: 'expired', error: 'expired: no activity for 24 hours', completedAt: new Date(now), stagingPath: null })
-      .where(and(eq(volumeImports.id, r.id), inArray(volumeImports.status, ['uploading', 'pending'])))
+      .where(and(eq(volumeImports.id, r.id), inArray(volumeImports.status, ['uploading', 'pending']), lt(volumeImports.updatedAt, cutoff)))
       .returning({ id: volumeImports.id });
     if (!hit) continue;
     await removeStaging(r.stagingPath);

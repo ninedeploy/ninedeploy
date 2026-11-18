@@ -197,6 +197,7 @@ RUN pnpm install --frozen-lockfile --prod --filter @ninedeploy/server...
 # Compiled output (the templates registry compiles into dist; the web dashboard
 # is served by the API itself via @fastify/static with an SPA fallback).
 COPY --from=build /app/apps/server/dist apps/server/dist
+COPY --from=build /app/scripts/recover-pitr-checkpoint.mjs scripts/recover-pitr-checkpoint.mjs
 COPY --from=build /app/apps/web/dist apps/web/dist
 COPY --from=build /app/packages/db/dist packages/db/dist
 # SQL migrations: the server self-migrates at startup via the runtime migrator

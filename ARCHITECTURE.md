@@ -1,15 +1,12 @@
 # NineDeploy — Architecture
 
-> **Doc status.** Originally written against the tree at `v0.3.5`; the hard
-> counts (tables, migrations, route modules, templates, MCP tools) were re-read
-> out of the source for `v0.15.8` (2026-10); coverage floors and installer size
-> date from `v0.10.36`. Test-case totals carry the release they were measured at. Where
-> the implementation does not yet match the intent, that is stated in the text
-> rather than smoothed over — see
-> [§16 Known gaps](#16-known-gaps-implementation-vs-intent), which is part of the
-> architecture, not an appendix to it. Most of them were closed in 0.3.5
-> (§16.1, §16.2, §16.3 in part, §16.4, §16.5, §16.7); what remains is marked as
-> such, with the product decision each one needs.
+> **Current contract:** [Current status](docs/CURRENT_STATUS.md) separates
+> implementation, scoped acceptance and publication. The generated
+> [support matrix](docs/SUPPORT_MATRIX.md) evaluates current runtime limits.
+> This architecture guide began at `v0.3.5`; dated inventories and the
+> historical findings in §16 retain their original scope and are not a
+> current release certificate. Use the schema, migration journal and runtime
+> registries as the source of truth for counts and operation lists.
 
 A self-hosted deployment platform with optional multi-server support. The core
 server runs bare-metal (systemd) for direct PM2 + Docker daemon access; a
@@ -20,17 +17,20 @@ fixed table of typed, validated operations for the core — network management,
 and (since 0.7.0) docker and compose deploys to a node through
 `engine/builders/remoteDocker.ts` / `remoteCompose.ts`, each node fronted by its
 own Traefik. What a node cannot run faithfully is refused up front with a reason
-(`lib/remoteDeploy.ts`) rather than deployed half-configured: PM2 and Nixpacks
-source builds, containers that need a template command, the Docker socket or
-extra volume attachments, repositories cloned with a Git credential, and
-services backed by a panel-local managed database. App containers live on
-a shared Docker network (`ninedeploy`); Traefik is the intended sole public
+(`lib/remoteDeploy.ts`) rather than deployed half-configured. PM2 remains on
+the panel host. Docker and Compose run on nodes; source builds, credentials,
+hooks and volume attachments depend on build placement, same-host resources
+and the agent's advertised capabilities and owner switches. Docker services
+use private `nd-svc-<slug>` bridges with Traefik attached; their databases join
+the relevant service bridges. The shared `ninedeploy` bridge remains for
+platform plumbing and standalone databases. Compose and Swarm have their own
+network paths. Traefik is the intended sole public
 listener on :80/:443, with an explicit, operator-gated escape hatch for direct
 host port publishing (`services.published_port`).
 
 - **Runtime**: Node 22.23.4+, 24.22.1+ or 26.12.1+ (supported majors only), pnpm 11 workspace, Turborepo (`turbo run build/dev/lint/typecheck/test/clean/db:*`)
 - **Language**: TypeScript 7 strict (`noUncheckedIndexedAccess`, `verbatimModuleSyntax`, `isolatedModules`), Biome for lint/format
-- **Testing**: Vitest 5 + `@vitest/coverage-v8`, Testing Library. Server: 308 files / 4 647 tests, green. Monorepo: 7 498 tests across 470 files, all green (0.10.8). Coverage gates are **tiered**, not uniformly 100 — see [§13](#13-testing)
+- **Testing**: Vitest 5 + `@vitest/coverage-v8`, Testing Library. Coverage gates are **tiered**, not uniformly 100 — see [§13](#13-testing). Current check results belong to their recorded source and acceptance scope in [Current status](docs/CURRENT_STATUS.md).
 
 ## 1. System diagram
 
@@ -43,7 +43,7 @@ host port publishing (`services.published_port`).
    CLI ─────────────────┤  │ Auth          │  │ Deploy Engine           │   │
    (commander 15)       │  │ JWT+sessions  │  │  Git clone → Insights    │   │
    MCP ─────────────────┤  │ API tokens    │  │  → Manifest → Deps      │   │
-   (stdio, 36 tools)    │  │ Passkeys/TOTP │  │  → Build → Run → Health │   │
+   (stdio / HTTP)      │  │ Passkeys/TOTP │  │  → Build → Run → Health │   │
    SDK ─────────────────┤  │ OIDC SSO      │  │  → Proxy swap → Cleanup │   │
                         │  ├───────────────┤  ├────────────────────────┤   │
                         │  │ Workspaces    │  │ Builders                │   │
@@ -69,7 +69,7 @@ host port publishing (`services.published_port`).
               ┌────────────▼┐  ┌──▼───────────────┐  ┌─────────────────────┐
               │  Traefik v3 │  │ SQLite (.data/)   │  │ Remote agents       │
               │  :80 / :443 │  │ libsql + Drizzle  │  │ (NINEDEPLOY_AGENT=1)│
-              │  auto-HTTPS │  │ 66 tables         │  │ typed ops, plain    │
+              │  auto-HTTPS │  │ Drizzle schema    │  │ typed operations    │
               │  middlewares│  │ self-migrating    │  │ HTTP transport §7   │
               └──────┬──────┘  └───────────────────┘  └──────────┬──────────┘
                      │
@@ -90,34 +90,34 @@ host port publishing (`services.published_port`).
 ```
 ninedeploy/                       pnpm 11 workspace + Turborepo
 ├── apps/
-│   ├── server/                    Fastify 5 API + deploy engine (163 .ts files)
+│   ├── server/                    Fastify 5 API + deploy engine
 │   │   ├── src/
-│   │   │   ├── engine/     (~4.9k LOC) pipeline, builders (docker/pm2/compose),
+│   │   │   ├── engine/     pipeline, builders (docker/pm2/compose),
 │   │   │   │               database, proxy, tunnel, logs, containerFiles,
 │   │   │   │               volumeFiles, logDrainManager, autoPrune, magicVars,
 │   │   │   │               repoInsights, templateDependencies, serverProvisioner
-│   │   │   ├── modules/    (~10.8k LOC) 83 route modules + api.ts aggregator — see §5
-│   │   │   ├── lib/        (~7.2k LOC) crypto, jwt, sessions, totp(+replay),
+│   │   │   ├── modules/    route modules + api.ts aggregator — see §5
+│   │   │   ├── lib/        crypto, jwt, sessions, totp(+replay),
 │   │   │   │               webauthn, oauth/OIDC, loginLockout, passwordReset,
 │   │   │   │               keyRotation, resourceAccess (authz choke point),
 │   │   │   │               hostPrivilege, hostPort, egressGuard, gitEgress,
 │   │   │   │               agentClient, spawnValidated, exec, git, vault,
 │   │   │   │               s3, backupRemote, cloudflare, firewall, frameworks,
 │   │   │   │               ninedeployManifest/-Apply/-ToNixpacks, selfUpdate
-│   │   │   ├── kernel/     (~2.1k LOC) microkernel: EventBus, HookPipeline,
+│   │   │   ├── kernel/     microkernel: EventBus, HookPipeline,
 │   │   │   │               ServiceRegistry, ConfigCenter, MenuRegistry,
 │   │   │   │               auditBridge, pluginLoader + 3 built-in plugins
-│   │   │   ├── plugins/    (~1.2k LOC) fastify plugins — see §6
-│   │   │   ├── templates/  305-entry registry bundle (175 stacks converted from the Coolify catalog and smoke-run)
+│   │   │   ├── plugins/    fastify plugins — see §6
+│   │   │   ├── templates/  registry bundle and reviewed upstream mirrors
 │   │   │   ├── agent.ts    remote-host agent mode
 │   │   │   └── version.ts  VERSION + changelog
 │   │   ├── scripts/        buildTemplateMirror.ts (compose→template converter)
-│   │   ├── test/           313 unit/route files
+│   │   ├── test/           unit, route and regression tests
 │   │   └── test/integration/  testcontainers (real PG/MySQL/Redis/Mongo,
 │   │                          deploy e2e, compose stack, volume snapshot);
 │   │                          vitest.integration.config.ts + RUN_INTEGRATION=1
 │   │
-│   ├── web/                       React 19.2 + Vite 8 + Tailwind v4 (~29.6k LOC)
+│   ├── web/                       React 19.2 + Vite 8 + Tailwind v4
 │   │   ├── src/routes/            27 top-level pages + service/ (16 tabs & cards),
 │   │   │                          settings/ (12 sections), manifestCreator/
 │   │   │                          (15 section editors), database/
@@ -134,14 +134,14 @@ ninedeploy/                       pnpm 11 workspace + Turborepo
 │   └── cli/                       `ninedeploy` CLI — 40+ commands (commander 15)
 │
 ├── packages/
-│   ├── db/          Drizzle ORM schema (66 tables) + 73 SQL migrations;
+│   ├── db/          Drizzle ORM schema + journalled SQL migrations;
 │   │                server self-migrates at startup (drizzle-kit is dev-only)
 │   ├── schemas/     Zod v4 DTOs shared by server, web, CLI, SDK, MCP
 │   ├── sdk/         Typed API client over an injectable FetchLike; 40+ namespaces
 │   ├── plugin-sdk/  definePlugin + scopedConfig helpers for kernel plugins
-│   └── mcp/         MCP server (`ninedeploy-mcp`, stdio) — 62 tools
+│   └── mcp/         MCP server (`ninedeploy-mcp`, stdio and HTTP/OAuth)
 │
-├── docs/                          11 operator guides (QUICKSTART, DEPLOYMENTS,
+├── docs/                          operator guides (QUICKSTART, DEPLOYMENTS,
 │                                  WORKSPACES_RBAC, NINEDEPLOY_MANIFEST,
 │                                  PLUGINS_MICROKERNEL, TRAEFIK_INGRESS, …)
 ├── .github/workflows/             ci.yml (typecheck/lint/build/test/schema-drift/
@@ -152,7 +152,7 @@ ninedeploy/                       pnpm 11 workspace + Turborepo
 ├── docker-compose.yml             development environment
 ├── docker-compose.prod.yml        standalone container install (DOCKER_GID)
 ├── systemd/                       ninedeploy.service unit
-├── install.sh                     ~2 350-line one-click installer
+├── install.sh                     one-click installer
 └── ARCHITECTURE.md                This file
 ```
 
@@ -176,7 +176,7 @@ typed SDK and Zod schemas:
   volumes, networks, sources, webhooks, workspaces, users, sessions, alerts,
   firewall, plugins/marketplace, config-center, templates, system/prune,
   update-check, manifest `init`/`validate`, `doctor`, `demo seed`
-- **MCP** (`packages/mcp`) — Model Context Protocol server (stdio). **36 tools**:
+- **MCP** (`packages/mcp`) — Model Context Protocol server (stdio and HTTP/OAuth). Tools include:
   read-only inspection (`list_services`, `get_service`, `service_logs`,
   `list_deploys`, `list_domains`, `list_databases`, `list_projects`,
   `list_workspaces`, `get_workspace`, `list_alerts`, `activity_log`,
@@ -194,7 +194,7 @@ typed SDK and Zod schemas:
   (`createClient({ baseUrl, token, fetch? })`) exposes typed namespaces with a
   `NineDeployError` type and injectable fetch
 
-## 4. Database schema (52 tables, migrations 0000–0065)
+## 4. Database schema (source: packages/db/src/schema.ts)
 
 Storage: **SQLite** via `@libsql/client` (dialect `turso`, local file
 `.data/ninedeploy.db`). PRAGMAs at boot: `foreign_keys=ON`,
@@ -312,10 +312,9 @@ servers                id, name, host, port, status(offline|online|error|pending
 
 ### 4.5 Migration history
 
-`packages/db/src/migrations/`, drizzle-kit generated, forward-only and additive.
-65 journalled migrations, `0000` → `0065`. **`0020` does not exist** — the tag
-was skipped; the journal (`meta/_journal.json`) is authoritative and does not
-reference it, so this is cosmetic.
+`packages/db/src/migrations/`, forward-only and additive. The current migration
+list is `meta/_journal.json`; the dated examples below are historical. **`0020`
+does not exist** — its tag was skipped and the journal does not reference it.
 
 The journal is not, on its own, proof that the schema is reachable: `0039` had
 to be written by hand because drizzle-kit's snapshot already claimed
@@ -382,7 +381,7 @@ envelopes; 5xx messages are suppressed in production.
 | containers | /containers/:name | inspect, compose, file browser (list/read/write/mkdir/delete) |
 | env | /services/:id/env, /projects/:id/env, /env/search | service + project-scope env CRUD, cross-scope key search |
 | hooks | /hooks, /services | receive (HMAC + branch + watch-path globs + replay dedup + **PR preview create/destroy**), manage CRUD; public, rate-limited |
-| templates | /templates | list, detail, deploy — schema-validated registry (305 entries; bundled JSON, DB/env source override with 6 h cache + offline fallback) |
+| templates | /templates | list, detail, deploy — schema-validated registry (bundled JSON, DB/env source override with 6 h cache + offline fallback) |
 | topology | /topology | graph (services + DBs + domains + attachments) |
 | stats | /stats, /services/:id/metrics | live snapshot, time series |
 | dashboard | /dashboard | aggregate stats + health probes + recent |

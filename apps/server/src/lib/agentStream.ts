@@ -80,6 +80,7 @@ export const AGENT_STREAM_KINDS = {
   // ── 0.16 T6 node databases ── (db.dump: agent-to-panel, db.restore: panel-to-agent; cap db.manage)
   'db.dump': { direction: 'agent-to-panel', cap: 'db.manage' },
   'db.restore': { direction: 'panel-to-agent', cap: 'db.manage' },
+  'db.pitr.export': { direction: 'agent-to-panel', cap: 'db.pitr.archive' },
   // ── end 0.16 T6 ──
 } as const satisfies Record<string, { direction: StreamDirection; cap: MultiNodeCapability }>;
 export type AgentStreamKind = keyof typeof AGENT_STREAM_KINDS;
@@ -93,6 +94,7 @@ const KIND_FEATURE: Record<AgentStreamKind, string> = {
   // ── 0.16 T6 node databases ──
   'db.dump': 'back up a node database',
   'db.restore': 'restore into a node database',
+  'db.pitr.export': 'export a PostgreSQL WAL archive snapshot',
   // ── end 0.16 T6 ──
 };
 

@@ -1,5 +1,7 @@
 # Node scale to zero and wake (R2)
 
+Current behavior and publication status are summarized in [Current status](CURRENT_STATUS.md) and the generated [support matrix](SUPPORT_MATRIX.md). The dated checkpoints below retain their original source and scope. Automatic node sleep/wake is implemented under advertised agent capabilities and panel/agent switches; aggregate R2 certification remains separate.
+
 ## Standalone catcher collection — local development checkpoint, 2026-11-08
 
 The production sleeper's `recoverCatchers` poller also discovers never-bound candidates on nodes with an already persisted wake credential and no sleeping cohort. Collection runs after demand scheduling, at most one job at a time, with a five-minute interval per node. It creates neither a wake credential nor a replacement catcher. Unsupported, unsealed or opted-out agents are refused before a fresh admission barrier is created.

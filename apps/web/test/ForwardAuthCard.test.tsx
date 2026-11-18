@@ -13,6 +13,15 @@ vi.mock('../src/lib/api.js', async () => {
 });
 
 describe('ForwardAuthCard (G2.3)', () => {
+  it('shows unconfirmed routing instead of a switch, and reloads after restoration', async () => {
+    mockOf(api.domains.list).mockResolvedValue([{ id: 11, hostname: 'grafana.example.com', status: 'active' }] as never);
+    mockOf(api.domains.forwardAuth.get).mockRejectedValueOnce(new Error('Previous routing is unconfirmed')).mockResolvedValue({ domainId: 11, forwardAuth: null });
+    renderWithProviders(<ForwardAuthCard svc={{ id: 5, serverId: null } as never} />);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Previous routing is unconfirmed');
+    expect(screen.queryByRole('switch')).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Reload status' }));
+    expect(await screen.findByRole('switch', { name: 'Panel sign-in for grafana.example.com' })).not.toBeChecked();
+  });
   it('puts a domain behind panel sign-in', async () => {
     mockOf(api.domains.list).mockResolvedValue([{ id: 11, hostname: 'grafana.example.com', path: '/', status: 'active' }] as never);
     mockOf(api.domains.forwardAuth.get).mockResolvedValue({ domainId: 11, forwardAuth: null } as never);

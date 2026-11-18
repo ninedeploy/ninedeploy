@@ -207,6 +207,8 @@ There are no suggestions under 12 hours of history. The hints are advisory: noth
 
 A docker service on the panel host can sleep when nobody uses it and wake on the next request. Set **Service → Settings → Sleep when idle**, or `sleepAfterMinutes` (5–1440) on `PATCH /v1/services/:id`; `null` turns it off.
 
+The steps below describe the panel-host wake endpoint. Ordinary node Docker services use the same setting, but their own agent serves a wake catcher: continuous idle evidence admits an ordered Stop, and visitor demand starts the captured containers before readiness and loaded routing are confirmed. The panel does not start the node's container name on its own Docker daemon. Node wake can remain pending across a panel restart. See [Current status](CURRENT_STATUS.md) for scoped acceptance and operational switches.
+
 **Going to sleep.** Every minute, a service sleeps once its domains have had no request for `sleepAfterMinutes`:
 1. Its domains are routed to the panel's wake endpoint.
 2. Its containers stop. Nothing is removed: the containers, volumes and variables stay as they are.
@@ -225,14 +227,14 @@ What the visitor gets:
 A domain's basic auth and IP allow list run before the wake, so a protected service wakes only for allowed visitors.
 
 **By hand.**
-- `POST /v1/services/:id/sleep` puts a service to sleep now, even without `sleepAfterMinutes`.
-- `POST /v1/services/:id/wake`, **Start** or **Restart** wakes it.
+- On the panel host, `POST /v1/services/:id/sleep` puts a service to sleep now, even without `sleepAfterMinutes`. Manual Sleep now is refused on nodes; node sleep requires verified automatic idle admission.
+- `POST /v1/services/:id/wake`, **Start** or **Restart** requests wake. A node wake may return `202` with `pending: true`; readiness and routing still have to settle before it is awake.
 - **Stop** ends the sleep (the service is then stopped). A deploy ends it too; the new release is awake.
 
 Requirements and limits:
-- Traffic analytics must be on (**Traefik → Traffic**): requests are counted from the traffic log. Without it nothing sleeps.
+- On the panel host, traffic analytics must be on (**Traefik → Traffic**): requests are counted from the traffic log. Nodes instead require their agent's verified idle observation and `NINEDEPLOY_AGENT_PROXY_TRAFFIC=on`.
 - The service needs at least one routed domain; otherwise nothing could wake it. Host ports and the service's internal network do not count as requests and do not wake it, so a service reached only that way should not sleep.
-- Panel host only; not for node or Swarm services. Node support is designed in [NODE_SLEEP_WAKE.md](NODE_SLEEP_WAKE.md). Nothing sleeps during a deploy or a canary, and the autoscaler holds while a service sleeps.
+- Ordinary Docker services on the panel host and nodes are supported under their own readiness and routing checks. The panel defaults `NINEDEPLOY_NODE_SLEEP_AUTOMATION` to `on`; `off` pauses automatic node sleep/wake. A node needs sealed agent transport and advertised idle/wake operations. Node services with fan-out targets are held; Swarm and Compose do not sleep. See [Current status](CURRENT_STATUS.md) and the scoped acceptance in [NODE_SLEEP_WAKE.md](NODE_SLEEP_WAKE.md). Nothing sleeps during conflicting deploy/lifecycle/canary work, and the autoscaler holds while a service sleeps.
 - The idle window starts again after a panel restart and after each deploy.
 
 ### Pending changes (G5.2)

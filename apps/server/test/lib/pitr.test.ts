@@ -100,7 +100,7 @@ describe('who can use it', () => {
     const base = { engine: 'postgres', serverId: null, previewCopyOf: null, previewServiceId: null };
     expect(pitrUnavailable(base)).toBeNull();
     expect(pitrUnavailable({ ...base, engine: 'mysql' })).toMatch(/PostgreSQL/);
-    expect(pitrUnavailable({ ...base, serverId: 3 })).toMatch(/panel host/);
+    expect(pitrUnavailable({ ...base, serverId: 3 })).toBeNull();
     expect(pitrUnavailable({ ...base, previewCopyOf: 1 })).toMatch(/preview/);
   });
 });

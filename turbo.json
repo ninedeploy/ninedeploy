@@ -1,6 +1,11 @@
 {
   "$schema": "https://turbo.build/schema.json",
-  "globalDependencies": ["**/.env", "**/.env.*", "tsconfig.base.json", "biome.json"],
+  "globalDependencies": [
+    ".env", ".env.*",
+    "apps/*/.env", "apps/*/.env.*",
+    "packages/*/.env", "packages/*/.env.*",
+    "tsconfig.base.json", "biome.json"
+  ],
   "globalEnv": ["NODE_ENV", "VITE_API_URL", "NINEDEPLOY_TEMPLATE_VERIFY_CONCURRENCY"],
   "tasks": {
     "build": {
@@ -21,6 +26,38 @@
     },
     "test": {
       "dependsOn": ["^build"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/*.md",
+        "$TURBO_ROOT$/*.sh",
+        "$TURBO_ROOT$/*.json",
+        "$TURBO_ROOT$/*.yaml",
+        "$TURBO_ROOT$/*.yml",
+        "$TURBO_ROOT$/.node-version",
+        "$TURBO_ROOT$/.npmrc",
+        "$TURBO_ROOT$/.dockerignore",
+        "$TURBO_ROOT$/.gitattributes",
+        "$TURBO_ROOT$/.gitignore",
+        "$TURBO_ROOT$/Dockerfile",
+        "$TURBO_ROOT$/docs/**",
+        "$TURBO_ROOT$/scripts/**",
+        "$TURBO_ROOT$/.github/**",
+        "$TURBO_ROOT$/systemd/**",
+        "$TURBO_ROOT$/patches/**",
+        "$TURBO_ROOT$/apps/*/src/**",
+        "$TURBO_ROOT$/apps/*/test/**",
+        "$TURBO_ROOT$/packages/*/src/**",
+        "$TURBO_ROOT$/packages/*/test/**",
+        "$TURBO_ROOT$/desktop/src/**",
+        "$TURBO_ROOT$/desktop/test/**",
+        "$TURBO_ROOT$/desktop/scripts/**",
+        "$TURBO_ROOT$/desktop/*.mjs",
+        "$TURBO_ROOT$/desktop/*.json",
+        "$TURBO_ROOT$/desktop/*.yml",
+        "$TURBO_ROOT$/e2e/tests/**",
+        "$TURBO_ROOT$/e2e/*.ts",
+        "$TURBO_ROOT$/e2e/*.json"
+      ],
       "outputs": []
     },
     "clean": {

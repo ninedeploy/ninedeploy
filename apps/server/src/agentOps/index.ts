@@ -14,6 +14,7 @@ import { MULTI_NODE_CAPABILITIES, type MultiNodeCapability } from '@ninedeploy/s
 import { buildOps } from './builds.js';
 import { observabilityOps } from './observability.js';
 import { databaseOps } from './databases.js';
+import { pitrOps } from './pitr.js';
 import { fileMountOps } from './fileMounts.js';
 import { gitKeyOps } from './gitCredential.js';
 import { imageOps } from './images.js';
@@ -110,6 +111,7 @@ export const AGENT_OP_MODULES: readonly AgentOpModule[] = [
   // ── end 0.16 T5 ──
   // ── 0.16 T6 node databases ── (agentOps/databases.ts; the db stream kinds are in agentOps/stream.ts)
   databaseOps,
+  pitrOps,
   // ── end 0.16 T6 ──
   // ── 0.16 T7 swarm ── (agentOps/swarm.ts)
   swarmOps,
@@ -180,6 +182,7 @@ export const AGENT_KILL_SWITCHES: Readonly<Partial<Record<MultiNodeCapability, r
   'docker.buildOptions': ['NINEDEPLOY_AGENT_BUILDS'],
   'git.sshkey': ['NINEDEPLOY_AGENT_STATIC_CREDENTIALS'],
   'db.manage': ['NINEDEPLOY_AGENT_DATABASES'],
+  'db.pitr.archive': ['NINEDEPLOY_AGENT_DATABASES', 'NINEDEPLOY_AGENT_PITR'],
   'db.dump.extra': ['NINEDEPLOY_AGENT_DATABASES'],
   // G5.1: Trivy on the node is the node owner's call.
   'image.scan': ['NINEDEPLOY_AGENT_IMAGE_SCAN'],

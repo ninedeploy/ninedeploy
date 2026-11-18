@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { backups, createDb, type Database, databaseAttachments, databases, type DB, runMigrations, services, users } from '@ninedeploy/db';
 
 /**
@@ -26,9 +26,15 @@ const { ensurePreviewDatabaseCopies, isPreviewCopy, previewCopyRefusal, removePr
 type Deps = typeof previewDatabaseDeps;
 
 let db: DB;
+let dbClient: ReturnType<typeof createDb>['client'];
+
+afterEach(() => {
+  dbClient?.close();
+  dbClient = undefined;
+});
 
 beforeEach(async () => {
-  ({ db } = createDb({ url: ':memory:' }));
+  ({ db, client: dbClient } = createDb({ url: ':memory:' }));
   await runMigrations(db, fileURLToPath(new URL('../../../../packages/db/src/migrations', import.meta.url)));
   await db.insert(users).values({ id: 7, email: 'owner@example.com', passwordHash: 'x' });
   await db.insert(services).values([

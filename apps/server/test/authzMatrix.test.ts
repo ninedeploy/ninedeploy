@@ -147,6 +147,17 @@ vi.mock('node:dns/promises', async (importOriginal) => {
   return { ...actual, ...stub, default: { ...actual, ...stub } };
 });
 vi.mock('pm2', () => ({ default: { connect: vi.fn((cb: (e: Error) => void) => cb(new Error('pm2 disabled'))) } }));
+// This suite removes sleep at the exec boundary. Real acknowledgement polling
+// would spin for 15 wall-clock seconds and accumulate millions of mock calls.
+// Refuse the external proxy acknowledgement immediately, recording the effect
+// so unauthorized callers are still required to reach neither Docker nor this seam.
+vi.mock('../src/lib/proxyRoutingAck.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/lib/proxyRoutingAck.js')>();
+  return { ...actual, confirmProxyRouting: vi.fn(async () => {
+    hoisted.effects.push('proxy acknowledgement');
+    throw new actual.ProxyRoutingUnconfirmed('proxy unavailable in authz matrix');
+  }) };
+});
 vi.mock('../src/lib/exec.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/lib/exec.js')>()),
   capture: vi.fn(async (cmd: string, args: string[]) => {
@@ -1025,6 +1036,9 @@ export const MATRIX: Record<string, Rule> = {
   'PUT /v1/databases/:id/backup-replicas': R('operator', { body: () => ({ replicas: [] }) }),
   // R3 point-in-time recovery: reads follow the backups list, writes are database admin (like a download).
   'GET /v1/databases/:id/pitr': R('viewer'),
+  'GET /v1/databases/:id/pitr/remote': OP,
+  'PUT /v1/databases/:id/pitr/remote': R('operator', { body: () => ({ enabled: false, destinationId: 1, intervalMinutes: 60 }) }),
+  'POST /v1/databases/:id/pitr/remote/checkpoint': R('operator', { note: 'PITR is off on the matrix database; admission refuses before external I/O.' }),
   'PUT /v1/databases/:id/pitr': R('admin', { body: () => ({ enabled: false, retentionDays: 7 }), note: 'PITR is off on the matrix database, so the at-floor call is a no-op; enabling is covered by test/modules/pitr.test.ts' }),
   'POST /v1/databases/:id/pitr/base-backup': R('admin', { note: 'PITR is off on the matrix database, so the at-floor call is a 422; covered by test/modules/pitr.test.ts' }),
   'POST /v1/databases/:id/pitr/recover': R('admin', { body: (r) => ({ name: uniq(r, 'pitr') }), note: 'PITR is off on the matrix database, so the at-floor call is a 422; covered by test/modules/pitr.test.ts' }),

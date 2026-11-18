@@ -73,11 +73,17 @@ export const OWNED_SETTINGS: readonly OwnedSettingDef[] = [
   { prefix: 'pending_changes:', owner: 'service', shape: 'id', secret: false, portability: 'drop' },
   { prefix: 'image_scan:', owner: 'service', shape: 'id', secret: false, portability: 'drop' },
   { prefix: 'service_move:', owner: 'service', shape: 'id', secret: false, portability: 'drop' },
+  { prefix: 'proxy_apply_service:', owner: 'service', shape: 'idColon', secret: false, portability: 'drop' },
   // Domains
   { prefix: 'forward_auth:', owner: 'domain', shape: 'id', secret: false, portability: 'copy' },
   { prefix: 'compose_route:', owner: 'domain', shape: 'id', secret: false, portability: 'copy' },
+  { prefix: 'proxy_apply_domain:', owner: 'domain', shape: 'idColon', secret: false, portability: 'drop' },
   // Databases
   { prefix: 'backup_replicas:', owner: 'database', shape: 'id', secret: false, portability: 'drop' },
+  { prefix: 'pitr_remote:', owner: 'database', shape: 'id', secret: false, portability: 'drop' },
+  { prefix: 'pitr_remote_state:', owner: 'database', shape: 'id', secret: false, portability: 'drop' },
+  { prefix: 'pitr_stream_state:', owner: 'database', shape: 'id', secret: false, portability: 'drop' },
+  { prefix: 'pitr_remote_passphrase:', owner: 'database', shape: 'id', secret: true, portability: 'drop' },
   // GitHub Apps
   { prefix: 'github_runners:', owner: 'githubApp', shape: 'id', secret: false, portability: 'drop' },
   // Workspaces

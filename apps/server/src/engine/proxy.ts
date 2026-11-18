@@ -581,6 +581,20 @@ async function mountsConfigDir(container: string, hostDir: string): Promise<bool
   }
 }
 
+/** A system restore can replace the directory while Docker keeps its old bind mount. */
+async function configMountWasReplaced(): Promise<boolean> {
+  try {
+    const { dev, ino } = statSync(dir(), { bigint: true });
+    const mounted = await capture('docker', ['exec', TRAEFIK_CONTAINER, 'stat', '-c', '%d:%i', '/etc/traefik'],
+      { timeoutMs: 3000, maxOutputBytes: 256 });
+    const [device, inode] = mounted.trim().split(':');
+    // Compare inode numbers only when both views are on the same device.
+    return device === String(dev) && /^\d+$/.test(inode ?? '') && inode !== String(ino);
+  } catch {
+    return false;
+  }
+}
+
 /** Ensure the Traefik reverse-proxy container is running on the shared network (idempotent). */
 async function ensureTraefikUnlocked(
   log: (line: string) => void,
@@ -628,13 +642,15 @@ async function ensureTraefikUnlocked(
     const hostConfigDir = await hostPathFor(dir());
     const runningOurDir = runningCurrentConfig && await mountsConfigDir(TRAEFIK_CONTAINER, hostConfigDir);
     if (runningOurDir && !staticConfigChanged) {
-      // The fingerprint matched the directory-provider static config: the
-      // running Traefik no longer reads the legacy file.
-      legacyMirror = false;
-      log('traefik already running on shared network');
-      return seededPlaceholder;
-    }
-    if (runningCurrentConfig && !runningOurDir) {
+      if (!await configMountWasReplaced()) {
+        // The fingerprint matched the directory-provider static config: the
+        // running Traefik no longer reads the legacy file.
+        legacyMirror = false;
+        log('traefik already running on shared network');
+        return seededPlaceholder;
+      }
+      log('traefik config directory was replaced; recreating container to remount it');
+    } else if (runningCurrentConfig && !runningOurDir) {
       log(`traefik serves another config directory; recreating it on ${hostConfigDir}`);
     } else if (runningOnNetwork && (!runningCurrentConfig || staticConfigChanged)) {
       log('traefik static configuration changed; recreating container to apply it');

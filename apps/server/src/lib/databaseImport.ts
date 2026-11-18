@@ -206,11 +206,29 @@ function classify(buf: Buffer): DumpKind {
 export function sniffBytes(head: Buffer): DumpSniff {
   if (head.length >= 2 && head[0] === 0x1f && head[1] === 0x8b) {
     let inner: Buffer;
+    const inflate = (end: number) => gunzipSync(head.subarray(0, end), {
+      finishFlush: zlibConstants.Z_SYNC_FLUSH,
+      maxOutputLength: SNIFF_BYTES,
+    });
     try {
       // A truncated head is expected: flush what decompresses, do not demand the trailer.
-      inner = gunzipSync(head, { finishFlush: zlibConstants.Z_SYNC_FLUSH });
-    } catch {
-      return { gzip: true, kind: 'binary' };
+      inner = inflate(head.length);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ERR_BUFFER_TOO_LARGE') return { gzip: true, kind: 'binary' };
+      // A tiny gzip head may expand to megabytes. Find a prefix that fits
+      // without ever allocating its full expansion or rejecting a valid dump.
+      let low = 0, high = head.length - 1;
+      inner = Buffer.alloc(0);
+      while (low <= high) {
+        const end = Math.floor((low + high) / 2);
+        try {
+          inner = inflate(end);
+          low = end + 1;
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'ERR_BUFFER_TOO_LARGE') return { gzip: true, kind: 'binary' };
+          high = end - 1;
+        }
+      }
     }
     return { gzip: true, kind: classify(inner.subarray(0, SNIFF_BYTES)) };
   }
@@ -1018,7 +1036,7 @@ export async function expireStaleImports(db: DB, now = Date.now()): Promise<numb
     const [hit] = await db
       .update(databaseImports)
       .set({ status: 'expired', error: 'expired: no activity for 24 hours', completedAt: new Date(now), stagingPath: null })
-      .where(and(eq(databaseImports.id, r.id), inArray(databaseImports.status, ['uploading', 'pending'])))
+      .where(and(eq(databaseImports.id, r.id), inArray(databaseImports.status, ['uploading', 'pending']), lt(databaseImports.updatedAt, cutoff)))
       .returning({ id: databaseImports.id });
     if (!hit) continue;
     await removeStaging(r.stagingPath);

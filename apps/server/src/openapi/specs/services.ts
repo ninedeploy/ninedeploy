@@ -208,7 +208,7 @@ export const servicesSpecs: RouteSpecMap = {
     summary: 'Turn maintenance mode on (a config) or off (null)',
     tag: 'services',
     description:
-      "While on, the service's domains answer the panel's 503 maintenance page with `Retry-After`; addresses in `bypass` still reach the app (Traefik `ClientIP`, the connecting address). A stopped service in maintenance still shows the page. Panel-host services only; refused when Traefik cannot reach the panel. Re-renders the proxy config. Audited service.maintenance.on / off.",
+      "While on, the service's domains answer a 503 maintenance page with `Retry-After`; addresses in `bypass` still reach the app (Traefik `ClientIP`, the connecting address). A stopped service in maintenance still shows the page. Panel-host services need panel reachability; a node needs its own page-serving agent. Fan-out is refused. Success requires proxy acknowledgement. Apply failure rolls back (502); an unconfirmed rollback returns 503 and reads remain unconfirmed until retry or boot/watchdog restoration. Audited service.maintenance.on / off.",
     floor: 'member',
     body: maintenanceInput,
     validation: 'zod',
@@ -224,7 +224,7 @@ export const servicesSpecs: RouteSpecMap = {
     summary: "Set a service's custom 502/503/504 pages",
     tag: 'services',
     description:
-      "HTML per status, at most 64 KiB each; a status left out keeps the proxy's default, `{}` turns them off. Traefik's `errors` middleware fetches the page from the panel when the app answers that status or cannot be reached. Panel-host services only. Audited service.error_pages.set.",
+      "HTML per status, at most 64 KiB each; a status left out keeps the proxy's default, `{}` turns them off. Traefik's `errors` middleware fetches the page from the panel or node agent when the app answers that status or cannot be reached. Fan-out is refused. Success requires proxy acknowledgement. Apply failure rolls back (502); unconfirmed restoration returns 503, including subsequent reads, until retry or boot/watchdog restoration. Audited service.error_pages.set.",
     floor: 'member',
     body: errorPagesInput,
     validation: 'zod',
@@ -257,7 +257,7 @@ export const servicesSpecs: RouteSpecMap = {
     summary: 'Put a domain behind panel sign-in (a config) or take it off (null)',
     tag: 'domains',
     description:
-      "Traefik's `forwardAuth` asks the panel about every request to the domain. A visitor without a valid cookie signs in on the panel and needs `minRole` or higher on the service. Panel-host services only; refused when Traefik cannot reach the panel. Re-renders the proxy config. Audited domain.forward_auth.on / off.",
+      "Traefik's `forwardAuth` asks the panel about every request to the domain. A visitor without a valid cookie signs in on the panel and needs `minRole` or higher on the service. Panel-host services only; refused when Traefik cannot reach the panel. Success requires proxy acknowledgement. Apply failure rolls back (502); unconfirmed restoration returns 503, including subsequent reads, until retry or boot/watchdog restoration. Audited domain.forward_auth.on / off.",
     floor: 'member',
     body: forwardAuthInput,
     validation: 'zod',

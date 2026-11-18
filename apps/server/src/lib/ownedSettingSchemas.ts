@@ -13,6 +13,8 @@ import {
 import { createLogger } from './log.js';
 import { OWNED_SETTINGS } from './ownedSettings.js';
 import { getSettingJson } from './settings.js';
+import { proxySettingJournal } from './proxySettingState.js';
+import { pitrRemoteConfig, pitrRemoteState, pitrStreamState } from './pitrRemoteState.js';
 
 /**
  * COMPETITIVE_ROADMAP_2026-11 S1: the stored shape of every per-entity
@@ -49,11 +51,17 @@ export const OWNED_SETTING_SCHEMAS: Readonly<Record<string, ZodType>> = {
   'pending_changes:': z.object({ patch: z.record(z.string(), z.unknown()) }).passthrough(),
   'image_scan:': imageScanResult,
   'service_move:': z.object({ state: z.string() }).passthrough(),
+  'proxy_apply_service:': proxySettingJournal,
   // Domains
   'forward_auth:': forwardAuthConfig,
   'compose_route:': composeRoute,
+  'proxy_apply_domain:': proxySettingJournal,
   // Databases
   'backup_replicas:': z.object({ replicas: z.array(z.unknown()) }).passthrough(),
+  'pitr_remote:': pitrRemoteConfig,
+  'pitr_remote_state:': pitrRemoteState,
+  'pitr_stream_state:': pitrStreamState,
+  'pitr_remote_passphrase:': z.string(),
   // GitHub Apps
   'github_runners:': githubRunnerConfig.partial(),
   // Workspaces

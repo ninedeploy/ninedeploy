@@ -10,8 +10,9 @@
 import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { servers, services, serviceTargets, users, type DB } from '@ninedeploy/db';
+import { buildConfigs, databases, servers, services, serviceTargets, users, type DB } from '@ninedeploy/db';
 import { SERVICE_CAPABILITY_IDS, type ServiceCapabilityId } from '@ninedeploy/schemas';
 
 vi.hoisted(() => {
@@ -20,6 +21,14 @@ vi.hoisted(() => {
 vi.mock('../src/lib/audit.js', () => ({ audit: vi.fn(async () => undefined) }));
 
 const { runtimeOf, serviceCapabilities } = await import('../src/lib/serviceCapabilities.js');
+const { config } = await import('../src/config.js');
+const { default: sleeperPlugin } = await import('../src/plugins/sleeper.js');
+const { readServiceSleepStatus } = await import('../src/lib/serviceSleepStatus.js');
+const { pitrUnavailable } = await import('../src/lib/pitr.js');
+const { upgradeRefusal } = await import('../src/lib/databaseUpgrade.js');
+const { previewCopyRefusal } = await import('../src/lib/previewDatabases.js');
+const { RESTORE_VERIFICATION_ENGINES } = await import('../src/lib/backupRestoreVerification.js');
+const { remoteServiceRefusalDetail } = await import('../src/lib/remoteDeploy.js');
 const { serviceCapabilityRoutes } = await import('../src/modules/serviceCapabilities.js');
 const { restartLimitRoutes } = await import('../src/modules/restartLimit.js');
 const { inlineDockerfileRoutes } = await import('../src/modules/inlineDockerfile.js');
@@ -39,18 +48,51 @@ const FIXTURES = [
 ] as const;
 
 let db: DB;
+const originalNodeSleepAutomation = config.nodeSleepAutomation;
 beforeEach(async () => {
+  config.nodeSleepAutomation = true;
   db = await migratedDb();
   await db.insert(users).values({ id: 1, email: 'op@example.com', passwordHash: 'h', isInstanceOperator: true });
   await db.insert(servers).values({ id: 9, name: 'node', host: 'node.test', tokenEncrypted: 'fixture' } as never);
   await db.insert(services).values(FIXTURES.map((f) => ({ name: f.slug, branch: 'main', ownerUserId: 1, port: 80, ...f })) as never);
   await db.insert(serviceTargets).values({ serviceId: 8, serverId: 9 } as never);
 });
-afterEach(() => closeMigratedDb(db));
+afterEach(() => {
+  config.nodeSleepAutomation = originalNodeSleepAutomation;
+  closeMigratedDb(db);
+});
 
 const load = async (id: number) => (await db.query.services.findFirst({ where: (s, { eq }) => eq(s.id, id) }))!;
 
 describe('evaluation', () => {
+  it.each([true, false])('matches the real node sleep controller with automation=%s', async enabled => {
+    config.nodeSleepAutomation = enabled;
+    const app = await buildTestApp({ db });
+    await app.register(sleeperPlugin);
+    await app.register(serviceCapabilityRoutes, { prefix: '/services' });
+    try {
+      await app.ready();
+      expect((await readServiceSleepStatus(db, await load(5))).nodeControllerActive).toBe(enabled);
+      const res = await app.inject({ method: 'GET', url: '/services/5/capabilities', headers: asUser() });
+      expect(res.statusCode).toBe(200);
+      expect(res.json().capabilities.scaleToZero).toMatchObject({
+        status: 'limited',
+        reason: expect.stringMatching(enabled ? /idle.*wake.*capabilit/i : /NINEDEPLOY_NODE_SLEEP_AUTOMATION=off/),
+      });
+      // Disabling node automation does not disable the panel-host sleeper.
+      expect((await serviceCapabilities(db, await load(1))).scaleToZero.status).toBe('available');
+    } finally { await app.close(); }
+    expect((await readServiceSleepStatus(db, await load(5))).nodeControllerActive).toBe(false);
+  });
+
+  it('explains that node fan-out cannot acquire automatic sleep authority', async () => {
+    await db.insert(servers).values({ id: 10, name: 'target', host: 'target.test', tokenEncrypted: 'fixture' } as never);
+    await db.insert(serviceTargets).values({ serviceId: 5, serverId: 10 } as never);
+    expect((await serviceCapabilities(db, await load(5))).scaleToZero).toMatchObject({
+      status: 'limited', reason: expect.stringMatching(/fan-out/),
+    });
+  });
+
   it('names the runtime column and answers the panel-only features by placement', async () => {
     const caps = async (id: number) => serviceCapabilities(db, await load(id));
     expect(runtimeOf(await load(5))).toBe('node-docker');
@@ -70,7 +112,7 @@ describe('evaluation', () => {
     expect((await caps(8)).restartLimit.status).toBe('available');
     expect((await caps(3)).fileMounts.status).toBe('unavailable');
     expect((await caps(7)).autoscale.status).toBe('limited');
-    expect((await caps(5)).scaleToZero.status).toBe('in_progress');
+    expect((await caps(5)).scaleToZero.status).toBe('limited');
     expect((await caps(4)).canary.status).toBe('unavailable');
   });
 
@@ -151,6 +193,41 @@ describe('docs/SUPPORT_MATRIX.md', () => {
       });
       return `| ${LABEL[id]} | ${cells.join(' | ')} |`;
     });
+    // Use the same database guards the API and preview producer call. No
+    // second hand-maintained engine allow-list belongs in the public matrix.
+    const databaseRows: string[] = [];
+    for (const engine of RESTORE_VERIFICATION_ENGINES) {
+      const decisions: string[][] = [];
+      for (const serverId of [null, 9]) {
+        const [database] = await db.insert(databases).values({
+          ownerUserId: 1, name: `${engine}-${serverId ?? 'panel'}`, slug: `${engine}-${serverId ?? 'panel'}`,
+          engine, serverId, status: 'running', passwordEncrypted: 'fixture',
+          containerName: 'managed-database', volumeName: 'managed-data',
+        }).returning();
+        decisions.push([
+          pitrUnavailable(database!) ? '—' : '✅',
+          upgradeRefusal(database!) ? '—' : '✅',
+          previewCopyRefusal(database!) ? '—' : '✅',
+        ]);
+      }
+      databaseRows.push(`| ${engine} | ${decisions[0]!.map((cell, i) => `${cell} / ${decisions[1]![i]}`).join(' | ')} | ✅ |`);
+    }
+    const buildRows: string[] = [];
+    for (const pack of ['nixpacks', 'paketo', 'heroku'] as const) {
+      await db.delete(buildConfigs).where(eq(buildConfigs.serviceId, 5));
+      await db.insert(buildConfigs).values({ serviceId: 5, buildPack: pack });
+      const cells: string[] = [];
+      for (const placement of [{ serverId: null }, { serverId: 9, buildOn: 'target' }, { serverId: 9, buildOn: 'panel' }]) {
+        const refusal = await remoteServiceRefusalDetail(db, { ...await load(5), ...placement }, {
+          probe: async () => ({ nodeLabel: 'matrix fixture', sealed: true, agent: async op => {
+            expect(op).toBe('agent.ping');
+            return { exitCode: 0, lines: [`ND-AGENT ${JSON.stringify({ version: '0.18.28', caps: ['build.nixpacks'] })}`] };
+          } }),
+        });
+        cells.push(refusal ? '—' : '✅');
+      }
+      buildRows.push(`| ${pack} | ${cells.join(' | ')} |`);
+    }
     const doc = [
       '# Support matrix',
       '',
@@ -169,6 +246,30 @@ describe('docs/SUPPORT_MATRIX.md', () => {
       ...notes.map((n, i) => `${i + 1}. ${n}`),
       '',
       'Checks of the live environment are not in this table. They run when you save or deploy. Examples: whether Traefik can reach the panel for maintenance pages and forward auth, and whether a node agent advertises an operation.',
+      '',
+      '## Database decisions',
+      '',
+      'Each pair is **panel host / node**. These are structural eligibility checks for an ordinary running managed database with a container and volume, with PITR off. The database API uses the same PITR and upgrade guards; the preview producer uses the same copy guard. Upgrade targets, free disk, privileges, agent capabilities and other live preflights still apply.',
+      '',
+      '| Engine | PITR | Major upgrade eligibility | Preview copy | Isolated restore adapter |',
+      '|---|---|---|---|---|',
+      ...databaseRows,
+      '',
+      "PITR keeps a live archive on the database's host. Node archiving/export requires a sealed agent advertising `db.pitr.archive`; managed replay remains panel-host only. Opt-in remote checkpoints/continuous WAL provide off-host recovery; see [Remote PITR archives](PITR_REMOTE_CHECKPOINTS.md). Major upgrades exclude pgvector, previews and databases with PITR enabled. Preview copies require the source to be running. Restore verification runs in an isolated helper on the panel host and measures the supplied backup, not high availability or recovery after host loss. RabbitMQ backups contain definitions, not queued messages.",
+      '',
+      'Read the actual database state through `GET /v1/databases/:id/pitr` and `GET /v1/databases/:id/upgrades/options`; live refusals are authoritative. See [Databases and backups](DATABASES_BACKUPS.md) and [Restore verification](RESTORE_VERIFICATION.md).',
+      '',
+      '## Build placement decisions',
+      '',
+      'Queue-time eligibility for a Docker service from a public Git repository, using a sealed agent advertising `build.nixpacks`. The evaluation calls `remoteServiceRefusalDetail`, the same guard used by deployment admission. A check mark does not promise a successful build: the tool, image, architecture, source and credentials must pass job-time checks too.',
+      '',
+      '| Pack | Panel host | Node, build on target | Node, build on panel |',
+      '|---|---|---|---|',
+      ...buildRows,
+      '',
+      'Building on the panel sends the resulting image to the node. Paketo/Heroku have no node-side builder. Dockerfile, Railpack, static and automatic pack resolution have additional job-time rules; see [Deployments](DEPLOYMENTS.md).',
+      '',
+      'For implementation, acceptance and publication status, see [Current status](CURRENT_STATUS.md).',
       '',
     ].join('\n');
     const file = new URL('../../../docs/SUPPORT_MATRIX.md', import.meta.url);

@@ -2,7 +2,6 @@ import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
 import { eq } from 'drizzle-orm';
 import { domains, services, users, type Domain } from '@ninedeploy/db';
 import { forwardAuthGrantInput, forwardAuthInput, type ForwardAuthView } from '@ninedeploy/schemas';
-import { writeDynamicConfig } from '../engine/proxy.js';
 import { audit } from '../lib/audit.js';
 import { badRequest, forbidden, notFound, parseId } from '../lib/errors.js';
 import { assertServiceCapability } from '../lib/serviceCapabilities.js';
@@ -29,6 +28,7 @@ import {
 } from '../lib/forwardAuth.js';
 import { panelOrigin } from '../lib/panelOrigin.js';
 import { wakeUnreachableReason } from '../lib/panelUpstream.js';
+import { applyProxySetting, readAppliedProxySetting } from '../lib/proxySettingApply.js';
 import { assertServiceRole, isOperator, loadServiceForUser, roleAtLeast, serviceRole } from '../lib/resourceAccess.js';
 
 /**
@@ -57,7 +57,7 @@ export const domainForwardAuthRoutes: FastifyPluginAsync = async (app) => {
 
   app.get('/:id/forward-auth', async (req): Promise<ForwardAuthView> => {
     const { d } = await load(req);
-    return { domainId: d.id, forwardAuth: await getForwardAuth(app.db, d.id) };
+    return readAppliedProxySetting(app.db, { owner: 'domain', id: d.id, feature: 'forward_auth' }, async () => ({ domainId: d.id, forwardAuth: await getForwardAuth(app.db, d.id) }));
   });
 
   app.put('/:id/forward-auth', async (req): Promise<ForwardAuthView> => {
@@ -70,14 +70,15 @@ export const domainForwardAuthRoutes: FastifyPluginAsync = async (app) => {
       const unreachable = await wakeUnreachableReason();
       if (unreachable) throw badRequest(`Cannot put the domain behind panel sign-in: ${unreachable}`, 'forward_auth_unreachable');
     }
-    await setForwardAuth(app.db, d.id, forwardAuth);
-    await writeDynamicConfig(app.db).catch((err: unknown) => req.log.warn({ err }, 'proxy re-render failed'));
+    const view = await applyProxySetting(app.db, { owner: 'domain', id: d.id, feature: 'forward_auth' }, null,
+      () => setForwardAuth(app.db, d.id, forwardAuth), async () => ({ domainId: d.id, forwardAuth: await getForwardAuth(app.db, d.id) }),
+      (err) => req.log.warn({ err }, 'panel sign-in could not be applied'));
     void audit(app.db, req.user!.id, forwardAuth ? 'domain.forward_auth.on' : 'domain.forward_auth.off', `${d.hostname} (${svc.name})`, {
       serviceId: svc.id,
       domainId: d.id,
       ...(forwardAuth && { minRole: forwardAuth.minRole }),
     });
-    return { domainId: d.id, forwardAuth: await getForwardAuth(app.db, d.id) };
+    return view;
   });
 };
 

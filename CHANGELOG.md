@@ -9,6 +9,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+**Highlights**
+- PostgreSQL PITR can ship encrypted recovery checkpoints or continuous WAL to HTTPS S3 from the panel host and managed nodes.
+- Panel sign-in, maintenance mode and custom error pages wait for proxy confirmation and recover safely from interrupted saves.
+- The disaster recovery runbook covers recovery of the panel, application volumes, PostgreSQL dumps and nodes after local state loss.
+
+**Action needed:** No.
+
+### Added
+
+- A [combined disaster recovery drill](docs/DISASTER_RECOVERY.md) covers remote panel and workload restore, node re-enrollment and replacement, and isolated DNS and ACME cutover.
+
+- Opt-in abandoned-upload collection for continuous PostgreSQL archives: bounded namespace scans, conditional publication fencing, protected live references, a 24-hour minimum object age and committed one-hour deletion grace, with restartable discovery progress.
+
+- Operator remote PostgreSQL archive controls on the database Backups tab: HTTPS destination and mode settings, confirmed recovery passphrases, verified recovery keys/ranges, archive lag, failure diagnostics and manual shipment for panel and node databases.
+
+- Remote PostgreSQL archives now support managed node databases through a sealed, capability-gated agent: archive setup, base backups, incremental WAL export, verified publication and the same safe remote retention policy. S3 credentials and recovery passphrases remain on the panel; node archives recover through the offline tool. Existing node databases remain opt-in.
+- Opt-in continuous PostgreSQL WAL shipping on the panel host: incremental encrypted segments, verified overlapping base generations, conditional S3 index publication, 1–35 day remote retention with a protected boundary base and delayed deletion, restart recovery and offline selected/latest-point restore. Existing checkpoint configurations retain their behavior.
+- Operator-only remote PostgreSQL PITR checkpoints to HTTPS S3 destinations, with an off-host recovery passphrase, complete base/WAL sets, SHA-256 file checks, upload read-back verification, scheduled/manual production and visible lag/failure status. The offline recovery tool uses a new data volume without needing the lost panel DB or master key. Full-checkpoint objects remain retained indefinitely.
+
+### Fixed
+
+- Remote-only application volume restores stage the download in the recovered panel's backup directory, so a missing directory from the source host no longer blocks recovery.
+- Traefik detects a configuration bind mount left on the old directory after panel import and recreates the proxy on the restored configuration.
+- Panel sign-in, maintenance mode and custom error pages succeed only after the proxy confirms the change. A failed apply restores the previous setting and routing; interrupted or unconfirmed restoration remains visible and is retried at boot and by the proxy watchdog.
+- Database import cleanup no longer expires an upload whose progress was refreshed after the cleanup scan selected it, preserving its staging file.
+- Closing the panel stops import maintenance from starting further cleanup or upgrade recovery steps after an in-flight task finishes.
+- Volume import cleanup now rechecks upload activity before expiring a selected import, so a concurrent chunk acknowledgement preserves its staging file.
+- Import format detection now bounds gzip output while inspecting the file header, avoiding large temporary allocations for highly compressed dumps.
+- Node scale-to-zero limits reflect the actual panel automation switch and agent requirements, including the fan-out restriction; runtime admission and refusal rules are unchanged.
+
+### Internal
+
+- Preview database test fixtures now close their native SQLite clients after each case.
+- Test cache inputs now include root documentation, installer, workflows, scripts and cross-package contracts, while unrelated scratch environment files no longer invalidate tasks. Regression fixtures prove that a cached green result cannot hide a broken external input.
+- CI and release checks run an uncached contract preflight before the full serialized coverage suites, which are forced to execute for release verification.
+
 ## [0.18.28] - 2026-11-13
 
 **Highlights**

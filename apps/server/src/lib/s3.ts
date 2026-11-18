@@ -61,6 +61,8 @@ export async function s3Request(
   query?: URLSearchParams,
   /** Abort signal replacing the default whole-request 120 s timeout. */
   signal?: AbortSignal,
+  /** Signed conditional writes: stale writers must never replace a newer archive index. */
+  condition?: { ifMatch: string } | { ifNoneMatch: '*' },
 ): Promise<Response> {
   const canonicalQuery = canonicalQueryString(query);
   const url = new URL(`${cfg.endpoint.replace(/\/$/, '')}/${cfg.bucket}/${uriEncode(key)}`);
@@ -76,6 +78,11 @@ export async function s3Request(
     'x-amz-date': amzDate,
   };
   if (method === 'PUT') headers['content-type'] = contentType;
+  if (condition) {
+    if (method !== 'PUT') throw new Error('S3 write conditions require PUT');
+    if ('ifMatch' in condition) headers['if-match'] = condition.ifMatch;
+    else headers['if-none-match'] = condition.ifNoneMatch;
+  }
 
   // Canonical request (sorted header names; signed headers list must match).
   const signedHeaders = Object.keys(headers).sort();
@@ -227,6 +234,7 @@ export async function s3GetToFile(
   key: string,
   filePath: string,
   stallMs: number = S3_TIMEOUT_MS,
+  options?: { maxBytes?: number; onResponse?: (response: Response) => void },
 ): Promise<void> {
   // r188: the default `AbortSignal.timeout(120s)` also covers the response
   // BODY, so a multi-GB restore was aborted mid-stream at two minutes (a
@@ -244,6 +252,7 @@ export async function s3GetToFile(
     const res = await s3Request(cfg, 'GET', key, undefined, undefined, undefined, controller.signal);
     touch();
     if (!res.ok) throw new Error(`S3 download failed (${res.status})`);
+    options?.onResponse?.(res);
     if (!res.body) {
       const { writeFileSync } = await import('node:fs');
       writeFileSync(filePath, '', { mode: 0o600 });
@@ -252,9 +261,15 @@ export async function s3GetToFile(
     const { createWriteStream } = await import('node:fs');
     const { Readable, Transform } = await import('node:stream');
     const { pipeline } = await import('node:stream/promises');
+    let received = 0;
     const progress = new Transform({
       transform(chunk, _enc, done) {
         touch();
+        received += chunk.length;
+        if (options?.maxBytes !== undefined && received > options.maxBytes) {
+          done(new Error('S3 object exceeds the expected download bound'));
+          return;
+        }
         done(null, chunk);
       },
     });

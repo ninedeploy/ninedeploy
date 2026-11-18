@@ -20,6 +20,14 @@ const capabilities = (id: string, status: string, reason: string | null = 'reaso
   } as never);
 
 describe('MaintenanceCard (G2.2)', () => {
+  it.each(['maintenance', 'errorPages'] as const)('shows a %s read failure without claiming a routing state', async (feature) => {
+    mockOf(api.services[feature].get).mockRejectedValueOnce(new Error('Previous routing is unconfirmed'));
+    renderWithProviders(<MaintenanceCard svc={{ id: 5, type: 'docker', serverId: null } as never} />);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Previous routing is unconfirmed');
+    expect(screen.queryByRole('switch')).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Reload status' }));
+    expect(await screen.findByRole('switch', { name: 'Maintenance mode' })).not.toBeChecked();
+  });
   it('turns maintenance on with the bypass list', async () => {
     mockOf(api.services.maintenance.set).mockResolvedValue({ maintenance: { title: 'Down for maintenance', message: '', retryAfterSeconds: 300, bypass: ['203.0.113.7'] }, since: '2026-10-28T10:00:00.000Z' } as never);
     renderWithProviders(<MaintenanceCard svc={{ id: 5, type: 'docker', serverId: null } as never} />);

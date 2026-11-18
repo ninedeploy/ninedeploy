@@ -181,7 +181,11 @@ async function authorizeVolume(
   const serviceIds = [...new Set([...(ownerId != null ? [ownerId] : []), ...sharing])];
   const databaseContainer = resolved?.owner.kind === 'database' ? (resolved.owner.containerName ?? null) : null;
   // R3: the data or WAL archive volume of a database with point-in-time recovery on.
-  const owningDatabase = resolved?.owner.kind === 'database' ? dbRows.find((d) => d.id === resolved.owner.refId) : undefined;
+  const owningDatabase = dbRows.find((d) => {
+    if ((d.serverId ?? null) !== serverId) return false;
+    const data = serverId === null ? d.volumeName : d.nodeVolumeName ?? `nd-db-${d.slug}-data`;
+    return data != null && (volumeName === data || volumeName === `${data}-wal`);
+  }) ?? (resolved?.owner.kind === 'database' ? dbRows.find((d) => d.id === resolved.owner.refId && (d.serverId ?? null) === serverId) : undefined);
   const pitrDatabase = owningDatabase?.pitrEnabled ? owningDatabase.name : null;
   return { serviceIds, databaseContainer, pitrDatabase };
 }
@@ -358,8 +362,9 @@ export const volumeBackupRoutes: FastifyPluginAsync = async (app) => {
     let isRemoteTemp = false;
     if (!existsSync(b.path)) {
       if (!b.remoteKey) throw notFound('Backup not found');
-      // r647: unique per request — see modules/backups.ts.
-      restorePath = `${b.path}.${randomUUID()}.remote`;
+      // Use the current panel's scratch directory. The source path and its
+      // volume-specific parent may no longer exist after a panel restore.
+      restorePath = path.join(config.paths.backupsDir, `${path.basename(b.path)}.${randomUUID()}.remote`);
       log(`Fetching remote object ${b.remoteKey}`);
       await fetchRemoteBackup(app.db, b, restorePath);
       isRemoteTemp = true;

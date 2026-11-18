@@ -159,6 +159,7 @@ GET /v1/databases/:id/pgbouncer member nd://scope/read/databases
 GET /v1/databases/:id/pitr viewer nd://scope/read/databases
 GET /v1/databases/:id/pitr/recoveries viewer nd://scope/read/databases
 GET /v1/databases/:id/pitr/recoveries/:recoveryId viewer nd://scope/read/databases
+GET /v1/databases/:id/pitr/remote operator nd://scope/read/databases
 GET /v1/databases/:id/public-access admin nd://scope/read/databases
 GET /v1/databases/:id/storage viewer nd://scope/read/databases
 GET /v1/databases/:id/tunnel admin nd://scope/read/databases
@@ -442,6 +443,7 @@ POST /v1/databases/:id/pgbouncer/disable operator nd://scope/write/databases
 POST /v1/databases/:id/pgbouncer/enable operator nd://scope/write/databases
 POST /v1/databases/:id/pitr/base-backup admin nd://scope/write/databases
 POST /v1/databases/:id/pitr/recover admin nd://scope/write/databases
+POST /v1/databases/:id/pitr/remote/checkpoint operator nd://scope/write/databases
 POST /v1/databases/:id/restart member nd://scope/write/databases
 POST /v1/databases/:id/start member nd://scope/write/databases
 POST /v1/databases/:id/stop member nd://scope/write/databases
@@ -625,6 +627,7 @@ PUT /v1/databases/:id/backup-policy admin nd://scope/write/databases
 PUT /v1/databases/:id/backup-replicas operator nd://scope/write/databases
 PUT /v1/databases/:id/imports/:importId/chunks/:index admin nd://scope/write/databases
 PUT /v1/databases/:id/pitr admin nd://scope/write/databases
+PUT /v1/databases/:id/pitr/remote operator nd://scope/write/databases
 PUT /v1/databases/:id/public-access operator nd://scope/write/databases
 PUT /v1/domains/:id/compose-route member nd://scope/write/domains
 PUT /v1/domains/:id/forward-auth member nd://scope/write/domains

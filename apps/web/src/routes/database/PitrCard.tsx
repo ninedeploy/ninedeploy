@@ -102,7 +102,7 @@ export function PitrCard({ db }: { db: DatabaseDetail }) {
       {title}
       <CardBody className="space-y-4">
         <p className="text-xs text-slate-400">
-          {t('Archives every change of this database, so it can be recovered to any second inside the window, into a new database. A base backup is taken daily; the archive and the base backups use disk on the panel host.')}
+          {s.recoveryUnavailableReason || t('Archives every change of this database, so it can be recovered to any second inside the window, into a new database. A base backup is taken daily; the archive and the base backups use disk on the panel host.')}
         </p>
         {!s.available ? (
           <p className="text-sm text-slate-500">{s.unavailableReason}</p>
@@ -161,7 +161,7 @@ export function PitrCard({ db }: { db: DatabaseDetail }) {
               <Button size="sm" variant="secondary" onClick={() => baseBackup.mutate()} disabled={busy || s.baseBackupRunning}>
                 {t('Take base backup')}
               </Button>
-              <Button size="sm" onClick={() => setRecovering(true)} disabled={!s.recoverable.length || s.recoveryRunning}>
+              <Button size="sm" onClick={() => setRecovering(true)} disabled={!s.recoverable.length || s.recoveryRunning || !!s.recoveryUnavailableReason}>
                 {t('Recover to a point in time…')}
               </Button>
               <Button size="sm" variant="danger" onClick={() => setConfirmDisable(true)} disabled={busy}>
@@ -205,7 +205,7 @@ export function PitrCard({ db }: { db: DatabaseDetail }) {
         onConfirm={() => { setConfirmDisable(false); set.mutate({ enabled: false }); }}
         onClose={() => setConfirmDisable(false)}
       />
-      {recovering && <RecoverDialog db={db} status={s} onClose={() => setRecovering(false)} onStarted={refresh} />}
+      {recovering && !s.recoveryUnavailableReason && <RecoverDialog db={db} status={s} onClose={() => setRecovering(false)} onStarted={refresh} />}
     </Card>
   );
 }

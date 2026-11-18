@@ -63,6 +63,7 @@ const FEATURES: Record<MultiNodeCapability, string> = {
   'build.railpack': 'build with Railpack',
   'git.sshkey': 'clone with a deploy key',
   'db.manage': 'host a managed database',
+  'db.pitr.archive': 'archive PostgreSQL WAL on a node',
   swarm: 'join the Swarm',
   'docker.ports': 'publish port mappings (UDP, port ranges, a host IP)',
   'docker.userLabels': 'set custom Docker labels',

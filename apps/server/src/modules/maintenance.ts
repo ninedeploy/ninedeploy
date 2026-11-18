@@ -2,13 +2,14 @@ import { and, eq } from 'drizzle-orm';
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
 import { domains } from '@ninedeploy/db';
 import { ERROR_PAGE_STATUSES, errorPagesInput, maintenanceInput, type ErrorPageStatus } from '@ninedeploy/schemas';
-import { ERROR_PAGE_PREFIX, MAINTENANCE_PREFIX, writeDynamicConfig } from '../engine/proxy.js';
+import { ERROR_PAGE_PREFIX, MAINTENANCE_PREFIX } from '../engine/proxy.js';
 import { audit } from '../lib/audit.js';
 import { badRequest, HttpError, parseId } from '../lib/errors.js';
 import { assertNodeCapability } from '../lib/agentCapabilities.js';
 import { clearNodePagesOutcome, nodePagesFailure } from '../lib/nodePagesSync.js';
 import { assertServiceCapability } from '../lib/serviceCapabilities.js';
-import { getErrorPages, getMaintenance, maintenanceView, restoreMaintenance, setErrorPages, setMaintenance } from '../lib/maintenance.js';
+import { getErrorPages, getMaintenance, maintenanceView, setErrorPages, setMaintenance } from '../lib/maintenance.js';
+import { applyProxySetting, readAppliedProxySetting } from '../lib/proxySettingApply.js';
 import { DEFAULT_ERROR, hostMatches, maintenanceAnswer, page } from '../lib/maintenancePages.js';
 import { wakeUnreachableReason } from '../lib/panelUpstream.js';
 import { assertServiceRole, loadServiceForUser } from '../lib/resourceAccess.js';
@@ -80,9 +81,6 @@ export const maintenancePageRoutes: FastifyPluginAsync = async (app) => {
 export const serviceMaintenanceRoutes: FastifyPluginAsync = async (app) => {
   app.addHook('onRequest', app.authenticate);
 
-  const rerender = (log: (msg: string) => void) =>
-    writeDynamicConfig(app.db).catch((err: unknown) => log(`proxy re-render failed: ${err instanceof Error ? err.message : String(err)}`));
-
   /**
    * Who serves the pages must be able to: on the panel host, Traefik must reach
    * the panel; on a node (P2), the node's agent must serve them itself.
@@ -95,40 +93,15 @@ export const serviceMaintenanceRoutes: FastifyPluginAsync = async (app) => {
     const unreachable = await wakeUnreachableReason();
     if (unreachable) throw badRequest(`${what}: ${unreachable}`, code);
   };
-  /**
-   * Save, then re-render. P2: for a node service being switched on, the save
-   * counts only when THIS re-render's node sync wrote the service's pages and
-   * the page server answered. Anything else (the page server failed, the
-   * node was unreachable, the sync stopped before its pages step) restores the
-   * previous value and re-renders again: nothing re-syncs a node on its own,
-   * so a kept setting would claim a maintenance mode no visitor ever sees.
-   */
-  const saveAndApply = async (
-    svc: { id: number; serverId: number | null },
-    enabling: boolean,
-    what: string,
-    save: () => Promise<void>,
-    restore: () => Promise<void>,
-    log: (m: string) => void,
-  ) => {
-    if (svc.serverId == null || !enabling) {
-      await save();
-      await rerender(log);
-      return;
-    }
-    clearNodePagesOutcome(svc.serverId);
-    await save();
-    await rerender(log);
+  const checkNodePages = async (svc: { id: number; serverId: number | null }, enabling: boolean, what: string) => {
+    if (svc.serverId == null || !enabling) return;
     const failure = await nodePagesFailure(app.db, svc.serverId, svc.id);
-    if (failure === null) return;
-    await restore();
-    await rerender(log);
-    throw new HttpError(502, 'node_pages_unapplied', `${what} was not changed: node #${svc.serverId} could not serve it (${failure}). Its domains keep answering as before.`);
+    if (failure !== null) throw new HttpError(502, 'node_pages_unapplied', `${what} was not changed: node #${svc.serverId} could not serve it (${failure}). Its domains keep answering as before.`);
   };
 
   app.get('/:id/maintenance', async (req) => {
     const svc = await loadServiceForUser(app.db, parseId((req.params as { id: string }).id), req.user!);
-    return maintenanceView(await getMaintenance(app.db, svc.id));
+    return readAppliedProxySetting(app.db, { owner: 'service', id: svc.id, feature: 'maintenance' }, async () => maintenanceView(await getMaintenance(app.db, svc.id)));
   });
 
   app.put('/:id/maintenance', async (req) => {
@@ -140,19 +113,20 @@ export const serviceMaintenanceRoutes: FastifyPluginAsync = async (app) => {
       await assertServiceCapability(app.db, svc, 'maintenance');
       await assertPagesReachable(svc, 'Cannot turn maintenance on', 'maintenance_unreachable');
     }
-    const previous = await getMaintenance(app.db, svc.id);
-    await saveAndApply(svc, !!maintenance, 'Maintenance mode', () => setMaintenance(app.db, svc.id, maintenance),
-      () => restoreMaintenance(app.db, svc.id, previous), (m) => req.log.warn(m));
+    const view = await applyProxySetting(app.db, { owner: 'service', id: svc.id, feature: 'maintenance' }, svc.serverId,
+      async () => { if (svc.serverId != null) clearNodePagesOutcome(svc.serverId); await setMaintenance(app.db, svc.id, maintenance); },
+      async () => maintenanceView(await getMaintenance(app.db, svc.id)), (err) => req.log.warn({ err }, 'maintenance could not be applied'),
+      () => checkNodePages(svc, !!maintenance, 'Maintenance mode'));
     void audit(app.db, req.user!.id, maintenance ? 'service.maintenance.on' : 'service.maintenance.off', `${svc.name} #${svc.id}`, {
       serviceId: svc.id,
       ...(maintenance && { bypass: maintenance.bypass.length }),
     });
-    return maintenanceView(await getMaintenance(app.db, svc.id));
+    return view;
   });
 
   app.get('/:id/error-pages', async (req) => {
     const svc = await loadServiceForUser(app.db, parseId((req.params as { id: string }).id), req.user!);
-    return getErrorPages(app.db, svc.id);
+    return readAppliedProxySetting(app.db, { owner: 'service', id: svc.id, feature: 'error_pages' }, () => getErrorPages(app.db, svc.id));
   });
 
   app.put('/:id/error-pages', async (req) => {
@@ -164,14 +138,15 @@ export const serviceMaintenanceRoutes: FastifyPluginAsync = async (app) => {
       await assertServiceCapability(app.db, svc, 'errorPages');
       await assertPagesReachable(svc, 'Cannot use custom error pages', 'error_pages_unreachable');
     }
-    const previous = (await getErrorPages(app.db, svc.id)).pages;
-    await saveAndApply(svc, any, 'The custom error pages', () => setErrorPages(app.db, svc.id, pages),
-      () => setErrorPages(app.db, svc.id, previous), (m) => req.log.warn(m));
+    const view = await applyProxySetting(app.db, { owner: 'service', id: svc.id, feature: 'error_pages' }, svc.serverId,
+      async () => { if (svc.serverId != null) clearNodePagesOutcome(svc.serverId); await setErrorPages(app.db, svc.id, pages); },
+      () => getErrorPages(app.db, svc.id), (err) => req.log.warn({ err }, 'error pages could not be applied'),
+      () => checkNodePages(svc, any, 'The custom error pages'));
     void audit(app.db, req.user!.id, 'service.error_pages.set', `${svc.name} #${svc.id}`, {
       serviceId: svc.id,
       statuses: Object.keys(pages).filter((k) => (pages as Record<string, string | undefined>)[k]?.trim()),
     });
-    return getErrorPages(app.db, svc.id);
+    return view;
   });
 };
 

@@ -18,7 +18,12 @@ import { encrypt, randomToken } from './crypto.js';
 import { conflict, HttpError, unprocessable } from './errors.js';
 import { slugify } from './slug.js';
 import { audit } from './audit.js';
-import { probeDatabaseCredentials, removeVolume, startDatabase, stopDatabase, volumeExists, ENGINES, defaultPort } from '../engine/database.js';
+import { getSettingJson } from './settings.js';
+import { nodePitrDeps, assertNodePitrCapable } from './nodePitr.js';
+import { NODE_PITR_REPLAY_REFUSAL } from './nodePitrContract.js';
+import { withNodeDatabaseLifecycle } from './nodeDatabaseLifecycle.js';
+import { pitrRemoteConfig, pitrStreamState } from './pitrRemoteState.js';
+import { probeDatabaseCredentials, removeVolume, startDatabase, stopDatabase, volumeExists, withDatabaseOperationLock, ENGINES, defaultPort } from '../engine/database.js';
 import { pitrArchiveVolume } from '../engine/pitrArchive.js';
 import {
   archivingFailing,
@@ -46,10 +51,24 @@ const baseBackupsRunning = new Set<number>();
 const recoveriesRunning = new Set<number>();
 /** Archives with destructive retention in flight in this process. */
 const prunesRunning = new Set<number>();
+const archiveReaders = new Set<number>();
+
+/** Pin the archive against retention/disable while copying a remote checkpoint. */
+export async function withPitrArchiveRead<T>(target: number | Database, read: () => Promise<T>): Promise<T> {
+  const id = typeof target === 'number' ? target : target.id;
+  if (prunesRunning.has(id) || archiveReaders.has(id) || baseBackupsRunning.has(id)) throw new HttpError(409, 'pitr_busy', 'The WAL archive is busy; try again when it finishes.');
+  archiveReaders.add(id);
+  try {
+    const copy = () => withDatabaseOperationLock(id, () => undefined, read);
+    return await (typeof target !== 'number' && target.serverId != null ? withNodeDatabaseLifecycle(id, copy) : copy());
+  }
+  finally { archiveReaders.delete(id); }
+}
 /** One recovery at a time on the panel host: a replay is CPU, memory and disk heavy. */
 export const MAX_PITR_RECOVERIES = 1;
 
 export const pitrBusy = {
+  archiveRead: (id: number) => archiveReaders.has(id),
   baseBackup: (id: number) => baseBackupsRunning.has(id),
   prune: (id: number) => prunesRunning.has(id),
   recovery: (id: number) => recoveriesRunning.has(id),
@@ -92,7 +111,6 @@ export const pitrDeps: PitrDeps = {
 /** Why `d` cannot use point-in-time recovery at all, or null. */
 export function pitrUnavailable(d: Pick<Database, 'engine' | 'serverId' | 'previewCopyOf' | 'previewServiceId'>): string | null {
   if (d.engine !== 'postgres') return 'Point-in-time recovery is available for PostgreSQL databases.';
-  if (d.serverId != null) return 'Point-in-time recovery is available for databases on the panel host, not yet on nodes.';
   if (d.previewCopyOf != null || d.previewServiceId != null) return "A preview's database copy does not archive its WAL.";
   return null;
 }
@@ -114,7 +132,21 @@ async function recreate(d: Database, log: (line: string) => void, deps: PitrDeps
  * running (the preflight asks the server itself); the first base backup runs
  * in the background and its outcome lands on the row.
  */
-export async function setPitr(
+export async function setPitr(db: DB, d: Database, input: { enabled: boolean; retentionDays?: number }, actor: number | null, log: (line: string) => void, deps: PitrDeps = d.serverId == null ? pitrDeps : nodePitrDeps(db, d)): Promise<Database> {
+  if (d.serverId == null) return setPitrCore(db, d, input, actor, log, deps);
+  await assertNodePitrCapable(db, d);
+  let firstBackup = false;
+  const result = await withNodeDatabaseLifecycle(d.id, () => withDatabaseOperationLock(d.id, log, async () => {
+    const current = await reload(db, d.id);
+    if (current.serverId !== d.serverId || current.slug !== d.slug || current.nodeContainerName !== d.nodeContainerName || current.nodeVolumeName !== d.nodeVolumeName) throw conflict('The node database target changed; refresh the page');
+    firstBackup = input.enabled && !current.pitrEnabled;
+    return setPitrCore(db, current, input, actor, log, deps);
+  }));
+  if (firstBackup) void runPitrBaseBackup(db, result, actor, log, deps).catch(() => undefined);
+  return result;
+}
+
+async function setPitrCore(
   db: DB,
   d: Database,
   input: { enabled: boolean; retentionDays?: number },
@@ -158,11 +190,11 @@ export async function setPitr(
       throw unprocessable(`The database did not start with WAL archiving: ${err instanceof Error ? err.message : String(err)}`, 'pitr_start_failed');
     }
     void audit(db, actor, 'database.pitr_enable', `${d.name}: retention ${retentionDays} day(s)`);
-    void runPitrBaseBackup(db, on, actor, log, deps).catch(() => undefined);
+    if (on.serverId == null) void runPitrBaseBackup(db, on, actor, log, deps).catch(() => undefined);
     return reload(db, d.id);
   }
   // Disabling: the archive goes with it.
-  if (recoveriesRunning.has(d.id) || baseBackupsRunning.has(d.id) || prunesRunning.has(d.id)) {
+  if (recoveriesRunning.has(d.id) || baseBackupsRunning.has(d.id) || prunesRunning.has(d.id) || archiveReaders.has(d.id)) {
     throw new HttpError(409, 'pitr_busy', 'A recovery, base backup or retention pass is using the WAL archive; try again when it finishes.');
   }
   await db.update(databases).set({ pitrEnabled: false, pitrBaseBackupAt: null, pitrLastError: null, pitrRetentionDays: retentionDays }).where(eq(databases.id, d.id));
@@ -181,8 +213,8 @@ export async function setPitr(
 }
 
 /** Take one base backup now; the row records the outcome. 409 while one runs. */
-export async function runPitrBaseBackup(db: DB, d: Database, actor: number | null, log: (line: string) => void, deps: PitrDeps = pitrDeps): Promise<string> {
-  if (prunesRunning.has(d.id)) throw new HttpError(409, 'pitr_busy', 'WAL archive retention is running; try again when it finishes.');
+export async function runPitrBaseBackup(db: DB, d: Database, actor: number | null, log: (line: string) => void, deps: PitrDeps = d.serverId == null ? pitrDeps : nodePitrDeps(db, d)): Promise<string> {
+  if (prunesRunning.has(d.id) || archiveReaders.has(d.id)) throw new HttpError(409, 'pitr_busy', 'WAL archive retention or a checkpoint copy is running; try again when it finishes.');
   if (baseBackupsRunning.has(d.id)) throw new HttpError(409, 'pitr_base_backup_running', 'A base backup of this database is already running.');
   baseBackupsRunning.add(d.id);
   try {
@@ -202,6 +234,8 @@ export async function runPitrBaseBackup(db: DB, d: Database, actor: number | nul
 export interface PitrStatus {
   available: boolean;
   unavailableReason: string | null;
+  /** Node archiving is supported; managed replay remains a separate adapter. */
+  recoveryUnavailableReason?: string;
   enabled: boolean;
   retentionDays: number;
   lastBaseBackupAt: string | null;
@@ -217,7 +251,7 @@ export interface PitrStatus {
   segmentCount: number;
 }
 
-export async function pitrStatus(d: Database, deps: PitrDeps = pitrDeps): Promise<PitrStatus> {
+export async function pitrStatus(d: Database, deps: PitrDeps = pitrDeps, db?: DB): Promise<PitrStatus> {
   const unavailableReason = pitrUnavailable(d);
   const status: PitrStatus = {
     available: unavailableReason === null,
@@ -234,6 +268,14 @@ export async function pitrStatus(d: Database, deps: PitrDeps = pitrDeps): Promis
     archiveBytes: 0,
     segmentCount: 0,
   };
+  if (d.serverId != null && !unavailableReason) {
+    status.recoveryUnavailableReason = NODE_PITR_REPLAY_REFUSAL;
+    if (deps === pitrDeps) {
+      if (!db) { status.available = false; status.unavailableReason = 'Node archive status requires the panel database context'; return status; }
+      try { await assertNodePitrCapable(db, d); deps = nodePitrDeps(db, d); }
+      catch (err) { status.available = false; status.unavailableReason = err instanceof Error ? err.message : 'The node archive capability could not be confirmed'; return status; }
+    }
+  }
   if (!d.pitrEnabled || unavailableReason) return status;
   const [inv, stats] = await Promise.all([deps.inventory(d), deps.archiver(d).catch(() => null)]);
   status.recoverable = recoverableRanges(inv).map((r) => ({ from: r.from.toISOString(), to: r.to.toISOString() }));
@@ -271,7 +313,7 @@ export async function startPitrRecovery(
   deps: PitrDeps = pitrDeps,
   onSettled?: (outcome: { status: 'completed' | 'failed'; error: string | null }) => void,
 ): Promise<{ recoveryId: number; databaseId: number }> {
-  const unavailable = pitrUnavailable(source);
+  const unavailable = source.serverId != null ? NODE_PITR_REPLAY_REFUSAL : pitrUnavailable(source);
   if (unavailable) throw unprocessable(unavailable, 'pitr_unavailable');
   if (!source.pitrEnabled) throw unprocessable('Point-in-time recovery is not enabled for this database.', 'pitr_disabled');
   if (input.targetTime && input.targetTime.getTime() > Date.now()) throw unprocessable('The target time is in the future.', 'pitr_target_future');
@@ -389,7 +431,7 @@ export async function failInterruptedPitrRecoveries(db: DB, log: (line: string) 
  * base backup when the newest is a day old, then apply the retention. Errors
  * land on the row (`pitr_last_error`) and in the audit log, once per incident.
  */
-export async function pitrMaintenance(db: DB, d: Database, log: (line: string) => void, deps: PitrDeps = pitrDeps, now = Date.now()): Promise<void> {
+export async function pitrMaintenance(db: DB, d: Database, log: (line: string) => void, deps: PitrDeps = d.serverId == null ? pitrDeps : nodePitrDeps(db, d), now = Date.now()): Promise<void> {
   if (!d.pitrEnabled || pitrUnavailable(d) || d.status !== 'running') return;
   const stats = await deps.archiver(d).catch(() => null);
   if (archivingFailing(stats)) {
@@ -401,15 +443,26 @@ export async function pitrMaintenance(db: DB, d: Database, log: (line: string) =
     // A base backup would wait for an archive that does not move.
     return;
   }
-  if (!baseBackupsRunning.has(d.id) && (!d.pitrBaseBackupAt || now - d.pitrBaseBackupAt.getTime() >= PITR_BASE_BACKUP_INTERVAL_MS)) {
+  if (!archiveReaders.has(d.id) && !baseBackupsRunning.has(d.id) && (!d.pitrBaseBackupAt || now - d.pitrBaseBackupAt.getTime() >= PITR_BASE_BACKUP_INTERVAL_MS)) {
     await runPitrBaseBackup(db, d, null, log, deps).catch(() => undefined);
   }
-  if (!recoveriesRunning.has(d.id) && !baseBackupsRunning.has(d.id) && !prunesRunning.has(d.id)) {
+  if (!archiveReaders.has(d.id) && !recoveriesRunning.has(d.id) && !baseBackupsRunning.has(d.id) && !prunesRunning.has(d.id)) {
     const current = await db.query.databases.findFirst({ where: eq(databases.id, d.id) });
-    if (current?.pitrEnabled && !pitrUnavailable(current) && current.status === 'running' && !recoveriesRunning.has(d.id) && !baseBackupsRunning.has(d.id) && !prunesRunning.has(d.id)) {
+    if (current?.pitrEnabled && !pitrUnavailable(current) && current.status === 'running' && !archiveReaders.has(d.id) && !recoveriesRunning.has(d.id) && !baseBackupsRunning.has(d.id) && !prunesRunning.has(d.id)) {
       prunesRunning.add(d.id);
       try {
-        await deps.prune(current, current.pitrRetentionDays, log);
+        const remote = await getSettingJson(db, `pitr_remote:${d.id}`, null);
+        const cfg = remote === null ? null : pitrRemoteConfig.parse(remote);
+        let canPrune = true;
+        if (cfg?.enabled && cfg.mode === 'continuous') {
+          const raw = await getSettingJson(db, `pitr_stream_state:${d.id}`, null);
+          const state = raw === null ? null : pitrStreamState.parse(raw);
+          const inv = await deps.inventory(current);
+          const base = inv.baseBackups.at(-1);
+          canPrune = !!cfg.archiveId && state?.archiveId === cfg.archiveId && !!state.protection && state.protection.baseLabel === base?.label && inv.segments.some((s) => s.name === state.protection!.lastSegment);
+        }
+        if (canPrune) await deps.prune(current, current.pitrRetentionDays, log);
+        else log(`Local WAL retention is held for ${d.name}: the newest base backup is not yet protected by the continuous remote archive.`);
       } catch (err) {
         log(`WAL archive retention failed for ${d.name}: ${err instanceof Error ? err.message : String(err)}`);
       } finally {
