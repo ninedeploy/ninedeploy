@@ -45,7 +45,7 @@ For a later candidate, pass its local image name or immutable reference. Compare
 
 The in-process probe uses Node's event-loop delay histogram at 10 ms resolution. SQLite contention is counted from panel log lines that report busy or locked errors. Storage growth is measured with `du -sk /data` from just before the steady window through completion of the workload, and the receipt also reports logical SQLite file sizes. The storage budget covers panel state. The log queue peak is a two-second sampled observation.
 
-This baseline establishes the healthy workload and the controlled restart budget on the recorded host. The follow-up resilience slice will reuse the workload with a slow node, full disk, and unreachable log destination. Host-loss RPO and restore timing are recorded in the [disaster recovery drill](DISASTER_RECOVERY.md).
+This baseline establishes the healthy workload and controlled restart budget on the recorded host. The [resilience drills](#resilience-drills) reuse it with a slow node, full disk, and unreachable log destination. Host-loss RPO and restore timing are recorded in the [disaster recovery drill](DISASTER_RECOVERY.md).
 
 ## Baseline measurements on November 18, 2026
 
@@ -84,3 +84,46 @@ Both fresh runs passed all 21 checks.
 The queue sampler saw no pending entries in the second run. Both runs delivered every numbered log line and ended with an empty queue. An independent check recomputed route percentiles and queue wait from the raw samples, matched every numbered log at the receiver, and confirmed that zero run-labeled containers, volumes, or networks remained.
 
 The run receipts and raw samples are under `.temp_files/n06-capacity-20261118/run-OJOmmI/` and `.temp_files/n06-capacity-20261118/run-NO855S/`. The observed margins apply to this workload and host. The highest observed route p95 was 58.1 ms against the 350 ms budget.
+
+## Resilience drills
+
+Run the faults separately on the same local Docker engine. Each command provisions a fresh panel, agents, and data. Replace the candidate reference to compare another image.
+
+```sh
+candidate=ghcr.io/ninedeploy/ninedeploy@sha256:113fb9e11ad3f8f94d38020e00e7744ad10c2f57c614afda89f089db2f4e51bf
+node scripts/smoke-capacity-baseline.mjs --image="$candidate" --scenario=slow-node --proof=.temp_files/n06-resilience
+node scripts/smoke-capacity-baseline.mjs --image="$candidate" --scenario=full-disk --proof=.temp_files/n06-resilience
+node scripts/smoke-capacity-baseline.mjs --image="$candidate" --scenario=log-outage --proof=.temp_files/n06-resilience
+```
+
+The baseline budgets still apply. The slow-node deployment queue p95 has a separate 45-second budget. Each scenario also requires independent evidence that the fault reached the product and that recovery completed.
+
+| Fault | Injection | Additional acceptance |
+| --- | --- | --- |
+| Slow node | Delay client-to-agent TCP chunks by 750 ms on one of the two private agents throughout the load. Keep the other agent and the panel daemon on their normal paths. | Forward delayed traffic. The authenticated node test must complete and take at least 750 ms under the fault. It must complete within 8 seconds once the delay is removed. |
+| Full panel data volume | Fill a dedicated 32 MiB tmpfs mounted at the fixture's `/data` starting at second 19. Verify zero available bytes and an actual `ENOSPC` from a bounded write, then hold the pressure for eight seconds. | The public service creation probe receives a 5xx response. The panel reports SQLite full, and the rejected write leaves no service row. After releasing the filler, retry the write, verify it, and remove the test row within 12 seconds. |
+| Unreachable log destination | Close the private HTTP receiver's production-facing listener for the 60-second load. Verify connection refusal from the panel fixture. Restore the same address at the end of the window. | At least 400 entries remain in the durable log queue before restoration, and none of the numbered load lines reach the sink while it is offline. Normal delivery resumes within 120 seconds, drains the queue, and delivers all 1,200 numbered lines exactly once in this connection-refused scenario. |
+
+All scenario receipts record the load and fault budgets before setup. The disk filler refuses any filesystem other than the dedicated 32 MiB tmpfs. The node relay and log receiver controls bind to loopback inside their fixtures. Their tests preserve the sealed agent exchange and re-enable the same receiver without changing the configured destination.
+
+### Resilience measurements on November 19, 2026
+
+The serial runs used the pinned v0.19.0 candidate and the same Docker engine and fixture image digests as the baseline. Each fault had its own fresh panel and two agents. All three fault runs passed their predefined checks. Each completed 480 scheduled reads and six deployments, delivered all 1,200 numbered log lines exactly once, and recorded zero SQLite busy or locked diagnostics.
+
+| Measurement | Slow node | Full disk | Unreachable log destination |
+| --- | ---: | ---: | ---: |
+| Acceptance checks passed | 24/24 | 29/29 | 25/25 |
+| Highest API route p95 | 20.7 ms | 12.9 ms | 22.9 ms |
+| Worst one-second panel event-loop p95 | 14.7 ms | 13.1 ms | 16.5 ms |
+| Deployment queue wait p95 | 4 s | 5 s | 6 s |
+| Peak sampled pending log entries | 0 | 0 | 1,200 |
+| Panel volume growth after settling | 96 KiB | 172 KiB | 256 KiB |
+| Controlled panel restart to usable API | 3.95 s | 3.00 s | 4.44 s |
+
+- **Slow node.** The relay delayed 45 TCP chunks. An authenticated node test took 26 ms before the fault, 786 ms under the fault, and 25 ms after the delay was removed.
+- **Full disk.** The 32 MiB data volume ran out of available bytes and returned `ENOSPC`. The probe held the pressure for 8.00 seconds. SQLite reported full once and the public write returned HTTP 500. The inventory proved the rejected write left no row. After releasing the filler, the probe confirmed the retried write and removed its test row in 312 ms. The expected HTTP 500 belongs to the dedicated write probe. All scheduled reads still returned HTTP 200.
+- **Unreachable log destination.** The panel fixture observed a refused connection. At restoration the queue held 1,200 numbered lines and the sink had received zero. The same destination received all lines without duplicates and the queue emptied in 29.11 seconds.
+
+The healthy control passed all 21 checks after the fixture changes. Its highest route p95 was 8.4 ms and its controlled restart took 2.58 seconds. Independent receipt checks confirmed the HTTP percentiles, the deployment completion records, every numbered log at the receiver, and cleanup of the labeled Docker resources in all four runs.
+
+The receipts and raw samples are under `.temp_files/n06-resilience-20261119/` in `run-UcAGiq` (slow node), `run-Ettyoa` (full disk), `run-TGp1Ib` (log outage), and `run-JZeXv5` (healthy control). These measurements cover each fault in isolation under the stated workload.

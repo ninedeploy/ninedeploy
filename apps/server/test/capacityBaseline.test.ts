@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { capacityChecks, limits, nearestRankP95, profile } from '../../../scripts/lib/capacity-baseline.mjs';
+import { faultChecks, faultProfiles, fullDiskProbe } from '../../../scripts/lib/capacity-resilience.mjs';
 
 const valid = () => ({
   routes: Object.fromEntries(profile.routes.map(route => [route, { count: 120, p95Ms: 25 }])),
@@ -45,5 +46,40 @@ describe('capacity baseline gates', () => {
       'Panel event-loop samples',
       'Missing log lines',
     ]);
+  });
+
+  it('keeps the healthy queue budget and applies the separate slow-node budget', () => {
+    const metrics = { ...valid(), deploymentWaitP95Ms: 40_000 };
+    const slow = { ...limits, deploymentWaitP95Ms: faultProfiles['slow-node'].deploymentWaitP95Ms };
+    expect(capacityChecks(metrics).filter(check => !check.passed).map(check => check.name))
+      .toEqual(['Deployment queue wait p95 ms']);
+    expect(capacityChecks(metrics, slow).every(check => check.passed)).toBe(true);
+  });
+
+  it('requires real fault evidence and bounded recovery', () => {
+    const faults = {
+      'slow-node': { delayedChunks: 1, slowProbeMs: 750, recoveryMs: 8001 },
+      'full-disk': { errno: 'ENOSPC', fullFreeBytes: 0, writeRejected: true, noPartialWrite: true,
+        writeRetried: true, sqliteFullLines: 0, observedHoldMs: 8000, recoveryMs: 2000 },
+      'log-outage': { offlineConnectionRefused: true, deliveredBeforeRestore: 0, pendingBeforeRestore: 0, recoveryMs: 2000 },
+    };
+    for (const [scenario, metrics] of Object.entries(faults)) {
+      expect(faultChecks(scenario, metrics).filter(check => !check.passed)).toHaveLength(1);
+      expect(faultChecks(scenario, {}).every(check => !check.passed)).toBe(true);
+    }
+  });
+
+  it('releases the bounded disk filler if the public write probe throws', async () => {
+    const attempts: string[] = [];
+    const aborted = new Error('fixture request aborted');
+    await expect(fullDiskProbe({
+      disk: async (action: string) => {
+        attempts.push(action);
+        return { errno: 'ENOSPC', after: { freeBytes: 0 } };
+      },
+      call: async () => { throw aborted; },
+      inventory: async () => [],
+    }, {})).rejects.toBe(aborted);
+    expect(attempts).toEqual(['fill', 'release']);
   });
 });

@@ -1,12 +1,7 @@
 import { createServer } from 'node:http';
 
 const counts = new Map();
-createServer(async (request, response) => {
-  if (request.method === 'GET' && request.url === '/receipt') {
-    response.setHeader('content-type', 'application/json');
-    response.end(JSON.stringify(Object.fromEntries(counts)));
-    return;
-  }
+const sink = createServer(async (request, response) => {
   if (request.method === 'POST' && request.url === '/logs') {
     try {
       let body = '';
@@ -26,4 +21,25 @@ createServer(async (request, response) => {
     return;
   }
   response.writeHead(404).end();
-}).listen(8080, '0.0.0.0');
+});
+const open = () => new Promise(resolve => sink.listen(8080, '0.0.0.0', resolve));
+const close = () => new Promise(resolve => {
+  sink.close(resolve);
+  sink.closeAllConnections();
+});
+await open();
+
+createServer(async (request, response) => {
+  if (request.method === 'GET' && request.url === '/receipt') {
+    response.setHeader('content-type', 'application/json');
+    response.end(JSON.stringify(Object.fromEntries(counts)));
+  } else if (request.method === 'POST' && request.url === '/offline') {
+    if (sink.listening) await close();
+    response.writeHead(204).end();
+  } else if (request.method === 'POST' && request.url === '/online') {
+    if (!sink.listening) await open();
+    response.writeHead(204).end();
+  } else {
+    response.writeHead(404).end();
+  }
+}).listen(8081, '127.0.0.1');

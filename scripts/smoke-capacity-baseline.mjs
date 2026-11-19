@@ -9,11 +9,16 @@ import { fileURLToPath } from 'node:url';
 import { setTimeout as pause } from 'node:timers/promises';
 import { promisify } from 'node:util';
 import { capacityChecks, limits, nearestRankP95, profile } from './lib/capacity-baseline.mjs';
+import { faultChecks, faultProfiles, fullDiskProbe } from './lib/capacity-resilience.mjs';
 import { removeOwnedSmokeResource } from './lib/owned-smoke-resources.mjs';
 
 const option = name => process.argv.find(arg => arg.startsWith(`--${name}=`))?.slice(name.length + 3);
 const image = option('image');
 assert.match(image ?? '', /^[A-Za-z0-9][A-Za-z0-9._:/@-]*$/, 'Pass --image=<local NineDeploy candidate>');
+const scenario = option('scenario') ?? 'baseline';
+assert.ok(scenario === 'baseline' || Object.hasOwn(faultProfiles, scenario), 'Use baseline, slow-node, full-disk, or log-outage');
+const fault = faultProfiles[scenario];
+const budgets = scenario === 'slow-node' ? { ...limits, deploymentWaitP95Ms: fault.deploymentWaitP95Ms } : limits;
 const output = resolve(option('proof') ?? '.temp_files/n06-capacity');
 mkdirSync(output, { recursive: true });
 const proof = mkdtempSync(join(output, 'run-'));
@@ -31,7 +36,8 @@ const privateImage = `${registry}:5000/n06/web:baseline`;
 const fixtures = ['docker:28-dind', 'registry:2', workImage, 'traefik:3'];
 const archive = join(proof, 'preload.tar');
 const resources = [];
-const receipt = { profile, limits, owner, image, cleanup: false };
+const receipt = { scenario, profile, limits: budgets, owner, image, cleanup: false,
+  ...(fault ? { fault: { settings: fault } } : {}) };
 const write = (file, value) => writeFileSync(join(proof, file), `${JSON.stringify(value, null, 2)}\n`);
 const execAsync = promisify(execFile);
 const options = timeout => ({ encoding: 'utf8', windowsHide: true, maxBuffer: 16 << 20, timeout });
@@ -48,9 +54,9 @@ function run(container, args, networkArgs = bridge) {
   resources.push(['container', container]);
   return docker(['run', '-d', '--name', container, '--label', label, ...networkArgs, ...args]);
 }
-function volume(value) {
+function volume(value, options = []) {
   resources.push(['volume', value]);
-  docker(['volume', 'create', '--label', label, value]);
+  docker(['volume', 'create', '--label', label, ...options, value]);
 }
 async function exec(container, args) {
   const { stdout } = await execAsync('docker', ['exec', container, ...args], options(20_000));
@@ -88,7 +94,7 @@ async function until(read, description, timeout, retryRequestErrors = false) {
   throw new Error(`Timed out waiting for ${description}${lastError ? `: ${lastError.message}` : ''}`);
 }
 
-let base, token, panelId, daemonId, sinkId;
+let base, token, panelId, daemonId, sinkId, relayId;
 let phase = 'fixture setup';
 const activatePort = () => {
   const binding = docker(['port', panelId, '3000/tcp']);
@@ -112,9 +118,13 @@ async function api(path, method, body) {
 }
 const health = () => until(() => api('/health'), 'panel health', 40_000, true);
 const inventory = () => api('/v1/services');
-const fetchSink = () => exec(sinkId, ['node', '-e',
-  "fetch('http://127.0.0.1:8080/receipt',{signal:AbortSignal.timeout(3000)}).then(async r=>{if(!r.ok)throw Error(r.status);console.log(await r.text())})"])
-  .then(raw => JSON.parse(raw));
+async function control(container, port, endpoint, method = 'GET') {
+  const url = `http://127.0.0.1:${port}/${endpoint}`;
+  const command = "fetch(process.argv[1],{method:process.argv[2],signal:AbortSignal.timeout(3000)}).then(async r=>{if(!r.ok)throw Error(r.status);console.log(await r.text())})";
+  const raw = await exec(container, ['node', '-e', command, url, method]);
+  return raw ? JSON.parse(raw) : null;
+}
+const fetchSink = () => control(sinkId, 8081, 'receipt');
 const storage = async () => JSON.parse(await exec(panelId, ['node', '-e',
   "const fs=require('node:fs');const child=require('node:child_process');console.log(JSON.stringify({dbBytes:fs.statSync('/data/ninedeploy.db').size, volumeBytes:Number(child.execFileSync('du',['-sk','/data']).toString().trim().split(/\\s+/)[0])*1024}))"]));
 
@@ -196,7 +206,8 @@ try {
   docker(['save', '-o', archive, workImage, 'traefik:3'], 120_000);
   resources.push(['network', network]);
   docker(['network', 'create', '--label', label, network]);
-  volume(data);
+  volume(data, scenario === 'full-disk' ? ['--driver', 'local', '--opt', 'type=tmpfs', '--opt', 'device=tmpfs',
+    '--opt', 'o=size=32m,mode=0700'] : []);
   run(registry, ['--no-healthcheck', fixtures[1]]);
   sinkId = run(sink, ['--no-healthcheck', ...mount(fixture('capacity-log-sink.mjs'), '/tmp/n06-sink.mjs'),
     '--entrypoint', 'node', image, '/tmp/n06-sink.mjs']);
@@ -213,7 +224,8 @@ try {
     '-e', `DOCKER_HOST=tcp://${panelDaemon}:2375`, '-e', 'NINEDEPLOY_ALLOW_PRIVATE_EGRESS=1',
     '-e', 'NINEDEPLOY_DEPLOY_CONCURRENCY=1', '-e', 'NINEDEPLOY_NODE_SLEEP_AUTOMATION=off',
     '-e', `NINEDEPLOY_SETUP_TOKEN=${setupToken}`, '-e', `NINEDEPLOY_JWT_SECRET=${randomBytes(32).toString('hex')}`,
-    ...mount(fixture('capacity-event-loop.mjs'), '/tmp/n06-probe.mjs'), image,
+    ...mount(fixture('capacity-event-loop.mjs'), '/tmp/n06-probe.mjs'),
+    ...(scenario === 'full-disk' ? mount(fixture('capacity-disk-pressure.mjs'), '/tmp/n06-disk.mjs') : []), image,
     'node', '--import', '/tmp/n06-probe.mjs', 'apps/server/dist/server.js']);
   activatePort();
   await health();
@@ -230,7 +242,13 @@ try {
     volume(agentData);
     const nodeId = await startDaemon(nodeDaemon, ['-v', `${agentData}:${agentHome}`]);
     const host = docker(['inspect', nodeId, '--format', '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}']);
-    const registered = await api('/v1/servers', 'POST', { name: `Capacity node ${index + 1}`, host, port: 4600 });
+    const delayedNode = scenario === 'slow-node' && index === 0;
+    if (delayedNode) {
+      relayId = run(name('relay'), ['--no-healthcheck', ...mount(fixture('capacity-agent-relay.mjs'), '/tmp/n06-relay.mjs'),
+        '--entrypoint', 'node', image, '/tmp/n06-relay.mjs', String(fault.delayMs)],
+      ['--network', `container:${nodeId}`]);
+    }
+    const registered = await api('/v1/servers', 'POST', { name: `Capacity node ${index + 1}`, host, port: delayedNode ? 4601 : 4600 });
     assert.match(registered.tokenSha256, /^[a-f0-9]{64}$/);
     run(agent, ['--user', '0', '-w', agentHome, '-v', `${agentData}:${agentHome}`,
       '-e', 'DOCKER_HOST=tcp://127.0.0.1:2375', '-e', 'NINEDEPLOY_AGENT=1',
@@ -267,7 +285,22 @@ try {
   const before = await storage();
 
   phase = 'steady workload';
-  console.log(`Fixture ready. Running ${profile.steadySeconds} seconds of scheduled load.`);
+  const nodeProbe = async () => {
+    const started = performance.now();
+    assert.ok((await api(`/v1/servers/${placements[1]}/test`, 'POST')).ok);
+    return performance.now() - started;
+  };
+  if (scenario === 'slow-node') {
+    receipt.fault.cleanProbeMs = await nodeProbe();
+    assert.ok((await control(relayId, 4602, 'slow', 'POST')).slow);
+  }
+  if (scenario === 'log-outage') {
+    await control(sinkId, 8081, 'offline', 'POST');
+    const target = `http://${sink}:8080/logs`;
+    const independent = "fetch(process.argv[1],{signal:AbortSignal.timeout(3000)}).then(()=>console.log('reachable'),e=>console.log(e.cause?.code||e.name))";
+    receipt.fault.offlineConnectionRefused = (await exec(panelId, ['node', '-e', independent, target])) === 'ECONNREFUSED';
+  }
+  console.log(`Fixture ready. Running ${profile.steadySeconds} seconds of scheduled load (${scenario}).`);
   const startedAt = Date.now();
   const start = performance.now();
   const backlog = [];
@@ -279,8 +312,20 @@ try {
   const observations = Array.from({ length: profile.steadySeconds / 2 }, (_, index) => timed(index * 2000, async () => {
     backlog.push({ at: Date.now(), ...await queue() });
   }));
+  const injection = [];
+  if (scenario === 'slow-node') injection.push(timed(12_000, async () => { receipt.fault.slowProbeMs = await nodeProbe(); }));
+  if (scenario === 'full-disk') injection.push(timed(fault.startSecond * 1000, () => fullDiskProbe({
+    disk: async action => JSON.parse(await exec(panelId, ['node', '/tmp/n06-disk.mjs', action])),
+    inventory,
+    call: async (action, value) => {
+      const response = action === 'create'
+        ? await fetchApi('/v1/services', 'POST', { name: value, type: 'docker', image: privateImage, port: 80 })
+        : await fetchApi(`/v1/services/${value}`, 'DELETE');
+      return { status: response.status, body: await response.json().catch(() => null) };
+    },
+  }, receipt.fault)));
   const outcomes = await Promise.allSettled([Promise.all(requests), Promise.all(queued), Promise.all(logs),
-    Promise.all(observations), pause(profile.steadySeconds * 1000)]);
+    Promise.all(observations), pause(profile.steadySeconds * 1000), ...injection]);
   const rejected = outcomes.find(outcome => outcome.status === 'rejected');
   if (rejected) throw rejected.reason;
   const [requestOutcome, queueOutcome] = outcomes;
@@ -289,19 +334,39 @@ try {
   const endedAt = startedAt + profile.steadySeconds * 1000;
   write('http.json', samples);
   write('backlog.json', backlog);
+  if (scenario === 'slow-node') {
+    const relay = await control(relayId, 4602, 'normal', 'POST');
+    assert.equal(relay.slow, false);
+    receipt.fault.delayedChunks = relay.delayedChunks;
+    receipt.fault.forwardedBytes = relay.forwardedBytes;
+    receipt.fault.recoveryMs = await nodeProbe();
+  }
+  let logRestoredAt;
+  if (scenario === 'log-outage') {
+    receipt.fault.pendingBeforeRestore = (await queue()).pendingEntries;
+    receipt.fault.deliveredBeforeRestore = Object.keys(await fetchSink()).filter(key => key.startsWith('load-')).length;
+    await control(sinkId, 8081, 'online', 'POST');
+    logRestoredAt = performance.now();
+  }
   const loop = (await exec(panelId, ['cat', '/tmp/n06-event-loop.ndjson'])).split(/\r?\n/).map(line => JSON.parse(line))
     .filter(window => window.at >= startedAt + 1000 && window.at <= endedAt && window.count > 0);
   write('event-loop.json', loop);
-  const deploys = await deployResults(deploymentIds, profile.settleMs);
-  write('deployments.json', deploys);
   const expectedLogs = profile.logBursts.length * profile.linesPerBurst;
-  const deliveryDone = await until(async () => {
+  const delivery = until(async () => {
     const status = await queue();
     const counts = await fetchSink();
-    return status.pendingEntries === 0 && Object.keys(counts).filter(key => key.startsWith('load-')).length >= expectedLogs
-      && { status, counts };
-  }, 'log delivery and empty queue', profile.settleMs).catch(async () => ({ status: await queue(), counts: await fetchSink() }));
+    if (status.pendingEntries !== 0 || Object.keys(counts).filter(key => key.startsWith('load-')).length < expectedLogs) return false;
+    if (logRestoredAt !== undefined) receipt.fault.recoveryMs = performance.now() - logRestoredAt;
+    return { status, counts };
+  }, 'log delivery and empty queue', scenario === 'log-outage' ? fault.recoveryMs : profile.settleMs)
+    .catch(async () => ({ status: await queue(), counts: await fetchSink() }));
+  const [drained, deployed] = await Promise.allSettled([delivery, deployResults(deploymentIds, profile.settleMs)]);
+  if (drained.status === 'rejected') throw drained.reason;
+  const deliveryDone = drained.value;
   write('delivery.json', deliveryDone);
+  if (deployed.status === 'rejected') throw deployed.reason;
+  const deploys = deployed.value;
+  write('deployments.json', deploys);
   const after = await storage();
 
   phase = 'controlled restart';
@@ -318,8 +383,10 @@ try {
   assert.equal((await queue()).pendingEntries, deliveryDone.status.pendingEntries);
   const panelRestartMs = performance.now() - restartAt;
   const panelLogs = await execAsync('docker', ['logs', '--since', new Date(startedAt).toISOString(), panelId], options(30_000));
-  const sqliteBusyLines = (panelLogs.stdout + panelLogs.stderr).split(/\r?\n/)
+  const logLines = (panelLogs.stdout + panelLogs.stderr).split(/\r?\n/);
+  const sqliteBusyLines = logLines
     .filter(line => /SQLITE_BUSY|database (?:table )?is locked|database is busy/i.test(line)).length;
+  if (scenario === 'full-disk') receipt.fault.sqliteFullLines = logLines.filter(line => /SQLITE_FULL|database or disk is full/i.test(line)).length;
   const expectedIds = Array.from({ length: expectedLogs }, (_, index) => deliveryDone.counts[`load-${index}`] ?? 0);
   receipt.storage = { before, after };
   receipt.metrics = {
@@ -338,7 +405,7 @@ try {
     logDuplicateLines: expectedIds.reduce((sum, count) => sum + Math.max(0, count - 1), 0),
     panelRestartMs,
   };
-  receipt.checks = capacityChecks(receipt.metrics);
+  receipt.checks = [...capacityChecks(receipt.metrics, budgets), ...faultChecks(scenario, receipt.fault)];
   for (const check of receipt.checks) console.log(`${check.passed ? 'PASS' : 'FAIL'} ${check.name}: ${check.value} (threshold ${check.limit})`);
   if (!receipt.checks.every(check => check.passed)) process.exitCode = 1;
 } catch (error) {

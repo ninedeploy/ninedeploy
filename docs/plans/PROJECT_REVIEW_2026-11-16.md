@@ -94,7 +94,7 @@ Implementation update: panel checkpoints and continuous archives passed the full
 - Work: define representative service/node/deployment/log volumes; measure API p95, event-loop delay, SQLite busy errors, disk growth, log backlog, recovery duration, and queue wait. Include full disk, a slow node, and an unreachable log destination.
 - Acceptance: a repeatable fixture, fixed workload, predefined acceptance thresholds, and recorded measurements. Select architectural changes only for measured bottlenecks.
 
-The first slice covers normal load and a controlled panel restart. The [capacity baseline](../CAPACITY_BASELINE.md) records the exact workload, budgets, candidate, and results. The slow-node, full-disk, and unreachable-log-destination cases remain in N06.
+The [capacity baseline](../CAPACITY_BASELINE.md) records the healthy load and controlled restart. Separate [resilience drills](../CAPACITY_BASELINE.md#resilience-measurements-on-november-19-2026) cover a slow agent node, a full panel data volume, and a log destination that refuses connections.
 
 **N07 — Restart behavior for user-visible in-memory state. P2 / M. Former S6.**
 
