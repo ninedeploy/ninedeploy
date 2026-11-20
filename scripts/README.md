@@ -37,6 +37,17 @@ A smoke test drives real Docker, often with a built panel image. Most run in CI 
 
 `smoke-pitr-ui.mjs` checks the remote PostgreSQL archive screen from the local source checkout. Install the workspace dependencies and the separate `e2e/` Playwright/Chromium dependencies using the command below, then run it from the repository root. It starts Vite on an ephemeral loopback port, mounts the actual component/authentication/SDK, and replaces only HTTP responses with a closed protocol fixture. It checks both page overflow and clipping of individual confirmation buttons. It writes screenshots and a receipt to a new run directory under `--proof` (default `.temp_files/pitr-ui`) and always closes its browser/server. It needs no Docker, live panel credentials or S3 account; this is UI acceptance, not a storage-provider or recovery-engine drill.
 
-`smoke-browser-e2e.mjs` (`pnpm smoke:browser`) drives the web panel with Playwright. It covers the setup form, the deploy wizard, the Turkish locale and a phone-width pass. It runs against an image in Docker-in-Docker, which it starts and removes by name. `.github/workflows/browser-e2e.yml` runs it after each green main CI run, on that run's `main-<sha>` image. Playwright lives in `e2e/`, with its own lockfile, outside the panel workspace. Install it once with `pnpm --dir e2e install && pnpm --dir e2e exec playwright install chromium`. Then run `node scripts/smoke-browser-e2e.mjs --image=<image>`. `--keep` leaves the panel running, and arguments after `--` go to Playwright.
+`smoke-browser-e2e.mjs` (`pnpm smoke:browser`) drives an isolated panel in Docker-in-Docker with Playwright. The journeys cover setup, first deployment, environment changes and rollback, PostgreSQL backup and restore, approval, member permissions, domain routing configuration, Turkish, and both classic and compact layouts on desktop and phone. The restore test checks PostgreSQL data through the fixture's private Docker daemon. Install the locked browser dependencies with `pnpm --dir e2e install --frozen-lockfile && pnpm --dir e2e exec playwright install chromium`.
+
+The Release workflow checks the candidate's image revision against the source checkout and runs the five core projects by digest. Each required project must execute and pass without skips or retries. A failed or skipped gate holds the GitHub Release and `:latest`. The separate Browser journeys workflow continues to test green main builds and runs nightly.
+
+```sh
+node scripts/smoke-browser-e2e.mjs --image=<candidate-digest-reference> -- \
+  --project=setup --project=desktop --project=phone --project=desktop-compact --project=phone-compact
+```
+
+Arguments after `--` go to Playwright. `--keep` leaves the disposable panel running for debugging.
+
+On November 21, 2026, the five core projects passed all 36 journeys locally on the published v0.19.0 image at digest `sha256:113fb9e11ad3f8f94d38020e00e7744ad10c2f57c614afda89f089db2f4e51bf`. The image revision was `0a59b5ed4068334b5ee0d1ad36e43959e92525ba`. The release validator accepted the final Playwright JSON and rejected the earlier report from a fixture run that queried PostgreSQL before it was ready. The restore test now waits for a real SQL response and proves that the restored row predates the snapshot while a post-snapshot row is gone. Both phone projects verified that layout choices survive reload. Local receipts are under `.temp_files/n08-browser-20261120/`.
 
 Before you run any smoke against a Docker daemon, check which daemon it is. A smoke that boots the panel recreates the panel's Traefik container on that daemon.

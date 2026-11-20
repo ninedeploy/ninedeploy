@@ -26,3 +26,21 @@ test('phone: the services list opens the service the desktop journey deployed', 
   await assertNoHorizontalOverflow(page, 'service page');
   w.assertClean();
 });
+
+test('phone: switching layouts in Appearance survives reload', async ({ page, layout }) => {
+  const w = watch(page);
+  await page.goto('/settings?section=appearance');
+  const classic = page.getByRole('button', { name: 'Classic', exact: true });
+  const compact = page.getByRole('button', { name: 'Compact (preview)', exact: true });
+  const initial = layout === 'classic' ? classic : compact;
+  const other = layout === 'classic' ? compact : classic;
+  await expect(initial).toHaveAttribute('aria-pressed', 'true');
+  await other.click();
+  await expect(other).toHaveAttribute('aria-pressed', 'true');
+  await page.reload();
+  await expect(other).toHaveAttribute('aria-pressed', 'true');
+  await initial.click();
+  await expect(initial).toHaveAttribute('aria-pressed', 'true');
+  await assertNoHorizontalOverflow(page, 'Appearance after switching layouts');
+  w.assertClean();
+});

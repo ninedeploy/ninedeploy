@@ -22,7 +22,7 @@ name: Release
 # r581: publication is gated on the end-to-end smokes. Installed servers
 # discover a release through the GitHub Releases API (updateCheck.ts, and
 # install.sh's latest_tag since r571) and docker installs follow `:latest`,
-# so neither may point at an image nobody has upgraded onto. Three jobs:
+# so neither may point at an image nobody has upgraded onto. The main jobs:
 #   1. publish-image — checks, then builds and pushes ONLY `:vX.Y.Z` and
 #      verifies its multi-arch manifest. Nothing discovers that tag yet.
 #      r700: then signs the pushed DIGEST (cosign keyless) and attaches its
@@ -30,7 +30,10 @@ name: Release
 #   2. smoke-published-image — the upgrade smoke (previous published release
 #      → this tag, on one data volume) and the user-journey smoke, both on
 #      the pushed image.
-#   3. promote-release — only after both smokes pass: re-points `:latest`
+#   3. browser-release-gate — the core Playwright journeys on the signed
+#      image digest, using the source commit from publish-image.
+#   4. promote-release — waits for the image smokes, browser gate, and desktop
+#      installers. It re-points `:latest`
 #      at the already-pushed manifest (when this tag is the highest; no
 #      rebuild) and creates the GitHub Release. r701: as a draft carrying
 #      the source archive, install.sh, SHA256SUMS and its Sigstore bundle,
@@ -73,6 +76,9 @@ permissions:
 jobs:
   publish-image:
     runs-on: ubuntu-latest
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
+      commit: ${{ steps.source.outputs.commit }}
     # The release checks plus the two-platform build took 24 min in v0.15.4;
     # v0.15.5 hit 30 min mid-build and was cancelled before anything was pushed.
     timeout-minutes: 60
@@ -129,6 +135,12 @@ jobs:
             echo "::error::Provenance mismatch: tag=$v package.json=$pkg version.ts=$ts — tag the commit whose bump you mean."
             exit 1
           fi
+
+      - name: Record the checked-out source commit
+        id: source
+        run: |
+          set -euo pipefail
+          printf 'commit=%s\n' "$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       # "Release checks" below re-ran, on the tagged commit, exactly what main
       # CI's "Typecheck · Lint · Build · Test" job runs on every push to main
@@ -213,6 +225,8 @@ jobs:
           # tag in the default branch case and buildx
           # rejects it.
           images: ghcr.io/ninedeploy/ninedeploy
+          labels: |
+            org.opencontainers.image.revision=${{ steps.source.outputs.commit }}
           # Branch references are skipped by the trigger
           # itself (`on: push: tags: ['v*']`) so no branch
           # slug is ever produced. The previous attempt used
@@ -764,14 +778,87 @@ jobs:
       APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
       APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
 
+  browser-release-gate:
+    name: Browser release gate
+    needs: publish-image
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.publish-image.outputs.commit }}
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 26.12.1
+
+      - name: Install Playwright and Chromium
+        run: |
+          pnpm --dir e2e install --frozen-lockfile
+          pnpm --dir e2e exec playwright install --with-deps chromium
+
+      - name: Verify and test the signed build digest in the browser
+        env:
+          CANDIDATE_DIGEST: ${{ needs.publish-image.outputs.digest }}
+          SOURCE_COMMIT: ${{ needs.publish-image.outputs.commit }}
+        run: |
+          set -euo pipefail
+          [[ "$CANDIDATE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          [[ "$SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$SOURCE_COMMIT"
+          candidate="ghcr.io/ninedeploy/ninedeploy@${CANDIDATE_DIGEST}"
+          docker pull "$candidate"
+          revision="$(docker image inspect "$candidate" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')"
+          test "$revision" = "$SOURCE_COMMIT"
+          echo "Browser candidate: $candidate ($SOURCE_COMMIT)"
+          export PLAYWRIGHT_JSON_OUTPUT_FILE="$PWD/e2e/test-results/release-journeys.json"
+          node scripts/smoke-browser-e2e.mjs --image="$candidate" -- \
+            --project=setup --project=desktop --project=phone --project=desktop-compact --project=phone-compact \
+            --reporter=list,html,json
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          import { readFileSync } from 'node:fs';
+          const { stats, suites } = JSON.parse(readFileSync(process.env.PLAYWRIGHT_JSON_OUTPUT_FILE, 'utf8'));
+          const collect = suite => [...(suite.specs ?? []).flatMap(spec => spec.tests), ...(suite.suites ?? []).flatMap(collect)];
+          const tests = suites.flatMap(collect);
+          assert.deepEqual([stats.unexpected, stats.flaky, stats.skipped], [0, 0, 0]);
+          assert.equal(tests.length, stats.expected);
+          assert.ok(tests.every(test => test.status === 'expected' && test.results.length === 1 && test.results[0].status === 'passed'));
+          assert.deepEqual([...new Set(tests.map(test => test.projectName))].sort(),
+            ['desktop', 'desktop-compact', 'phone', 'phone-compact', 'setup']);
+          console.log(`Verified ${tests.length} browser tests across five required projects.`);
+          JS
+          printf 'Browser checks passed for `%s` at `%s`.\n' "$candidate" "$SOURCE_COMMIT" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Preserve the browser report and traces
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-browser-journeys-${{ github.run_attempt }}
+          path: |
+            e2e/playwright-report
+            e2e/test-results
+          retention-days: 14
+          if-no-files-found: ignore
+
   promote-release:
-    needs: [publish-image, smoke-published-image, desktop]
+    needs: [publish-image, smoke-published-image, desktop, browser-release-gate]
     runs-on: ubuntu-latest
     # Downloading and attaching ~600 MB of desktop installers (R6).
     timeout-minutes: 30
     # publish-npm reads the r573 decision (does this tag move `latest`?).
     outputs:
       move_latest: ${{ steps.latest.outputs.move }}
+    env:
+      CANDIDATE_DIGEST: ${{ needs.publish-image.outputs.digest }}
+      SOURCE_COMMIT: ${{ needs.publish-image.outputs.commit }}
     permissions:
       # `contents: write` is needed to create the GitHub Release and upload
       # its assets; the workflow's contents: read default is too narrow
@@ -784,8 +871,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # CHANGELOG.md is attached to the Release from the TAG's tree.
-          ref: ${{ env.RELEASE_TAG }}
+          # The assets and release notes use the source exercised by the gate.
+          ref: ${{ needs.publish-image.outputs.commit }}
 
       # r573: `:latest` is what fresh `install.sh --docker` runs on older
       # installers and a manual `docker pull` resolve. Every run used to
@@ -833,6 +920,7 @@ jobs:
         run: |
           set -euo pipefail
           git fetch --no-tags --depth=1 origin "+refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"
+          test "$(git rev-parse "refs/tags/${RELEASE_TAG}^{commit}")" = "$SOURCE_COMMIT"
           out=release-assets
           rm -rf "$out" && mkdir "$out"
           archive="ninedeploy-${RELEASE_TAG}.tar.gz"
@@ -941,7 +1029,6 @@ jobs:
           echo "The $RELEASE_TAG release carries all of its assets."
 
       - name: Set up Docker Buildx
-        if: steps.latest.outputs.move == 'true'
         uses: docker/setup-buildx-action@988b5a0280414f521da01fcc63a27aeeb4b104db # v6.7.0
 
       - name: Log in to GHCR
@@ -961,8 +1048,11 @@ jobs:
         run: |
           set -euo pipefail
           repo=ghcr.io/ninedeploy/ninedeploy
-          docker buildx imagetools create --tag "${repo}:latest" "${repo}:${RELEASE_TAG}"
-          want="$(docker buildx imagetools inspect "${repo}:${RELEASE_TAG}" --format '{{json .Manifest}}' | jq -r .digest)"
+          want="$CANDIDATE_DIGEST"
+          [[ "$want" =~ ^sha256:[0-9a-f]{64}$ ]]
+          tagged="$(docker buildx imagetools inspect "${repo}:${RELEASE_TAG}" --format '{{json .Manifest}}' | jq -r .digest)"
+          test "$tagged" = "$want"
+          docker buildx imagetools create --tag "${repo}:latest" "${repo}@${want}"
           got="$(docker buildx imagetools inspect "${repo}:latest" --format '{{json .Manifest}}' | jq -r .digest)"
           if [ -z "$want" ] || [ "$want" != "$got" ]; then
             echo "::error::${repo}:latest is ${got:-unknown}, expected ${RELEASE_TAG}'s ${want:-unknown}"
@@ -983,6 +1073,10 @@ jobs:
           MOVE_LATEST: ${{ steps.latest.outputs.move }}
         run: |
           set -euo pipefail
+          repo=ghcr.io/ninedeploy/ninedeploy
+          [[ "$CANDIDATE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          tagged="$(docker buildx imagetools inspect "${repo}:${RELEASE_TAG}" --format '{{json .Manifest}}' | jq -r .digest)"
+          test "$tagged" = "$CANDIDATE_DIGEST"
           draft="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)"
           if [ "$draft" = "true" ]; then
             gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest="$MOVE_LATEST"

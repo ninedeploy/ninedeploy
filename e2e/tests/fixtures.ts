@@ -27,7 +27,9 @@ export const test = base.extend<{ layout: PanelLayout }>({
         if (sessionStorage.getItem(k) === null) sessionStorage.setItem(k, v);
       }
     }, saved);
-    if (layout === 'compact') await page.addInitScript(() => localStorage.setItem('ninedeploy_layout', 'compact'));
+    if (layout === 'compact') await page.addInitScript(() => {
+      if (localStorage.getItem('ninedeploy_layout') === null) localStorage.setItem('ninedeploy_layout', 'compact');
+    });
     await use(page);
   },
 });

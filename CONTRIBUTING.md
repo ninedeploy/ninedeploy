@@ -68,6 +68,8 @@ One-click templates are reviewed for pinned images and closed-by-default exposur
 
 Maintainers tag releases. Each release's `CHANGELOG.md` section opens with a block for the people who run NineDeploy: **Highlights**, one to three bullets a user notices, and an **Action needed:** line (`No.`, optionally with a short note, or `Yes: <what to do>`). The GitHub release notes lead with that block (`scripts/release-notes.mjs`), and `pnpm release:tag` refuses a version whose section lacks it. A stable marker (below) written in the section is carried into the release notes.
 
+The Release workflow checks the signed build digest and runs the core Playwright journeys from its source commit. Release promotion requires the browser gate, the Docker smokes, and the desktop installers to succeed. The browser job retains the report and any failure traces. [Browser journey commands](scripts/README.md#browser-journeys)
+
 Every release is offered at once to panels on the default channel. Panels on the **stable** channel get only the release that the `stable` tag points at. Once a day, `.github/workflows/stable-channel.yml` moves that tag to the newest release that has been out for 7 days. Two markers in a GitHub release's notes change that:
 
 - `<!-- stable: hold -->` keeps a release off stable, for example while a regression is investigated.

@@ -1,4 +1,5 @@
-import { readFileSync, existsSync, statSync, readdirSync, mkdtempSync, mkdirSync, writeFileSync, copyFileSync, rmSync } from 'node:fs';
+// biome-ignore-all lint/suspicious/noTemplateCurlyInString: Assertions compare literal shell and GitHub Actions expressions.
+import { readFileSync, existsSync, statSync, readdirSync, mkdtempSync, mkdirSync, writeFileSync, copyFileSync, rmSync, rmdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -9,6 +10,84 @@ import { afterAll, describe, expect, it } from 'vitest';
 type Step = { name?: string; run?: string; uses?: string; with?: Record<string, unknown>; env?: Record<string, string> };
 type Workflow = { jobs: Record<string, { steps: Step[] }> };
 const readWorkflow = (name: string) => load(readFileSync(new URL(`../../../.github/workflows/${name}`, import.meta.url), 'utf8')) as Workflow;
+
+describe('N08 release browser gate', () => {
+  it('tests the signed build digest from the exact source and blocks promotion on a failed or skipped job', () => {
+    const { jobs } = readWorkflow('release-publish.yml') as unknown as { jobs: Record<string, {
+      needs?: string | string[];
+      if?: string;
+      'continue-on-error'?: boolean;
+      outputs?: Record<string, string>;
+      permissions?: Record<string, string>;
+      steps: Step[];
+    }> };
+    const publish = jobs['publish-image']!;
+    const gate = jobs['browser-release-gate']!;
+    const promotion = jobs['promote-release']!;
+    expect(publish.outputs?.digest).toBe('${{ steps.push.outputs.digest }}');
+    expect(gate.needs).toBe('publish-image');
+    expect(gate.if).toBeUndefined();
+    expect(gate['continue-on-error']).toBeUndefined();
+    expect(gate.permissions).toEqual({ contents: 'read' });
+    expect(gate.steps[0]?.with).toMatchObject({
+      ref: '${{ needs.publish-image.outputs.commit }}', 'persist-credentials': false,
+    });
+    const run = gate.steps.find(step => step.run?.includes('smoke-browser-e2e.mjs'));
+    expect(run?.env).toMatchObject({ CANDIDATE_DIGEST: '${{ needs.publish-image.outputs.digest }}' });
+    expect(run?.run).toContain('ghcr.io/ninedeploy/ninedeploy@${CANDIDATE_DIGEST}');
+    expect(run?.run).toContain('test "$revision" = "$SOURCE_COMMIT"');
+    for (const project of ['setup', 'desktop', 'phone', 'desktop-compact', 'phone-compact']) {
+      expect(run?.run).toContain(`--project=${project}`);
+    }
+    expect(run?.run).not.toContain('--project=screens');
+    expect(promotion.needs).toContain('browser-release-gate');
+    expect(promotion.if).toBeUndefined();
+    expect(promotion['continue-on-error']).toBeUndefined();
+  });
+
+  it('runs the workflow report validator and rejects absent, skipped, failed and retried coverage', () => {
+    const gate = readWorkflow('release-publish.yml').jobs['browser-release-gate']!;
+    const run = gate.steps.find(step => step.run?.includes('smoke-browser-e2e.mjs'))?.run;
+    const validator = run?.match(/node --input-type=module <<'JS'\n([\s\S]*?)\nJS(?:\n|$)/)?.[1];
+    expect(validator).toBeTruthy();
+    const directory = mkdtempSync(join(tmpdir(), 'nd-browser-receipt-'));
+    const file = join(directory, 'report.json');
+    const report = () => ({
+      stats: { expected: 5, flaky: 0, unexpected: 0, skipped: 0 },
+      suites: [{ suites: [{ specs: [{
+        tests: ['setup', 'desktop', 'phone', 'desktop-compact', 'phone-compact'].map(projectName =>
+          ({ projectName, status: 'expected', results: [{ status: 'passed' }] })),
+      }] }] }],
+    });
+    function check(data: ReturnType<typeof report>, valid: boolean) {
+      writeFileSync(file, JSON.stringify(data));
+      const result = spawnSync(process.execPath, ['--input-type=module', '-e', validator!], {
+        encoding: 'utf8', env: { ...process.env, PLAYWRIGHT_JSON_OUTPUT_FILE: file }, timeout: 5_000,
+      });
+      expect(result.error).toBeUndefined();
+      expect(result.status).toBe(valid ? 0 : 1);
+    }
+    try {
+      check(report(), true);
+      const omitted = report();
+      omitted.suites[0]!.suites[0]!.specs[0]!.tests.pop();
+      omitted.stats.expected--;
+      check(omitted, false);
+      const skipped = report();
+      skipped.stats.skipped++;
+      check(skipped, false);
+      const failed = report();
+      failed.suites[0]!.suites[0]!.specs[0]!.tests[0]!.results[0]!.status = 'failed';
+      check(failed, false);
+      const retried = report();
+      retried.suites[0]!.suites[0]!.specs[0]!.tests[0]!.results.unshift({ status: 'failed' });
+      check(retried, false);
+    } finally {
+      rmSync(file, { force: true });
+      rmdirSync(directory);
+    }
+  });
+});
 
 describe('release delivery invariants', () => {
   it('requires the October 2026 Node security baseline for the release and Docker runtime', () => {
@@ -393,7 +472,6 @@ describe('r581: publication is gated on the end-to-end smokes', () => {
     const composeRestore = steps.findIndex((s) => s.run?.includes('--compose-release-only'));
     const nodeCanary = steps.findIndex((s) => s.run?.includes('scripts/smoke-node-canary.mjs'));
     expect(nodeCanary).toBeGreaterThan(nodeOps);
-    // biome-ignore lint/suspicious/noTemplateCurlyInString: Match the workflow's literal shell variable.
     expect(steps[nodeCanary]!.run).toBe('node scripts/smoke-node-canary.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}" --proof=.temp_files/release-node-smoke');
     expect(steps[nodeCanary]!.if).toBe("matrix.suite == 'public-canary'");
     expect(steps[nodeCanary]!['timeout-minutes']).toBeGreaterThan(0);
@@ -417,20 +495,23 @@ describe('r581: publication is gated on the end-to-end smokes', () => {
   it(':latest and the GitHub Release come only after the smokes, as a retag of the smoked manifest', () => {
     const all = jobs();
     const promote = all['promote-release']!;
-    expect(needsOf(promote)).toEqual(expect.arrayContaining(['publish-image', 'smoke-published-image']));
+    expect(needsOf(promote)).toEqual(expect.arrayContaining(['publish-image', 'smoke-published-image', 'browser-release-gate']));
     // r701: + the OIDC token for the keyless SHA256SUMS signature.
     expect(promote.permissions).toEqual({ contents: 'write', packages: 'write', 'id-token': 'write' });
     const steps = promote.steps;
     // No rebuild on the way to :latest.
     expect(steps.some((s) => uses(s, 'docker/build-push-action'))).toBe(false);
     const retag = steps.findIndex((s) => s.run?.includes('imagetools create'));
-    expect(steps[retag]!.run).toContain('imagetools create --tag "${repo}:latest" "${repo}:${RELEASE_TAG}"');
+    expect(steps[retag]!.run).toContain('want="$CANDIDATE_DIGEST"');
+    expect(steps[retag]!.run).toContain('test "$tagged" = "$want"');
+    expect(steps[retag]!.run).toContain('imagetools create --tag "${repo}:latest" "${repo}@${want}"');
     expect(steps[retag]!.run).toContain('"$want" != "$got"');
     // The Release is what servers discover — publishing it is the last step.
     const release = steps.findIndex((s) => s.run?.includes('gh release edit "$RELEASE_TAG"'));
     expect(release).toBe(steps.length - 1);
     expect(release).toBeGreaterThan(retag);
     expect(steps[release]!.run).toContain('--draft=false');
+    expect(steps[release]!.run).toContain('test "$tagged" = "$CANDIDATE_DIGEST"');
 
     // Nowhere else: only promote-release may write contents or create the Release.
     for (const [name, job] of Object.entries(all)) {
@@ -535,6 +616,7 @@ describe('r700/r701: the release is signed (Sigstore keyless) and published with
     const steps = jobs()['promote-release']!.steps;
     const build = steps.findIndex((s) => s.run?.includes('git archive'));
     const run = steps[build]!.run!;
+    expect(run).toContain('test "$(git rev-parse "refs/tags/${RELEASE_TAG}^{commit}")" = "$SOURCE_COMMIT"');
     expect(run).toContain('git archive --format=tar.gz --prefix="${top}/" -o "${out}/${archive}" "refs/tags/${RELEASE_TAG}"');
     expect(run).toContain('archive="ninedeploy-${RELEASE_TAG}.tar.gz"');
     // install.sh's asset IS the archive's install.sh (same bytes).

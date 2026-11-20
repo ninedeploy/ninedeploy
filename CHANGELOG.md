@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+**Highlights**
+
+- Releases now require successful core browser journeys on the exact image offered to operators.
+
+**Action needed:** No.
+
+### Internal
+
+- Require the core browser journeys on the signed candidate image digest before release promotion. Cover PostgreSQL restore and phone layout changes in the browser.
+
 ## [0.19.0] - 2026-11-18
 
 **Highlights**

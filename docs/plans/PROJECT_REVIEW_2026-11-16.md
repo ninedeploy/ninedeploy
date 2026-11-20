@@ -111,6 +111,8 @@ The [capacity baseline](../CAPACITY_BASELINE.md) records the healthy load and co
 - Work: add a Git fixture, PR preview, and cleanup; browser restore, permission denial, and failure feedback; and release-blocking core journeys against the candidate image digest. Verify real DNS/ACME separately in a controlled acceptance environment.
 - Acceptance: a failing core browser journey blocks publication of that same candidate; cover desktop/phone and classic/compact transitions. Reading a CI definition does not prove that its current run passed.
 
+The first N08 slice adds the [digest-pinned browser release gate](../../scripts/README.md#browser-journeys), PostgreSQL snapshot restore with a data check, and Classic–Compact switching at phone width. The Git-backed PR preview lifecycle and dedicated browser failure feedback remain follow-up work. Provider DNS and ACME staging are tracked in the recovery runbook.
+
 **N09 — First successful HTTPS deployment and framework guides. P1 / M. Former A2/A4.**
 
 - Existing features: installer domain/email options, the first-deploy card, and README screenshots. [Dashboard](../../apps/web/src/routes/Dashboard.tsx) shows the checklist only to operators. [proxy.ts](../../apps/server/src/engine/proxy.ts) routes the panel domain through `host.docker.internal:${config.port}`; bind/port behavior needs acceptance from the user's perspective.

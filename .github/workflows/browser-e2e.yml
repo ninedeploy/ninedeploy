@@ -3,7 +3,7 @@ name: Browser journeys
 # S7 (docs/plans/COMPETITIVE_ROADMAP_2026-11.md): the web panel driven by
 # Playwright, on the image main CI just published (main-<sha>). It is a
 # separate workflow, so it stays out of ci.yml's cancel-on-push concurrency and
-# of the release's main-CI reuse guard, and it does not block anything yet.
+# of the release's main-CI reuse guard. Release promotion has its own digest-pinned browser job.
 # scripts/smoke-browser-e2e.mjs starts dind + the panel; e2e/ holds the
 # journeys and its own Playwright install (never part of the panel workspace).
 

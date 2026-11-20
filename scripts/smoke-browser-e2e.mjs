@@ -97,7 +97,7 @@ async function main() {
     cwd: E2E_DIR,
     stdio: 'inherit',
     shell: process.platform === 'win32',
-    env: { ...process.env, ND_BASE_URL: ORIGIN, ND_SETUP_TOKEN: SETUP_TOKEN },
+    env: { ...process.env, ND_BASE_URL: ORIGIN, ND_SETUP_TOKEN: SETUP_TOKEN, ND_E2E_DIND: DIND },
     timeout: 45 * 60_000,
   });
   if (pw.status !== 0) {
