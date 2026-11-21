@@ -51,8 +51,9 @@ test('domain and TLS: a domain added in the panel gets a Traefik router to the r
   await expect(page.getByText(route.router!, { exact: true })).toBeVisible();
 
   // HTTPS switched from the domain row, then back: the domain and its router follow each time.
+  const domainControls = page.getByRole('button', { name: `Remove ${host}`, exact: true }).locator('..');
   for (const want of [!added!.ssl, added!.ssl]) {
-    await page.getByTitle(want ? 'HTTPS off — click to issue a certificate' : 'HTTPS on — click to disable').click();
+    await domainControls.getByTitle(want ? 'HTTPS off — click to issue a certificate' : 'HTTPS on — click to disable').click();
     await expect.poll(async () => (await domainOf(page, id, host))?.ssl, { timeout: 30_000 }).toBe(want);
     await expect.poll(async () => {
       const r = await routeOf(page, id, host);

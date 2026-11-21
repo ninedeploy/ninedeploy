@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Internal
 
 - Require the core browser journeys on the signed candidate image digest before release promotion. Cover PostgreSQL restore and phone layout changes in the browser.
+- Exercise Git-backed PR preview creation, cleanup and failed-build feedback in the required browser journeys.
 
 ## [0.19.0] - 2026-11-18
 

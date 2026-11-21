@@ -107,11 +107,11 @@ The [capacity baseline](../CAPACITY_BASELINE.md) records the healthy load and co
 **N08 — Make browser journeys a release gate. P1 / M. Former S7.**
 
 - Evidence: [.github/workflows/browser-e2e.yml](../../.github/workflows/browser-e2e.yml) runs after main CI/nightly and is non-blocking. `promote-release.needs` in [release-publish](../../.github/workflows/release-publish.yml) does not wait for this browser workflow. Other release smokes already exist.
-- Missing coverage: `e2e/tests` has no preview Git journey; [09-domain-tls](../../e2e/tests/09-domain-tls.spec.ts) explicitly says it obtains no real certificate. The current test checks routing configuration.
+- At review time, `e2e/tests` lacked a Git-backed preview journey. [09-domain-tls](../../e2e/tests/09-domain-tls.spec.ts) exercises TLS routing configuration with a fixture domain.
 - Work: add a Git fixture, PR preview, and cleanup; browser restore, permission denial, and failure feedback; and release-blocking core journeys against the candidate image digest. Verify real DNS/ACME separately in a controlled acceptance environment.
 - Acceptance: a failing core browser journey blocks publication of that same candidate; cover desktop/phone and classic/compact transitions. Reading a CI definition does not prove that its current run passed.
 
-The first N08 slice adds the [digest-pinned browser release gate](../../scripts/README.md#browser-journeys), PostgreSQL snapshot restore with a data check, and Classic–Compact switching at phone width. The Git-backed PR preview lifecycle and dedicated browser failure feedback remain follow-up work. Provider DNS and ACME staging are tracked in the recovery runbook.
+The [digest-pinned browser release gate](../../scripts/README.md#browser-journeys) covers PostgreSQL snapshot restore, member permission denial, and Classic–Compact switching at phone width. Its desktop project also covers Git-backed PR preview creation and teardown, including the browser feedback from a deliberately failed build. Provider DNS and ACME staging are tracked in the recovery runbook.
 
 **N09 — First successful HTTPS deployment and framework guides. P1 / M. Former A2/A4.**
 

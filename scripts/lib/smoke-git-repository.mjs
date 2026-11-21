@@ -65,5 +65,18 @@ export function createSwarmGitRepository(root) {
   return { bare, first, advance() {
     write('baked-two'); git(['add', 'Dockerfile', 'app.cjs']); git(['commit', '-m', 'Second owned artifact']);
     const second = git(['rev-parse', 'HEAD']); git(['--git-dir', bare, 'fetch', work, 'main:main']); return second;
+  }, publishBranch(name, { label, dockerfile }) {
+    git(['switch', '-c', name, 'main']);
+    try {
+      write(label);
+      if (dockerfile) writeFileSync(join(work, 'Dockerfile'), dockerfile);
+      git(['add', 'Dockerfile', 'app.cjs']);
+      git(['commit', '-m', `Build fixture branch ${name}`]);
+      const commit = git(['rev-parse', 'HEAD']);
+      git(['--git-dir', bare, 'fetch', work, `${name}:${name}`]);
+      return { name, commit };
+    } finally {
+      git(['switch', 'main']);
+    }
   } };
 }

@@ -7,11 +7,10 @@
 // every visited page at phone width (no overflow, no console errors, no API
 // 4xx/5xx).
 //
-// Topology (copied from smoke-user-journey.mjs, not shared, so the release gate
-// stays untouched): a privileged docker:28-dind sidecar and the panel image on
-// their own network, the panel published on 127.0.0.1:<port>, with
-// NINEDEPLOY_PUBLIC_URL set to exactly that origin. Everything it creates is
-// named nd-e2e-*-<suffix> and removed by name; nothing is ever pruned.
+// The panel, its Docker-in-Docker daemon, and a read-only Git HTTP server
+// share a disposable network. Only the panel is published, on loopback.
+// NINEDEPLOY_PUBLIC_URL matches that browser origin. Cleanup targets the
+// containers, network, volume, and Git directory created by this run.
 //
 // Usage:
 //   pnpm --dir e2e install && pnpm --dir e2e exec playwright install chromium
@@ -19,8 +18,11 @@
 // --keep leaves the containers running and prints the panel URL (debugging).
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
+import { basename, dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { createSwarmGitRepository, gitHttpServerCode } from './lib/smoke-git-repository.mjs';
 
 const repoVersion = /export const VERSION = '([^']*)';/.exec(
   readFileSync(new URL('../apps/server/src/version.ts', import.meta.url), 'utf8'),
@@ -30,15 +32,19 @@ const IMAGE = process.argv.find((a) => a.startsWith('--image='))?.slice('--image
 const KEEP = process.argv.includes('--keep');
 const dash = process.argv.indexOf('--');
 const PW_ARGS = dash === -1 ? [] : process.argv.slice(dash + 1);
+// biome-ignore lint/suspicious/noUndeclaredEnvVars: This standalone Docker smoke runs outside the Turbo cache.
 const PANEL_PORT = Number(process.env.ND_E2E_PORT ?? 4650);
 const ORIGIN = `http://127.0.0.1:${PANEL_PORT}`;
 const suffix = randomBytes(4).toString('hex');
 const NET = `nd-e2e-${suffix}`;
 const DIND = `nd-e2e-dind-${suffix}`;
 const PANEL = `nd-e2e-panel-${suffix}`;
+const GIT = `nd-e2e-git-${suffix}`;
 const VOLUME = `nd-e2e-data-${suffix}`;
 const SETUP_TOKEN = randomBytes(18).toString('hex');
 const E2E_DIR = new URL('../e2e/', import.meta.url);
+const PROOF_DIR = fileURLToPath(new URL('../.temp_files/', import.meta.url));
+let gitRoot;
 
 const docker = (args, opts = {}) => {
   const r = spawnSync('docker', args, { encoding: 'utf8', timeout: opts.timeout ?? 120_000, maxBuffer: 8 << 20 });
@@ -61,6 +67,16 @@ async function main() {
   if (pulled.status !== 0) fail(`cannot pull ${IMAGE}: ${(pulled.stderr || pulled.error?.message || '').trim().split(/\r?\n/).slice(-3).join(' | ')}`);
 
   docker(['network', 'create', NET]);
+  mkdirSync(PROOF_DIR, { recursive: true });
+  const proofDirectory = realpathSync(PROOF_DIR);
+  gitRoot = mkdtempSync(join(proofDirectory, 'nd-e2e-git-'));
+  const repository = createSwarmGitRepository(gitRoot);
+  const preview = repository.publishBranch('n08-preview', { label: 'n08-preview-content' });
+  const broken = repository.publishBranch('n08-broken', { label: 'n08-broken',
+    dockerfile: 'FROM node:26-slim\nRUN echo N08_EXPECTED_BUILD_FAILURE >&2 && exit 37\n' });
+  docker(['run', '-d', '--name', GIT, '--network', NET, '--user', '0', '--no-healthcheck',
+    '--mount', `type=bind,src=${repository.bare},dst=/repo/repo.git,readonly`,
+    '--entrypoint', 'node', IMAGE, '-e', gitHttpServerCode()]);
   docker(['run', '-d', '--name', DIND, '--network', NET, '--privileged', '-v', `${VOLUME}:/data`, 'docker:28-dind',
     'dockerd', '--host=tcp://0.0.0.0:2375']);
   for (let i = 0; i < 45; i++) {
@@ -76,6 +92,8 @@ async function main() {
     '-e', `NINEDEPLOY_SETUP_TOKEN=${SETUP_TOKEN}`,
     // The browser's origin: CORS and the terminal's Origin check compare against it.
     '-e', `NINEDEPLOY_PUBLIC_URL=${ORIGIN}`,
+    '-e', 'NINEDEPLOY_WILDCARD_DOMAIN=n08.test',
+    '-e', 'NINEDEPLOY_ALLOW_PRIVATE_EGRESS=1',
     '-e', 'NINEDEPLOY_JWT_ACCESS_TTL=2h',
     '-e', `DOCKER_HOST=tcp://${DIND}:2375`,
     IMAGE]);
@@ -97,7 +115,8 @@ async function main() {
     cwd: E2E_DIR,
     stdio: 'inherit',
     shell: process.platform === 'win32',
-    env: { ...process.env, ND_BASE_URL: ORIGIN, ND_SETUP_TOKEN: SETUP_TOKEN, ND_E2E_DIND: DIND },
+    env: { ...process.env, ND_BASE_URL: ORIGIN, ND_SETUP_TOKEN: SETUP_TOKEN, ND_E2E_DIND: DIND,
+      ND_E2E_GIT: JSON.stringify({ container: GIT, main: repository.first, preview, broken }) },
     timeout: 45 * 60_000,
   });
   if (pw.status !== 0) {
@@ -113,7 +132,14 @@ main()
   .finally(() => {
     if (KEEP) return;
     // -v: the dind image declares /var/lib/docker a volume; without it every run left that anonymous volume behind.
-    for (const c of [PANEL, DIND]) spawnSync('docker', ['rm', '-f', '-v', c], { encoding: 'utf8' });
+    for (const c of [PANEL, DIND, GIT]) spawnSync('docker', ['rm', '-f', '-v', c], { encoding: 'utf8' });
     spawnSync('docker', ['volume', 'rm', VOLUME], { encoding: 'utf8' });
     spawnSync('docker', ['network', 'rm', NET], { encoding: 'utf8' });
+    if (gitRoot) {
+      const resolved = realpathSync(gitRoot);
+      if (resolved !== gitRoot || dirname(resolved) !== realpathSync(PROOF_DIR) || !basename(resolved).startsWith('nd-e2e-git-')) {
+        fail('refusing cleanup outside the owned browser Git fixture');
+      }
+      rmSync(resolved, { recursive: true, force: true, maxRetries: 3 });
+    }
   });

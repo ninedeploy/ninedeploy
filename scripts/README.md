@@ -48,6 +48,16 @@ node scripts/smoke-browser-e2e.mjs --image=<candidate-digest-reference> -- \
 
 Arguments after `--` go to Playwright. `--keep` leaves the disposable panel running for debugging.
 
+The desktop project includes the Git-backed PR preview lifecycle. The smoke provisions a read-only smart HTTP server on the fixture's private network. The test turns on previews in the browser and sends locally signed PR events to the panel's webhook endpoint. It checks branch-specific HTTP content through fixture Traefik, and verifies the Failed state and Docker build output in the browser for a second branch. Closing the PRs removes the preview services, routing, and the successful preview's container and bridge. The parent keeps serving its original commit. The hostnames use the reserved `.test` domain, and the HTTP probe stays inside the fixture network.
+
+```sh
+node scripts/smoke-browser-e2e.mjs --image=<candidate-digest-reference> -- 10-pr-preview.spec.ts --project=desktop
+```
+
 On November 21, 2026, the five core projects passed all 36 journeys locally on the published v0.19.0 image at digest `sha256:113fb9e11ad3f8f94d38020e00e7744ad10c2f57c614afda89f089db2f4e51bf`. The image revision was `0a59b5ed4068334b5ee0d1ad36e43959e92525ba`. The release validator accepted the final Playwright JSON and rejected the earlier report from a fixture run that queried PostgreSQL before it was ready. The restore test now waits for a real SQL response and proves that the restored row predates the snapshot while a post-snapshot row is gone. Both phone projects verified that layout choices survive reload. Local receipts are under `.temp_files/n08-browser-20261120/`.
+
+#### PR preview verification on November 21, 2026
+
+The expanded gate passed **37 journeys across all five projects** on the same v0.19.0 digest, with zero skipped, failed or flaky tests. The release report validator accepted the final result and rejected a previous run whose TLS selector matched two domains. The TLS journey now chooses the controls belonging to its target hostname. The PR journey verified the exact deployed commit, error output from the broken branch, both closed routes returning HTTP 404, and continued service from the original parent container. An earlier run logged a bridge removal warning for the broken build. The final Docker inventory confirmed both preview bridges were absent after closure. The runner removed its Git directory and all its Docker fixtures. The receipts are under `.temp_files/n08-preview-20261121/`.
 
 Before you run any smoke against a Docker daemon, check which daemon it is. A smoke that boots the panel recreates the panel's Traefik container on that daemon.

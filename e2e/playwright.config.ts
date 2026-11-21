@@ -31,7 +31,7 @@ export default defineConfig({
     { name: 'setup', testMatch: /01-setup\.spec\.ts/, use: { ...devices['Desktop Chrome'] } },
     {
       name: 'desktop',
-      testMatch: /0[2-9]-.*\.spec\.ts/,
+      testMatch: /(?:0[2-9]|10)-.*\.spec\.ts/,
       testIgnore: /phone|08-compact/,
       dependencies: ['setup'],
       use: { ...devices['Desktop Chrome'], viewport: { width: 1366, height: 900 } },

@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { expect, it } from 'vitest';
 import { createSwarmGitRepository, gitHttpServerCode } from '../../../scripts/lib/smoke-git-repository.mjs';
 
-it('serves two real commits over smart HTTP to shallow clones and retains the original pinned commit', async () => {
+it('serves main and preview branches to shallow smart HTTP clones and retains the original pinned commit', async () => {
   const root = mkdtempSync(join(tmpdir(), 'nd-owned-git-'));
   let child: ReturnType<typeof spawn> | undefined;
   try {
@@ -24,6 +24,16 @@ it('serves two real commits over smart HTTP to shallow clones and retains the or
     git(['clone', '--depth', '1', url, 'first']);
     expect(git(['-C', 'first', 'rev-parse', 'HEAD'])).toBe(repository.first);
     expect(readFileSync(join(root, 'first', 'app.cjs'), 'utf8')).toContain('baked-one');
+    const preview = repository.publishBranch('fixture-preview', { label: 'fixture-preview-body' });
+    git(['clone', '--depth', '1', '--branch', preview.name, url, 'preview']);
+    expect(git(['-C', 'preview', 'rev-parse', 'HEAD'])).toBe(preview.commit);
+    expect(readFileSync(join(root, 'preview', 'app.cjs'), 'utf8')).toContain('fixture-preview-body');
+    const broken = repository.publishBranch('fixture-broken', { label: 'fixture-broken',
+      dockerfile: 'FROM node:26-slim\nRUN exit 37\n' });
+    git(['clone', '--depth', '1', '--branch', broken.name, url, 'broken']);
+    expect(git(['-C', 'broken', 'rev-parse', 'HEAD'])).toBe(broken.commit);
+    expect(readFileSync(join(root, 'broken', 'Dockerfile'), 'utf8')).toContain('RUN exit 37');
+    expect(git(['-C', repository.bare, 'rev-parse', 'refs/heads/main'])).toBe(repository.first);
     const second = repository.advance(); expect(second).not.toBe(repository.first);
     git(['clone', '--depth', '1', url, 'second']);
     expect(git(['-C', 'second', 'rev-parse', 'HEAD'])).toBe(second);
