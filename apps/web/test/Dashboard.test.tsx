@@ -2,6 +2,7 @@
 import { screen, waitFor, fireEvent } from '@testing-library/react';
 import { Dashboard } from '../src/routes/Dashboard.js';
 import { api } from '../src/lib/api.js';
+import { useAuth } from '../src/lib/auth.js';
 import { renderWithProviders, mockOf } from './helpers.js';
 import { useLocation } from 'react-router';
 
@@ -15,6 +16,7 @@ vi.mock('../src/lib/api.js', async () => {
   const { createFakeApiModule } = await import('./apiMock.js');
   return createFakeApiModule();
 });
+vi.mock('../src/lib/auth.js', async () => (await import('./apiMock.js')).createAuthMock());
 
 const dashData = {
   stats: {
@@ -46,6 +48,22 @@ const dashData = {
 describe('Dashboard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockOf(useAuth).mockReturnValue({ user: { id: 1, isOperator: true }, loading: false });
+  });
+
+  it('offers a workspace member a first deploy without advertising operator actions', async () => {
+    mockOf(useAuth).mockReturnValue({ user: { id: 2, isOperator: false }, loading: false });
+    mockOf(api.dashboard.get).mockResolvedValue({
+      ...dashData,
+      stats: { ...dashData.stats, services: 0 },
+      health: [],
+    });
+    renderWithProviders(<Dashboard />);
+    expect(await screen.findByRole('heading', { name: 'Deploy your first app' })).toBeVisible();
+    expect(screen.getByRole('button', { name: /Start deploy/ })).toBeVisible();
+    expect(screen.queryByRole('button', { name: /Load Next.js Demo/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Try the demo/ })).not.toBeInTheDocument();
+    expect(screen.queryByText('Getting started', { exact: true })).not.toBeInTheDocument();
   });
 
 it('shows an error card with retry when the dashboard query fails', async () => {

@@ -111,15 +111,12 @@ export function Dashboard() {
       {/* Hero status banner */}
       <input ref={importRef} type="file" accept=".json" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) doImport(f); e.target.value = ''; }} />
       <div className="flex items-center justify-end gap-2">
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={() => seedDemo.mutate()}
-          disabled={seedDemo.isPending}
-        >
-          <Sparkles size={13} className="text-indigo-400" />
-          {seedDemo.isPending ? t('Creating Demo…') : t('Load Next.js Demo')}
-        </Button>
+        {isOperator && (
+          <Button variant="secondary" size="sm" onClick={() => seedDemo.mutate()} disabled={seedDemo.isPending}>
+            <Sparkles size={13} className="text-indigo-400" />
+            {seedDemo.isPending ? t('Creating Demo…') : t('Load Next.js Demo')}
+          </Button>
+        )}
         <Button variant="secondary" size="sm" onClick={() => importRef.current?.click()} disabled={importing}>
           <Upload size={13} /> {importing ? t('Importing…') : t('Import service')}
         </Button>
@@ -128,7 +125,7 @@ export function Dashboard() {
       {/* Setup lands a fresh install here: until something is deployed, the
           way to deploy it is the first thing on the page. */}
       {s.services === 0 && (
-        <FirstDeployCard onDeploy={openDeploy} onDemo={() => seedDemo.mutate()} demoPending={seedDemo.isPending} />
+        <FirstDeployCard onDeploy={openDeploy} onDemo={isOperator ? () => seedDemo.mutate() : undefined} demoPending={seedDemo.isPending} />
       )}
       {/* The instance operator's setup checklist (its routes are operator-only). */}
       {isOperator && <GettingStartedCard />}
@@ -451,7 +448,7 @@ export function Dashboard() {
   );
 }
 
-function FirstDeployCard({ onDeploy, onDemo, demoPending }: { onDeploy: () => void; onDemo: () => void; demoPending: boolean }) {
+function FirstDeployCard({ onDeploy, onDemo, demoPending }: { onDeploy: () => void; onDemo?: () => void; demoPending: boolean }) {
   const t = useT();
   return (
     <div className="relative overflow-hidden rounded-2xl border border-indigo-500/25 bg-gradient-to-br from-indigo-500/[0.10] via-indigo-500/[0.03] to-transparent p-6">
@@ -467,7 +464,7 @@ function FirstDeployCard({ onDeploy, onDemo, demoPending }: { onDeploy: () => vo
           </p>
         </div>
       </div>
-      <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-3">
+      <div className={cn('mt-5 grid grid-cols-1 gap-3', onDemo ? 'md:grid-cols-3' : 'md:grid-cols-2')}>
         <button type="button" onClick={onDeploy} className="group rounded-xl border border-indigo-500/40 bg-indigo-500/15 p-4 text-left transition hover:bg-indigo-500/25">
           <GitBranch size={18} className="text-indigo-300" />
           <div className="mt-2 text-sm font-semibold text-white">{t('From your code')}</div>
@@ -484,14 +481,16 @@ function FirstDeployCard({ onDeploy, onDemo, demoPending }: { onDeploy: () => vo
             {t('Browse templates')} <ArrowRight size={12} className="transition group-hover:translate-x-0.5" />
           </div>
         </Link>
-        <button type="button" onClick={onDemo} disabled={demoPending} className="group rounded-xl border border-white/10 bg-white/[0.03] p-4 text-left transition hover:bg-white/[0.06] disabled:opacity-60">
-          <Package size={18} className="text-emerald-300" />
-          <div className="mt-2 text-sm font-semibold text-white">{t('Try the demo')}</div>
-          <div className="text-xs text-slate-400">{t('A sample Next.js app, built for you')}</div>
-          <div className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-slate-300">
-            {demoPending ? t('Creating demo…') : t('Load demo')} <ArrowRight size={12} className="transition group-hover:translate-x-0.5" />
-          </div>
-        </button>
+        {onDemo && (
+          <button type="button" onClick={onDemo} disabled={demoPending} className="group rounded-xl border border-white/10 bg-white/[0.03] p-4 text-left transition hover:bg-white/[0.06] disabled:opacity-60">
+            <Package size={18} className="text-emerald-300" />
+            <div className="mt-2 text-sm font-semibold text-white">{t('Try the demo')}</div>
+            <div className="text-xs text-slate-400">{t('A sample Next.js app, built for you')}</div>
+            <div className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-slate-300">
+              {demoPending ? t('Creating demo…') : t('Load demo')} <ArrowRight size={12} className="transition group-hover:translate-x-0.5" />
+            </div>
+          </button>
+        )}
       </div>
     </div>
   );

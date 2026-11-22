@@ -96,6 +96,8 @@ After the first admin signs in, the Dashboard shows a **Getting started** checkl
 
 To start from a working Dockerfile and health check, deploy a [Next.js, Laravel, or FastAPI starter](FRAMEWORK_STARTERS.md).
 
+If you are joining an existing instance with registration closed, ask the instance operator to create your account. A workspace owner or admin can then invite you as a `member`. Sign in, open **New**, and choose a permitted source such as **Docker image** or **Upload source**. The instance operator handles the initial setup checklist and built-in demo. [Workspace permissions](WORKSPACES_RBAC.md#-2-role-hierarchy--permission-matrix)
+
 On a fresh install with a public IP, services get a free test URL right away — `http://<service>.<server-ip>.sslip.io` — so the first deploy is reachable before any DNS work. Switch to your own wildcard domain, or turn it off, under **Settings → Security → Automatic URLs** ([details](./TRAEFIK_INGRESS.md#automatic-urls-0161)).
 
 ---

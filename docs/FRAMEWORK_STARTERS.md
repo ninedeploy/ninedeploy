@@ -55,4 +55,43 @@ The smoke passed on a Linux amd64 panel image built locally from the updated sou
 | Laravel | 42.7 s | 46.2 s |
 | FastAPI | 22.4 s | 24.5 s |
 
-These timings cover a single run against a fresh isolated Docker daemon. The first hosted workflow run and clean-host installation through public HTTPS are pending.
+These timings cover a single run against a fresh isolated Docker daemon. The first hosted framework workflow run is pending.
+
+## Clean-server first deployment
+
+The test starts with a fresh Ubuntu 24.04.5 LTS QEMU/KVM guest with four vCPUs and 3 GiB of memory. It has no Docker installation, NineDeploy state, or cached container images. Run the pinned Docker-mode installer from the NineDeploy checkout. Start timing when the installer command begins. VM provisioning and fixture preparation happen before the timed interval.
+
+```bash
+sudo env DEBIAN_FRONTEND=noninteractive bash ./install.sh --docker --version v0.19.0
+```
+
+From a private browser connection, open the installer setup link, create the first operator and use **New → Upload source** to deploy the Next.js example. The test gives the example a unique response marker. Once the deployment reports `running`, add an HTTP hostname for the service in Traefik. Start a disposable Cloudflare Quick Tunnel to that route with the matching origin Host header. The tunnel exposes the example application. The setup and panel endpoints stay on local forwards.
+
+Measure success from a normal HTTPS client with hostname and chain validation enabled. The response must be HTTP 200 and contain the run's marker. Request `/healthz` over the same public endpoint and require HTTP 200 with `{"status":"ok"}`. Stop the tunnel after verification. Cloudflare supplies the public certificate in this test. A custom-domain run using NineDeploy's own ACME resolver requires a public origin or an authorized DNS-01 zone. [Quick Tunnels](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/) · [ACME challenges](https://letsencrypt.org/docs/challenge-types/)
+
+### Timing from the November 22, 2026 run
+
+The installer pulled the published v0.19.0 image with digest `sha256:113fb9e11ad3f8f94d38020e00e7744ad10c2f57c614afda89f089db2f4e51bf` and source revision `0a59b5ed4068334b5ee0d1ad36e43959e92525ba`. Each row is elapsed wall time from installer invocation.
+
+| Milestone | Elapsed |
+| --- | ---: |
+| Panel `/health` reported `ok` | 122.334 s |
+| Installer returned successfully | 123.416 s |
+| First operator reached the dashboard in a signed-in browser | 123.672 s |
+| Next.js source upload submitted | 124.908 s |
+| Deployment reported `running` | 185.224 s |
+| Service response matched through the Traefik origin | 187.469 s |
+| First trusted public HTTPS response matched the application | **257.697 s** |
+
+The public request negotiated TLS 1.3 with a trusted certificate from issuer `WE1`. Both `/` and `/healthz` returned HTTP 200. The tunnel process exited after verification. The interval from the first verified origin response to the first public response was 70.228 seconds in this run. A separate generated tunnel hostname returned NXDOMAIN from both public resolvers checked during preflight. This is one measurement of the Docker-mode installer and temporary public edge. Public issuance and renewal through the built-in ACME resolver remain open.
+
+## Workspace member onboarding
+
+The operator creates a regular account, and the workspace owner adds it as a `member`. In a separate browser session the member signs in, sees the workspace's existing service, and opens **New → Docker image** to deploy another service. Instance user management and built-in demo creation both return HTTP 403 for the member. The workspace role still permits the member to deploy. The dashboard shows the first-deploy entry point to members with an empty inventory and reserves the built-in demo actions for operators. [Workspace permissions](WORKSPACES_RBAC.md#-2-role-hierarchy--permission-matrix)
+
+The browser journey passed on the locally built onboarding candidate `sha256:0e55fb1675a8a2ba55e78f59f9447d643beae2d7662dca9edd02bfa64af6241e`. The member's deployment reached `running` with the regular Docker image wizard. A dashboard regression test first reproduced the visible demo action for a non-operator and then passed with the permission-aware rendering. The focused runs passed 122 web tests, 40 server tests, and three browser journeys covering setup, first deploy, and member access.
+
+```bash
+docker build -t ninedeploy:member-onboarding .
+node scripts/smoke-browser-e2e.mjs --image=ninedeploy:member-onboarding -- --project=desktop 02-first-deploy 07-member
+```
