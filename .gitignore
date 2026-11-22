@@ -60,6 +60,7 @@ security-report/
 
 
 *.txt
+!examples/fastapi/requirements.txt
 *.tar.gz
 
 # Coverage artifacts (v8 json reporter scratch output)

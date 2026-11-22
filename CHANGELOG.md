@@ -12,8 +12,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 **Highlights**
 
 - Releases now require successful core browser journeys on the exact image offered to operators.
+- Deploy Next.js, Laravel, and FastAPI from a local folder using the new framework starters.
 
 **Action needed:** No.
+
+### Added
+
+- Add three source-upload starters with Dockerfiles, locked dependencies, health checks and deployment instructions. Verify all three through the panel and proxy in a dedicated workflow.
+
+### Fixed
+
+- Keep the panel's sibling readiness probe connected while asynchronous HTTP handlers produce their response. This allows healthy FastAPI services to deploy when the panel reaches them through a Docker bridge.
 
 ### Internal
 

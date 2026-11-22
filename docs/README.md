@@ -5,6 +5,7 @@ The guides are grouped by what you are doing. The last group holds the project's
 ## Get started
 
 - [Quickstart](QUICKSTART.md): install, first sign-in, first deploy, upgrades.
+- [Framework starters](FRAMEWORK_STARTERS.md) for deploying Next.js, Laravel or FastAPI from a local folder.
 - [Support matrix](SUPPORT_MATRIX.md): which service features work on the panel host, on nodes, on Swarm, and for Compose and PM2.
 - [Current status](CURRENT_STATUS.md): implementation, acceptance and publication status, the remaining R2 certification checklist, and operational switches.
 - [Troubleshooting](TROUBLESHOOTING.md): common failures and how to recover.

@@ -15,6 +15,7 @@ import { connectContainerToServiceBridge, ensureServiceBridge } from '../../lib/
 import { buildWithBuildKit } from './buildkit.js';
 import { buildStaticSite } from './staticSite.js';
 import { buildProbeUrl, safeProbePath } from '../../lib/probeUrl.js';
+import { CONTAINER_HTTP_PROBE } from '../../lib/containerProbe.js';
 import { writeSecretFile, type SecretFile } from '../../lib/secretFile.js';
 import { pullableReleaseRef } from '../fanout.js';
 import { BUILDPACK_BUILDERS, isBuildpackPack, type BuildpackPack } from '../../lib/buildPacks.js';
@@ -482,8 +483,8 @@ const DOCKER_READ_TIMEOUT_MS = 10_000;
  * a wedged daemon held isHealthy (and the deploy) 30 minutes past its deadline. */
 const PROBE_SETUP_TIMEOUT_MS = 30_000;
 
-/** F972: `docker exec <prober> nc -w 3`. nc's own 3 s bounds only the connect
- * inside the prober; this bounds the CLI-to-daemon exec create/start/attach. */
+/** F972: Bound the CLI-to-daemon exec create/start/attach separately from the
+ * probe's deadline inside the container. */
 const PROBE_EXEC_TIMEOUT_MS = 10_000;
 
 /** Probe the same HTTP endpoint from the runtime's bridge when the panel
@@ -494,7 +495,7 @@ async function probeSiblingHttp(ip: string, port: number, healthPath: string): P
   let status: number | undefined;
   await run('docker', [
     'exec', PROBE_CONTAINER, 'sh', '-c',
-    'printf "GET %s HTTP/1.0\\r\\nHost: %s:%s\\r\\nConnection: close\\r\\n\\r\\n" "$1" "$2" "$3" | nc -w 3 "$2" "$3" | head -n 1',
+    `address="$2"; port="$3"; host="$address:$port"; ${CONTAINER_HTTP_PROBE}`,
     'probe', healthPath, ip, String(port),
   ], { timeoutMs: PROBE_EXEC_TIMEOUT_MS }, (line) => {
     const match = /^HTTP\/1\.[01] (\d{3})(?:\s|$)/.exec(line);

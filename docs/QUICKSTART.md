@@ -94,6 +94,8 @@ docker run -d --name ninedeploy \
 
 After the first admin signs in, the Dashboard shows a **Getting started** checklist and a **Deploy your first app** card. The **New** button (top bar, or `/new`) opens the resource picker: a Git repository, a Docker image, a Dockerfile, an uploaded `.zip` / `.tar.gz` of a project folder, a static site, a Compose stack, one of 11 database engines, or a one-click app from the catalog. Without a Git repository, `ninedeploy deploy up ./my-app --create my-app` deploys a local folder ([details](./DEPLOYMENTS.md#deploy-without-git-uploaded-source-0161)).
 
+To start from a working Dockerfile and health check, deploy a [Next.js, Laravel, or FastAPI starter](FRAMEWORK_STARTERS.md).
+
 On a fresh install with a public IP, services get a free test URL right away — `http://<service>.<server-ip>.sslip.io` — so the first deploy is reachable before any DNS work. Switch to your own wildcard domain, or turn it off, under **Settings → Security → Automatic URLs** ([details](./TRAEFIK_INGRESS.md#automatic-urls-0161)).
 
 ---

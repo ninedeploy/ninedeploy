@@ -1,0 +1,14 @@
+{
+  "name": "ninedeploy/laravel-starter",
+  "type": "project",
+  "require": {
+    "php": "^8.3",
+    "laravel/framework": "13.43.0"
+  },
+  "config": {
+    "platform": {
+      "php": "8.4.0"
+    },
+    "sort-packages": true
+  }
+}

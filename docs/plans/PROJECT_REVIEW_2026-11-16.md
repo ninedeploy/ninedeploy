@@ -118,6 +118,7 @@ The [digest-pinned browser release gate](../../scripts/README.md#browser-journey
 - Existing features: installer domain/email options, the first-deploy card, and README screenshots. [Dashboard](../../apps/web/src/routes/Dashboard.tsx) shows the checklist only to operators. [proxy.ts](../../apps/server/src/engine/proxy.ts) routes the panel domain through `host.docker.internal:${config.port}`; bind/port behavior needs acceptance from the user's perspective.
 - Work: onboarding appropriate to member permissions; first-deploy error messages; and clean-host timing for install → sign-in → sample application → real HTTPS. Start with working starters/manifests/guides for Next.js, Laravel, and FastAPI; add others based on demand.
 - Acceptance: guides pass a real deployment smoke in CI; a new user encounters no unexplained admin step. Run account/domain-dependent acceptance when those resources are available.
+- On 2026-11-22, Next.js, Laravel, and FastAPI passed source upload, manifest readiness, and isolated Traefik HTTP checks on a locally built panel image. The run exercised the fix for the panel's sibling HTTP probe. The first hosted `Framework starters` run is pending. Member onboarding, first-deploy feedback, and clean-host install → sign-in → public HTTPS timing remain open. [Framework starters and local evidence](../FRAMEWORK_STARTERS.md#local-acceptance-on-2026-11-22)
 
 **N10 — Complete the compact UI transition with user evidence. P2 / M. Former A3.**
 
