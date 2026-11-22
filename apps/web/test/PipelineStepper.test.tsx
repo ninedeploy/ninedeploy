@@ -38,6 +38,7 @@ describe('PipelineStepper', () => {
     const stages = parsePipelineStages(rawLogs, 'failed');
     const buildStage = stages.find((s) => s.id === 'BUILD');
     expect(buildStage?.status).toBe('failed');
+    expect(buildStage?.detail).toBe('Docker build timed out');
   });
 
   it('marks running stage when cancelled', () => {
@@ -93,12 +94,20 @@ describe('PipelineStepper', () => {
   });
 
   it('marks the running stage failed with the default detail when ERROR carries no text', () => {
-    // A non-failed deploy status keeps the parse-level detail (the isFailed
-    // path would overwrite it with the generic banner detail below).
     const stages = parsePipelineStages('##[stage:BUILD:running]\n##[stage:ERROR:failed]', 'building');
     const buildStage = stages.find((s) => s.id === 'BUILD');
     expect(buildStage?.status).toBe('failed');
     expect(buildStage?.detail).toBe('Stage failed');
+  });
+
+  it('shows the failed stage and worker error in the failure summary and jumps to its output', () => {
+    const onStageClick = vi.fn();
+    const rawLogs = '##[stage:PREPARE:success]\n##[stage:BUILD:running] Building image\n✗ Deployment failed: Docker build exited with code 37\n##[stage:ERROR:failed]\n';
+    render(<PipelineStepper rawLogs={rawLogs} deployStatus="failed" onStageClick={onStageClick} />);
+    expect(screen.getByText('Build failed')).toBeVisible();
+    expect(screen.getByText('Docker build exited with code 37')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Jump to failed step' }));
+    expect(onStageClick).toHaveBeenCalledWith('BUILD');
   });
 
   it('renders a failed stage with the error styling and its detail', () => {

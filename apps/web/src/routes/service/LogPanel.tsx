@@ -51,6 +51,7 @@ export function LogPanel({
     if (lineIndex >= 0) {
       const lineHeight = 20;
       ref.current.scrollTop = lineIndex * lineHeight;
+      ref.current.scrollIntoView?.({ block: 'nearest' });
     }
   };
 

@@ -46,23 +46,23 @@ export function parsePipelineStages(rawLogs: string, deployStatus?: string): Pip
 
   const lines = rawLogs.split('\n');
   let currentRunningStage: StageId | null = null;
+  let failureReason: string | undefined;
 
   for (const line of lines) {
+    const summary = /^✗ Deployment failed: (.+)$/.exec(line.trimEnd());
+    if (summary) failureReason = summary[1];
     const match = line.match(/##\[stage:([A-Z_]+):(running|success|failed)\](?:\s+(.*))?/);
     if (match) {
-      const stageName = match[1] as StageId;
+      const stageName = match[1] as StageId | 'ERROR';
       const stageStatus = match[2] as StageStatus;
       const detail = match[3] || undefined;
 
-      if (stageName === ('ERROR' as any)) {
-        // Defensive: currentRunningStage is only ever set to a key that
-        // exists in stagesState, so the second conjunct cannot be falsy.
-        /* v8 ignore start */
-        if (currentRunningStage && stagesState[currentRunningStage]) {
+      if (stageName === 'ERROR') {
+        if (currentRunningStage) {
           stagesState[currentRunningStage].status = 'failed';
-          stagesState[currentRunningStage].detail = detail || 'Stage failed';
+          stagesState[currentRunningStage].detail = isCancelled ? 'Deployment cancelled' : detail || failureReason || 'Stage failed';
+          currentRunningStage = null;
         }
-        /* v8 ignore stop */
         continue;
       }
 
@@ -73,8 +73,8 @@ export function parsePipelineStages(rawLogs: string, deployStatus?: string): Pip
           currentRunningStage = stageName;
         } else if (stageStatus === 'success' && currentRunningStage === stageName) {
           currentRunningStage = null;
-        } else if (stageName === 'CANARY' && stageStatus === 'failed') {
-          // The abort line names the reason; the ERROR marker and the failed
+        } else if (stageStatus === 'failed') {
+          // The failed stage names the reason; the ERROR marker and the failed
           // deploy status that follow must not replace it.
           currentRunningStage = null;
         }
@@ -83,9 +83,9 @@ export function parsePipelineStages(rawLogs: string, deployStatus?: string): Pip
   }
 
   // If failed and no explicit stage failed, mark the running stage as failed
-  if ((isFailed || isCancelled) && currentRunningStage && stagesState[currentRunningStage]) {
+  if ((isFailed || isCancelled) && currentRunningStage) {
     stagesState[currentRunningStage].status = 'failed';
-    stagesState[currentRunningStage].detail = isCancelled ? 'Deployment cancelled' : 'An error occurred';
+    stagesState[currentRunningStage].detail = isCancelled ? 'Deployment cancelled' : failureReason || 'An error occurred';
   }
 
   // A deploy without a canary keeps the seven stages it always had.
@@ -114,6 +114,7 @@ export function PipelineStepper({
   const stages = useMemo(() => parsePipelineStages(rawLogs, deployStatus), [rawLogs, deployStatus]);
   const isZeroDowntimeLive = deployStatus === 'running';
   const completedStages = stages.filter((stage) => stage.status === 'success').length;
+  const failedStage = deployStatus === 'failed' ? stages.find((stage) => stage.status === 'failed') : undefined;
 
   // Theme surfaces (bg-slate-950/*), never a fixed hex: in light mode the
   // fixed navy left the heading dark on dark.
@@ -130,7 +131,7 @@ export function PipelineStepper({
               {isZeroDowntimeLive
                 ? t('All traffic is now served by the new release.')
                 : deployStatus === 'failed'
-                  ? t('The deployment failed. Inspect its CI results and output for the failed step.')
+                  ? t('Review the deployment output, fix the cause, and deploy again.')
                   : deployStatus === 'awaiting_ci'
                     ? t('Waiting for required CI workflows on the pinned commit. The current release stays live.')
                   : deployStatus === 'awaiting_approval'
@@ -175,6 +176,18 @@ export function PipelineStepper({
           </span>
         </div>
       </div>
+
+      {failedStage && (
+        <div className="space-y-1 border-b border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm" role="status">
+          <p className="font-medium text-rose-300">{t('{stage} failed', { stage: t(failedStage.label) })}</p>
+          {failedStage.detail && <p className="wrap-anywhere text-slate-200">{t(failedStage.detail)}</p>}
+          {onStageClick && (
+            <button type="button" className="text-xs font-medium text-rose-200 underline underline-offset-2" onClick={() => onStageClick(failedStage.id)}>
+              {t('Jump to failed step')}
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="overflow-x-auto px-4 py-4">
         <div className={cn('grid', stages.length > 7 ? 'min-w-[34rem] grid-cols-8' : 'min-w-[30rem] grid-cols-7')}>

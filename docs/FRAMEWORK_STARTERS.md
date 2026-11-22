@@ -24,6 +24,14 @@ Deploy a small Next.js, Laravel, or FastAPI application from a local folder. Eac
 
 You can also upload an archive through **New → Upload source**. Put the Dockerfile and `.ninedeploy` at the root of the archive and include the lockfile. Keep credentials and local dependencies outside the archive. [Source upload guide](DEPLOYMENTS.md#deploy-without-git-uploaded-source-0161)
 
+### Recover a failed upload deployment
+
+After **Create and deploy**, the panel opens the service's **Deploys** tab. If a build fails, the deployment output shows the failed step and any error detail recorded for it. Select **Jump to failed step** to find that step in the build log. Review the failing command or check before changing the source.
+
+Use **Upload new version** on the same service to send a corrected archive. This queues a new deployment and keeps the earlier attempt in history. If the upload itself was rejected after the service was created, the panel displays the rejection and opens the same **Deploys** tab so you can upload again there.
+
+On November 22, 2026, the browser journey reproduced the missing **Deploys** hand-off on the previous panel image. On the updated image (`sha256:504f8e892750af3cff0bb7044d67e37dab46b151954579dd3e36d88a828bdf4e`), a disposable Dockerfile exited with code 37 during the first build. The browser opened **Deploys**, showed **Build failed**, and jumped to the step containing the Dockerfile output. A corrected upload reached `running` on the same service, the failed attempt remained in history, and Traefik served the corrected application's response.
+
 ## Customize the starter
 
 - **Next.js** uses App Router with `app/page.js` as its entry page. The runtime image copies the standalone server and the generated static assets. If you add a `public/` directory, add a Dockerfile `COPY` for it into the runtime image. Regenerate `package-lock.json` with `npm install` from the project directory when you change dependencies. [Next.js standalone output](https://nextjs.org/docs/app/api-reference/config/next-config-js/output)

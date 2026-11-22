@@ -1,3 +1,6 @@
+import { execFileSync } from 'node:child_process';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { expect, test } from './fixtures';
 import { apiGet, watch } from './support';
 
@@ -41,5 +44,51 @@ test('first deploy: an image through the deploy wizard comes up running', async 
     )
     .toMatch(/^(running|failed|cancelled)$/);
   expect(last?.status, `deploy #${last?.id}`).toBe('running');
+  w.assertClean();
+});
+
+test('first source deploy: a build failure shows its cause and a corrected upload goes live', async ({ page }, testInfo) => {
+  test.setTimeout(420_000);
+  const w = watch(page);
+  const source = testInfo.outputPath('source');
+  mkdirSync(source, { recursive: true });
+  const archive = (instruction: string, name: string) => {
+    writeFileSync(join(source, 'Dockerfile'), `FROM nginx:1.27-alpine\nRUN ${instruction}\n`);
+    return {
+      name,
+      mimeType: 'application/gzip',
+      buffer: execFileSync('tar', ['-czf', '-', '-C', source, '.'], { timeout: 10_000, windowsHide: true }),
+    };
+  };
+
+  await page.goto('/new');
+  await page.getByRole('button', { name: 'Upload source', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Upload source' });
+  await dialog.getByPlaceholder('my-app').fill('e2e-first-upload');
+  await dialog.getByPlaceholder('3000').fill('80');
+  await dialog.getByLabel('Archive').setInputFiles(archive('echo N09_EXPECTED_BUILD_FAILURE && exit 37', 'broken.tar.gz'));
+  await dialog.getByRole('button', { name: 'Create and deploy' }).click();
+  await page.waitForURL(url => /^\/services\/\d+$/.test(url.pathname), { timeout: 60_000 });
+  const url = new URL(page.url());
+  expect(url.searchParams.get('tab')).toBe('deploys');
+  const id = Number(url.pathname.split('/').at(-1));
+  const deployments = () => apiGet<Deploy[]>(page, `/v1/services/${id}/deploys`);
+  const poll = { timeout: 150_000, intervals: [1_000, 2_000, 5_000] };
+  await expect.poll(async () => (await deployments())[0]?.status, poll).toBe('failed');
+  const failedId = (await deployments())[0]!.id;
+  const failure = page.getByRole('status').filter({ hasText: 'Build failed' });
+  await expect(failure).toBeVisible();
+  await expect(failure).toContainText(/exited with code|exit code/);
+  await failure.getByRole('button', { name: 'Jump to failed step' }).click();
+  await expect(page.locator('pre').filter({ hasText: 'N09_EXPECTED_BUILD_FAILURE' })).toBeInViewport();
+
+  await page.getByLabel('Upload new version').setInputFiles(archive('printf n09-recovered > /usr/share/nginx/html/index.html', 'fixed.tar.gz'));
+  await expect.poll(async () => {
+    const latest = (await deployments())[0];
+    return latest?.id !== failedId && latest?.status;
+  }, poll).toBe('running');
+  await expect(page.getByText('All traffic is now served by the new release.')).toBeVisible();
+  await expect(failure).toHaveCount(0);
+  expect(await deployments()).toContainEqual(expect.objectContaining({ id: failedId, status: 'failed' }));
   w.assertClean();
 });

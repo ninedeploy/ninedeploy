@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Keep the panel's sibling readiness probe connected while asynchronous HTTP handlers produce their response. This allows healthy FastAPI services to deploy when the panel reaches them through a Docker bridge.
 - Hide the operator-only demo actions from workspace members. Members can start a deployment from the dashboard and choose an application source under **New**.
+- Open **Deploys** after a first source upload, including when the archive is rejected after service creation. Failed deployments show the failed step and its available error detail beside a shortcut to the relevant log output.
 
 ### Internal
 

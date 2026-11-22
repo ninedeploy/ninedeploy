@@ -27,7 +27,7 @@ vi.mock('../src/components/Toast.js', async () => {
 
 function LocationProbe() {
   const location = useLocation();
-  return <div data-testid="location">{location.pathname}</div>;
+  return <div data-testid="location">{location.pathname}{location.search}</div>;
 }
 
 const zipFile = (name = 'app.zip', bytes = [0x50, 0x4b, 3, 4]) => new File([new Uint8Array(bytes)], name, { type: 'application/zip' });
@@ -63,7 +63,7 @@ describe('New resource → Upload source', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Upload source' }));
   }
 
-  it('creates a docker service, uploads the archive to it and opens the service', async () => {
+  it('opens the deployment output after the first upload queues a build', async () => {
     mockOf(api.services.create).mockResolvedValue({ id: 31, name: 'drop', slug: 'drop' } as never);
     mockOf(api.services.uploadSource).mockResolvedValue({ sha: 'a'.repeat(40), entries: 2, deploymentId: 5 } as never);
     open();
@@ -71,21 +71,21 @@ describe('New resource → Upload source', () => {
     fireEvent.change(screen.getByLabelText('Archive'), { target: { files: [zipFile()] } });
     fireEvent.change(screen.getByPlaceholderText('3000'), { target: { value: '8080' } });
     fireEvent.click(screen.getByRole('button', { name: /Create and deploy/ }));
-    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/services/31'));
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/services/31?tab=deploys'));
     expect(api.services.create).toHaveBeenCalledWith({ name: 'drop', type: 'docker', port: 8080 });
     expect(mockOf(api.services.uploadSource).mock.calls[0]![0]).toBe(31);
     expect(Array.from(mockOf(api.services.uploadSource).mock.calls[0]![1] as Uint8Array)).toEqual([0x50, 0x4b, 3, 4]);
     expect(toastSpy.toast).toHaveBeenCalledWith('drop created — deploying your upload', 'success');
   });
 
-  it('a refused upload still leads to the service it created, saying so', async () => {
+  it('a refused upload opens the existing service where the archive can be replaced', async () => {
     mockOf(api.services.create).mockResolvedValue({ id: 32, name: 'drop', slug: 'drop' } as never);
     mockOf(api.services.uploadSource).mockRejectedValue(new Error('Unsafe path in the archive: "../x"'));
     open();
     fireEvent.change(screen.getByPlaceholderText('my-app'), { target: { value: 'drop' } });
     fireEvent.change(screen.getByLabelText('Archive'), { target: { files: [zipFile()] } });
     fireEvent.click(screen.getByRole('button', { name: /Create and deploy/ }));
-    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/services/32'));
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/services/32?tab=deploys'));
     expect(toastSpy.toast).toHaveBeenCalledWith('Service created, but the upload failed: Unsafe path in the archive: "../x"', 'error');
   });
 

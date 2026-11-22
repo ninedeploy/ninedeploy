@@ -58,7 +58,7 @@ export function UploadSourceModal({ onClose }: { onClose: () => void }) {
     onSuccess: (svc) => {
       toast(t('{name} created — deploying your upload', { name: svc.name }), 'success');
       onClose();
-      navigate(`/services/${svc.id}`);
+      navigate(`/services/${svc.id}?tab=deploys`);
     },
     onError: (err: Error & { serviceId?: number }) => {
       toast(
@@ -67,7 +67,7 @@ export function UploadSourceModal({ onClose }: { onClose: () => void }) {
       );
       if (err.serviceId != null) {
         onClose();
-        navigate(`/services/${err.serviceId}`);
+        navigate(`/services/${err.serviceId}?tab=deploys`);
       }
     },
   });

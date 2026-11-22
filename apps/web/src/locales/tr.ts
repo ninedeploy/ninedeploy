@@ -5338,8 +5338,10 @@ export const TR: Readonly<Record<string, string>> = {
   'Serve production traffic': 'Production trafiğini sun',
   'Zero-downtime deployment': 'Kesintisiz dağıtım',
   'All traffic is now served by the new release.': 'Tüm trafik artık yeni sürüm tarafından sunuluyor.',
-  'The deployment failed. Inspect its CI results and output for the failed step.':
-    'Dağıtım başarısız oldu. Başarısız adım için CI sonuçlarını ve çıktısını inceleyin.',
+  'Review the deployment output, fix the cause, and deploy again.':
+    'Dağıtım çıktısını inceleyin, hatayı giderin ve tekrar dağıtın.',
+  '{stage} failed': '{stage} başarısız oldu',
+  'Jump to failed step': 'Başarısız adıma git',
   'Waiting for required CI workflows on the pinned commit. The current release stays live.':
     'Sabitlenmiş commit için gerekli CI iş akışları bekleniyor. Mevcut sürüm yayında kalır.',
   'Waiting for a workspace admin to approve this deploy. The current release stays live.':
