@@ -133,11 +133,17 @@ User feedback was not available for this decision. Everything here is browser ev
 - **A `HEAD` request to a client-side route answers 404.** Only `GET` is given the entry page, so `/services` answers 200 to `GET` and 404 to `HEAD`. Browsers use `GET`; a monitor that probes such a route with `HEAD` would report the panel down. The root page is a real file and answers both.
 - **README screenshots** are made with the `screens` project and will show compact once regenerated.
 
+## Hosted run
+
+After the commit was pushed, hosted CI passed on `c4a8a0339095dee4e0ef19beff58dbadfb7f9345`: 20,203 tests in the eight workspace packages, with server coverage above every floor (93.43 % statements, 88.40 % branches, 91.92 % functions, 96.60 % lines). The [Browser journeys workflow](https://github.com/ninedeploy/ninedeploy/actions/runs/45279201742) then ran all five projects on the published `main-c4a8a033` image and passed **65 of 65**, with the README screenshot test skipped by design. The [CI run](https://github.com/ninedeploy/ninedeploy/actions/runs/45270693627) is the first hosted evidence for every commit after v0.19.0.
+
+The first of those hosted runs, on the commit before, [failed one server test](https://github.com/ninedeploy/ninedeploy/actions/runs/45262642560). It was not N10's: the browser release gate job that N08 had added to `release-publish.yml` set Node up without the repository's runtime check. `c4a8a033` adds it. Ten older jobs in other workflows do the same and are not covered by that test.
+
 ## Limits of this evidence
 
-- This is browser evidence from automated journeys on a local Docker Desktop panel. No person used either layout for this record, and no manual screen-reader session was held. "A control has a name" is decided by a script that follows the order a browser uses: `aria-label`, `aria-labelledby`, a `<label>`, the text, the `title`, and for fields the placeholder.
+- This is browser evidence from automated journeys, run on a local Docker Desktop panel and then in hosted CI. No person used either layout for this record, and no manual screen-reader session was held. "A control has a name" is decided by a script that follows the order a browser uses: `aria-label`, `aria-labelledby`, a `<label>`, the text, the `title`, and for fields the placeholder.
 - The journeys check five deep links per layout on every run. All fourteen were checked once per layout, on the baseline image.
-- Hosted CI was not run. The candidate image is local.
+- The hosted runs cover the pushed commits only. The full release gate (`pnpm release:check`) and the release workflow's digest-pinned gate have not been run on a release candidate.
 
 ## Evidence
 
