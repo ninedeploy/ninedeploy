@@ -41,11 +41,17 @@ export async function setContextLayout(context: BrowserContext, layout: PanelLay
   }, layout);
 }
 
-export const test = base.extend<{ layout: PanelLayout }>({
+/**
+ * N10: a project that sets `storesLayout` to false stores no layout, as a
+ * first visit does not, so its pages show whatever the panel gives a browser
+ * until it chooses one. The README screenshots run that way.
+ */
+export const test = base.extend<{ layout: PanelLayout; storesLayout: boolean }>({
   layout: ['classic', { option: true }],
-  page: async ({ page, layout }, use) => {
+  storesLayout: [true, { option: true }],
+  page: async ({ page, layout, storesLayout }, use) => {
     await restoreSession(page.context());
-    await setContextLayout(page.context(), layout);
+    if (storesLayout) await setContextLayout(page.context(), layout);
     await use(page);
   },
 });

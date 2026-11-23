@@ -69,11 +69,12 @@ export default defineConfig({
       use: { ...devices['Pixel 7'], layout: 'compact' },
     },
     // A5: README screenshots, only with ND_SCREENSHOTS=<dir> and --project=screens.
+    // N10: the README shows the layout a browser gets until it chooses one, so this project stores none.
     {
       name: 'screens',
       testMatch: /[/\\]screens\.spec\.ts$/,
       dependencies: ['setup'],
-      use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 }, colorScheme: 'dark' },
+      use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 }, colorScheme: 'dark', storesLayout: false },
     },
   ],
 });
