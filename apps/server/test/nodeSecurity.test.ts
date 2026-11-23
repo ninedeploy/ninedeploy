@@ -53,7 +53,8 @@ describe('Node security baseline', () => {
         if (install >= 0) expect(install).toBeGreaterThan(check);
       }
     }
-    expect(found).toBe(6);
+    // ci.yml: three jobs. release-publish.yml: three, the browser release gate since N08. publish-npm.yml: one.
+    expect(found).toBe(7);
   });
 });
 
