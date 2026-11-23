@@ -50,7 +50,9 @@ const HASHED_ASSET = /^assets[\\/](?:[^\\/]+[\\/])*[^\\/]+-[A-Za-z0-9_-]{8}\.[A-
  * Serve the built web dashboard (apps/web/dist) from the API and fall back to
  * index.html for client-side routes. Registered LAST so every /v1 route wins;
  * unknown API paths still get JSON 404s, only browser HTML navigations get the
- * SPA entry. Without a dist, retain JSON 404s without Fastify's raw-URL log.
+ * SPA entry. `HEAD` gets the same answer as `GET` without a body, because a
+ * monitor may probe a client-side route that way. Without a dist, retain JSON
+ * 404s without Fastify's raw-URL log.
  */
 export async function registerStaticFiles(fastify: FastifyInstance, root: string | null): Promise<void> {
   if (!root) {
@@ -74,13 +76,15 @@ export async function registerStaticFiles(fastify: FastifyInstance, root: string
   }
 
   fastify.setNotFoundHandler((req: FastifyRequest, reply: FastifyReply) => {
-    if (root && !isApiPath(req.url) && req.method === 'GET') {
+    // Only GET came here before, so a monitor's HEAD to a client-side route
+    // read 404 as a panel that was down.
+    if (root && !isApiPath(req.url) && (req.method === 'GET' || req.method === 'HEAD')) {
       // R4: the OAuth consent page is never shown inside another site's frame (clickjacking).
       if (req.url.startsWith('/oauth/authorize')) reply.header('X-Frame-Options', 'DENY').header('Content-Security-Policy', "frame-ancestors 'none'");
       return reply.sendFile('index.html');
     }
-    // Preserve Fastify's default not-found body for API paths and non-GET
-    // requests — the dashboard must not change the API 404 contract.
+    // Preserve Fastify's default not-found body for API paths and every other
+    // method — the dashboard must not change the API 404 contract.
     return reply.code(404).send({
       message: `Route ${req.method}:${req.url} not found`,
       error: 'Not Found',

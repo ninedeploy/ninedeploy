@@ -143,6 +143,40 @@ describe('registerStaticFiles', () => {
       expect(res.headers['cache-control'], url).toBe('public, max-age=0');
     }
   });
+  // A monitor may probe a client-side route with HEAD. GET was given the entry
+  // page and HEAD answered 404, which a monitor reads as a panel that is down.
+  it('answers HEAD on a client-side route as it answers GET, without a body', async () => {
+    const app = await buildTestApp();
+    await registerStaticFiles(app, makeDist('head', '<html><body>dashboard-here</body></html>'));
+
+    const get = await app.inject({ method: 'GET', url: '/services/42' });
+    const head = await app.inject({ method: 'HEAD', url: '/services/42' });
+    expect(head.statusCode).toBe(200);
+    expect(head.body).toBe('');
+    for (const header of ['content-type', 'content-length', 'cache-control']) {
+      expect(head.headers[header], header).toBe(get.headers[header]);
+    }
+    // R4: the consent page's refusal to be framed is sent to HEAD as well.
+    const consent = await app.inject({ method: 'HEAD', url: '/oauth/authorize?client_id=x' });
+    expect(consent.statusCode).toBe(200);
+    expect(consent.headers['x-frame-options']).toBe('DENY');
+
+    // The API surface keeps its JSON 404 for HEAD, and other methods keep theirs.
+    const api = await app.inject({ method: 'HEAD', url: '/v1/nope' });
+    expect(api.statusCode).toBe(404);
+    expect(api.json()).toEqual({
+      message: 'Route HEAD:/v1/nope not found',
+      error: 'Not Found',
+      statusCode: 404,
+    });
+    const put = await app.inject({ method: 'PUT', url: '/anything' });
+    expect(put.statusCode).toBe(404);
+    expect(put.json()).toEqual({
+      message: 'Route PUT:/anything not found',
+      error: 'Not Found',
+      statusCode: 404,
+    });
+  });
 });
 
 describe('staticFilesPlugin (default export)', () => {
