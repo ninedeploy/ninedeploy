@@ -11,6 +11,15 @@ import { defineConfig, devices } from '@playwright/test';
 const baseURL = process.env.ND_BASE_URL;
 if (!baseURL) throw new Error('ND_BASE_URL is not set: run scripts/smoke-browser-e2e.mjs, which starts the panel');
 
+/**
+ * Playwright matches a RegExp against a test file's whole path, so every
+ * pattern here is anchored to the file's name. Unanchored, a checkout under a
+ * directory such as `n10-acceptance` matched `1[0-2]-` and put every file
+ * into the desktop projects.
+ */
+const JOURNEYS = /[/\\](?:0[2-9]|1[0-2])-[^/\\]*\.spec\.ts$/;
+const PHONE_OR_COMPACT_ONLY = /[/\\](?:phone|08-compact)[^/\\]*\.spec\.ts$/;
+
 export default defineConfig({
   testDir: './tests',
   fullyParallel: false,
@@ -28,39 +37,41 @@ export default defineConfig({
     video: 'off',
   },
   projects: [
-    { name: 'setup', testMatch: /01-setup\.spec\.ts/, use: { ...devices['Desktop Chrome'] } },
+    { name: 'setup', testMatch: /[/\\]01-setup\.spec\.ts$/, use: { ...devices['Desktop Chrome'] } },
     {
       name: 'desktop',
-      testMatch: /(?:0[2-9]|10)-.*\.spec\.ts/,
-      testIgnore: /phone|08-compact/,
+      testMatch: JOURNEYS,
+      testIgnore: PHONE_OR_COMPACT_ONLY,
       dependencies: ['setup'],
       use: { ...devices['Desktop Chrome'], viewport: { width: 1366, height: 900 } },
     },
     {
       name: 'phone',
-      testMatch: /phone\.spec\.ts/,
+      testMatch: /[/\\]phone\.spec\.ts$/,
       dependencies: ['desktop'],
       use: { ...devices['Pixel 7'] },
     },
-    // A3: the compact layout (opt-in for one release) passes the journeys
-    // that use the service page and the sidebar, on the same panel: 04, 06 and
-    // 09 under their own names, then what only compact has, then phone width.
+    // A3/N10: the compact layout runs every desktop journey the classic
+    // project runs, on the same panel and under per-layout names, plus what
+    // only compact has (08), then phone width. Until N10 it repeated only the
+    // journeys that touch the service page, which left first deploy, logs,
+    // backup/restore, team access and Turkish unmeasured in compact.
     {
       name: 'desktop-compact',
-      testMatch: /(04-env-rollback|06-approval|08-compact|09-domain-tls)\.spec\.ts/,
+      testMatch: JOURNEYS,
       dependencies: ['desktop'],
       use: { ...devices['Desktop Chrome'], viewport: { width: 1366, height: 900 }, layout: 'compact' },
     },
     {
       name: 'phone-compact',
-      testMatch: /phone\.spec\.ts/,
+      testMatch: /[/\\]phone\.spec\.ts$/,
       dependencies: ['desktop-compact'],
       use: { ...devices['Pixel 7'], layout: 'compact' },
     },
     // A5: README screenshots, only with ND_SCREENSHOTS=<dir> and --project=screens.
     {
       name: 'screens',
-      testMatch: /screens\.spec\.ts/,
+      testMatch: /[/\\]screens\.spec\.ts$/,
       dependencies: ['setup'],
       use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 }, colorScheme: 'dark' },
     },

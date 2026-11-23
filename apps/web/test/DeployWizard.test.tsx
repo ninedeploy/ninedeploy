@@ -500,6 +500,37 @@ describe('DeployWizard', () => {
     await waitFor(() => expect(document.activeElement).toBe(screen.getByPlaceholderText('my-app')));
   });
 
+  // N10: the browser journeys found the wizard was the one dialog on the task
+  // paths that let Tab out to the page behind it, lost the focus when closed,
+  // and closed with a button a screen reader could not name.
+  it('N10: the close button is named, and the focus comes back to what opened the wizard', async () => {
+    const user = userEvent.setup();
+    const opener = document.createElement('button');
+    opener.textContent = 'Docker image';
+    document.body.appendChild(opener);
+    opener.focus();
+    const { unmount, onClose } = renderWizard();
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByPlaceholderText('my-app')));
+    expect(screen.getByRole('button', { name: 'Close dialog' })).toBeInTheDocument();
+    await user.keyboard('{Escape}');
+    expect(onClose).toHaveBeenCalledTimes(1);
+    // What the page does when the wizard asks to close.
+    unmount();
+    expect(document.activeElement).toBe(opener);
+    opener.remove();
+  });
+
+  it('N10: Tab stays inside the wizard', async () => {
+    const user = userEvent.setup();
+    renderWizard();
+    const dialog = await screen.findByRole('dialog');
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByPlaceholderText('my-app')));
+    for (let i = 0; i < 30; i++) {
+      await user.tab();
+      expect(dialog).toContainElement(document.activeElement as HTMLElement);
+    }
+  });
+
   it('hides the back button on the first step and closes via X', async () => {
     const user = userEvent.setup();
     const { container, onClose } = renderWizard();

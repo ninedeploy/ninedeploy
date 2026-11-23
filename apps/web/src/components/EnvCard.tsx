@@ -320,16 +320,18 @@ export function EnvCard({
             )}
 
             <form onSubmit={onAdd} className="space-y-2">
+              {/* N10: named, not just placeheld — a placeholder leaves with the first character typed. */}
               <div className="flex gap-2">
-                <Input value={key} onChange={(e) => setKey(e.target.value)} placeholder="KEY" className="h-9 min-w-0 flex-[2] font-mono text-xs" />
+                <Input value={key} onChange={(e) => setKey(e.target.value)} placeholder="KEY" aria-label={t('Key')} className="h-9 min-w-0 flex-[2] font-mono text-xs" />
                 <Input
                   value={value}
                   onChange={(e) => setValue(e.target.value)}
                   placeholder={secret ? t('secret value') : t('value')}
+                  aria-label={secret ? t('Secret value') : t('Value')}
                   type={secret ? 'password' : 'text'}
                   className="h-9 min-w-0 flex-[3] font-mono text-xs"
                 />
-                <Button type="submit" size="sm" variant="secondary" disabled={!key.trim() || add.isPending}>
+                <Button type="submit" size="sm" variant="secondary" disabled={!key.trim() || add.isPending} aria-label={t('Add variable')}>
                   <Plus size={14} />
                 </Button>
               </div>
@@ -365,6 +367,7 @@ export function EnvCard({
                           value={dirty ? draft : v.value}
                           type={v.isSecret || v.hidden ? 'password' : 'text'}
                           placeholder={v.isSecret ? t('•••• hidden') : v.hidden ? t('•••• protected lane') : ''}
+                          aria-label={t('Value of {key}', { key: v.key })}
                           onChange={(e) => setDrafts((d) => ({ ...d, [v.id]: e.target.value }))}
                           className="h-7 min-w-0 flex-1 font-mono text-[11px]"
                         />

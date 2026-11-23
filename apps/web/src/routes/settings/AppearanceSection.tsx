@@ -51,12 +51,12 @@ export function AppearanceSection() {
                     : 'border-white/10 bg-white/[0.02] text-slate-500 hover:border-white/20',
                 )}
               >
-                {l === 'classic' ? t('Classic') : t('Compact (preview)')}
+                {l === 'classic' ? t('Classic') : t('Compact')}
               </button>
             ))}
           </div>
           <p className="mt-2 text-xs text-slate-500">
-            {t('Compact shows six service tabs with the rest under More, folds rarely used service settings, and shortens the sidebar. It becomes the default in a coming release.')}
+            {t('Compact is the default: six service tabs with the rest under More, rarely used service settings folded, and a shorter sidebar. Classic keeps every tab and setting in view. The choice is kept in this browser.')}
           </p>
         </div>
         <div>

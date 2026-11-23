@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
-import { expect, test } from './fixtures';
-import { apiGet, watch } from './support';
+import { expect, perLayout, test } from './fixtures';
+import { apiList, watch } from './support';
 
 type Db = { id: number; name: string; engine: string; status: string; containerName: string };
 type Backup = { id: number; status: string; sizeBytes: number };
@@ -15,20 +15,25 @@ function query(db: Db, statement: string): string {
   { encoding: 'utf8', timeout: 15_000, windowsHide: true }).trim();
 }
 
-test('database backup and restore: the browser restores a protected row from a PostgreSQL snapshot', async ({ page }) => {
+test('database backup and restore: the browser restores a protected row from a PostgreSQL snapshot', async ({ page, layout }) => {
   test.setTimeout(600_000);
   const w = watch(page);
+  // N10: the compact run repeats this journey on the same panel, so the
+  // database is named instead of taking the quick button's `postgres-db`.
+  const name = perLayout(layout, 'e2e-restore');
   await page.goto('/databases');
   await page.getByRole('button', { name: /New database/ }).click();
   await page.getByRole('button', { name: /PostgreSQL/ }).first().click();
-  await page.getByRole('button', { name: /Create Now/ }).click();
+  await page.getByRole('button', { name: /Continue/ }).click();
+  await page.getByPlaceholder('my-database').fill(name);
+  await page.getByRole('button', { name: /Continue/ }).click();
+  await page.getByRole('button', { name: 'Create database', exact: true }).click();
 
   // The managed postgres image is pulled inside dind on a cold runner.
   let db: Db | undefined;
   await expect
     .poll(async () => {
-      const list = await apiGet<Db[] | { items: Db[] }>(page, '/v1/databases');
-      db = (Array.isArray(list) ? list : list.items).find((d) => d.engine === 'postgres');
+      db = (await apiList<Db>(page, '/v1/databases')).find((d) => d.name === name);
       return db?.status;
     }, { timeout: 360_000, intervals: [3_000, 5_000] })
     .toBe('running');
@@ -45,7 +50,7 @@ test('database backup and restore: the browser restores a protected row from a P
   let latest: Backup | undefined;
   await expect
     .poll(async () => {
-      latest = (await apiGet<Backup[]>(page, `/v1/databases/${db!.id}/backups`))[0];
+      latest = (await apiList<Backup>(page, `/v1/databases/${database.id}/backups`))[0];
       return latest?.status;
     }, { timeout: 180_000, intervals: [2_000, 5_000] })
     .toMatch(/^(completed|failed)$/);
@@ -56,7 +61,8 @@ test('database backup and restore: the browser restores a protected row from a P
   query(database, "INSERT INTO browser_restore VALUES ('after-snapshot')");
   expect(query(database, values)).toBe('after-snapshot\nin-snapshot');
   await page.goto('/backups');
-  await page.getByRole('row').filter({ hasText: database.name }).getByTitle('Restore', { exact: true }).click();
+  // Exact name: the compact run's "e2e-restore-compact" also contains "e2e-restore".
+  await page.getByRole('row').filter({ has: page.getByText(database.name, { exact: true }) }).getByTitle('Restore', { exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Restore backup' });
   await expect(dialog).toContainText('Current data will be overwritten.');
   const restored = page.waitForResponse(response =>

@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom/vitest';
 import { cleanup } from '@testing-library/react';
-import { afterEach } from 'vitest';
+import { afterEach, beforeEach } from 'vitest';
 
 // Vitest runs without globals, so React Testing Library's automatic cleanup
 // never registers — unmount explicitly between tests or renders leak across
@@ -63,3 +63,16 @@ for (const name of ['localStorage', 'sessionStorage'] as const) {
   Object.defineProperty(globalThis, name, { value: storage, configurable: true, writable: true });
   Object.defineProperty(window, name, { value: storage, configurable: true, writable: true });
 }
+
+// N10: compact is the layout a browser gets until it chooses one
+// (lib/layout.ts). This suite was written against classic and names classic's
+// tabs and links, so every test starts there unless it sets the layout itself.
+// Compact has its own tests (ServiceDetail "A3 compact layout", Layout,
+// Topology, panelLayout), and the browser journeys run each task in both.
+beforeEach(() => {
+  try {
+    localStorage.setItem('ninedeploy_layout', 'classic');
+  } catch {
+    // A test that denies storage keeps its own fixture, and reads the default.
+  }
+});

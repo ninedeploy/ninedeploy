@@ -10,7 +10,7 @@ import { useExperienceMode } from '../lib/mode.js';
 import { registeredNodes } from '../lib/multiNode.js';
 import { openFirstRunWarning } from '../lib/openFirstRun.js';
 import { useToast } from './Toast.js';
-import { Button, Input, Select, Textarea, cn } from './ui.js';
+import { Button, Input, Select, Textarea, cn, useDialogFocus } from './ui.js';
 import { DeploymentSupport } from './DeploymentSupport.js';
 import { fill, msg, useT } from '../lib/i18n.js';
 
@@ -124,33 +124,19 @@ export function DeployWizard({ template, preset, onClose }: { template?: Templat
   const dialogRef = useRef<HTMLDivElement>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
 
-  // Modal hygiene: focus the first field on open so keyboard/screen-reader
-  // users land IN the dialog (not the page behind it), close on Escape, and
-  // lock background scrolling while the wizard is up.
-  // Callers pass `onClose` as a fresh inline arrow per render, so keying this
-  // effect on it used to refocus the name field after EVERY keystroke typed
-  // anywhere else in the form. Read the latest closure through a ref instead
-  // and run the setup exactly once per mount of the dialog.
   const busyRef = useRef(false);
   // r208: what a failed repo deploy already created. The create → env → trigger
   // sequence is not atomic; a retry after a failed env row or trigger used to
   // re-POST the service and die on `slug_taken`, stranding a half-made service.
   const createdRef = useRef<{ serviceId: number; envDone: Set<string>; githubLinked?: boolean; domainDone?: boolean } | null>(null);
-  const onCloseRef = useRef(onClose);
-  useEffect(() => {
-    onCloseRef.current = onClose;
-  });
-  useEffect(() => {
-    nameInputRef.current?.focus();
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !busyRef.current) onCloseRef.current(); };
-    window.addEventListener('keydown', onKey);
-    return () => {
-      document.body.style.overflow = prevOverflow;
-      window.removeEventListener('keydown', onKey);
-    };
-  }, []);
+  // Modal hygiene, through the hook every other dialog uses (N10): focus the
+  // name field on open so keyboard and screen-reader users land IN the dialog,
+  // keep Tab inside it, close on Escape, lock background scrolling, and hand
+  // the focus back to whatever opened it. Callers pass `onClose` as a fresh
+  // inline arrow per render; the hook reads the latest closure through a ref
+  // and runs its setup exactly once per mount of the dialog.
+  // Escape does nothing while a deploy is running: the wizard's own rule.
+  useDialogFocus(dialogRef, true, () => { if (!busyRef.current) onClose(); }, nameInputRef);
   // Compose and PM2 are operator-only: a member following such a preset link
   // lands on the Docker type instead of a form the API would refuse.
   const presetType = preset?.type && (preset.type === 'docker' || isAdmin) ? preset.type : 'docker';
@@ -640,7 +626,7 @@ export function DeployWizard({ template, preset, onClose }: { template?: Templat
                 {isAdvanced ? <><Terminal size={10} /> DevOps Pro</> : <><Sparkles size={10} /> {t('Quick Mode')}</>}
               </span>
             </h2>
-            <button type="button" onClick={() => !busyRef.current && onClose()} className="rounded-lg p-1.5 text-slate-400 hover:bg-white/10 hover:text-slate-200 transition"><X size={16} /></button>
+            <button type="button" onClick={() => !busyRef.current && onClose()} aria-label={t('Close dialog')} className="rounded-lg p-1.5 text-slate-400 hover:bg-white/10 hover:text-slate-200 transition"><X size={16} /></button>
           </div>
           <div className="flex items-center gap-2">
             {STEPS.map((label, i) => (

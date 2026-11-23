@@ -71,16 +71,18 @@ export function Workspaces() {
     enabled: Boolean(workspaceId),
   });
 
-  const { data: invitations = [] } = useQuery<WorkspaceInvitationEntry[]>({
-    queryKey: ['workspace-invitations', workspaceId],
-    /* v8 ignore next 1 -- queryFn never runs when `enabled` is false (no workspace selected) */
-    queryFn: () => (workspaceId ? api.workspaces.listInvitations(workspaceId) : []),
-    enabled: Boolean(workspaceId) && Boolean(detail),
-    refetchInterval: 15_000,
-  });
-
   const isOwner = detail?.myRole === 'owner' || user?.isOperator === true;
   const isAdmin = isOwner || detail?.myRole === 'admin';
+
+  // N10: only an admin can list invitations. A member opening this page used
+  // to ask anyway and get a 403 in the console, so the page does not ask.
+  const { data: invitations = [] } = useQuery<WorkspaceInvitationEntry[]>({
+    queryKey: ['workspace-invitations', workspaceId],
+    /* v8 ignore next 1 -- queryFn never runs when `enabled` is false (no workspace, or not an admin) */
+    queryFn: () => (workspaceId ? api.workspaces.listInvitations(workspaceId) : []),
+    enabled: Boolean(workspaceId) && isAdmin,
+    refetchInterval: 15_000,
+  });
 
   const inviteMutation = useMutation({
     mutationFn: (input: WorkspaceMemberAddInput) =>

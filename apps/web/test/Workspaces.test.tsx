@@ -88,6 +88,16 @@ describe('Workspaces route', () => {
     expect(api.accessGrants.list).not.toHaveBeenCalled();
   });
 
+  // N10: a member opening this page (the team-access task) made the panel
+  // answer 403 in the browser console — the page asked for the invitations
+  // that only an admin can list.
+  it.each(['member', 'viewer'] as const)('N10: a %s opening the page never asks for the invitations', async (myRole) => {
+    mockOf(api.workspaces.get).mockResolvedValue({ ...mockWs, myRole } as never);
+    renderWithProviders(<Workspaces />);
+    expect(await screen.findByText('dev@acme.com')).toBeInTheDocument();
+    expect(api.workspaces.listInvitations).not.toHaveBeenCalled();
+  });
+
   it('falls back to a stable shell when no workspace is selected', async () => {
     // When currentWorkspace is null, the page should not crash and should not
     // call the invitation listing endpoint.

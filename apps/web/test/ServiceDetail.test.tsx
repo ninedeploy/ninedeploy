@@ -2257,6 +2257,36 @@ describe('ServiceDetail', () => {
     });
   });
 
+  // N10: the browser journeys found controls on the task pages that a screen
+  // reader could not name. This one's heading sat outside its <label>.
+  describe('N10: controls a screen reader can name', () => {
+    it('names the PR preview switch after what it turns on', async () => {
+      renderRoute(<ServiceDetail />, { path: '/services/:id', route: '/services/1?tab=settings' });
+      expect(await screen.findByRole('checkbox', { name: 'Ephemeral PR / MR Preview Deployments' })).toBeInTheDocument();
+    });
+
+    // N10: on a phone the tab strip scrolls sideways, and the page brings the
+    // selected tab on screen — but only when the tab changed. A deep link
+    // selects its tab before the service has loaded, so there was nothing to
+    // scroll to yet, and the tab stayed off-screen.
+    it('N10: a deep link brings its tab on screen once the tab strip exists', async () => {
+      const scrollIntoView = vi.fn();
+      const original = Element.prototype.scrollIntoView;
+      Element.prototype.scrollIntoView = scrollIntoView;
+      try {
+        let resolveService: (value: unknown) => void = () => {};
+        mockOf(api.services.get).mockReturnValue(new Promise((resolve) => { resolveService = resolve; }));
+        renderRoute(<ServiceDetail />, { path: '/services/:id', route: '/services/1?tab=volumes' });
+        expect(screen.queryByRole('tab')).not.toBeInTheDocument();
+        await act(async () => { resolveService({ ...service }); });
+        expect(await screen.findByRole('tab', { name: 'Volumes & Storage' })).toHaveAttribute('aria-selected', 'true');
+        expect(scrollIntoView).toHaveBeenCalledTimes(1);
+      } finally {
+        Element.prototype.scrollIntoView = original;
+      }
+    });
+  });
+
   describe('A3 compact layout', () => {
     const tabNames = () => screen.getAllByRole('tab').map((el) => el.textContent);
     afterEach(() => localStorage.removeItem(LAYOUT_STORAGE_KEY));
@@ -2274,7 +2304,7 @@ describe('ServiceDetail', () => {
       expect(tabNames()).toHaveLength(14); // no inline compose file
       expect(screen.queryByRole('button', { name: 'More' })).not.toBeInTheDocument();
 
-      fireEvent.click(screen.getByRole('button', { name: 'Compact (preview)' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Compact' }));
       await waitFor(() => expect(tabNames()).toEqual(['Overview', 'Deploys', 'Environment', 'Domains', 'Logs', 'Settings']));
       expect(localStorage.getItem(LAYOUT_STORAGE_KEY)).toBe('compact');
       const more = screen.getByRole('button', { name: 'More' });
@@ -2316,6 +2346,39 @@ describe('ServiceDetail', () => {
       await waitFor(() => expect(screen.getAllByText((_c, el) => el?.tagName === 'PRE' && el.textContent === 'line one\nline two')).toHaveLength(1));
     });
 
+    it('N10: the header toggle hides the runtime log on the Logs tab, where the log is shown without asking', async () => {
+      localStorage.setItem(LAYOUT_STORAGE_KEY, 'compact');
+      mockOf(api.services.logs).mockResolvedValue({ lines: 'line one\nline two' } as never);
+      const log = () => screen.findByText((_c, el) => el?.tagName === 'PRE' && el.textContent === 'line one\nline two');
+      const user = userEvent.setup();
+      renderRoute(<ServiceDetail />, { path: '/services/:id', route: '/services/1?tab=activity' });
+      await log();
+      // The log is on the page, so the button offers to hide it — and does.
+      await user.click(screen.getByRole('button', { name: /Hide logs/ }));
+      await waitFor(() => expect(screen.queryByText('line one')).not.toBeInTheDocument());
+      expect(screen.getByRole('button', { name: /Runtime logs/ })).toBeInTheDocument();
+      // And to show it again.
+      await user.click(screen.getByRole('button', { name: /Runtime logs/ }));
+      await log();
+    });
+
+    it('N10: hiding the log on the Logs tab leaves the other tabs\' header toggle as it was', async () => {
+      localStorage.setItem(LAYOUT_STORAGE_KEY, 'compact');
+      mockOf(api.services.logs).mockResolvedValue({ lines: 'line one\nline two' } as never);
+      const log = () => screen.findByText((_c, el) => el?.tagName === 'PRE' && el.textContent === 'line one\nline two');
+      const user = userEvent.setup();
+      renderRoute(<ServiceDetail />, { path: '/services/:id', route: '/services/1' });
+      await user.click(await screen.findByRole('button', { name: /Runtime logs/ }));
+      await log();
+      await user.click(screen.getByRole('tab', { name: 'Logs' }));
+      await user.click(screen.getByRole('button', { name: /Hide logs/ }));
+      await waitFor(() => expect(screen.queryByText('line one')).not.toBeInTheDocument());
+      // The Overview still shows the log the header toggle opened there.
+      await user.click(screen.getByRole('tab', { name: 'Overview' }));
+      await log();
+      expect(screen.getByRole('button', { name: /Hide logs/ })).toBeInTheDocument();
+    });
+
     it('folds rarely used settings that are off, keeps the deploy hook out, and opens the fold on request', async () => {
       localStorage.setItem(LAYOUT_STORAGE_KEY, 'compact');
       mockOf(api.services.get).mockResolvedValue({ ...service, canary: null } as never);
@@ -2349,11 +2412,12 @@ describe('ServiceDetail', () => {
       expect(screen.queryByRole('button', { name: /More settings/ })).not.toBeInTheDocument();
     });
 
-    it('ignores an unknown stored value and starts classic', async () => {
+    // N10: compact is the default; the suite pins classic in test/setup.ts.
+    it('N10: an unknown stored value is not a choice, so the page starts in the default layout, compact', async () => {
       localStorage.setItem(LAYOUT_STORAGE_KEY, 'something-else');
       renderRoute(<ServiceDetail />, { path: '/services/:id', route: '/services/1' });
       await screen.findByRole('heading', { name: 'api' });
-      expect(screen.queryByRole('button', { name: 'More' })).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'More' })).toBeInTheDocument();
     });
   });
 });

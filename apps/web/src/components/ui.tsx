@@ -559,12 +559,12 @@ export function useDialogFocus(
     // The panel ref is always attached before this effect runs (refs bind
     // during commit, effects after), so the element is safe to assert.
     const panel = panelRef.current!;
-    // r564: `tabindex="-1"` elements (listbox options, the backdrop) are not
-    // Tab stops — counting them as the trap's first/last let Tab escape.
+    // Count real Tab stops when the wizard hides Back or disables Continue.
     const focusables = () =>
-      Array.from(panel.querySelectorAll<HTMLElement>('button, [href], input, select, textarea, [tabindex]')).filter(
-        (el) => !(el as HTMLButtonElement).disabled && el.getAttribute('tabindex') !== '-1',
-      );
+      Array.from(panel.querySelectorAll<HTMLElement>('button, [href], input, select, textarea, summary, [tabindex]')).filter((el) => {
+        if (el.tabIndex < 0 || el.matches(':disabled, input[type="hidden"]') || el.closest('[inert], [hidden]')) return false;
+        return el.checkVisibility?.({ visibilityProperty: true }) ?? getComputedStyle(el).visibility === 'visible';
+      });
 
     const target = initialFocusRefSnapshot.current?.current ?? focusables()[0];
     target?.focus();

@@ -646,10 +646,12 @@ function PreviewEnvironmentsCard({ svc }: { svc: Service }) {
             <GitPullRequest size={16} className="text-indigo-400" /> {t('Ephemeral PR / MR Preview Deployments')}
           </div>
           <label className="relative inline-flex cursor-pointer items-center">
+            {/* N10: the heading is this control's name; it sits outside the <label>. */}
             <input
               type="checkbox"
               checked={enabled}
               onChange={(e) => setEnabled(e.target.checked)}
+              aria-label={t('Ephemeral PR / MR Preview Deployments')}
               className="peer sr-only"
             />
             <div className="peer h-5 w-9 rounded-full bg-slate-700 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-all after:content-[''] peer-checked:bg-indigo-600 peer-checked:after:translate-x-full peer-focus:outline-none" />

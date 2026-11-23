@@ -40,6 +40,13 @@ function isApiPath(url: string): boolean {
 }
 
 /**
+ * A build output file whose name carries Vite's content hash. Nothing else
+ * about the file is stable, so nothing else may be kept by a browser: the
+ * hash is what makes the name a promise.
+ */
+const HASHED_ASSET = /^assets[\\/](?:[^\\/]+[\\/])*[^\\/]+-[A-Za-z0-9_-]{8}\.[A-Za-z0-9]+$/;
+
+/**
  * Serve the built web dashboard (apps/web/dist) from the API and fall back to
  * index.html for client-side routes. Registered LAST so every /v1 route wins;
  * unknown API paths still get JSON 404s, only browser HTML navigations get the
@@ -49,7 +56,21 @@ export async function registerStaticFiles(fastify: FastifyInstance, root: string
   if (!root) {
     fastify.log.info('web dashboard dist not found — API-only mode (build apps/web or set NINEDEPLOY_WEB_DIST)');
   } else {
-    await fastify.register(fastifyStatic, { root, prefix: '/', wildcard: true, index: ['index.html'] });
+    await fastify.register(fastifyStatic, {
+      root,
+      prefix: '/',
+      wildcard: true,
+      index: ['index.html'],
+      // N10: a hashed file is fetched once and kept. index.html names those
+      // files and stays `max-age=0`, so an upgrade is seen on the next load.
+      // Before this, every page load asked the panel again for all ~29 of
+      // them — and each ask counted against the panel's request limit.
+      setHeaders(reply, filename) {
+        if (HASHED_ASSET.test(path.relative(root, filename))) {
+          reply.header('Cache-Control', 'public, max-age=31536000, immutable');
+        }
+      },
+    });
   }
 
   fastify.setNotFoundHandler((req: FastifyRequest, reply: FastifyReply) => {

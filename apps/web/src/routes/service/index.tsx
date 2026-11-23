@@ -230,6 +230,10 @@ export function ServiceDetail() {
   });
 
   const [showRuntimeLogs, setShowRuntimeLogs] = useState(false);
+  // N10: the compact Logs tab shows the runtime log without asking. This is
+  // whether the person hid it there; it does not touch the header toggle's
+  // own state, which is for the other tabs.
+  const [logsHiddenOnTab, setLogsHiddenOnTab] = useState(false);
   const [showExec, setShowExec] = useState(false);
 
   const doExportService = async () => {
@@ -253,6 +257,10 @@ export function ServiceDetail() {
   // reachable by `?tab=compose` either — for every other service.
   const visibleTabs = SERVICE_TABS.filter((tabDef) => tabDef.id !== 'compose' || !!svc?.composeContent);
   const tab: TabId = visibleTabs.some((tabDef) => tabDef.id === tabParam) ? (tabParam as TabId) : 'overview';
+  // A3/N10: compact's Logs tab owns the runtime log while it is open.
+  const logsOnTab = isCompact && tab === 'activity';
+  // The header button says what it does: whether the runtime log is on the page.
+  const runtimeLogsShown = svc?.runtimeId != null && (logsOnTab ? !logsHiddenOnTab : showRuntimeLogs);
   const byId = (ids: TabId[]) => ids.flatMap((tid) => visibleTabs.filter((tabDef) => tabDef.id === tid));
   const primaryTabs = byId(COMPACT_PRIMARY);
   const moreTabs = byId(COMPACT_MORE);
@@ -290,11 +298,15 @@ export function ServiceDetail() {
     );
   };
   // In the one-row tab strip (below lg) the active tab may sit off-screen.
+  // N10: also once the strip exists. A deep link selects its tab before the
+  // service has loaded, so there was nothing to scroll to yet, and on a
+  // phone the selected tab stayed outside the strip.
   const activeTabRef = useRef<HTMLButtonElement | null>(null);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: re-run when the tab changes; the ref itself is stable.
+  const serviceId = svc?.id;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: re-run when the tab changes or the strip appears; the ref itself is stable.
   useEffect(() => {
     activeTabRef.current?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
-  }, [tab]);
+  }, [tab, serviceId]);
   // Redeploying a LIVE service is intentional but easy to hit by accident —
   // the button sits next to Restart/Stop — so a running service requires a
   // confirmation before the build is queued.
@@ -405,8 +417,12 @@ export function ServiceDetail() {
             </Button>
           )}
           {svc.runtimeId && (
-            <Button variant="ghost" size="md" onClick={() => setShowRuntimeLogs((v) => !v)}>
-              <Terminal size={15} /> {showRuntimeLogs ? t('Hide logs') : t('Runtime logs')}
+            <Button
+              variant="ghost"
+              size="md"
+              onClick={() => (logsOnTab ? setLogsHiddenOnTab((v) => !v) : setShowRuntimeLogs((v) => !v))}
+            >
+              <Terminal size={15} /> {runtimeLogsShown ? t('Hide logs') : t('Runtime logs')}
             </Button>
           )}
           {svc.runtimeId && (
@@ -431,7 +447,7 @@ export function ServiceDetail() {
       />
 
       {/* Compact: the Logs tab shows runtime logs itself; never stream them twice. */}
-      {showRuntimeLogs && svc.runtimeId && !(isCompact && tab === 'activity') && <RuntimeLogsCard serviceId={id} slug={svc.slug} />}
+      {!logsOnTab && runtimeLogsShown && <RuntimeLogsCard serviceId={id} slug={svc.slug} />}
       <NodeLifecycleCard serviceId={id} command={lifecycleState.data?.command ?? null} />
       {lifecycleState.isError && <ErrorCard title={t('Could not load runtime commands')} error={lifecycleState.error} onRetry={() => void lifecycleState.refetch()} />}
 
@@ -543,7 +559,7 @@ export function ServiceDetail() {
           {tab === 'framework' && <FrameworkTab serviceId={id} svc={svc} />}
           {tab === 'activity' && (
             <>
-              {isCompact && svc.runtimeId && <RuntimeLogsCard serviceId={id} slug={svc.slug} />}
+              {logsOnTab && runtimeLogsShown && <RuntimeLogsCard serviceId={id} slug={svc.slug} />}
               <ActivityTab serviceId={id} name={svc.name} />
               <ShippedLogSearchCard serviceId={id} />
               {/* G5.4: errors reported by Sentry SDKs. */}

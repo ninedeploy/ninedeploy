@@ -5,23 +5,35 @@ import { useCallback, useSyncExternalStore } from 'react';
  * rarely used Settings cards folded, and a shorter sidebar (Hub inside New,
  * no Queue item, Networks inside Topology).
  *
- * It is opt-in for one release (Settings → Appearance), so an upgrade changes
- * nothing for anyone; the release after turns it on by default and removes
- * the classic layout. Kept in the browser like the theme and the Simple /
- * Advanced mode, and read through a store rather than a provider, so every
- * component that branches on it sees the same value without extra wiring.
+ * N10 (docs/COMPACT_LAYOUT.md): compact is the layout a browser gets until it
+ * chooses one. It was opt-in while the two layouts were compared on the same
+ * tasks; that comparison is done. A stored choice is kept either way, so
+ * someone who picked Classic keeps it. The choice is kept in the browser like
+ * the theme and the Simple / Advanced mode, and read through a store rather
+ * than a provider, so every component that branches on it sees the same value
+ * without extra wiring.
  */
 export type PanelLayout = 'classic' | 'compact';
+
+/**
+ * The layout for a browser that never chose: a first visit, a new browser
+ * profile, a private window, or a browser that refuses storage (where a
+ * choice then lasts for the page only).
+ */
+export const DEFAULT_LAYOUT: PanelLayout = 'compact';
 
 export const LAYOUT_STORAGE_KEY = 'ninedeploy_layout';
 const CHANGED = 'ninedeploy-layout-changed';
 
+/** The stored choice, or the default. An explicit Classic counts exactly as much as an explicit Compact. */
 export function readLayout(): PanelLayout {
   try {
-    return localStorage.getItem(LAYOUT_STORAGE_KEY) === 'compact' ? 'compact' : 'classic';
+    const stored = localStorage.getItem(LAYOUT_STORAGE_KEY);
+    if (stored === 'classic' || stored === 'compact') return stored;
   } catch {
-    return 'classic';
+    // Storage blocked: the default.
   }
+  return DEFAULT_LAYOUT;
 }
 
 export function writeLayout(layout: PanelLayout): void {
@@ -51,7 +63,7 @@ function subscribe(onChange: () => void): () => void {
 const snapshot = (): PanelLayout => memory ?? readLayout();
 
 export function usePanelLayout(): { layout: PanelLayout; isCompact: boolean; setLayout: (layout: PanelLayout) => void } {
-  const layout = useSyncExternalStore(subscribe, snapshot, () => 'classic' as const);
+  const layout = useSyncExternalStore(subscribe, snapshot, () => DEFAULT_LAYOUT);
   const setLayout = useCallback((next: PanelLayout) => writeLayout(next), []);
   return { layout, isCompact: layout === 'compact', setLayout };
 }

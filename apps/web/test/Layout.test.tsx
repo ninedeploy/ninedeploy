@@ -384,6 +384,34 @@ describe('Layout', () => {
     expect(screen.queryByRole('button', { name: 'Close the menu' })).not.toBeInTheDocument();
   });
 
+  // N10: on a phone, tapping a group icon in the first moments of the page
+  // opened the drawer and then lost it again. The navigation effect runs on
+  // mount and once more when the plugin menu list arrives after the first
+  // paint; both used to close whatever the person had opened.
+  it('N10: on a phone a drawer opened before the plugin menu list arrives stays open', async () => {
+    const media = { matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() };
+    vi.stubGlobal('matchMedia', vi.fn(() => media));
+    let resolveMenus: (value: unknown) => void = () => {};
+    apiMock.api.menus.list.mockReturnValue(new Promise((resolve) => { resolveMenus = resolve; }));
+    const user = userEvent.setup();
+    renderLayout('/');
+    // Closed at first, as on any page.
+    expect(screen.queryByText('Collapse')).not.toBeInTheDocument();
+    const dataBtn = screen.getAllByRole('button').find((b) => b.textContent === 'Data') as HTMLButtonElement;
+    await user.click(dataBtn);
+    expect(screen.getByText('Collapse')).toBeInTheDocument();
+    // The menu list arrives now, with a plugin page of its own group. The
+    // drawer the person opened stays.
+    await act(async () => {
+      resolveMenus({ items: [{ id: 'demo', slot: 'sidebar:secondary', label: 'Plugin page', route: '/settings/extensions/demo' }] });
+    });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Extensions' })).toBeInTheDocument());
+    expect(screen.getByText('Collapse')).toBeInTheDocument();
+    // A navigation still closes it.
+    await user.click(screen.getByRole('link', { name: /Databases/ }));
+    expect(screen.queryByText('Collapse')).not.toBeInTheDocument();
+  });
+
   it('collapses the panel via the collapse button', async () => {
     const user = userEvent.setup();
     renderLayout('/databases');

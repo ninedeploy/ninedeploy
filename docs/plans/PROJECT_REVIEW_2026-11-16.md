@@ -125,6 +125,7 @@ The [digest-pinned browser release gate](../../scripts/README.md#browser-journey
 **N10 — Complete the compact UI transition with user evidence. P2 / M. Former A3.**
 
 - [layout.ts](../../apps/web/src/lib/layout.ts) defaults to `classic`; compact is opt-in and has browser projects. The breadth of instance Settings remains separate work.
+- **Implemented on November 23, 2026, and unpublished:** both layouts were compared on the same operator and member tasks, and compact is now the default for a browser that has not chosen one. A stored Classic is kept. Grouping Settings by task is still open. [Compact layout acceptance](../COMPACT_LAYOUT.md)
 - Work: evaluate tasks: new deployment, environment change, finding logs, rollback, backup/restore, and team access. Change the default based on results; group Settings by task. Include keyboard/focus behavior, screen-reader labels, Turkish, and phone layouts in acceptance.
 - Acceptance: deep links and active feature cards remain discoverable; the same journeys complete in the new layout. Base behavior changes on task evidence.
 
@@ -693,3 +694,24 @@ These timings describe the PostgreSQL 18 test dataset and local Docker network. 
 The tested NineDeploy candidate was built from the local tree at base `f238463e292cf5145356b41c86d179a6661d6796`. Its image ID was `sha256:792567148132ab524c1eb9b0d837e75e0d5186f4f2f9f49e293e91d2c3e8ffe7`. The RustFS image ID was `sha256:ed9210d6411d77ffceb70d94b964a3cb7d225983368bc25bebe01e995293dcc2`. This package adds a reusable `--rustfs` smoke mode and keeps all archive runtime source bytes from the preceding package.
 
 Related server tests passed **93 tests across five files**. Documentation and contract checks passed **47 tests across seven files**. Script syntax and scoped Biome lint checks passed. Evidence is under `.temp_files/package-8-20261117/`. The final panel and node receipts are `panel-1/result.json` and `node-final/result.json`, with exact row checks in `verify.log` and `latest-verify.log` beside each. The initial node run, before the extra pagination scenario was added, passed 18 scenarios. The post-run audit confirmed all three resource labels were clear, both copies of each temporary TLS private key were removed, and the candidate image tag was removed after its identity was verified. See `verified-results.json`.
+
+## Twelfth-package implementation record — November 23, 2026
+
+### N10 — compact and classic compared; compact becomes the default
+
+Committed on `main` and **unpublished**. Other sessions were editing the checkout at the same time (roadmap and status documents, Turkish comments, a repository-preflight feature in the deploy wizard), so every number below was taken on an image built from a tree that holds `841b2b27` plus the N10 files only. The record with the full matrix and its limits is [Compact layout acceptance](../COMPACT_LAYOUT.md).
+
+- The compact browser project now runs every desktop journey the classic project runs, under per-layout service, database and member names. New journeys keep measured facts in the JSON report: clicks per task, what each layout hides, Tab stops, dialog focus, unnamed controls, the phone drawer and deep links, the member's seat, and the default layout.
+- **Comparison.** Nine operator tasks take the same clicks in both layouts, and none needs a tab or a card that compact puts away. Compact keeps 8 service tabs under **More** and 9 service settings cards while their feature is off, and replaces **Hub** with **New**. Crossing the service tabs takes 6 Tab stops instead of 14. On a phone the tab strip is 701 px wide instead of 1677 px. A deep link to each of the 14 tabs lands on a selected, visible tab in both layouts.
+- **Defects found and fixed**, in both layouts unless stated: the compact **Logs** tab header button (compact only); both wizards off the shared focus hook; four controls without a name; a member's **Workspaces** page asking for invitations only admins can list and getting a 403; hashed panel files requested again on every load; a phone drawer closed right after an early tap; a deep-linked tab left off-screen on a phone. The shared dialog hook counted a hidden control as its last Tab stop; that fix and its test came from a concurrent session and are part of this commit.
+- **Decision.** Compact is the default for a browser that has not chosen a layout; a stored Classic is kept. No user feedback was available, so the decision rests on the browser evidence. `DEFAULT_LAYOUT` in `apps/web/src/lib/layout.ts` holds it back.
+
+| Check | Observed result |
+| --- | --- |
+| Baseline image (`841b2b27`, no N10 change) | In compact: the Logs-tab button red. In both layouts: dialog focus red, three controls without a name on the walk (a fourth, the value field of an existing variable, was found by a probe), the phone drawer closed after an early tap, a deep-linked tab off-screen. A member's **Workspaces** page answered 403 for invitations. The core journeys completed in compact. |
+| Candidate image `sha256:47e82df0da212893c497a0179bfacade5f106b8e437478b7aa9eabcbbf04cb35` | Three consecutive runs of the five projects: **65 of 65 passed each** (15.8, 14.9 and 16.7 minutes), none skipped, failed or retried. The Release workflow's report check accepts each report. |
+| Unit tests | The failing run is kept for four fixes (static-file caching, the member's invitation request, the phone drawer, the tab brought on screen); the other tests were written after their fix. The complete web suite passed **245 files / 2,889 tests**; the server suites that read the changed files passed **61 tests in 6 files**. Both ran in the shared checkout. |
+| Static checks | Web and server typecheck and Biome on the changed files pass. |
+| Hosted CI, full release gate | **Not run** when this was written. |
+
+**Completion:** N10's comparison and its fixes are committed and locally verified; nothing is published. Left open: **More** is off-screen on a phone until the tab strip is scrolled; instance Settings still has 20 sections in 4 groups; hosted CI and the full gate on the integrated candidate remain for release preparation.

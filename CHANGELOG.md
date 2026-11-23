@@ -13,23 +13,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Releases now require successful core browser journeys on the exact image offered to operators.
 - Deploy Next.js, Laravel, and FastAPI from a local folder using the new framework starters.
+- The compact panel layout is now the default for browsers that have not chosen one. A stored Classic choice is kept.
 
-**Action needed:** No.
+**Action needed:** No. To keep the classic layout, choose it once under **Settings → Appearance → Layout**. The choice is kept per browser.
 
 ### Added
 
 - Add three source-upload starters with Dockerfiles, locked dependencies, health checks and deployment instructions. Verify all three through the panel and proxy in a dedicated workflow.
+### Changed
+
+- Make the compact layout the default. It was compared with classic on the same operator and member tasks: the same number of clicks, with no tab or setting the tasks need put away, and fewer Tab stops on every service page. [Compact layout record](docs/COMPACT_LAYOUT.md)
 
 ### Fixed
 
 - Keep the panel's sibling readiness probe connected while asynchronous HTTP handlers produce their response. This allows healthy FastAPI services to deploy when the panel reaches them through a Docker bridge.
 - Hide the operator-only demo actions from workspace members. Members can start a deployment from the dashboard and choose an application source under **New**.
 - Open **Deploys** after a first source upload, including when the archive is rejected after service creation. Failed deployments show the failed step and its available error detail beside a shortcut to the relevant log output.
+- On the compact **Logs** tab the header button said **Runtime logs** while the log was on the page, and **Hide logs** without hiding it. It now says what is on the page, and hides and shows the log there.
+- The deploy and database wizards now take the focus when opened and hand it back when closed, and the deploy wizard's close button has a name.
+- Name the controls a screen reader could not announce: the environment card's add button and value fields, and the PR-preview switch.
+- A workspace member opening **Workspaces** no longer makes the page ask for invitations only admins can list, which answered 403.
+- On a phone, a tap on a sidebar group icon right after the page loads is no longer undone, and a link to a service tab brings that tab on screen.
+- A page load no longer asks the panel again for every script and stylesheet: files whose name carries the build hash are kept by the browser.
 
 ### Internal
 
 - Require the core browser journeys on the signed candidate image digest before release promotion. Cover PostgreSQL restore and phone layout changes in the browser.
 - Exercise Git-backed PR preview creation, cleanup and failed-build feedback in the required browser journeys.
+- The compact browser project now runs every desktop journey the classic project runs, under per-layout names. New journeys keep the task matrix, the controls each layout hides, Tab stops, dialog focus, unnamed controls, the phone drawer and the default layout as measured facts.
 
 ## [0.19.0] - 2026-11-18
 

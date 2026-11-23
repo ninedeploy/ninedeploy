@@ -1,12 +1,12 @@
 import { execFileSync } from 'node:child_process';
 import { createHmac, randomUUID } from 'node:crypto';
 import type { Page } from '@playwright/test';
-import { expect, test } from './fixtures';
-import { apiGet, sessionToken, watch } from './support';
+import { expect, perLayout, test } from './fixtures';
+import { apiGet, sessionToken, watch, type Deploy } from './support';
 
 type Branch = { name: string; commit: string };
 type Service = { id: number; name: string; slug: string; runtimeId: string | null; previewDeploymentsEnabled: boolean; previewParentServiceId: number | null };
-type Deployment = { id: number; status: string; commitSha: string };
+type Deployment = Deploy & { commitSha: string };
 type Hook = { id: number; secret: string };
 type Opened = { action: string; previewServiceId: number; deploymentId: number };
 type Traffic = { status: number; body: string };
@@ -28,7 +28,8 @@ const docker = (args: string[]) => execFileSync('docker', args,
 const slowPoll = { timeout: 180_000, intervals: [1_000, 2_000, 5_000] };
 const deployments = (page: Page, service: number) => apiGet<Deployment[]>(page, `/v1/services/${service}/deploys`);
 
-test('N08 PR preview: a signed Git event serves its branch, a broken build shows its failure, and closing removes both previews', async ({ page }) => {
+// N10: the compact project repeats this journey too, under its own parent service.
+test('N08 PR preview: a signed Git event serves its branch, a broken build shows its failure, and closing removes both previews', async ({ page, layout }) => {
   test.setTimeout(600_000);
   const fixture = JSON.parse(process.env.ND_E2E_GIT ?? 'null') as { container: string; main: string; preview: Branch; broken: Branch } | null;
   const dind = process.env.ND_E2E_DIND;
@@ -50,22 +51,22 @@ test('N08 PR preview: a signed Git event serves its branch, a broken build shows
     expect(response.ok(), `POST ${path}: HTTP ${response.status()}`).toBe(true);
     return await response.json() as T;
   }
-  const name = 'n08-git-parent';
+  const name = perLayout(layout, 'n08-git-parent');
   const parent = await post<Service>('/v1/services', {
     name, type: 'docker', repoUrl, branch: 'main', port: 8080, build: { buildPack: 'dockerfile' },
   });
   const original = await post<{ deploymentId: number }>(`/v1/services/${parent.id}/deploys`, {});
   await expect.poll(async () => (await deployments(page, parent.id)).find(row => row.id === original.deploymentId), slowPoll)
     .toMatchObject({ status: 'running', commitSha: git.main });
-  const parentHost = 'n08-parent-control.n08.test';
+  const parentHost = `${perLayout(layout, 'n08-parent-control')}.n08.test`;
   await post(`/v1/services/${parent.id}/domains`, { hostname: parentHost, ssl: false });
   await expect.poll(() => visit(parentHost), slowPoll).toEqual({ status: 200, body: 'baked-one' });
   const liveParent = await apiGet<Service>(page, `/v1/services/${parent.id}`);
   expect(liveParent.runtimeId).toBeTruthy();
 
   await page.goto(`/services/${parent.id}?tab=settings`);
-  const toggle = page.getByText('Ephemeral PR / MR Preview Deployments', { exact: true }).locator('../..')
-    .getByRole('checkbox', { name: '', exact: true });
+  // N10: the switch is named after what it turns on (it used to have no name at all).
+  const toggle = page.getByRole('checkbox', { name: 'Ephemeral PR / MR Preview Deployments' });
   await toggle.locator('..').click();
   await expect(toggle).toBeChecked();
   await page.getByRole('button', { name: 'Save PR preview settings' }).click();

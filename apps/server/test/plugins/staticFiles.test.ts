@@ -116,6 +116,33 @@ describe('registerStaticFiles', () => {
       statusCode: 404,
     });
   });
+
+  // N10: every page load revalidated all ~29 hashed files because they were
+  // sent with `max-age=0`. A hashed file never changes under its name, so a
+  // browser may keep it; the entry page names those files and is still asked
+  // for every time, so an upgrade is picked up at once.
+  it('lets a browser keep a content-hashed asset, and keeps asking for everything else', async () => {
+    const app = await buildTestApp();
+    const root = makeDist('cache', '<html><body>dashboard-here</body></html>');
+    mkdirSync(path.join(root, 'assets', 'fonts'), { recursive: true });
+    writeFileSync(path.join(root, 'assets', 'index-CZ-IztWf.js'), 'console.log(2)');
+    writeFileSync(path.join(root, 'assets', 'fonts', 'inter-De8F0oAb.woff2'), 'font');
+    writeFileSync(path.join(root, 'assets', 'app.css'), 'body{}');
+    writeFileSync(path.join(root, 'robots.txt'), 'User-agent: *');
+    await registerStaticFiles(app, root);
+
+    for (const url of ['/assets/index-CZ-IztWf.js', '/assets/fonts/inter-De8F0oAb.woff2']) {
+      const res = await app.inject({ method: 'GET', url });
+      expect(res.statusCode, `${url}: ${res.body}`).toBe(200);
+      expect(res.headers['cache-control'], url).toBe('public, max-age=31536000, immutable');
+    }
+    // A name that can change under its file is asked for again, entry page and SPA routes included.
+    for (const url of ['/', '/assets/app.js', '/assets/app.css', '/robots.txt', '/services/42']) {
+      const res = await app.inject({ method: 'GET', url });
+      expect(res.statusCode, url).toBe(200);
+      expect(res.headers['cache-control'], url).toBe('public, max-age=0');
+    }
+  });
 });
 
 describe('staticFilesPlugin (default export)', () => {

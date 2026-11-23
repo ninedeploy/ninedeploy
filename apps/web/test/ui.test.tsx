@@ -371,6 +371,23 @@ describe('Modal', () => {
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Close dialog' }));
   });
 
+  it('wraps past visually hidden controls and disabled fields', () => {
+    render(
+      <Modal title="T" onClose={() => {}}>
+        <button type="button">Visible last button</button>
+        <button type="button" style={{ visibility: 'hidden' }}>Hidden previous step</button>
+        <fieldset disabled><input aria-label="Disabled property" /></fieldset>
+      </Modal>,
+    );
+    const close = screen.getByRole('button', { name: 'Close dialog' });
+    const last = screen.getByRole('button', { name: 'Visible last button' });
+    last.focus();
+    fireEvent.keyDown(last, { key: 'Tab' });
+    expect(close).toHaveFocus();
+    fireEvent.keyDown(close, { key: 'Tab', shiftKey: true });
+    expect(last).toHaveFocus();
+  });
+
   it('wraps Shift+Tab from the first focusable to the last', async () => {
     const user = userEvent.setup();
     render(

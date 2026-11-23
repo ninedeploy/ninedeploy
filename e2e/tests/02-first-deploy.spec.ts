@@ -1,12 +1,12 @@
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { expect, test } from './fixtures';
-import { apiGet, watch } from './support';
+import { expect, perLayout, test, webService } from './fixtures';
+import { deploysOf, watch, type Deploy } from './support';
 
-type Deploy = { id: number; status: string };
-
-test('first deploy: an image through the deploy wizard comes up running', async ({ page }) => {
+// N10: the compact project repeats these journeys on the same panel, so
+// everything they create is named per layout.
+test('first deploy: an image through the deploy wizard comes up running', async ({ page, layout }) => {
   test.setTimeout(420_000);
   const w = watch(page);
   // The dashboard's "Start deploy" opens the same wizard; ?deploy=image picks the image source.
@@ -14,7 +14,7 @@ test('first deploy: an image through the deploy wizard comes up running', async 
   const dialog = page.getByRole('dialog');
   await expect(dialog).toBeVisible();
 
-  await dialog.getByPlaceholder('my-app').fill('e2e-web');
+  await dialog.getByPlaceholder('my-app').fill(webService(layout));
   await dialog.getByPlaceholder('n8nio/n8n').fill('nginx:1.27-alpine');
   await dialog.getByRole('button', { name: /Continue/ }).click();
   await dialog.getByPlaceholder('3000', { exact: true }).fill('80');
@@ -29,15 +29,14 @@ test('first deploy: an image through the deploy wizard comes up running', async 
   // The wizard hands over to the new service's page.
   await page.waitForURL(/\/services\/\d+/, { timeout: 60_000 });
   const id = Number(/\/services\/(\d+)/.exec(page.url())![1]);
-  await expect(page.getByText('e2e-web').first()).toBeVisible();
+  await expect(page.getByText(webService(layout), { exact: true }).first()).toBeVisible();
 
   // The image is pulled inside dind on a cold runner: allow a few minutes.
   let last: Deploy | undefined;
   await expect
     .poll(
       async () => {
-        const list = await apiGet<Deploy[] | { items: Deploy[] }>(page, `/v1/services/${id}/deploys`);
-        last = (Array.isArray(list) ? list : list.items)[0];
+        last = (await deploysOf(page, id))[0];
         return last?.status;
       },
       { timeout: 360_000, intervals: [2_000, 5_000] },
@@ -47,7 +46,7 @@ test('first deploy: an image through the deploy wizard comes up running', async 
   w.assertClean();
 });
 
-test('first source deploy: a build failure shows its cause and a corrected upload goes live', async ({ page }, testInfo) => {
+test('first source deploy: a build failure shows its cause and a corrected upload goes live', async ({ page, layout }, testInfo) => {
   test.setTimeout(420_000);
   const w = watch(page);
   const source = testInfo.outputPath('source');
@@ -64,7 +63,7 @@ test('first source deploy: a build failure shows its cause and a corrected uploa
   await page.goto('/new');
   await page.getByRole('button', { name: 'Upload source', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Upload source' });
-  await dialog.getByPlaceholder('my-app').fill('e2e-first-upload');
+  await dialog.getByPlaceholder('my-app').fill(perLayout(layout, 'e2e-first-upload'));
   await dialog.getByPlaceholder('3000').fill('80');
   await dialog.getByLabel('Archive').setInputFiles(archive('echo N09_EXPECTED_BUILD_FAILURE && exit 37', 'broken.tar.gz'));
   await dialog.getByRole('button', { name: 'Create and deploy' }).click();
@@ -72,7 +71,7 @@ test('first source deploy: a build failure shows its cause and a corrected uploa
   const url = new URL(page.url());
   expect(url.searchParams.get('tab')).toBe('deploys');
   const id = Number(url.pathname.split('/').at(-1));
-  const deployments = () => apiGet<Deploy[]>(page, `/v1/services/${id}/deploys`);
+  const deployments = () => deploysOf(page, id);
   const poll = { timeout: 150_000, intervals: [1_000, 2_000, 5_000] };
   await expect.poll(async () => (await deployments())[0]?.status, poll).toBe('failed');
   const failedId = (await deployments())[0]!.id;

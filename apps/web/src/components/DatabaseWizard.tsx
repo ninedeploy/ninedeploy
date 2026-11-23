@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { type FormEvent, useId, useState } from 'react';
+import { type FormEvent, useId, useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, Check, Database, HardDrive, Server, Sparkles, Terminal, X, Zap } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useAuth } from '../lib/auth.js';
@@ -7,7 +7,7 @@ import { formatBytes } from '../lib/format.js';
 import { fill, msg, useT } from '../lib/i18n.js';
 import { useExperienceMode } from '../lib/mode.js';
 import { registeredNodes } from '../lib/multiNode.js';
-import { Button, Input, cn, useEscapeToClose } from './ui.js';
+import { Button, Input, cn, useDialogFocus } from './ui.js';
 import { useToast } from './Toast.js';
 
 export const ENGINES = [
@@ -57,7 +57,10 @@ export function DatabaseWizard({
   // database there for its whole life (operator only).
   const [host, setHost] = useState('');
   const titleId = useId();
-  useEscapeToClose(onClose);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  // N10: the modal hygiene every other dialog has — focus moves in, Tab stays
+  // in, Escape closes, and the focus goes back to the button that opened it.
+  useDialogFocus(dialogRef, true, onClose);
 
   const volumes = useQuery({
     queryKey: ['volumes'],
@@ -121,7 +124,7 @@ export function DatabaseWizard({
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-6">
       <button type="button" aria-label={t('Close dialog')} tabIndex={-1} aria-hidden="true" onClick={onClose} className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-      <div role="dialog" aria-modal="true" aria-labelledby={titleId} className="nd-fade relative w-full max-w-lg overflow-hidden rounded-t-2xl border border-white/10 bg-slate-950 shadow-2xl sm:rounded-2xl">
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby={titleId} className="nd-fade relative w-full max-w-lg overflow-hidden rounded-t-2xl border border-white/10 bg-slate-950 shadow-2xl sm:rounded-2xl">
         {/* Header + stepper */}
         <div className="border-b border-white/5 p-5">
           <div className="mb-3 flex items-center justify-between">

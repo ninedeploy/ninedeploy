@@ -270,13 +270,24 @@ export function Layout() {
   }, []);
 
   // Auto-open the correct group when navigating (on a phone: close the drawer).
+  // Auto-open the correct group when navigating (on a phone: close the drawer).
+  // N10: on a phone only a navigation, or arriving at a phone width, closes
+  // it. This effect also runs on mount and again when the plugin menu list
+  // arrives after the first paint; both used to close a drawer the person had
+  // just opened from the rail.
+  const drawerClosedFor = useRef(location.pathname);
+  const wasNarrow = useRef(narrow);
   useEffect(() => {
     if (narrow) {
-      setActiveGroup(null);
-      return;
+      if (drawerClosedFor.current !== location.pathname || !wasNarrow.current) {
+        drawerClosedFor.current = location.pathname;
+        setActiveGroup(null);
+      }
+    } else {
+      const g = findGroup(location.pathname, navGroups);
+      if (g) setActiveGroup(g);
     }
-    const g = findGroup(location.pathname, navGroups);
-    if (g) setActiveGroup(g);
+    wasNarrow.current = narrow;
   }, [location.pathname, navGroups, narrow]);
 
   const currentGroup = navGroups.find((g) => g.id === activeGroup) ?? null;

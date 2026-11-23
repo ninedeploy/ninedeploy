@@ -41,6 +41,8 @@ A smoke test drives real Docker, often with a built panel image. Most run in CI 
 
 The Release workflow checks the candidate's image revision against the source checkout and runs the five core projects by digest. Each required project must execute and pass without skips or retries. A failed or skipped gate holds the GitHub Release and `:latest`. The separate Browser journeys workflow continues to test green main builds and runs nightly.
 
+The compact project runs every desktop journey the classic project runs, under per-layout service, database and member names, so both layouts are measured by the same walks (N10). The N10 journeys keep what they measure in the JSON report as annotations named `n10-*`: set `PLAYWRIGHT_JSON_OUTPUT_FILE`. That is the clicks each operator task takes from the dashboard, the tabs and cards each layout hides, Tab stops, what each dialog does with the focus, controls without a name, the phone drawer and deep links, the member's seat, and what a browser that never chose a layout gets. Two limits of the runner: a `--grep` filter is not applied to a project that runs as a dependency of another, and arguments after `--` must not contain spaces, because they are passed through a shell. The record is in [Compact layout acceptance](../docs/COMPACT_LAYOUT.md).
+
 ```sh
 node scripts/smoke-browser-e2e.mjs --image=<candidate-digest-reference> -- \
   --project=setup --project=desktop --project=phone --project=desktop-compact --project=phone-compact

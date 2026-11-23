@@ -179,6 +179,26 @@ describe('DatabaseWizard', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  // N10: the browser journeys found this wizard left the focus on the button
+  // behind it, and dropped it when it closed.
+  it('N10: takes the focus, keeps Tab inside, and hands the focus back to what opened it', async () => {
+    const user = userEvent.setup();
+    const opener = document.createElement('button');
+    opener.textContent = 'New database';
+    document.body.appendChild(opener);
+    opener.focus();
+    const { unmount } = renderWizard();
+    const dialog = screen.getByRole('dialog', { name: 'New database' });
+    await waitFor(() => expect(dialog).toContainElement(document.activeElement as HTMLElement));
+    for (let i = 0; i < 30; i++) {
+      await user.tab();
+      expect(dialog).toContainElement(document.activeElement as HTMLElement);
+    }
+    unmount();
+    expect(document.activeElement).toBe(opener);
+    opener.remove();
+  });
+
   it('closes via the X button and the backdrop', async () => {
     const user = userEvent.setup();
     const { container, onClose } = renderWizard();

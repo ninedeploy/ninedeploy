@@ -30,9 +30,9 @@ function renderCard() {
   });
 }
 
-/** Locate the Add submit button inside the new-env form (it has no accessible text). */
+/** Locate the Add submit button inside the new-env form. */
 function getAddButton() {
-  return document.querySelector('form button[type="submit"]') as HTMLButtonElement;
+  return screen.getByRole('button', { name: 'Add variable' });
 }
 
 /** Locate the <form> element wrapping the new-variable inputs. */
@@ -118,6 +118,25 @@ describe('EnvCard', () => {
     );
     expect(screen.getByPlaceholderText('KEY')).toHaveValue('');
     expect(screen.getByPlaceholderText('value')).toHaveValue('');
+  });
+
+  // N10: the browser journeys found these controls without a name: the add
+  // button is an icon, and a placeholder leaves with the first character typed.
+  it('N10: keeps a name on the new-variable fields and button, and names each value after its key', async () => {
+    const user = userEvent.setup();
+    renderCard();
+    await screen.findByDisplayValue('3000');
+    const key = screen.getByRole('textbox', { name: 'Key' });
+    await user.type(key, 'GREETING');
+    expect(key).toHaveAccessibleName('Key');
+    expect(screen.getByRole('textbox', { name: 'Value' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Add variable' })).toBeInTheDocument();
+    // A secret's value field is a password input; it is named the same way.
+    await user.click(screen.getByRole('checkbox', { name: /Secret/ }));
+    expect(screen.getByLabelText('Secret value')).toHaveAttribute('type', 'password');
+    // An existing variable's value is named after its key, placeholder or not.
+    expect(screen.getByLabelText('Value of PORT')).toHaveValue('3000');
+    expect(screen.getByLabelText('Value of API_KEY')).toHaveAttribute('type', 'password');
   });
 
   it('adds a secret variable when the checkbox is checked', async () => {
