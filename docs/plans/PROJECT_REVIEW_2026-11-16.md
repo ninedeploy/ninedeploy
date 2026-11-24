@@ -44,7 +44,7 @@ This review did not modify those files. They form an existing work package whose
 
 ## Prioritized work packages
 
-**Completed locally:** N01, N02 and N21. **N03 is implemented and passes its focused/native acceptance; its full release gate is not clean.** See the [first-package record](#first-package-implementation-record) and [N03 record](#second-package-implementation-record) for the separate verdicts. Other packages retain their priorities below.
+**Status on November 24, 2026:** N01, N02, N03 and N21, and the N04 and N05 packages, are published in 0.19.0. N06, N08, N09 and N10 are implemented on `main` and unpublished, with a review of repository settings in the deploy wizard, a migration-plan import and the generated CLI command reference. Hosted CI and the browser gate are green on that `main`; a full release gate on a candidate is still open. See the [first-package record](#first-package-implementation-record), the [N03 record](#second-package-implementation-record) and the [N10 record](#twelfth-package-implementation-record--november-23-2026) for the verdicts recorded before publication, and [Current status](../CURRENT_STATUS.md) for the hosted checks. Other packages retain their priorities below.
 
 P1: address in the next releases. P2: follow the foundational guarantees. S: a small slice; M: several slices; L: split across multiple releases. These are relative scope estimates, not calendar commitments.
 

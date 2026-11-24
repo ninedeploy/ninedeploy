@@ -67,7 +67,7 @@ These documents are kept for transparency. They are dated, and parts of them des
 - [Competitor gap roadmap, 2026-10](GAP_ROADMAP.md)
 - [Competitive delivery: acceptance evidence](COMPETITIVE_DELIVERY.md)
 - [Compact layout acceptance](COMPACT_LAYOUT.md) records the task comparison and the default layout decision.
-- Node work in progress: [request-rate autoscaling](NODE_RPS_AUTOSCALING.md) and [scale to zero and wake](NODE_SLEEP_WAKE.md)
+- Node scaling: [request-rate autoscaling](NODE_RPS_AUTOSCALING.md) and [scale to zero and wake](NODE_SLEEP_WAKE.md)
 - [Swarm runtime acceptance](SWARM_RUNTIME_ACCEPTANCE.md)
 - Audits: [0.10.2](AUDIT_0.10.2.md), [0.10.8](AUDIT_0.10.8.md), [security remediation, 2026-09](SECURITY_AUDIT_2026-09.md)
 - [Persistent port ingress plan](plans/persistent-port-ingress.md)
