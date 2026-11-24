@@ -36,6 +36,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - On a phone, a tap on a sidebar group icon right after the page loads is no longer undone, and a link to a service tab brings that tab on screen.
 - A page load no longer asks the panel again for every script and stylesheet: files whose name carries the build hash are kept by the browser.
 - A `HEAD` request to a panel page now gets the same answer as `GET`, without the body. A monitor that checks the panel with `HEAD` no longer sees a 404 on a page that opens.
+- A file of the web build that no longer exists answers 404 instead of the panel's entry page. A tab open from before an upgrade is told that the file is gone, and does not get a page it cannot use as a script.
+- On a phone with the compact layout, a service's **More** button is on screen without scrolling. The six tabs scroll beside it.
 
 ### Internal
 

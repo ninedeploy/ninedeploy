@@ -2321,6 +2321,19 @@ describe('ServiceDetail', () => {
       expect(tabNames()[1]).toBe('Terminal & Exec');
     });
 
+    it('scrolls the six tabs in a box of their own, with More beside it', async () => {
+      // jsdom has no layout, so this is the wiring a phone relies on: More is not inside the
+      // box the tabs scroll in. The browser journey measures that it is on screen.
+      localStorage.setItem(LAYOUT_STORAGE_KEY, 'compact');
+      renderRoute(<ServiceDetail />, { path: '/services/:id', route: '/services/1' });
+      expect(await screen.findByRole('heading', { name: 'api' }));
+      const more = screen.getByRole('button', { name: 'More' });
+      const box = screen.getByRole('tab', { name: 'Overview' }).parentElement!;
+      expect(box).toContainElement(screen.getByRole('tab', { name: 'Settings' }));
+      expect(box).not.toContainElement(more);
+      expect(more.parentElement).toBe(box.parentElement);
+    });
+
     it('opens More by itself for a deep link to one of its tabs, and lists an inline compose file there', async () => {
       localStorage.setItem(LAYOUT_STORAGE_KEY, 'compact');
       mockOf(api.services.get).mockResolvedValue({ ...service, type: 'compose', repoUrl: null, composeService: 'web', composeContent: 'services: {}\n' } as never);

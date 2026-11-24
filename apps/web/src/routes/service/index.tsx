@@ -463,11 +463,24 @@ export function ServiceDetail() {
         {/* Below lg: one scrolling row of tabs; as a list it pushed the tab's
             content a whole phone screen down. */}
         <aside className="w-full min-w-0 lg:w-60 shrink-0">
-          <div className="flex gap-1 overflow-x-auto rounded-2xl border border-white/[0.06] bg-white/[0.02] p-2 lg:block lg:space-y-1 lg:overflow-visible">
+          <div
+            className={cn(
+              'flex gap-1 rounded-2xl border border-white/[0.06] bg-white/[0.02] p-2 lg:block lg:space-y-1',
+              // Classic keeps its one scrolling row.
+              !isCompact && 'overflow-x-auto lg:overflow-visible',
+            )}
+          >
             <div className="hidden px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-500 lg:block">
               {t('Service Navigation')}
             </div>
-            {(isCompact ? primaryTabs : visibleTabs).map(renderTab)}
+            {isCompact && (
+              // Below lg the six tabs scroll inside their own box, so More stays beside them
+              // on screen: the row is wider than a phone, and More is what reaches the other eight.
+              <div className="flex min-w-0 flex-1 gap-1 overflow-x-auto lg:block lg:space-y-1 lg:overflow-visible">
+                {primaryTabs.map(renderTab)}
+              </div>
+            )}
+            {!isCompact && visibleTabs.map(renderTab)}
             {isCompact && moreTabs.length > 0 && (
               <button
                 type="button"

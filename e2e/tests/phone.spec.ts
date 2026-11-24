@@ -96,11 +96,21 @@ test('phone: a service\'s tabs switch from the strip, including one kept under M
   facts.tabsUpFront = (await tabs.allTextContents()).map((text) => text.trim());
   const more = strip.getByRole('button', { name: 'More', exact: true });
   if (layout === 'compact') {
-    // The strip is wider than the phone: whether More is on screen without scrolling is a fact worth keeping.
+    // The six tabs do not fit a phone, and More is what reaches the other eight, so it sits
+    // beside the scrolling tabs and is on screen before anything is scrolled.
     facts.moreOnScreenWithoutScrolling = await more.evaluate((el) => {
       const box = el.getBoundingClientRect();
       return box.left >= 0 && box.right <= document.documentElement.clientWidth;
     });
+    expect(facts.moreOnScreenWithoutScrolling).toBe(true);
+    await expect(more).toBeInViewport();
+    // The first tab is on screen beside it, and the strip still scrolls.
+    await expect(tabs.first()).toBeInViewport();
+    facts.stripScrolls = await tabs.first().evaluate((el) => {
+      const scroller = el.parentElement!;
+      return scroller.scrollWidth > scroller.clientWidth;
+    });
+    expect(facts.stripScrolls).toBe(true);
   }
 
   // Environment: one of the tabs both layouts show up front.
