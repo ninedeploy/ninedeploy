@@ -9,6 +9,10 @@ const turbo = createRequire(import.meta.url).resolve('turbo');
 const config = readFileSync(new URL('../../../turbo.json', import.meta.url), 'utf8');
 const manager = JSON.parse(readFileSync(new URL('../../../package.json', import.meta.url), 'utf8')).packageManager as string;
 const temporaryRoot = realpathSync(tmpdir());
+const COMMAND_TIMEOUT_MS = 15_000;
+// The first test runs eight subprocesses. Keep the per-command deadline
+// and give the outer test that total budget plus setup and teardown time.
+const FIXTURE_TIMEOUT_MS = 8 * COMMAND_TIMEOUT_MS + 15_000;
 let directory: string;
 
 function write(file: string, text: string) {
@@ -19,7 +23,7 @@ function write(file: string, text: string) {
 
 function run(...args: string[]) {
   const result = spawnSync(process.execPath, [turbo, 'run', 'test', '--filter=@ninedeploy/server', '--cache=local:rw', ...args], {
-    cwd: directory, encoding: 'utf8', timeout: 15_000, windowsHide: true,
+    cwd: directory, encoding: 'utf8', timeout: COMMAND_TIMEOUT_MS, windowsHide: true,
     env: { ...process.env, TURBO_TELEMETRY_DISABLED: '1', TURBO_TOKEN: '', TURBO_TEAM: '' },
   });
   if (result.error) throw result.error;
@@ -64,7 +68,7 @@ afterEach(() => {
   rmSync(directory, { recursive: true, force: true });
 });
 
-it('a cached green result cannot hide a broken root document consumed by the task', () => {
+it('a cached green result cannot hide a broken root document consumed by the task', { timeout: FIXTURE_TIMEOUT_MS }, () => {
   // A cold pnpm invocation can normalize the minimal fixture lockfile. Warm
   // the cache only after that bootstrap and assert the inputs then stay fixed.
   const bootstrap = run();
@@ -84,7 +88,7 @@ it('a cached green result cannot hide a broken root document consumed by the tas
   expect(hash()).not.toBe(before);
 });
 
-it('hashes installer, workflow and script changes but ignores unrelated scratch environment files', () => {
+it('hashes installer, workflow and script changes but ignores unrelated scratch environment files', { timeout: FIXTURE_TIMEOUT_MS }, () => {
   const before = hash();
   write('.temp_files/research/.env', 'UNRELATED_FIXTURE=1\n');
   write('.temp_files/unrelated.txt', 'scratch only\n');
