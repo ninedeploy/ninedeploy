@@ -498,7 +498,10 @@ describe('deploy-time resolution with a configured provider', () => {
 describe('pipeline passes its deploy log to the resolver (M14)', () => {
   it('loadRuntimeEnv forwards log to resolveVaultRefs, and the deploy passes its log', () => {
     const src = readFileSync(new URL('../src/engine/pipeline.ts', import.meta.url), 'utf8');
-    expect(src).toMatch(/await resolveVaultRefs\(db, env, \{ service, projectIds: projectLinks\.map\(\(p\) => p\.projectId\) \}, log\)/);
+    // collectRuntimeEnv merges the sources and names the service's projects; loadRuntimeEnv
+    // resolves the references last, from that merged map, and hands the deploy log to the resolver.
+    expect(src).toMatch(/projectIds: projectLinks\.map\(\(p\) => p\.projectId\),/);
+    expect(src).toMatch(/const \{ projectIds, \.\.\.environment \} = await collectRuntimeEnv\(db, service, templateDatabaseId\);[\s\S]{0,200}?return \{ \.\.\.environment, values: await resolveVaultRefs\(db, environment\.values, \{ service, projectIds \}, log\) \};/);
     expect(src).toMatch(/const runtimeEnvironment: RuntimeEnvironment = restore\s*\? \{[^\n]+\}\s*: await loadRuntimeEnv\(db, service, templateDatabaseId, log\);/);
     const vaultSrc = readFileSync(new URL('../src/lib/vault.ts', import.meta.url), 'utf8');
     expect(vaultSrc).toMatch(/export function hasVaultRef\(value: string\): boolean \{\s*return hasSecretRef\(value\);\s*\}/);
