@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Show detected build files, a declared TCP port when unambiguous, and environment template keys in the repository deploy wizard. Template values are never returned or applied by the scan.
 - Add three source-upload starters with Dockerfiles, locked dependencies, health checks and deployment instructions. Verify all three through the panel and proxy in a dedicated workflow.
 ### Changed
 

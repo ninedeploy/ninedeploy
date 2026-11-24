@@ -411,6 +411,12 @@ Each rule becomes one `docker run -p` operand (`-p 203.0.113.7:27015-27030:27015
 
 ### Git LFS (0.16.3)
 
+### Review repository settings before deploying
+
+When the deploy wizard analyzes a repository, it lists the Dockerfile and conventional Compose filenames in the selected base directory. A single literal TCP `EXPOSE` port in the Dockerfile's final stage appears as a hint. Check the runtime step for the selected port and health path before deploying. The scan leaves multiple or dynamic ports for you to verify.
+
+The wizard lists up to 100 variable names from the first readable example environment file, such as `.env.example` or `.env.sample`. Enter the values you need on the Environment step. The analysis returns only names and leaves the deploy settings as entered.
+
 A repository that keeps models, media or datasets in Git LFS checks out *pointer files* (a few lines of text) in their place. Turn on **Service → Settings → Git LFS** and each deploy replaces them with their content before the build.
 
 - The files come from the repository's own LFS server, `<repository URL>.git/info/lfs`, with the service's Git credential (an access token or a GitHub App). A repository's `.lfsconfig` is ignored, so a repository cannot point the panel at another server. HTTPS repositories only; an SSH (deploy key) repository is refused with a message.

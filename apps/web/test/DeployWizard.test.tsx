@@ -936,6 +936,33 @@ describe('DeployWizard — repository analysis & Git credential guidance', () =>
     }
   });
 
+  it('shows repository preflight hints on source and review without adding example keys to the deploy', async () => {
+    const user = userEvent.setup();
+    apiMock.api.insights.analyze.mockResolvedValue({
+      ...analysis,
+      preflight: {
+        dockerfile: 'Dockerfile', composeFiles: ['compose.yaml'], exposedTcpPort: 8080,
+        envTemplate: { file: '.env.example', keys: ['API_TOKEN'] },
+      },
+    });
+    renderWizard();
+
+    await fillRepo(user);
+    const summaryName = 'Environment keys in .env.example (1)';
+    expect(await screen.findByText(summaryName, {}, { timeout: 4000 })).toBeInTheDocument();
+    expect(screen.getByText('Dockerfile, compose.yaml')).toBeVisible();
+    expect(screen.getByText(':8080')).toBeVisible();
+    await user.click(screen.getByText(summaryName));
+    expect(screen.getByText('API_TOKEN')).toBeVisible();
+
+    for (let step = 0; step < 4; step++) await user.click(screen.getByRole('button', { name: /continue/i }));
+    expect(screen.getByText(summaryName)).toBeInTheDocument();
+    expect(screen.getByText('GET /')).toBeVisible();
+    await user.click(screen.getByRole('button', { name: /^Deploy$/ }));
+    await waitFor(() => expect(apiMock.api.deploys.trigger).toHaveBeenCalledWith(42));
+    expect(apiMock.api.env.create).not.toHaveBeenCalled();
+  });
+
   it('applies framework suggestions to the form', async () => {
     const user = userEvent.setup();
     apiMock.api.insights.analyze.mockResolvedValue(analysis);

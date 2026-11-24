@@ -1111,6 +1111,8 @@ export function DeployWizard({ template, preset, onClose }: { template?: Templat
                           <PlanStep icon={<Globe size={12} />} label={t('Route traffic')} value={t('Traefik router + auto URL')} />
                         </div>
 
+                        <RepoPreflightDetails preflight={insights.preflight} />
+
                         {insights.framework.env.length > 0 && (
                           <div className="flex flex-wrap items-center gap-1.5">
                             <span className="text-[10px] uppercase tracking-wider text-slate-500">{t('Suggested env:')}</span>
@@ -1494,11 +1496,7 @@ export function DeployWizard({ template, preset, onClose }: { template?: Templat
               <Row label={t('Type')} value={type} />
               {nodeChoice && <Row label={t('Host')} value={chosenNode ? chosenNode.name : t('This panel host')} />}
               <Row label={mode === 'repo' ? t('Repository') : t('Image')} value={mode === 'repo' ? repoUrl : image} />
-              {/* The review step is repo-mode only (templates finish one step
-                  earlier), so the image arms are type-level only. */}
-              {/* v8 ignore start */}
-              {trimmedBaseDir && mode === 'repo' && <Row label={t('Base directory')} value={trimmedBaseDir} />}
-              {/* v8 ignore stop */}
+              {mode === 'repo' && <Row label={t('Base directory')} value={trimmedBaseDir || '/'} />}
               {insights && mode === 'repo' && (
                 <Row
                   label={t('Detected framework')}
@@ -1510,7 +1508,7 @@ export function DeployWizard({ template, preset, onClose }: { template?: Templat
                   /* v8 ignore stop */
                 />
               )}
-              {buildPackSent !== 'auto' && (
+              {type === 'docker' && mode === 'repo' && (
                 <Row label={t('Build pack')} value={t(BUILD_PACKS.find((b) => b.id === buildPackSent)?.label ?? buildPackSent)} />
               )}
               {projectId && <Row label={t('Project')} value={projects.data?.find((p) => String(p.id) === projectId)?.name ?? `#${projectId}`} />}
@@ -1522,9 +1520,11 @@ export function DeployWizard({ template, preset, onClose }: { template?: Templat
                 <Row label={t('Build commands')} value={[installCmd, buildCmd, startCmd].filter(Boolean).join('  →  ')} />
               )}
               {port && <Row label={t('Port')} value={`:${port}`} />}
+              {healthPath && <Row label={t('Healthcheck')} value={`GET ${healthPath}`} />}
               {!composeDeploy && publishedPort && <Row label={t('Host Port')} value={`:${publishedPort}`} />}
               {volumeMount && <Row label={t('Volume')} value={volumeMount} />}
               <Row label={t('Env vars')} value={String(envRows.filter((e) => e.key.trim()).length)} />
+              {mode === 'repo' && <RepoPreflightDetails preflight={insights?.preflight} />}
               {!composeDeploy && <Row label={t('Limits')} value={cpuShares || memLimitMb ? t('{cpu} shares · {mem} MB', { cpu: cpuShares || '—', mem: memLimitMb || '—' }) : t('none')} />}
             </div>
           )}
@@ -1568,6 +1568,35 @@ function L({ label, children }: { label: string; children: React.ReactNode }) {
 function Row({ label, value }: { label: string; value: string }) {
   return <div className="flex items-center justify-between rounded-lg bg-white/[0.02] px-3 py-2"><span className="text-xs text-slate-500">{label}</span><span className="max-w-[60%] truncate font-medium text-slate-200">{value}</span></div>;
 }
+
+function RepoPreflightDetails({ preflight }: { preflight: RepoInsights['preflight'] }) {
+  const t = useT();
+  if (!preflight) return null;
+  const files = [preflight.dockerfile, ...preflight.composeFiles].filter(Boolean);
+  const template = preflight.envTemplate;
+  if (!files.length && !template) return null;
+
+  return (
+    <div className="min-w-0 space-y-1.5 border-t border-white/10 pt-2 text-xs text-slate-300">
+      {files.length > 0 && (
+        <p>{t('Detected build files')} <code className="break-all">{files.join(', ')}</code></p>
+      )}
+      {preflight.exposedTcpPort != null && (
+        <p>{t('Declared TCP port')} <code>:{preflight.exposedTcpPort}</code></p>
+      )}
+      {template && (
+        <details>
+          <summary className="cursor-pointer">{t('Environment keys in {file} ({count})', { file: template.file, count: template.keys.length })}</summary>
+          <p className="my-1 text-slate-400">{t('Review these names and add values on the Environment step.')}</p>
+          <ul className="flex flex-wrap gap-x-3 gap-y-1 font-mono">
+            {template.keys.map((key) => <li className="break-all" key={key}>{key}</li>)}
+          </ul>
+        </details>
+      )}
+    </div>
+  );
+}
+
 /** One line of the framework-aware deploy pipeline preview. */
 function PlanStep({ icon, label, value, mono }: { icon: React.ReactNode; label: string; value: string | null; mono?: boolean }) {
   return (

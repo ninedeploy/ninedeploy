@@ -46,6 +46,41 @@ const write = (rel: string, content: string) => {
 
 const pkgJson = (fields: Record<string, unknown>) => write('package.json', JSON.stringify(fields));
 
+describe('repository preflight', () => {
+  it('reports files and a final-stage port from the selected app and exposes only template keys', () => {
+    write('.env.example', 'ROOT_ONLY=ignored\n');
+    write('apps/web/Dockerfile', 'FROM scratch AS build\nEXPOSE 5000\nFROM scratch\nEXPOSE 8080/tcp 53/udp\n');
+    write('apps/web/compose.yaml', 'services: {}\n');
+    write('apps/web/.env.example', '# settings\nexport API_TOKEN=example-private-value\nPUBLIC_URL=\nMULTILINE="first\nNOT_AN_ENV_KEY=embedded"\n');
+    write('apps/web/.env', 'PRODUCTION_ONLY=do-not-read\n');
+
+    const result = analyzeRepo(dir, '/apps/web');
+    expect(result.preflight).toEqual({
+      dockerfile: 'Dockerfile',
+      composeFiles: ['compose.yaml'],
+      exposedTcpPort: 8080,
+      envTemplate: { file: '.env.example', keys: ['API_TOKEN', 'MULTILINE', 'PUBLIC_URL'] },
+    });
+    expect(JSON.stringify(result)).not.toMatch(/example-private-value|NOT_AN_ENV_KEY|PRODUCTION_ONLY|ROOT_ONLY/);
+  });
+
+  it.each(['EXPOSE 8080 8081', 'EXPOSE $PORT', 'RUN <<EOF\nEXPOSE 8080\nEOF', 'EXPOSE 5353/udp'])(
+    'leaves the port undecided for %j', (instruction) => {
+      write('Dockerfile', `FROM scratch\n${instruction}\n`);
+      expect(analyzeRepo(dir).preflight?.exposedTcpPort).toBeNull();
+    },
+  );
+
+  it('uses the first readable example file and caps the number of returned keys', () => {
+    write('.env.example', 'X'.repeat(65_537));
+    write('.env.sample', Array.from({ length: 120 }, (_, index) => `KEY_${index}=value`).join('\n'));
+    write('.env.template', 'ALTERNATIVE=\n');
+    expect(analyzeRepo(dir).preflight?.envTemplate).toEqual({
+      file: '.env.sample', keys: Array.from({ length: 120 }, (_, index) => `KEY_${index}`).sort().slice(0, 100),
+    });
+  });
+});
+
 describe('analyzeRepo — Node frameworks', () => {
   it('detects Next.js with version, lockfile package manager and node engine', () => {
     pkgJson({

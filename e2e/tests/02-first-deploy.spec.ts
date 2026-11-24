@@ -4,6 +4,28 @@ import { join } from 'node:path';
 import { expect, perLayout, test, webService } from './fixtures';
 import { deploysOf, watch, type Deploy } from './support';
 
+test('repository preflight shows build files, port and example keys before deploy', async ({ page }) => {
+  const fixture = JSON.parse(process.env.ND_E2E_GIT ?? 'null') as { container: string } | null;
+  expect(fixture?.container).toMatch(/^nd-e2e-git-[0-9a-f]{8}$/);
+  const w = watch(page);
+  await page.goto('/?deploy=git');
+  const dialog = page.getByRole('dialog');
+  await dialog.getByPlaceholder('my-app').fill('repo-preflight');
+  await dialog.getByPlaceholder('https://github.com/you/repo').fill(`http://${fixture!.container}:8080/repo.git`);
+
+  await expect(dialog.getByText('Detected build files')).toContainText('Dockerfile', { timeout: 30_000 });
+  await expect(dialog.getByText('Declared TCP port')).toContainText(':8080');
+  await dialog.getByText('Environment keys in .env.example (1)').click();
+  await expect(dialog.getByText('DEMO_TOKEN', { exact: true })).toBeVisible();
+  await expect(dialog.getByText('example-value-for-e2e')).toHaveCount(0);
+
+  for (let step = 0; step < 4; step++) await dialog.getByRole('button', { name: 'Continue' }).click();
+  await expect(dialog.getByText('GET /', { exact: true })).toBeVisible();
+  await expect(dialog.getByText('Environment keys in .env.example (1)')).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Deploy', exact: true })).toBeEnabled();
+  w.assertClean();
+});
+
 // N10: the compact project repeats these journeys on the same panel, so
 // everything they create is named per layout.
 test('first deploy: an image through the deploy wizard comes up running', async ({ page, layout }) => {

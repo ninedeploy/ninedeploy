@@ -47,6 +47,13 @@ export const repoInsights = z.object({
   devDependencyCount: z.number().int(),
   hasDockerfile: z.boolean(),
   hasComposeFile: z.boolean(),
+  /** Static hints in the selected base directory. Older stored analyses omit this. */
+  preflight: z.object({
+    dockerfile: z.literal('Dockerfile').nullable(),
+    composeFiles: z.array(z.string()).max(4),
+    exposedTcpPort: z.number().int().min(1).max(65535).nullable(),
+    envTemplate: z.object({ file: z.string(), keys: z.array(z.string().max(128)).max(100) }).nullable(),
+  }).optional(),
   monorepo: z.boolean(),
   /** Marker files the detection was derived from (e.g. package.json, go.mod). */
   detectedFiles: z.array(z.string()),

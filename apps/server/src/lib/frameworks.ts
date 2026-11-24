@@ -1,5 +1,6 @@
 import { closeSync, existsSync, constants as fsConstants, fstatSync, lstatSync, openSync, readdirSync, readSync } from 'node:fs';
 import path from 'node:path';
+import { parseEnv } from 'node:util';
 import type { FrameworkPreset, PackageManagerId, RepoInsights } from '@ninedeploy/schemas';
 import { matchesAny } from './glob.js';
 import { resolveInRepo } from './repoPath.js';
@@ -34,6 +35,8 @@ const LOCKFILES: Array<{ file: string; pm: PackageManagerId }> = [
 ];
 
 const COMPOSE_FILES = ['docker-compose.yml', 'docker-compose.yaml', 'compose.yml', 'compose.yaml'];
+const ENV_TEMPLATES = ['.env.example', '.env.sample', '.env.template', '.env.dist', '.env.local.example'];
+const MAX_PREFLIGHT_BYTES = 64 * 1024;
 
 /** Literal install-command suggestions per package manager (lockfile-aware). */
 const INSTALL_CMD: Record<PackageManagerId, { lock: string; noLock: string }> = {
@@ -71,16 +74,16 @@ const START_CMD: Record<PackageManagerId, string> = {
  * lstat and the open is refused too, and the read never goes past the cap
  * (a FIFO or device would otherwise block or grow without bound).
  */
-function readText(file: string): string | null {
+function readText(file: string, limit = MAX_MARKER_BYTES): string | null {
   let fd: number | null = null;
   try {
     if (!lstatSync(file).isFile()) return null;
     fd = openSync(file, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0));
     const st = fstatSync(fd);
-    if (!st.isFile() || st.size > MAX_MARKER_BYTES) return null;
-    const buf = Buffer.alloc(Math.min(st.size, MAX_MARKER_BYTES) + 1);
+    if (!st.isFile() || st.size > limit) return null;
+    const buf = Buffer.alloc(st.size + 1);
     const n = readSync(fd, buf, 0, buf.length, 0);
-    if (n > MAX_MARKER_BYTES) return null;
+    if (n > limit) return null;
     return buf.subarray(0, n).toString('utf8');
   } catch {
     return null;
@@ -666,6 +669,60 @@ function finalize(preset: Preset, facts: Omit<RepoInsights, 'framework' | 'analy
  */
 export function analyzeRepo(workDir: string, baseDir?: string, commitSha?: string): RepoInsights {
   const dir = resolveInRepo(workDir, baseDir);
+  const insights = analyzeFramework(dir, baseDir, commitSha);
+  const isFile = (file: string): boolean => {
+    try {
+      return lstatSync(path.join(dir, file), { throwIfNoEntry: false })?.isFile() ?? false;
+    } catch {
+      return false;
+    }
+  };
+  const dockerfile = isFile('Dockerfile') ? 'Dockerfile' : null;
+  const composeFiles = COMPOSE_FILES.filter(isFile);
+  const dockerfileText = dockerfile ? readText(path.join(dir, dockerfile), MAX_PREFLIGHT_BYTES) : null;
+  return {
+    ...insights,
+    preflight: {
+      dockerfile,
+      composeFiles,
+      exposedTcpPort: dockerfileText ? readExposedTcpPort(dockerfileText) : null,
+      envTemplate: readEnvTemplate(dir),
+    },
+  };
+}
+
+function readEnvTemplate(dir: string): NonNullable<RepoInsights['preflight']>['envTemplate'] {
+  for (const file of ENV_TEMPLATES) {
+    const content = readText(path.join(dir, file), MAX_PREFLIGHT_BYTES);
+    if (!content) continue;
+    const keys = Object.keys(parseEnv(content)).filter((key) => /^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(key)).sort().slice(0, 100);
+    if (keys.length) return { file, keys };
+  }
+  return null;
+}
+
+/** The final stage's unambiguous literal hint. Image metadata resolves the effective port at deploy time. */
+function readExposedTcpPort(text: string): number | null {
+  if (/^\s*#\s*escape\s*=/im.test(text)) return null;
+  const instructions = text.replace(/\\\r?\n/g, ' ').split(/\r?\n/).map((line) => line.trim());
+  if (instructions.some((line) => /^(?:RUN|COPY|ADD)\s.*<</i.test(line))) return null;
+  const stage = instructions.findLastIndex((line) => /^FROM\s/i.test(line));
+  if (stage < 0) return null;
+  const ports = new Set<number>();
+  for (const line of instructions.slice(stage + 1)) {
+    const declaration = /^EXPOSE\s+(.+)$/i.exec(line)?.[1];
+    if (!declaration) continue;
+    for (const token of declaration.split(/\s+/)) {
+      const match = /^(\d{1,5})(?:\/(tcp|udp))?$/i.exec(token);
+      const port = Number(match?.[1]);
+      if (!match || port < 1 || port > 65535) return null;
+      if (match[2]?.toLowerCase() !== 'udp') ports.add(port);
+    }
+  }
+  return ports.size === 1 ? (ports.values().next().value ?? null) : null;
+}
+
+function analyzeFramework(dir: string, baseDir?: string, commitSha?: string): RepoInsights {
   const detectedFiles: string[] = [];
 
   const probe = (file: string): boolean => {

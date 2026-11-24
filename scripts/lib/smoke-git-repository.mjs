@@ -48,7 +48,7 @@ export function gitHttpServerCode(root = '/repo', port = 8080) {
   return `(${main.toString()})(${JSON.stringify(root)},${JSON.stringify(port)})`;
 }
 
-export function createSwarmGitRepository(root) {
+export function createSwarmGitRepository(root, { envExample } = {}) {
   const work = join(root, 'work'), bare = join(root, 'repo.git'); mkdirSync(work, { recursive: true });
   const git = (args, cwd = work) => {
     const result = spawnSync('git', ['-c', 'commit.gpgsign=false', '-c', 'user.name=Owned runtime fixture', '-c', 'user.email=proof@example.test', ...args],
@@ -60,7 +60,12 @@ export function createSwarmGitRepository(root) {
     writeFileSync(join(work, 'Dockerfile'), `FROM node:26-slim\nWORKDIR /app\nCOPY app.cjs /app/app.cjs\nHEALTHCHECK --interval=2s --timeout=3s --retries=3 --start-period=120s CMD ${JSON.stringify(['node', '-e', health])}\nEXPOSE 8080\nCMD ["node","/app/app.cjs"]\n`);
     writeFileSync(join(work, 'app.cjs'), `const fs=require('node:fs');require('node:http').createServer((q,r)=>{const ready=process.env.NEEDS_READINESS!=='1'||fs.existsSync('/tmp/nd-ready');r.statusCode=ready?200:503;r.end(ready?${JSON.stringify(label)}:'booting')}).listen(8080,'0.0.0.0');\n`);
   };
-  git(['init', '-b', 'main']); write('baked-one'); git(['add', 'Dockerfile', 'app.cjs']); git(['commit', '-m', 'First owned artifact']);
+  git(['init', '-b', 'main']); write('baked-one'); git(['add', 'Dockerfile', 'app.cjs']);
+  if (envExample) {
+    writeFileSync(join(work, '.env.example'), envExample);
+    git(['add', '-f', '.env.example']);
+  }
+  git(['commit', '-m', 'First owned artifact']);
   const first = git(['rev-parse', 'HEAD']); git(['clone', '--bare', '--no-hardlinks', work, bare]);
   return { bare, first, advance() {
     write('baked-two'); git(['add', 'Dockerfile', 'app.cjs']); git(['commit', '-m', 'Second owned artifact']);

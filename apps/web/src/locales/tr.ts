@@ -6350,6 +6350,9 @@ export const TR: Readonly<Record<string, string>> = {
   "Pausing shipment keeps remote objects. Disabling local WAL archiving also pauses shipment. Wait for the first base backup before shipping.": "Gönderimi duraklatmak uzak nesneleri korur. Yerel WAL arşivlemeyi kapatmak da gönderimi duraklatır. Göndermeden önce ilk temel yedeği bekleyin.",
   "Change remote archive recovery details?": "Uzak arşiv kurtarma bilgileri değiştirilsin mi?",
   "Existing objects stay in their previous archive. Keep their recovery keys, destination credentials and passphrase. The new archive is protected only after a verified shipment.": "Mevcut nesneler önceki arşivlerinde kalır. Kurtarma anahtarlarını, hedef kimlik bilgilerini ve parolayı saklayın. Yeni arşiv ancak doğrulanmış bir gönderimden sonra korunur.",
+  'Detected build files': 'Bulunan yapı dosyaları',
+  'Declared TCP port': 'Bildirilen TCP portu',
+  'Review these names and add values on the Environment step.': 'Adları inceleyin ve değerleri Ortam adımında ekleyin.',
   'Collect abandoned uploads': 'Sahipsiz yüklemeleri temizle',
   'Opt-in: scans up to 200 managed keys per pass. Unreferenced objects must be at least 24 hours old, then wait one hour after retirement. Requires ListBucket permission. Turning this off stops discovery; committed cleanup intents still complete.': 'İsteğe bağlı: her turda en fazla 200 yönetilen anahtar taranır. Başvurulmayan nesneler en az 24 saatlik olmalı ve kullanımdan çıkarıldıktan sonra bir saat beklemelidir. ListBucket izni gerekir. Kapatmak keşfi durdurur; kaydedilmiş temizlik işlemleri tamamlanır.',
 };
