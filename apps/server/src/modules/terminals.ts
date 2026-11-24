@@ -195,7 +195,7 @@ export const terminalRoutes: FastifyPluginAsync = async (app) => {
           throw err(
             422,
             'use_container_target',
-            `"${svc.name}" is a compose service: list its containers with GET /v1/services/${svc.id}/containers and open one with the "container" target.`,
+            `"${svc.name}" is a compose service: list its containers on the panel's Docker page (GET /v1/stats) and open one with the "container" target.`,
           );
         }
         if (svc.type !== 'docker') throw err(422, 'not_a_container', `"${svc.name}" does not run in a container.`);

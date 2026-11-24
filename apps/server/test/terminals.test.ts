@@ -170,7 +170,9 @@ describe('POST /v1/terminals: service targets', () => {
     const compose = await create({ kind: 'service', serviceId: ids.compose });
     expect(compose.statusCode).toBe(422);
     expect(compose.json().error).toMatchObject({ code: 'use_container_target' });
-    expect(compose.json().error.message).toContain(`/v1/services/${ids.compose}/containers`);
+    // The message names a page and a route that exist; there is no per-service container list.
+    expect(compose.json().error.message).toContain("panel's Docker page (GET /v1/stats)");
+    expect(compose.json().error.message).not.toContain('/v1/services/');
     expect((await create({ kind: 'service', serviceId: ids.pm2 })).json().error.code).toBe('not_a_container');
     const idle = await create({ kind: 'service', serviceId: ids.idle });
     expect([idle.statusCode, idle.json().error.code]).toEqual([409, 'not_running']);
