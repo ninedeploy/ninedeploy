@@ -4,7 +4,8 @@ import path from 'node:path';
 import { config } from '../config.js';
 import { and, asc, desc, eq, inArray, isNotNull, lt, notInArray, sql } from 'drizzle-orm';
 import { z } from 'zod';
-import { deployments, services, users, type DB, type Service } from '@ninedeploy/db';
+import { databaseAttachments, databaseImports, databases, deployments, services, users, volumeImports, type DB, type Service } from '@ninedeploy/db';
+import type { MigrationReadiness } from '@ninedeploy/schemas';
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import { diffLines, renderDiff } from '../lib/diff.js';
 import { buildEnv, capture } from '../lib/exec.js';
@@ -88,6 +89,29 @@ const promoteInput = z.object({
 });
 
 export const deploysRoutes: FastifyPluginAsync = async (app) => {
+  app.get('/:id/deploys/migration-readiness', { onRequest: [app.authenticate], preHandler: app.requireOperator }, async (req, reply): Promise<MigrationReadiness> => {
+    const id = num((req.params as { id: string }).id);
+    const service = await loadServiceForUser(app.db, id, req.user!);
+    const { inspectRuntimeEnvKeys } = await import('../engine/pipeline.js');
+    const activeImport = ['uploading', 'pending', 'running'] as const;
+    const [keys, targets, busy, activeVolume] = await Promise.all([
+      inspectRuntimeEnvKeys(app.db, service),
+      app.db.select({ databaseId: databases.id, alias: databaseAttachments.envAlias, slug: databases.slug, engine: databases.engine, status: databases.status })
+        .from(databaseAttachments).innerJoin(databases, eq(databases.id, databaseAttachments.databaseId)).where(eq(databaseAttachments.serviceId, id)),
+      app.db.query.deployments.findFirst({ where: and(eq(deployments.serviceId, id), inArray(deployments.status, CANCELLABLE_STATUSES)), columns: { id: true } }),
+      app.db.query.volumeImports.findFirst({ where: and(eq(volumeImports.serviceId, id), inArray(volumeImports.status, activeImport)), columns: { id: true } }),
+    ]);
+    const activeDatabase = targets.length > 0 && await app.db.query.databaseImports.findFirst({
+      where: and(inArray(databaseImports.databaseId, targets.map(({ databaseId }) => databaseId)), inArray(databaseImports.status, activeImport)), columns: { id: true },
+    });
+    reply.header('cache-control', 'no-store');
+    return {
+      id, slug: service.slug, type: service.type, status: service.status, hasSource: Boolean(service.repoUrl || service.image), ...keys,
+      bindings: targets.map(({ status, ...target }) => ({ ...target, running: status === 'running' })),
+      deploymentPending: Boolean(busy), volumeImportsPending: Boolean(activeVolume), databaseImportsPending: Boolean(activeDatabase),
+    };
+  });
+
   // Trigger a new deployment (enqueues a `queued` row the worker picks up).
   app.post('/:id/deploys', { onRequest: [app.authenticate] }, async (req) => {
     const id = num((req.params as { id: string }).id);

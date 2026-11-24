@@ -3,12 +3,15 @@ import { useEffect, useRef, useState } from 'react';
 import { CloudDownload, RotateCcw, Upload, X } from 'lucide-react';
 import { DATABASE_IMPORT_ENGINE_OPTIONS, type DatabaseImportEngine, type DatabaseImportOptions } from '@ninedeploy/schemas';
 import { DATABASE_IMPORT_FINISHED_STATUSES, type DatabaseDetail, type DatabaseImport } from '@ninedeploy/sdk';
-import { api } from '../../lib/api.js';
+import { api, getApiSessionGeneration } from '../../lib/api.js';
 import { useAuth } from '../../lib/auth.js';
 import { formatBytes, formatDateTime } from '../../lib/format.js';
 import { useToast } from '../../components/Toast.js';
 import { Badge, Button, Card, CardBody, Field, Input, Select } from '../../components/ui.js';
 import { msg, useT } from '../../lib/i18n.js';
+import { fileChunks, importFileChecksum } from '../../lib/importFile.js';
+
+export { fileChunks };
 
 type OptionKey = keyof DatabaseImportOptions;
 
@@ -46,16 +49,6 @@ const STATUS_TONE: Record<DatabaseImport['status'], 'neutral' | 'indigo' | 'emer
   expired: 'neutral',
 };
 
-/** Read a file in 4 MiB slices from `offset` on: the SDK re-cuts them to the server's chunk size. */
-export function fileChunks(file: Blob, step = 4 * 1024 * 1024): (offset: number) => AsyncIterable<Uint8Array> {
-  return (offset: number) =>
-    (async function* () {
-      for (let at = offset; at < file.size; at += step) {
-        yield new Uint8Array(await file.slice(at, Math.min(at + step, file.size)).arrayBuffer());
-      }
-    })();
-}
-
 const message = (err: unknown, fallback: string) => (err instanceof Error ? err.message : fallback);
 const isEngine = (engine: string): engine is DatabaseImportEngine => Object.hasOwn(DATABASE_IMPORT_ENGINE_OPTIONS, engine);
 
@@ -92,6 +85,11 @@ export function ImportCard({ db }: { db: DatabaseDetail }) {
   const [prefix, setPrefix] = useState<string | undefined>(undefined);
   const [objectKey, setObjectKey] = useState('');
   const fileInput = useRef<HTMLInputElement>(null);
+  const live = useRef(false);
+  useEffect(() => {
+    live.current = true;
+    return () => { live.current = false; };
+  }, []);
 
   const history = useQuery({
     queryKey: ['database-imports', db.id],
@@ -131,11 +129,19 @@ export function ImportCard({ db }: { db: DatabaseDetail }) {
   const needsConfirm = keys.includes('confirmReplace') && !opts.confirmReplace;
 
   const upload = useMutation({
-    mutationFn: async (f: File) => {
+    mutationFn: async ({ file: f, generation }: { file: File; generation: number }) => {
+      const chunks = fileChunks(f);
+      // Older uploads have no recorded hash and can still resume by size.
+      const checksum = !resumeTarget || resumeTarget.sha256 ? await importFileChecksum(chunks(0)) : undefined;
+      if (!live.current || generation !== getApiSessionGeneration()) throw new Error(t('Upload cancelled. Open the database and try again.'));
+      if (resumeTarget?.sha256 && checksum !== resumeTarget.sha256.toLowerCase()) {
+        throw new Error(t('This file differs from the original upload. Choose the original dump.'));
+      }
       setProgress({ received: resumeTarget?.receivedBytes ?? 0, total: f.size });
-      return api.databases.importFile(db.id, fileChunks(f), {
+      return api.databases.importFile(db.id, chunks, {
         sizeBytes: f.size,
         filename: f.name,
+        ...(!resumeTarget ? { sha256: checksum } : {}),
         options: options(),
         ...(resumeTarget ? { resumeImportId: resumeTarget.id } : {}),
         onCreated: refreshHistory,
@@ -148,7 +154,7 @@ export function ImportCard({ db }: { db: DatabaseDetail }) {
       setResumeTarget(null);
       if (fileInput.current) fileInput.current.value = '';
     },
-    onError: (err) => toast(message(err, t('The upload failed')), 'error'),
+    onError: (err) => { if (live.current) toast(message(err, t('The upload failed')), 'error'); },
     onSettled: () => {
       setProgress(null);
       refreshHistory();
@@ -270,8 +276,8 @@ export function ImportCard({ db }: { db: DatabaseDetail }) {
               disabled={busy}
             />
           </Field>
-          <Button size="sm" onClick={() => file && upload.mutate(file)} disabled={!file || !!sizeMismatch || needsConfirm || busy}>
-            <Upload size={12} /> {resumeTarget ? t('Resume upload') : t('Upload and import')}
+          <Button size="sm" onClick={() => file && upload.mutate({ file, generation: getApiSessionGeneration() })} disabled={!file || !!sizeMismatch || needsConfirm || busy}>
+            <Upload size={12} /> {upload.isPending && !progress ? t('Checking dump…') : resumeTarget ? t('Resume upload') : t('Upload and import')}
           </Button>
         </div>
         {sizeMismatch && (

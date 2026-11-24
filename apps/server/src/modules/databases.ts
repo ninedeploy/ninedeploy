@@ -3,8 +3,8 @@ import { and, eq } from 'drizzle-orm';
 import { audit } from '../lib/audit.js';
 import { backups, databaseAttachments, databases, type DB, projects, servers, serviceTargets, users, type Database } from '@ninedeploy/db';
 import { deleteOwnedSettings } from '../lib/ownedSettings.js';
-import type { FastifyPluginAsync } from 'fastify';
-import { createAttachment, createDatabase, setLimits, DATABASE_STUDIO_ENGINES } from '@ninedeploy/schemas';
+import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
+import { createAttachment, createDatabase, createEmptyDatabase, setLimits, DATABASE_STUDIO_ENGINES } from '@ninedeploy/schemas';
 import {
   adoptRetainedVolume,
   volumeExists,
@@ -208,8 +208,7 @@ export const databasesRoutes: FastifyPluginAsync = async (app) => {
     );
   });
 
-  app.post('/', async (req) => {
-    const input = createDatabase.parse(req.body);
+  const provisionDatabase = async (req: FastifyRequest, input: ReturnType<typeof createDatabase.parse>, requireFreshVolume = false) => {
     // Placing a database in someone else's project would hand them a resource
     // they cannot see and the creator cannot be held to.
     if (input.projectId != null) {
@@ -421,7 +420,8 @@ export const databasesRoutes: FastifyPluginAsync = async (app) => {
       if (volumeClash) throw badRequest(`Volume "${volumeName}" already belongs to database "${volumeClash.name}"`);
 
       // No row claims this volume — but it may still hold someone's data.
-      if (!req.user!.isOperator && (await volumeExists(volumeName))) {
+      if ((requireFreshVolume || !req.user!.isOperator) && (await volumeExists(volumeName))) {
+        if (requireFreshVolume) throw new HttpError(409, 'fresh_volume_required', `A retained volume "${volumeName}" already exists for this name`);
         throw forbidden(
           `A retained volume "${volumeName}" already exists for this name — pick another name, or ask an operator to adopt it`,
         );
@@ -458,16 +458,20 @@ export const databasesRoutes: FastifyPluginAsync = async (app) => {
       // under this name holds credentials from the database that created it.
       // Re-key (postgres) or refuse loudly (engines without a re-key) so a
       // remount never boots a server the credentials cannot reach.
-      if (needsVolumeAdoption(created)) {
-        await adoptRetainedVolume(created, (line) => app.log.info({ component: 'database' }, line));
+      const log = (line: string) => app.log.info({ component: 'database' }, line);
+      if (requireFreshVolume) {
+        await startDatabase(created, log, { requireFreshVolume: true });
+      } else {
+        if (needsVolumeAdoption(created)) await adoptRetainedVolume(created, log);
+        await startDatabase(created, log);
       }
-      await startDatabase(created, (line) => app.log.info({ component: 'database' }, line));
       await app.db
         .update(databases)
         .set({ status: 'running', internalHost: containerName, internalPort: defaultPort(input.engine), initializedAt: new Date() })
         .where(eq(databases.id, created.id));
     } catch (err) {
       await app.db.update(databases).set({ status: 'error' }).where(eq(databases.id, created.id));
+      if (requireFreshVolume && err instanceof HttpError) throw err;
       throw badRequest(`Failed to start database: ${err instanceof Error ? err.message : err}`);
     }
 
@@ -484,7 +488,10 @@ export const databasesRoutes: FastifyPluginAsync = async (app) => {
       engine: created.engine,
     });
     return serialize(updated!, { isAdmin: req.user?.isOperator === true });
-  });
+  };
+
+  app.post('/', (req) => provisionDatabase(req, createDatabase.parse(req.body)));
+  app.post('/empty', { preHandler: app.requireOperator }, (req) => provisionDatabase(req, createEmptyDatabase.parse(req.body), true));
 
   app.get('/:id', async (req) => {
     const id = num((req.params as { id: string }).id);

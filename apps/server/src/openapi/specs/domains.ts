@@ -1,4 +1,4 @@
-import { createDomain, domainPatch } from '@ninedeploy/schemas';
+import { createDomain, cutoverDomain, cutoverDomainQuery, domainPatch } from '@ninedeploy/schemas';
 import type { RouteSpecMap } from '../types.js';
 
 /**
@@ -20,6 +20,14 @@ export const domainsSpecs: RouteSpecMap = {
     body: createDomain,
     responseType: 'CreatedDomain',
     validation: 'zod',
+  },
+  'GET /v1/services/:id/domains/cutover': {
+    summary: 'Check deployment and DNS for a planned domain',
+    tag: 'domains', floor: 'operator', query: cutoverDomainQuery, responseType: 'DomainCutoverResult', validation: 'zod',
+  },
+  'POST /v1/services/:id/domains/cutover': {
+    summary: 'Attach a planned domain after rechecking its DNS and deployment',
+    tag: 'domains', floor: 'operator', body: cutoverDomain, responseType: 'DomainCutoverResult', validation: 'zod',
   },
   'PATCH /v1/services/:id/domains/:domainId': {
     summary: "Update a domain's routing options",

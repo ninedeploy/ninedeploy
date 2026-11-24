@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { importPlan } from '@ninedeploy/schemas';
 import { applyPlan, renderApplyPreview, type ApplyClient } from '../src/commands/importApply.js';
 import { dumpCommand, renderDataPreview } from '../src/commands/importData.js';
 import { buildImportPlan, renderImportPlan } from '../src/commands/importPlan.js';
@@ -27,6 +28,8 @@ describe('Procfile and app.json', () => {
 
   it('maps each process to a Nixpacks service with its start command; release is left to a person', () => {
     const plan = planFromHeroku(files, opts);
+    const saved: unknown = JSON.parse(JSON.stringify(plan));
+    expect(importPlan.parse(saved)).toEqual(saved);
     expect(plan.source).toMatchObject({ kind: 'heroku', url: REPO });
     expect(plan.services.map((s) => [s.ref, s.name])).toEqual([['web', 'shop-app'], ['worker', 'shop-app-worker'], ['clock', 'shop-app-clock']]);
     const [web, worker, clock] = plan.services;

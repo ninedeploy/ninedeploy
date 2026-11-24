@@ -20,6 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Show detected build files, a declared TCP port when unambiguous, and environment template keys in the repository deploy wizard. Template values are never returned or applied by the scan.
+- Review a saved migration plan from **New resource**. The browser opens the JSON locally and shows the proposed resources and manual steps before you apply the plan.
+- Check the target from a saved migration plan to spot occupied names, repeated entries and settings that need attention before applying it.
+- From a reviewed migration plan: prepare services and empty databases, migrate variable names and database attachments, check deployment readiness, import database dumps and volume archives with a checksum and resume, and cut domains over after checking their DNS answers.
 - Add three source-upload starters with Dockerfiles, locked dependencies, health checks and deployment instructions. Verify all three through the panel and proxy in a dedicated workflow.
 ### Changed
 

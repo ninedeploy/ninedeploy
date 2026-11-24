@@ -651,6 +651,19 @@ export type DeploymentStatus = (typeof DEPLOYMENT_STATUSES)[number];
 /** A deploy that has ended: nothing will happen to it on its own any more. */
 export const FINISHED_DEPLOYMENT_STATUSES = ['running', 'superseded', 'failed', 'cancelled'] as const;
 
+/** Key names and target metadata checked before handing a migrated service to Deploys. */
+export const migrationReadiness = service.pick({ id: true, slug: true, type: true, status: true }).extend({
+  hasSource: z.boolean(),
+  environmentKeys: z.array(z.string()),
+  managedDatabaseKeys: z.array(z.string()),
+  secretReferenceKeys: z.array(z.string()),
+  bindings: z.array(z.object({ databaseId: z.number().int(), alias: z.string(), slug: z.string(), engine: z.string(), running: z.boolean() })),
+  deploymentPending: z.boolean(),
+  volumeImportsPending: z.boolean(),
+  databaseImportsPending: z.boolean(),
+});
+export type MigrationReadiness = z.infer<typeof migrationReadiness>;
+
 export const deploymentCiSummary = z.object({
   state: z.enum(['waiting', 'passed', 'failed']),
   reason: z.string(),
@@ -762,6 +775,20 @@ export const createDomain = z.object({
   rateLimitBurst: z.number().int().min(0).max(100000).optional().nullable(),
 });
 export type CreateDomainInput = z.input<typeof createDomain>;
+
+export const cutoverDomain = createDomain.pick({ hostname: true, ssl: true });
+export const cutoverDomainQuery = cutoverDomain.pick({ hostname: true });
+export type CutoverDomainInput = z.input<typeof cutoverDomain>;
+
+export const domainCutoverResult = z.object({
+  hostname: z.string(),
+  status: z.enum(['ready', 'active', 'ownership_required', 'deployment_required', 'manual', 'route_conflict',
+    'expected_unavailable', 'dns_unavailable', 'dns_unresolved', 'dns_mismatch']),
+  expected: z.array(z.string()).optional(),
+  resolved: z.array(z.string()).optional(),
+  verification: z.object({ recordName: z.string(), recordType: z.literal('TXT'), recordValue: z.string() }).optional(),
+});
+export type DomainCutoverResult = z.infer<typeof domainCutoverResult>;
 
 /**
  * Why a redirect regex cannot go to Traefik, or null. Traefik compiles it
@@ -876,6 +903,8 @@ export const createDatabase = z.object({
   serverId: z.number().int().positive().nullable().optional(),
 });
 export type CreateDatabaseInput = z.input<typeof createDatabase>;
+export const createEmptyDatabase = createDatabase.pick({ name: true, engine: true, version: true });
+export type CreateEmptyDatabaseInput = z.input<typeof createEmptyDatabase>;
 
 export const DATABASE_STUDIO_ENGINES = ['postgres', 'mysql', 'mariadb', 'redis', 'valkey', 'keydb', 'dragonfly'] as const;
 
@@ -941,8 +970,9 @@ export const upsertEnvVar = z.object({
 export type UpsertEnvVarInput = z.input<typeof upsertEnvVar>;
 
 /** .env bulk import — parse the content server-side and upsert each var. */
+export const ENV_IMPORT_MAX_CHARS = 100_000;
 export const envImport = z.object({
-  content: z.string().min(1).max(100_000),
+  content: z.string().min(1).max(ENV_IMPORT_MAX_CHARS),
   isSecret: z.boolean().optional(),
   overwriteExisting: z.boolean().optional(),
 });

@@ -8,6 +8,7 @@ import type {
   BackupPolicyInput,
   BackupWithDb,
   CreateDatabaseInput,
+  CreateEmptyDatabaseInput,
   ManagedDatabase,
   DatabaseDetail,
   SetLimitsInput,
@@ -32,6 +33,8 @@ export interface DatabasesApi {
     /** `query` is appended verbatim, e.g. `?projectId=3` (project scoping). */
     list: (query?: string) => Promise<ManagedDatabase[]>;
     create: (input: CreateDatabaseInput) => Promise<ManagedDatabase>;
+    /** Operator only. Creates on the panel host and refuses retained data. */
+    createEmpty: (input: CreateEmptyDatabaseInput) => Promise<ManagedDatabase>;
     get: (id: number) => Promise<DatabaseDetail>;
     remove: (id: number, options?: { force?: boolean }) => Promise<void>;
     restart: (id: number) => Promise<void>;
@@ -216,6 +219,7 @@ export function databasesApi(t: Transport): DatabasesApi {
     databases: {
       list: (query) => get<ManagedDatabase[]>(`/v1/databases${query ?? ''}`),
       create: (input) => send<ManagedDatabase>('POST', '/v1/databases', input),
+      createEmpty: (input) => send<ManagedDatabase>('POST', '/v1/databases/empty', input),
       get: (id) => get<DatabaseDetail>(`/v1/databases/${id}`),
       remove: async (id, opts) => {
         await request(`/v1/databases/${id}${opts?.force ? '?force=true' : ''}`, { method: 'DELETE' });

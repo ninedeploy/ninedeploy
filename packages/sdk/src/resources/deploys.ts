@@ -7,6 +7,7 @@ import type {
   WebhookCreate,
   CreatedWebhook,
   Deployment,
+  MigrationReadiness,
   QueueResponse,
   ApprovalsResponse,
   AiConfigStatus,
@@ -35,6 +36,8 @@ export interface DeploysApi {
      */
     trigger: (serviceId: number, input?: TriggerDeploy) => Promise<{ deploymentId: number; alreadyInProgress?: boolean }>;
     list: (serviceId: number) => Promise<Deployment[]>;
+    /** Operator-only metadata for reviewing a prepared service. */
+    migrationReadiness: (serviceId: number) => Promise<MigrationReadiness>;
     /**
      * Global deploy queue view: every in-flight (queued / building /
      * deploying) deployment the caller can see, with service + project
@@ -190,6 +193,7 @@ export function deploysApi(t: Transport): DeploysApi {
       trigger: (serviceId, input) =>
         send<{ deploymentId: number; alreadyInProgress?: boolean }>('POST', `/v1/services/${serviceId}/deploys`, input ?? {}),
       list: (serviceId) => get<Deployment[]>(`/v1/services/${serviceId}/deploys`),
+      migrationReadiness: (serviceId) => get<MigrationReadiness>(`/v1/services/${serviceId}/deploys/migration-readiness`),
       queue: (query) => {
         const filter = query?.replace(/^\?/, '');
         return get<QueueResponse>(`/v1/services/queue?includeCi=true${filter ? `&${filter}` : ''}`);

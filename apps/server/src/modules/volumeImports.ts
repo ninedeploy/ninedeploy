@@ -1,5 +1,5 @@
 import { stat, open, mkdir } from 'node:fs/promises';
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray, notExists } from 'drizzle-orm';
 import { deployments, serviceTargets, volumeImports, type Service } from '@ninedeploy/db';
 import { VOLUME_IMPORT_CHUNK_SIZE, volumeImportCreate } from '@ninedeploy/schemas';
 import type { FastifyInstance, FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
@@ -220,12 +220,16 @@ export const volumeImportRoutes: FastifyPluginAsync<VolumeImportRouteOptions> = 
     const sniff = await sniffFile(row.stagingPath);
     if (!sniff.gzip || sniff.kind !== 'tar') await refuse('The file is not a gzipped tar archive (tar -czf … -C <volume> .)');
 
+    // Claim the archive and its destination together. Two ready archives can
+    // belong to different operators and both pass the checks above.
+    const activeRestore = app.db.select({ id: volumeImports.id }).from(volumeImports)
+      .where(and(eq(volumeImports.volumeName, row.volumeName), eq(volumeImports.status, 'running')));
     const [started] = await app.db
       .update(volumeImports)
       .set({ status: 'running', startedAt: new Date(), error: null })
-      .where(and(eq(volumeImports.id, row.id), eq(volumeImports.status, 'pending')))
+      .where(and(eq(volumeImports.id, row.id), eq(volumeImports.status, 'pending'), notExists(activeRestore)))
       .returning();
-    if (!started) throw conflict('The import was started or cancelled by another request');
+    if (!started) throw conflict('The import changed state or another restore for this volume is in progress. Refresh its status and try again.');
     void audit(app.db, req.user!.id, 'volume.import.start', svc.name, volumeImportAuditMeta(started));
     void runJob(app.db, started.id, { actorId: req.user!.id, log: (line) => app.log.info({ component: 'volume-import', importId: started.id }, line) });
     return reply.code(202).send(serializeVolumeImport(started));

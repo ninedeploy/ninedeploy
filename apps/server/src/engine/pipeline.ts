@@ -319,14 +319,11 @@ async function loadPreviewOnlyEnv(
   return db.query.previewEnvVars.findMany({ where: eq(previewEnvVars.serviceId, service.previewParentServiceId) });
 }
 
-/** Exported for the 0068 upgrade-compatibility test (test/previewEnvUpgrade.test.ts). */
-export async function loadRuntimeEnv(
+async function collectRuntimeEnv(
   db: DB,
   service: typeof services.$inferSelect,
   templateDatabaseId?: number,
-  /** Deploy log: the resolver warns there about references it left literal (0.14). */
-  log?: (line: string) => void,
-): Promise<RuntimeEnvironment> {
+): Promise<RuntimeEnvironment & { projectIds: number[] }> {
   const env: Record<string, string> = {};
   const managedDatabaseKeys = new Set<string>();
   // Which keys of `env` carry a secret: the last writer of a key decides.
@@ -474,10 +471,9 @@ export async function loadRuntimeEnv(
   // A key whose value is a vault reference resolves to a secret.
   for (const [key, value] of Object.entries(env)) if (hasVaultRef(value)) secretKeys.add(key);
 
-  // Vault references resolve last, from the fully-merged map — and only for
-  // a service the operator allowed (r510).
   return {
-    values: await resolveVaultRefs(db, env, { service, projectIds: projectLinks.map((p) => p.projectId) }, log),
+    values: env,
+    projectIds: projectLinks.map((p) => p.projectId),
     attachmentCount: attaches.length,
     readyAttachmentCount,
     managedDatabaseKeys: [...managedDatabaseKeys].sort(),
@@ -485,6 +481,25 @@ export async function loadRuntimeEnv(
     withheldFromPreview,
     attachedDatabases,
   };
+}
+
+/** Merge exactly the same sources as a deployment, keeping values on the server. */
+export async function inspectRuntimeEnvKeys(db: DB, service: typeof services.$inferSelect) {
+  const { values, managedDatabaseKeys } = await collectRuntimeEnv(db, service);
+  const environmentKeys = Object.keys(values).sort();
+  return { environmentKeys, managedDatabaseKeys, secretReferenceKeys: environmentKeys.filter((key) => hasVaultRef(values[key]!)) };
+}
+
+export async function loadRuntimeEnv(
+  db: DB,
+  service: typeof services.$inferSelect,
+  templateDatabaseId?: number,
+  /** Deploy log: the resolver warns there about references it left literal (0.14). */
+  log?: (line: string) => void,
+): Promise<RuntimeEnvironment> {
+  const { projectIds, ...environment } = await collectRuntimeEnv(db, service, templateDatabaseId);
+  // Resolve references last, from the fully merged map, for services allowed to use them.
+  return { ...environment, values: await resolveVaultRefs(db, environment.values, { service, projectIds }, log) };
 }
 
 /**

@@ -551,7 +551,91 @@ describe('domains routes', () => {
 // node:dns/promises is mocked so the DNS-status route needs no real
 // resolution; classifyResolution stays pure and is exercised directly.
 const dnsMocks = vi.hoisted(() => ({ resolve4: vi.fn(), resolve6: vi.fn(), resolveTxt: vi.fn() }));
-vi.mock('node:dns/promises', () => dnsMocks);
+vi.mock('node:dns/promises', () => ({ ...dnsMocks, Resolver: class {
+  resolve4 = dnsMocks.resolve4;
+  resolve6 = dnsMocks.resolve6;
+} }));
+
+describe('domain cutover', () => {
+  it('keeps a route unchanged when an A record matches but an AAAA record still points elsewhere', async () => {
+    const insert = vi.fn(() => [domainRow({ hostname: 'app.example.test' })]);
+    const db = createFakeDb({
+      findFirst: { services: svcRow({ status: 'running' }), deployments: { status: 'running' } },
+      insert: { domains: insert as never },
+    });
+    const app = await buildTestApp({ db });
+    await app.register(domainsRoutes);
+    cfMocks.getDnsRecordsConfig.mockResolvedValueOnce({ enabled: true, token: 'test-token', content: '203.0.113.5' });
+    dnsMocks.resolve4.mockResolvedValueOnce(['203.0.113.5']);
+    dnsMocks.resolve6.mockResolvedValueOnce(['2001:db8::5']);
+    try {
+      const res = await app.inject({ method: 'POST', url: '/1/domains/cutover', headers: asUser(), payload: { hostname: 'app.example.test' } });
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toMatchObject({ status: 'dns_mismatch', expected: ['203.0.113.5'], resolved: ['203.0.113.5', '2001:db8::5'] });
+      expect(insert).not.toHaveBeenCalled();
+    } finally { await app.close(); }
+  });
+
+  it('checks without writing and attaches without creating a provider DNS record', async () => {
+    cfMocks.createDnsRecord.mockClear();
+    const host = 'app.example.test';
+    const insert = vi.fn(() => [domainRow({ hostname: host, status: 'active' })]);
+    const db = createFakeDb({
+      findFirst: { services: svcRow({ status: 'running' }), deployments: { status: 'running' } },
+      insert: { domains: insert as never },
+    });
+    const app = await buildTestApp({ db });
+    await app.register(domainsRoutes);
+    const dnsReady = () => {
+      cfMocks.getDnsRecordsConfig.mockResolvedValueOnce({ enabled: true, token: 'test-token', content: '2001:db8::5' });
+      dnsMocks.resolve4.mockRejectedValueOnce(Object.assign(new Error('No A'), { code: 'ENODATA' }));
+      dnsMocks.resolve6.mockResolvedValueOnce(['2001:DB8:0:0:0:0:0:5']);
+    };
+    try {
+      dnsReady();
+      const check = await app.inject({ method: 'GET', url: `/1/domains/cutover?hostname=${host}`, headers: asUser() });
+      expect(check.json()).toMatchObject({ status: 'ready', hostname: host });
+      expect(insert).not.toHaveBeenCalled();
+      dnsReady();
+      const apply = await app.inject({ method: 'POST', url: '/1/domains/cutover', headers: asUser(), payload: { hostname: host, ssl: false } });
+      expect(apply.json()).toMatchObject({ status: 'active', hostname: host });
+      expect(insert).toHaveBeenCalledOnce();
+      expect(cfMocks.createDnsRecord).not.toHaveBeenCalled();
+    } finally { await app.close(); }
+  });
+
+  it('requires ownership proof for an existing pending domain and fails closed on a lookup error', async () => {
+    const host = 'pending.example.test';
+    const pending = domainRow({ hostname: host, status: 'pending', verificationToken: 'fixture-challenge' });
+    const update = vi.fn(() => [domainRow({ hostname: host, status: 'active' })]);
+    const db = createFakeDb({
+      findFirst: { services: svcRow({ status: 'running' }), domains: pending, deployments: { status: 'running' } },
+      findMany: { domains: [pending] },
+      update: { domains: update as never },
+    });
+    const app = await buildTestApp({ db });
+    await app.register(domainsRoutes);
+    const apply = () => app.inject({ method: 'POST', url: '/1/domains/cutover', headers: asUser(), payload: { hostname: host } });
+    const dns = () => {
+      cfMocks.getDnsRecordsConfig.mockResolvedValueOnce({ enabled: false, token: null, content: '203.0.113.5' });
+      dnsMocks.resolve4.mockResolvedValueOnce(['203.0.113.5']);
+    };
+    try {
+      dns();
+      dnsMocks.resolve6.mockRejectedValueOnce(Object.assign(new Error('lookup failed'), { code: 'ESERVFAIL' }));
+      expect((await apply()).json()).toMatchObject({ status: 'dns_unavailable' });
+      dns();
+      dnsMocks.resolve6.mockResolvedValueOnce([]);
+      dnsMocks.resolveTxt.mockResolvedValueOnce([['other-value']]);
+      expect((await apply()).json()).toMatchObject({ status: 'ownership_required', verification: { recordValue: 'fixture-challenge' } });
+      expect(update).not.toHaveBeenCalled();
+      dns();
+      dnsMocks.resolve6.mockResolvedValueOnce([]);
+      dnsMocks.resolveTxt.mockResolvedValueOnce([['fixture-challenge']]);
+      expect((await apply()).json()).toMatchObject({ status: 'active' });
+    } finally { await app.close(); }
+  });
+});
 
 describe('domains DNS status', () => {
   it('reports ok when the hostname resolves to the expected address', async () => {

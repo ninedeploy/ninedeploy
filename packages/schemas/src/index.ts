@@ -26,6 +26,7 @@ export * from './proxyConfig.js';
 export * from './databaseImport.js';
 export * from './databaseUpgrade.js';
 export * from './volumeImport.js';
+export * from './importPlan.js';
 export * from './secretProviders.js';
 export * from './terminals.js';
 export * from './traffic.js';

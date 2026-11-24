@@ -14,7 +14,7 @@ import { connectContainerToServiceBridge, ensureServiceBridge } from '../lib/ser
 import { writeSecretFile } from '../lib/secretFile.js';
 import { createKeyedOperationGuard } from '../lib/keyedOperationGuard.js';
 import { acquireCrossProcessLock, LockUnavailableError, type CrossProcessLock } from '../lib/crossProcessLock.js';
-import { conflict } from '../lib/errors.js';
+import { conflict, HttpError } from '../lib/errors.js';
 import { type DbCommand, dbCommandEnv, dumpCommands, isRedisFamily, mongoshCommand, mongoToolCommand, mysqlCommand, probeCommand, redisCliCommand, restoreCommand, saveReplyProblem } from '../lib/databaseCommands.js';
 import { backupClickhouse, backupMeilisearch, backupRabbitmq, restoreClickhouse, restoreMeilisearch, restoreRabbitmq } from './extraEngineBackups.js';
 import { redisStudioConfig, studioImageForEngine } from '../lib/databaseStudioImages.js';
@@ -548,7 +548,7 @@ export async function containerRunning(name: string): Promise<boolean> {
 export async function startDatabase(
   d: Database,
   log: (line: string) => void,
-  opts: { labels?: Record<string, string> } = {},
+  opts: { labels?: Record<string, string>; requireFreshVolume?: boolean } = {},
 ): Promise<void> {
   const cfg = ENGINES[d.engine];
   if (!cfg) throw new Error(`Unknown engine: ${d.engine}`);
@@ -557,6 +557,7 @@ export async function startDatabase(
   // Idempotency: if the database is already running, do nothing (e.g. on server
   // restart). This avoids a `docker run` name-conflict failure.
   if (await containerRunning(d.containerName)) {
+    if (opts.requireFreshVolume) throw conflict(`Database container "${d.containerName}" already exists`);
     log(`${d.containerName} already running — reusing`);
     return;
   }
@@ -573,9 +574,19 @@ export async function startDatabase(
   // come up anonymous of origin, and a retained volume must stay traceable to
   // the database that made it even after its row is deleted.
   if (await volumeExists(d.volumeName)) {
+    if (opts.requireFreshVolume) {
+      throw new HttpError(409, 'fresh_volume_required', `A retained volume "${d.volumeName}" already exists for this name`);
+    }
     log(`Reusing retained volume ${d.volumeName} (previous data restored)`);
   } else {
-    await createDockerVolume(d.volumeName, log, databaseVolumeLabels(d, opts.labels));
+    const labels = databaseVolumeLabels(d, opts.labels);
+    const creationLabel = 'ninedeploy.database.creation';
+    if (opts.requireFreshVolume) labels[creationLabel] = randomUUID();
+    await createDockerVolume(d.volumeName, log, labels);
+    // Docker reports success even when another create claimed this name first.
+    if (opts.requireFreshVolume && (await volumeLabels(d.volumeName))[creationLabel] !== labels[creationLabel]) {
+      throw new HttpError(409, 'fresh_volume_required', `Could not verify a fresh volume "${d.volumeName}"`);
+    }
   }
 
   // R3: a PostgreSQL database with point-in-time recovery on archives its WAL
@@ -585,7 +596,9 @@ export async function startDatabase(
 
   // Remove any stale (stopped) container of the same name so `docker run` does
   // not fail with a name conflict; the retained volume preserves the data.
-  await run('docker', ['rm', '-f', d.containerName], {}, swallow).catch(() => undefined);
+  if (!opts.requireFreshVolume) {
+    await run('docker', ['rm', '-f', d.containerName], {}, swallow).catch(() => undefined);
+  }
 
   const password = decrypt(d.passwordEncrypted);
   const args = ['run', '-d', '--name', d.containerName, '--network', NETWORK, '--restart', 'unless-stopped'];

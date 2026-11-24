@@ -7,6 +7,11 @@ const TOKEN_KEY = 'ninedeploy.token';
 const REFRESH_KEY = 'ninedeploy.refreshToken';
 let sessionGeneration = 0;
 
+/** Fence multi-request actions when the active browser session changes. */
+export function getApiSessionGeneration(): number {
+  return sessionGeneration;
+}
+
 /**
  * Token storage. sessionStorage (NOT localStorage) so a bearer credential
  * never survives the tab — closing the browser clears the session, shrinking

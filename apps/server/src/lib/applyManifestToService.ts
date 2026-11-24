@@ -39,14 +39,15 @@ import { previewPatternError } from './previewDomain.js';
  * unique (serviceId, databaseId) index. No new rows are created on a
  * no-op run.
  *
- * Six sections are fully wired here (routes, database, alerts, previews,
- * notifications, volume backups); the build-shaping ones are applied by
- * `engine/pipeline.ts` instead. Three are *recognised but not wired* —
- * `static`, `watch` and `network` — because the underlying platform feature is
- * either a panel/operator setting or does not exist yet. Every one of them
- * pushes a warning so the operator sees in the deploy log that the section was
- * read and had no effect; a section that is accepted by the schema and then
- * silently dropped is the failure mode this list exists to prevent.
+ * Seven sections are fully wired here (routes, database, alerts, previews,
+ * notifications, volume backups, and `watch`, whose paths become the
+ * watch-path filter of the service's active webhooks); the build-shaping ones
+ * are applied by `engine/pipeline.ts` instead. Two are *recognised but not
+ * wired* — `static` and `network` — because the underlying platform feature is
+ * a panel/operator setting. Each of them pushes a warning so the operator sees
+ * in the deploy log that the section was read and had no effect; a section
+ * that is accepted by the schema and then silently dropped is the failure mode
+ * this list exists to prevent.
  */
 
 export interface ApplyManifestResult {

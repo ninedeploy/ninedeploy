@@ -166,6 +166,19 @@ describe('volume import routes', () => {
     expect(await row(id)).toMatchObject({ status: 'failed', stagingPath: null });
   });
 
+  it('claims a volume for one restore at a time and leaves another upload pending', async () => {
+    const first = await uploaded();
+    const second = await uploaded();
+    const replies = await Promise.all([start(first), start(second)]);
+    expect(replies.map((res) => res.statusCode).sort()).toEqual([202, 409]);
+    expect(runJob).toHaveBeenCalledOnce();
+    const running = replies.find((res) => res.statusCode === 202)!.json().id as number;
+    const waiting = running === first ? second : first;
+    expect(await row(waiting)).toMatchObject({ status: 'pending', stagingPath: expect.any(String) });
+    await db.update(volumeImports).set({ status: 'completed' }).where(eq(volumeImports.id, running));
+    expect((await start(waiting)).statusCode).toBe(202);
+  });
+
   it('cancels an upload and lists only this service\'s imports; chunks belong to their creator', async () => {
     const id = (await create({ sizeBytes: 10, sha256: 'a'.repeat(64) })).json().id as number;
     const staging = (await row(id)).stagingPath!;

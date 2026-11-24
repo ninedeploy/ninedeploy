@@ -13,7 +13,10 @@
  *   Redis database index), and replacing a value that differs would change
  *   what the app connects to without anyone seeing it.
  */
-import type { ImportPlan, PlanDatabase, PlanEngine, SourceKind } from './plan.js';
+import { sourceDatabaseHosts as sourceHosts } from '@ninedeploy/schemas';
+import type { ImportPlan, PlanDatabase, PlanEngine } from './plan.js';
+
+export { sourceHosts };
 
 /** The scheme each engine's panel connection string starts with (server engine/database.ts). */
 const PANEL_SCHEME: Record<PlanEngine, string> = {
@@ -21,34 +24,6 @@ const PANEL_SCHEME: Record<PlanEngine, string> = {
   redis: 'redis:', keydb: 'redis:', dragonfly: 'redis:', clickhouse: 'clickhouse:',
 };
 const REDIS_FAMILY = new Set<PlanEngine>(['redis', 'keydb', 'dragonfly']);
-
-/**
- * The names the source's apps reach a database by, from where it runs.
- * CapRover: both the app name and the `srv-captain--` alias (1.16 names new
- * apps' Swarm services plainly, older ones with the prefix). Coolify: the
- * container name (its uuid). Dokploy: the Swarm service (appName).
- */
-export function sourceHosts(kind: SourceKind, db: PlanDatabase): string[] {
-  const name = db.runtime?.name?.toLowerCase();
-  if (!name) return [];
-  switch (db.runtime!.kind) {
-    case 'heroku-app':
-      // The name is the Heroku app, not a host: add-on URLs name Heroku's own hosts.
-      return [];
-    case 'container':
-    case 'swarm-service':
-      break;
-    default: {
-      const never: never = db.runtime!.kind;
-      return never;
-    }
-  }
-  if (kind === 'caprover') {
-    const app = name.replace(/^srv-captain--/, '');
-    return [app, `srv-captain--${app}`];
-  }
-  return [name];
-}
 
 /** `KEY=value` pairs of a .env file: quotes removed, `# comments` after an unquoted value dropped. */
 export function envFileEntries(content: string): Array<{ key: string; value: string }> {

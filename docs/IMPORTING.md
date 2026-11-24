@@ -5,8 +5,9 @@
 | Step | What it does | Status |
 |---|---|---|
 | 1. Plan | Read the source and list each service, domain, environment variable name, volume and database, with every unsupported option | Available (CLI) |
-| 2. Apply | Create the planned services and databases in NineDeploy, resumably, with a receipt per item, and leave the source untouched | Available (CLI) |
-| 3. Data | Move database contents, checksummed; then deploy, switch DNS and add the domains as the last step | Databases, service volumes and the domain cutover available (CLI) |
+| Review | Open the saved plan in the panel and inspect the proposed resources and manual steps | Available (browser) |
+| 2. Apply | Create the planned services and databases in NineDeploy, resumably, with a receipt per item | Available (CLI). The browser can prepare service definitions and empty databases. |
+| 3. Data and cutover | Move database contents and primary service volumes with checksums, then deploy and switch DNS | Database and primary volume imports in the browser and CLI. Direct DNS cutover in the browser and CLI. |
 
 ## Run a plan
 
@@ -27,6 +28,30 @@ ninedeploy import plan heroku --url https://github.com/acme/shop.git --dir ./sho
 ```
 
 `--json` prints the plan as JSON, and `--out plan.json` also saves it. Leave the variable unset and the command asks for the credential without echoing it.
+
+## Review the saved plan in the panel
+
+Open **New resource → Review migration plan** and choose the version 1 JSON file saved by `--out`. The browser reads up to 2 MiB locally and shows the services, databases, domains, volume mappings, environment variable names and manual steps. Source-generated domains are marked as staying with the source.
+
+The source credential stays on the machine that generated the plan.
+
+Instance operators can select **Check target** to compare the plan with the target's current service and database inventory. The browser checks for occupied names, repeated names and references, missing sources, unsupported engines, and invalid settings. An occupied name can be a resource from an earlier attempt. Check its definition and receipt before proceeding. Resource creation performs its own checks, including runtime and storage checks, when you apply the plan.
+
+Instance operators can select **Prepare resources → Create resources** to create service definitions and start empty databases on the panel host. The panel rechecks the inventory at confirmation, skips unsupported items and reports conflicts for review. If a database has a retained volume under the proposed name, creation stops for that item. Service deployment, environment values, database attachments, data transfer and domain cutover are separate steps.
+
+To resume, reopen the same plan in the same browser tab as the same operator. Preparation tracks the IDs of resources it creates and checks their current names before reusing the result. Review a reported conflict if a previous request may have succeeded without returning a response. You can open the dump uploader for a prepared database from the plan as described below. The CLI steps use their own receipt beside the plan. If you started in the browser and need to continue in the CLI, first review the prepared resources and run `import apply` with the same plan to create the CLI receipt.
+
+### Migrate environment and connections
+
+For a prepared service, choose its `.env` file under **Migrate environment and connections**. The panel previews key names locally. It accepts up to 100 KB with unique, single-line `KEY=value` entries. Import saves only planned variables as secrets and keeps existing service values. The preview lists planned keys missing from the file and known source connection keys that need review. Values are sent to the target panel when you confirm.
+
+The panel can attach running databases specified explicitly in the plan, using their prepared target IDs and planned environment aliases. An attachment supplies its connection string on the next deployment. Aliases reserved for these attachments are excluded from the `.env` import. A conflict with an existing variable or attachment needs review. For connection strings inferred from copied values, use the CLI workflow below or edit the connection in the service's Environment tab.
+
+### Review deployment readiness
+
+For each prepared service, use **Check deployment readiness** to compare the plan with the target. The panel checks the configured repository or image, the environment keys assembled for deployment, the planned database aliases, and any unfinished import or deployment work. The check sends key names and status only. Secret references are resolved when you deploy.
+
+When the review passes, use **Open deployments** to open the service's Deploys tab. Start deployment there and verify the running application before switching DNS. Readiness reflects the target at the time of the check. It does not validate secret values or test application health.
 
 ## Apply a plan
 
@@ -60,6 +85,10 @@ ninedeploy import apply plan.json --yes --project 3 --dotenv blog=./blog.env   #
 
 ## Move the data
 
+For prepared databases with dump support, use **Import a dump into** in the migration plan to open the target database's **Backups → Import a dump** card. You can reopen the same plan in the same tab and account to return to these links. Quiesce writes on the source before taking the final dump, then choose that file and select **Upload and import**. The panel keeps the existing safety-backup workflow and shows the result in **Recent imports**.
+
+The browser computes SHA-256 in bounded chunks before uploading a local file, and the panel checks it before restoring. When resuming, select the original dump. For an upload with a recorded hash, the browser checks that the file matches before sending another chunk. An older upload created without a hash can resume by size.
+
 ```bash
 ninedeploy import data plan.json                                  # the order, and a dump command per database
 ninedeploy import data plan.json --dump pgreal=pgreal.dump --yes  # imports it
@@ -92,6 +121,10 @@ Without `--yes`, `import data` prints the order that loses no writes, and the du
 
 ## Move the volumes
 
+For prepared Docker services with a supported primary mount, select **Import a volume archive into** in the migration plan. The link opens **Volumes & Storage → Import a volume archive**. You can also open the archive card from the service itself. The panel checks the live service and mount against the preparation receipt before offering the link.
+
+Choose a `.tar.gz` and select **Upload archive** to stage it with a SHA-256 checksum. If the upload is interrupted, use **Resume** and select the original archive again. After stopping the target service, select **Restore archive** and confirm the volume and mount. Keep the service stopped until the import completes. The panel checks the archive, takes a safety backup if the volume exists, and reports the result in **Recent volume imports**.
+
 `import data` also moves each service's data volume: the one mounted at the path the service was created with. In NineDeploy that is the service's `nd-svc-<name>-data` volume.
 
 1. Stop the app on the source so its files do not change while they are copied. On CapRover, set it to 0 instances.
@@ -115,6 +148,10 @@ Without `--yes`, `import data` prints the order that loses no writes, and the du
 **Checked live** on CapRover v1.16.0, which names an app's Docker volume exactly as its volume name. A volume holding a nested file, a file owned by uid 1234 with mode 640, and a symlink arrived in the deployed NineDeploy service with the same listing, owners and checksums, and nginx served the page through the symlink. A second run made no second import. While the service ran, the start was refused; after stopping it, the same import snapshotted the volume first. The Dokploy volume command was run against a live Dokploy v0.31.0, which names the Docker volume exactly as the mount's volume name. On Coolify the volume name carries the application's uuid as a prefix (`<uuid>-web-html`), as the live 4.7.5 API showed. Its source names the Docker volume exactly that, but the command has not been run there.
 
 ## Cut over the domains
+
+The migration plan shows **Cut over domains** for services prepared on the panel host. After deploying the target, verify the application and update its DNS records. In the plan, select **Check cutover**, review the expected and resolved addresses, then confirm the hostname you want the panel to route. The server checks the latest deployment and all A and AAAA answers again at confirmation. It uses the destination configured under **Settings → DNS records**, or the detected public IP when no destination is set. DNS records are managed separately from this panel action.
+
+If the domain is pending, publish the displayed TXT record and select **Verify ownership**. A domain already attached to the prepared service is shown as attached on the next check. Wildcards, shared routes, proxied records whose addresses differ from the target, and non-local service placement need manual review or the CLI options below.
 
 ```bash
 ninedeploy import cutover plan.json                    # what is ready, host by host

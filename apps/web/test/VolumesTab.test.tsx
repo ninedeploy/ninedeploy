@@ -1,5 +1,6 @@
 ﻿import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { createHash } from 'node:crypto';
 import { VolumesTab } from '../src/routes/service/VolumesTab.js';
 import { api } from '../src/lib/api.js';
 import { renderWithProviders, mockOf } from './helpers.js';
@@ -7,7 +8,7 @@ import { renderWithProviders, mockOf } from './helpers.js';
 vi.mock('../src/lib/api.js', async () => {
   // Must be './apiMock.js', not './helpers.js' — see the note in apiMock.ts.
   const { createFakeApiModule } = await import('./apiMock.js');
-  return createFakeApiModule();
+  return { ...createFakeApiModule(), getApiSessionGeneration: () => 0 };
 });
 
 // The browser modal is covered by its own suite; stub it here to observe opens.
@@ -61,6 +62,61 @@ vi.mock('../src/lib/auth.js', () => ({
 describe('VolumesTab', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it('stages a checksummed archive and restores it only after confirmation', async () => {
+    mockOf(api.volumes.list).mockResolvedValue([]);
+    mockOf(api.attachments.list).mockResolvedValue([]);
+    mockOf(api.fanout.get).mockResolvedValue([]);
+    const bytes = new Uint8Array([1, 2, 3]);
+    const sha256 = createHash('sha256').update(bytes).digest('hex');
+    const pending = { id: 9, filename: 'files.tar.gz', serviceId: 1, volumeName: 'nd-svc-api-data', status: 'pending', createdByUserId: 1,
+      sizeBytes: 3, receivedBytes: 3, sha256 };
+    mockOf(api.volumeImports.list).mockResolvedValueOnce([]).mockResolvedValue([pending] as never);
+    mockOf(api.volumeImports.importFile).mockResolvedValue(pending as never);
+    mockOf(api.volumeImports.start).mockResolvedValue({ ...pending, status: 'running' } as never);
+    renderWithProviders(<VolumesTab serviceId={1} svc={svc({ status: 'idle' })} />);
+
+    const input = await screen.findByLabelText('Volume archive');
+    fireEvent.change(input, { target: { files: [new File([bytes], 'files.tar.gz')] } });
+    fireEvent.click(screen.getByRole('button', { name: 'Upload archive' }));
+    await waitFor(() => expect(api.volumeImports.importFile).toHaveBeenCalledWith(1, expect.any(Function), expect.objectContaining({
+      sizeBytes: 3, sha256, filename: 'files.tar.gz', start: false,
+    })));
+    fireEvent.click(await screen.findByRole('button', { name: 'Restore archive' }));
+    expect(api.volumeImports.start).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm restore' }));
+    await waitFor(() => expect(api.volumeImports.start).toHaveBeenCalledWith(1, 9));
+  });
+
+  it('offers a pending archive for review but disables restore while the service is running', async () => {
+    mockOf(api.volumes.list).mockResolvedValue([]);
+    mockOf(api.attachments.list).mockResolvedValue([]);
+    mockOf(api.volumeImports.list).mockResolvedValue([{ id: 9, status: 'pending', volumeName: 'nd-svc-api-data', createdByUserId: 1 }] as never);
+    renderWithProviders(<VolumesTab serviceId={1} svc={svc()} />);
+    expect(await screen.findByText('Ready to restore')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Restore archive' })).toBeDisabled();
+    expect(api.volumeImports.start).not.toHaveBeenCalled();
+  });
+
+  it('checks the original archive checksum before resuming an interrupted upload', async () => {
+    mockOf(api.volumes.list).mockResolvedValue([]);
+    mockOf(api.attachments.list).mockResolvedValue([]);
+    const bytes = new Uint8Array([1, 2, 3]);
+    const sha256 = createHash('sha256').update(bytes).digest('hex');
+    mockOf(api.volumeImports.list).mockResolvedValue([{ id: 9, status: 'uploading', sizeBytes: 3, receivedBytes: 1, sha256, createdByUserId: 1 }] as never);
+    renderWithProviders(<VolumesTab serviceId={1} svc={svc({ status: 'stopped' })} />);
+    fireEvent.click(await screen.findByRole('button', { name: /^Resume$/ }));
+    const input = screen.getByLabelText('Volume archive');
+    fireEvent.change(input, { target: { files: [new File([new Uint8Array([4, 5, 6])], 'other.tar.gz')] } });
+    fireEvent.click(screen.getByRole('button', { name: 'Resume upload' }));
+    expect(await screen.findByText('This archive differs from the original upload. Choose the original archive.')).toBeVisible();
+    expect(api.volumeImports.importFile).not.toHaveBeenCalled();
+    mockOf(api.volumeImports.importFile).mockResolvedValue({ id: 9, status: 'pending' } as never);
+    fireEvent.change(input, { target: { files: [new File([bytes], 'copy.tar.gz')] } });
+    fireEvent.click(screen.getByRole('button', { name: 'Resume upload' }));
+    await waitFor(() => expect(api.volumeImports.importFile).toHaveBeenCalledWith(1, expect.any(Function), expect.objectContaining({ resumeImportId: 9, start: false })));
+    expect(api.volumeImports.start).not.toHaveBeenCalled();
   });
 
   it('renders the stateless empty state when no volume is mounted', async () => {

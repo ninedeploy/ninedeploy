@@ -14,10 +14,10 @@ if (!baseURL) throw new Error('ND_BASE_URL is not set: run scripts/smoke-browser
 /**
  * Playwright matches a RegExp against a test file's whole path, so every
  * pattern here is anchored to the file's name. Unanchored, a checkout under a
- * directory such as `n10-acceptance` matched `1[0-2]-` and put every file
+ * directory such as `n10-acceptance` matched `1[0-3]-` and put every file
  * into the desktop projects.
  */
-const JOURNEYS = /[/\\](?:0[2-9]|1[0-2])-[^/\\]*\.spec\.ts$/;
+const JOURNEYS = /[/\\](?:0[2-9]|1[0-3])-[^/\\]*\.spec\.ts$/;
 const PHONE_OR_COMPACT_ONLY = /[/\\](?:phone|08-compact)[^/\\]*\.spec\.ts$/;
 
 export default defineConfig({

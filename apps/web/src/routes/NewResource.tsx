@@ -10,9 +10,10 @@ import { useAuth } from '../lib/auth.js';
 import { type DeployKind, useOpenDeploy } from '../lib/deployLauncher.js';
 import { DatabaseWizard, type DatabaseEngineId, ENGINES } from '../components/DatabaseWizard.js';
 import { DeployWizard } from '../components/DeployWizard.js';
+import { ImportPlanReview } from '../components/ImportPlanReview.js';
 import { UploadSourceModal } from '../components/UploadSource.js';
 import { useToast } from '../components/Toast.js';
-import { Card, PageHeader, cn } from '../components/ui.js';
+import { Button, Card, PageHeader, cn } from '../components/ui.js';
 import { fill, msg, useT } from '../lib/i18n.js';
 
 type Category = 'all' | 'apps' | 'databases' | 'services';
@@ -70,6 +71,7 @@ export function NewResource() {
   const [dbEngine, setDbEngine] = useState<DatabaseEngineId | null>(null);
   const [template, setTemplate] = useState<Template | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [reviewingPlan, setReviewingPlan] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
 
   const templates = useQuery({ queryKey: ['templates'], queryFn: () => api.templates.list() });
@@ -114,7 +116,12 @@ export function NewResource() {
 
   return (
     <div className="nd-fade space-y-6">
-      <PageHeader icon={<Plus size={18} />} title={t('New resource')} subtitle={t('Deploy an application, start a database or install a one-click app.')} />
+      <PageHeader
+        icon={<Plus size={18} />}
+        title={t('New resource')}
+        subtitle={t('Deploy an application, start a database or install a one-click app.')}
+        actions={<Button type="button" size="sm" variant="secondary" onClick={() => setReviewingPlan(true)}>{t('Review migration plan')}</Button>}
+      />
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <div className="relative flex-1">
@@ -270,6 +277,7 @@ export function NewResource() {
       )}
       {template && <DeployWizard template={template} onClose={() => setTemplate(null)} />}
       {uploading && <UploadSourceModal onClose={() => setUploading(false)} />}
+      {reviewingPlan && <ImportPlanReview onClose={() => setReviewingPlan(false)} operator={isOperator ? user : null} />}
     </div>
   );
 }

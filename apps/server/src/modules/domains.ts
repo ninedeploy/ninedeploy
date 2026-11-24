@@ -1,8 +1,9 @@
-import { and, eq } from 'drizzle-orm';
+import { isIP } from 'node:net';
+import { and, desc, eq } from 'drizzle-orm';
 import { audit } from '../lib/audit.js';
-import { domains, type Domain } from '@ninedeploy/db';
+import { deployments, domains, serviceTargets, type Domain, type Service } from '@ninedeploy/db';
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
-import { createDomain, domainPatch } from '@ninedeploy/schemas';
+import { createDomain, cutoverDomain, cutoverDomainQuery, domainPatch, type DomainCutoverResult } from '@ninedeploy/schemas';
 import { getAcmeEmail, parseHeaders, writeDynamicConfig } from '../engine/proxy.js';
 import { autoHostFor } from '../lib/autoUrl.js';
 import { createDnsRecord, deleteDnsRecord, detectPublicIp, getDnsRecordsConfig, listDnsRecordsByName } from '../lib/cloudflare.js';
@@ -11,7 +12,7 @@ import { assertServiceRole, roleAtLeast, serviceRole } from '../lib/resourceAcce
 import { badRequest, conflict, HttpError, isUniqueViolation, notFound, parseId as num } from '../lib/errors.js';
 import { getSettingString } from '../lib/settings.js';
 import { deleteOwnedSettings } from '../lib/ownedSettings.js';
-import { classifyResolution, resolveHostAddresses } from '../lib/dnsStatus.js';
+import { allCutoverAddressesMatch, classifyResolution, resolveCutoverAddresses, resolveHostAddresses } from '../lib/dnsStatus.js';
 import {
   challengeRecordName,
   checkOwnershipRecord,
@@ -253,9 +254,8 @@ export const domainsRoutes: FastifyPluginAsync = async (app) => {
     return { ...serialize(d), created: true };
   });
 
-  app.post('/:id/domains', async (req) => {
+  const createServiceDomain = async (req: FastifyRequest, input: ReturnType<typeof createDomain.parse>, manageDns = true) => {
     const id = num((req.params as { id: string }).id);
-    const input = createDomain.parse(req.body);
     const svc = await loadServiceForUser(app.db, id, req.user!);
     await assertServiceRole(app.db, svc, req.user!, 'member');
     // Store normalised: DNS is case-insensitive, so `Victim.Example.com` and
@@ -347,10 +347,10 @@ export const domainsRoutes: FastifyPluginAsync = async (app) => {
     // a flag on the response rather than failing the request.
     let dnsWarning: string | null = null;
     let dnsRecordId: string | null = null;
-    const dnsCfg = await getDnsRecordsConfig(app.db);
+    const dnsCfg = manageDns ? await getDnsRecordsConfig(app.db) : null;
     // Only for a domain that is already live — there is nothing to point at a
     // hostname whose ownership has not been established.
-    if (!needsProof && dnsCfg.enabled && dnsCfg.token) {
+    if (!needsProof && dnsCfg?.enabled && dnsCfg.token) {
       try {
         const content = dnsCfg.content || (await detectPublicIp());
         dnsRecordId = await createDnsRecord(dnsCfg.token, hostname, content);
@@ -369,7 +369,8 @@ export const domainsRoutes: FastifyPluginAsync = async (app) => {
       dnsRecordId ? { dnsRecordId } : dnsWarning ? { dnsWarning } : undefined,
     );
     return { ...serialize(d), dnsRecordId, dnsWarning, verification: challengeFor(d) };
-  });
+  };
+  app.post('/:id/domains', (req) => createServiceDomain(req, createDomain.parse(req.body)));
 
   /**
    * Prove ownership of a pending domain and bring it live.
@@ -377,9 +378,8 @@ export const domainsRoutes: FastifyPluginAsync = async (app) => {
    * Idempotent and safe to poll: DNS propagation takes minutes, so a failure
    * explains what was found rather than consuming the challenge.
    */
-  app.post('/:id/domains/:domainId/verify', async (req) => {
+  const verifyServiceDomain = async (req: FastifyRequest, domainId: number, manageDns = true) => {
     const id = num((req.params as { id: string }).id);
-    const domainId = num((req.params as { domainId: string }).domainId);
     const verifySvc = await loadServiceForUser(app.db, id, req.user!);
     // Verification flips the domain live (and can mint provider DNS records):
     // a write on the service, so the `member` floor applies — a viewer seat
@@ -418,8 +418,8 @@ export const domainsRoutes: FastifyPluginAsync = async (app) => {
 
     // Now that the hostname is ours to route, the provider record can be made.
     let dnsWarning: string | null = null;
-    const dnsCfg = await getDnsRecordsConfig(app.db);
-    if (dnsCfg.enabled && dnsCfg.token) {
+    const dnsCfg = manageDns ? await getDnsRecordsConfig(app.db) : null;
+    if (dnsCfg?.enabled && dnsCfg.token) {
       try {
         const content = dnsCfg.content || (await detectPublicIp());
         const dnsRecordId = await createDnsRecord(dnsCfg.token, updated.hostname, content);
@@ -436,6 +436,65 @@ export const domainsRoutes: FastifyPluginAsync = async (app) => {
     await writeDynamicConfig(app.db);
     void audit(app.db, req.user!.id, 'domain.verified', updated.hostname);
     return { ...serialize(updated), verified: true, verification: null, dnsWarning };
+  };
+  app.post('/:id/domains/:domainId/verify', (req) => verifyServiceDomain(req, num((req.params as { domainId: string }).domainId)));
+
+  const readiness = async (svc: Service): Promise<'manual' | 'deployment_required' | null> => {
+    if (svc.serverId != null || svc.orchestrator === 'swarm' ||
+      await app.db.query.serviceTargets.findFirst({ where: eq(serviceTargets.serviceId, svc.id) })) return 'manual';
+    const latest = await app.db.query.deployments.findFirst({ where: eq(deployments.serviceId, svc.id), orderBy: desc(deployments.id), columns: { status: true } });
+    return svc.status === 'running' && latest?.status === 'running' ? null : 'deployment_required';
+  };
+
+  const inspectCutover = async (req: FastifyRequest, input: string): Promise<{ result: DomainCutoverResult; pendingId?: number }> => {
+    const id = num((req.params as { id: string }).id);
+    const svc = await loadServiceForUser(app.db, id, req.user!);
+    const hostname = normalizeHost(input);
+    const reply = (status: DomainCutoverResult['status']) => ({ result: { hostname, status } });
+    if (!isRoutableHostname(hostname) || hostname.startsWith('*.') || !hostname.includes('.') || isIP(hostname) || /[/:@?#\s]/.test(input.trim())) return reply('manual');
+    // Cutover is for one whole host. Leave shared paths and redirects to the
+    // normal domain editor, where their routing can be reviewed individually.
+    const rows = await app.db.query.domains.findMany({ where: eq(domains.hostname, hostname) });
+    const [row] = rows;
+    if (rows.length > 1 || (row && (row.serviceId !== id || row.path !== '/' || row.redirectWww))) return reply('route_conflict');
+    if (row?.status === 'active') return reply('active');
+    const serviceBlock = await readiness(svc);
+    if (serviceBlock) return reply(serviceBlock);
+    let expected: string[];
+    try {
+      const dns = await getDnsRecordsConfig(app.db);
+      const want = dns.content?.trim() || await detectPublicIp();
+      if (normalizeHost(want) === hostname) return reply('expected_unavailable');
+      expected = isIP(want) ? [want] : await resolveCutoverAddresses(want);
+    } catch {
+      return reply('expected_unavailable');
+    }
+    if (!expected.length) return reply('expected_unavailable');
+    const resolved = await resolveCutoverAddresses(hostname).catch(() => null);
+    if (!resolved) return { result: { hostname, status: 'dns_unavailable', expected } };
+    const status = !resolved.length ? 'dns_unresolved' : allCutoverAddressesMatch(resolved, expected) ? 'ready' : 'dns_mismatch';
+    const verification = row && challengeFor(row);
+    return { result: { hostname, status, expected, resolved, ...(verification ? { verification } : {}) }, pendingId: row?.id };
+  };
+
+  app.get('/:id/domains/cutover', { preHandler: app.requireOperator }, async (req) => {
+    const { hostname } = cutoverDomainQuery.parse(req.query);
+    return (await inspectCutover(req, hostname)).result;
+  });
+
+  app.post('/:id/domains/cutover', { preHandler: app.requireOperator }, async (req): Promise<DomainCutoverResult> => {
+    const input = cutoverDomain.parse(req.body);
+    const { result, pendingId } = await inspectCutover(req, input.hostname);
+    if (result.status !== 'ready') return result;
+    const svc = await loadServiceForUser(app.db, num((req.params as { id: string }).id), req.user!);
+    const serviceBlock = await readiness(svc);
+    if (serviceBlock) return { ...result, status: serviceBlock };
+    if (pendingId !== undefined) {
+      const verified = await verifyServiceDomain(req, pendingId, false);
+      return { ...result, status: verified.verified ? 'active' : 'ownership_required', verification: verified.verification ?? undefined };
+    }
+    const added = await createServiceDomain(req, createDomain.parse({ ...input, hostname: result.hostname }), false);
+    return { ...result, status: added.status === 'active' ? 'active' : 'ownership_required', verification: added.verification ?? undefined };
   });
 
   /**

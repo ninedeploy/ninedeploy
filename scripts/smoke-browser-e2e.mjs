@@ -70,11 +70,11 @@ async function main() {
   mkdirSync(PROOF_DIR, { recursive: true });
   const proofDirectory = realpathSync(PROOF_DIR);
   gitRoot = mkdtempSync(join(proofDirectory, 'nd-e2e-git-'));
-  const repository = createSwarmGitRepository(gitRoot);
+  const repository = createSwarmGitRepository(gitRoot, { envExample: 'DEMO_TOKEN=example-value-for-e2e\n' });
   const preview = repository.publishBranch('n08-preview', { label: 'n08-preview-content' });
   const broken = repository.publishBranch('n08-broken', { label: 'n08-broken',
     dockerfile: 'FROM node:26-slim\nRUN echo N08_EXPECTED_BUILD_FAILURE >&2 && exit 37\n' });
-  docker(['run', '-d', '--name', GIT, '--network', NET, '--user', '0', '--no-healthcheck',
+  docker(['run', '-d', '--name', GIT, '--network', NET, '--network-alias', 'migration-old.e2e.test', '--user', '0', '--no-healthcheck',
     '--mount', `type=bind,src=${repository.bare},dst=/repo/repo.git,readonly`,
     '--entrypoint', 'node', IMAGE, '-e', gitHttpServerCode()]);
   docker(['run', '-d', '--name', DIND, '--network', NET, '--privileged', '-v', `${VOLUME}:/data`, 'docker:28-dind',
@@ -85,7 +85,8 @@ async function main() {
     if (i === 44) fail('dind daemon never became reachable');
     await sleep(1000);
   }
-  docker(['run', '-d', '--name', PANEL, '--network', NET, '-p', `127.0.0.1:${PANEL_PORT}:3000`,
+  docker(['run', '-d', '--name', PANEL, '--network', NET, '--network-alias', 'migration-cutover.e2e.test',
+    '--network-alias', 'migration-cutover-compact.e2e.test', '-p', `127.0.0.1:${PANEL_PORT}:3000`,
     '-v', `${VOLUME}:/data`,
     '-e', `NINEDEPLOY_JWT_SECRET=${randomBytes(32).toString('hex')}`,
     '-e', `NINEDEPLOY_MASTER_KEY=${randomBytes(32).toString('hex')}`,
@@ -115,7 +116,7 @@ async function main() {
     cwd: E2E_DIR,
     stdio: 'inherit',
     shell: process.platform === 'win32',
-    env: { ...process.env, ND_BASE_URL: ORIGIN, ND_SETUP_TOKEN: SETUP_TOKEN, ND_E2E_DIND: DIND,
+    env: { ...process.env, ND_BASE_URL: ORIGIN, ND_SETUP_TOKEN: SETUP_TOKEN, ND_E2E_DIND: DIND, ND_E2E_PANEL: PANEL,
       ND_E2E_GIT: JSON.stringify({ container: GIT, main: repository.first, preview, broken }) },
     timeout: 45 * 60_000,
   });

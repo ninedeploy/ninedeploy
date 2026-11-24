@@ -30,11 +30,12 @@
  * The receipt holds ids, states and notes, never a value.
  */
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { hasImportServiceSource as hasSource, importDatabaseVersion as databaseVersion } from '@ninedeploy/schemas';
 import { getClient, type NineDeployClient } from '../client.js';
 import { loadConfig } from '../config.js';
 import { c, error, header, info, success } from '../lib/format.js';
 import { type ConnectionHit, findConnections } from '../lib/importers/connections.js';
-import type { ImportPlan, PlanEngine, PlanIssue, PlanService } from '../lib/importers/plan.js';
+import type { ImportPlan, PlanIssue, PlanService } from '../lib/importers/plan.js';
 
 type CreateServiceInput = Parameters<NineDeployClient['services']['create']>[0];
 type CreateDatabaseInput = Parameters<NineDeployClient['databases']['create']>[0];
@@ -112,27 +113,7 @@ export function validatePlan(raw: unknown): ImportPlan {
   return p as ImportPlan;
 }
 
-/** The image repository NineDeploy runs for each engine (engine/database.ts). */
-const ENGINE_REPOS: Record<PlanEngine, string> = {
-  postgres: 'postgres', mysql: 'mysql', mariadb: 'mariadb', mongo: 'mongo', redis: 'redis',
-  keydb: 'eqalpha/keydb', dragonfly: 'ghcr.io/dragonflydb/dragonfly', clickhouse: 'clickhouse/clickhouse-server',
-};
-
-/**
- * The source's version, when its image is the same repository NineDeploy runs
- * and the tag is a version (starts with a digit). Otherwise undefined, and
- * the panel picks its default.
- */
-export function databaseVersion(engine: PlanEngine, image: string | null): string | undefined {
-  if (!image) return undefined;
-  const ref = image.split('@')[0]!;
-  const colon = ref.lastIndexOf(':');
-  if (colon < 0 || ref.slice(colon).includes('/')) return undefined;
-  const repo = ref.slice(0, colon).replace(/^docker\.io\//, '').replace(/^library\//, '');
-  const tag = ref.slice(colon + 1);
-  if (repo !== ENGINE_REPOS[engine] || !/^[0-9][A-Za-z0-9_.-]*$/.test(tag)) return undefined;
-  return tag;
-}
+export { databaseVersion };
 
 /** Variable names a .env file defines (values are never looked at). */
 export function envFileKeys(content: string): string[] {
@@ -144,7 +125,6 @@ export function envFileKeys(content: string): string[] {
   return keys;
 }
 
-const hasSource = (s: PlanService): boolean => Boolean(s.create.image || s.create.repoUrl);
 const issueNotes = (issues: PlanIssue[], skip: string[] = []): string[] =>
   issues.filter((i) => i.level !== 'info' && !skip.includes(i.option)).map((i) => `${i.level === 'unsupported' ? 'Not carried' : 'To do'}: ${i.detail}`);
 /** Which domains move at the cutover, and which stay with the source (its own generated hosts). */

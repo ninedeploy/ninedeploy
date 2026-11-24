@@ -2,6 +2,8 @@
 // Split out of the former single-file SDK entry (src/index.ts); the public
 // surface is re-exported unchanged from there.
 import type {
+  EnvImportInput,
+  EnvImportResult,
   EnvVar,
   UpsertEnvVarInput,
 } from '@ninedeploy/schemas';
@@ -14,7 +16,7 @@ export interface EnvApi {
     update: (serviceId: number, varId: number, input: UpsertEnvVarInput) => Promise<EnvVar>;
     remove: (serviceId: number, varId: number) => Promise<void>;
     /** Bulk import from a .env-formatted string. Returns imported/skipped counts. */
-    import: (serviceId: number, content: string) => Promise<{ imported: number; skipped: number; errors: Array<{ line: number; message: string }> }>;
+    import: (serviceId: number, content: string, options?: Pick<EnvImportInput, 'isSecret' | 'overwriteExisting'>) => Promise<EnvImportResult>;
     /** Export non-secret env vars as a .env-formatted string (admin floor). */
     export: (serviceId: number) => Promise<{ content: string; count: number }>;
     /** Cross-scope key search: where a given env key is defined. */
@@ -51,11 +53,11 @@ export function envApi(t: Transport): EnvApi {
       remove: async (serviceId, varId) => {
         await request(`/v1/services/${serviceId}/env/${varId}`, { method: 'DELETE' });
       },
-      import: (serviceId, content) =>
-        send<{ imported: number; skipped: number; errors: Array<{ line: number; message: string }> }>(
+      import: (serviceId, content, options) =>
+        send<EnvImportResult>(
           'POST',
           `/v1/services/${serviceId}/env/import`,
-          { content },
+          { ...options, content },
         ),
       export: (serviceId) =>
         get<{ content: string; count: number }>(`/v1/services/${serviceId}/env/export`),

@@ -26,7 +26,7 @@ const FIXED_UUID = '00000000-0000-4000-8000-000000000000';
 const h = vi.hoisted(() => {
   const events: unknown[] = [];
   const state = { running: false, volume: false, labels: {} as Record<string, string> };
-  return { events, state, scratch: '' };
+  return { events, state, scratch: '', foreignVolumeOnCreate: false };
 });
 
 vi.mock('node:crypto', async (importOriginal) => {
@@ -91,6 +91,10 @@ function respond(args: string[]): string {
 vi.mock('../src/lib/exec.js', () => ({
   run: async (cmd: string, args: string[], opts: Record<string, unknown> = {}, sink?: (line: string) => void) => {
     h.events.push(norm({ fn: 'run', cmd, args, opts }));
+    if (h.foreignVolumeOnCreate && cmd === 'docker' && args[0] === 'volume' && args[1] === 'create') {
+      h.state.volume = true;
+      h.state.labels = { fixture: 'foreign' };
+    }
     // `docker cp <container>:<path> <host file>` writes the host file.
     if (cmd === 'docker' && args[0] === 'cp' && /^[^/]+:\//.test(args[1] ?? '') && args[2]) writeFileSync(args[2], 'DUMP-BYTES');
     sink?.(args.includes('SAVE') ? 'OK' : '');
@@ -333,6 +337,17 @@ async function recordArgv(impl: ArgvImpl): Promise<Record<string, { events: unkn
 
 beforeEach(() => {
   h.events.length = 0;
+  h.foreignVolumeOnCreate = false;
+});
+
+it('does not mount a volume that appeared during empty database creation', async () => {
+  Object.assign(h.state, { running: false, volume: false, labels: {} });
+  h.foreignVolumeOnCreate = true;
+  await expect(engine.startDatabase(ROWS[0]!, () => undefined, { requireFreshVolume: true }))
+    .rejects.toMatchObject({ statusCode: 409, code: 'fresh_volume_required' });
+  expect(h.state.labels).toEqual({ fixture: 'foreign' });
+  const events = h.events as Array<{ fn: string; args?: string[] }>;
+  expect(events.filter(({ fn }) => fn === 'run').map(({ args }) => args?.slice(0, 2))).toEqual([['volume', 'create']]);
 });
 
 describe('v0.15.0 database argv fixture (panel host)', () => {

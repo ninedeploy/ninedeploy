@@ -7,6 +7,21 @@ export const slug = z
   .max(63)
   .regex(/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/, 'lowercase letters, digits and hyphens');
 
+/** Derive the slug used for resource names and their runtime DNS labels. */
+export function slugifyResourceName(input: string): string {
+  const derived = input
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 63)
+    .replace(/-+$/, '');
+  // Truncate before dropping the trailing separator. Padding a one-letter
+  // slug keeps it valid and idempotent for the 2–63 character contract.
+  if (derived.length === 1) return `${derived}${derived}`;
+  return derived || 'service';
+}
+
 /**
  * POSIX environment-variable name, as accepted by `docker run --env-file` and
  * shells: letters, digits and underscores, starting with a letter or

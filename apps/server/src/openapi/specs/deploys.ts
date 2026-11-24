@@ -7,6 +7,10 @@ import type { RouteSpecMap } from '../types.js';
  * cross-checks every entry); bodies name the zod schema the handler parses.
  */
 export const deploysSpecs: RouteSpecMap = {
+  'GET /v1/services/:id/deploys/migration-readiness': {
+    summary: 'Inspect the runtime settings of a prepared migration service',
+    tag: 'deploys', floor: 'operator', responseType: 'MigrationReadiness',
+  },
   'GET /v1/services/:id/deploys/:depId/release': {
     summary: 'Whether a deployment has a restorable release record',
     description: 'Metadata only. Recorded inline Compose releases check local image availability on the original panel host: missing images or a failed Docker check disable restore. Queueing and the worker check again. Legacy redeploys use current settings; volume data is never restored.',

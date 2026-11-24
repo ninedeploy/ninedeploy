@@ -867,6 +867,7 @@ export const MATRIX: Record<string, Rule> = {
   'POST /v1/services/:id/insights/refresh': R('member'),
   'POST /v1/services/:id/promote': R('member', { body: (r) => ({ targetServiceId: r.service2 }) }),
   'GET /v1/services/:id/deploys': R('viewer'),
+  'GET /v1/services/:id/deploys/migration-readiness': R('operator'),
   'POST /v1/services/:id/deploys': R('member', { body: () => ({}) }),
   'GET /v1/services/:id/source': R('viewer'),
   'GET /v1/services/:id/badge': R('member', { note: 'the badge URL is its credential, so even reading it needs a member seat' }),
@@ -929,6 +930,8 @@ export const MATRIX: Record<string, Rule> = {
   'GET /v1/services/:id/deploys/:depId/release': R('viewer'),
   'GET /v1/services/:id/deploys/:depId/logs/download': R('viewer'),
   'GET /v1/services/:id/domains': R('viewer'),
+  'GET /v1/services/:id/domains/cutover': R('operator', { query: () => 'hostname=app.example.test' }),
+  'POST /v1/services/:id/domains/cutover': R('operator', { body: () => ({ hostname: 'app.example.test' }) }),
   'POST /v1/services/:id/domains': R('member', { body: (r) => ({ hostname: `${uniq(r, 'new')}.example.test` }) }),
   'PATCH /v1/services/:id/domains/:domainId': R('member', { body: () => ({ ssl: true }) }),
   'DELETE /v1/services/:id/domains/:domainId': R('member'),
@@ -1011,6 +1014,7 @@ export const MATRIX: Record<string, Rule> = {
 
   // ── databases & backups ──
   'POST /v1/databases': R('member', { body: (r) => ({ name: uniq(r, 'db'), engine: 'postgres', projectId: r.project }) }),
+  'POST /v1/databases/empty': R('operator', { body: (r) => ({ name: uniq(r, 'empty-db'), engine: 'postgres' }) }),
   'GET /v1/databases/:id': R('viewer'),
   'DELETE /v1/databases/:id': R('admin'),
   'GET /v1/databases/:id/logs': R('viewer'),

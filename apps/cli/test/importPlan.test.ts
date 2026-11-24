@@ -2,6 +2,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { importPlan } from '@ninedeploy/schemas';
 import { buildImportPlan, CREDENTIAL_ENV, importPlanAction, renderImportPlan } from '../src/commands/importPlan.js';
 import { planFromCaprover } from '../src/lib/importers/caprover.js';
 import { planFromCoolify } from '../src/lib/importers/coolify.js';
@@ -19,7 +20,10 @@ const fromFixture = (map: Record<string, unknown>): SourceGet => async (p) => {
 
 /** The A1 secret rule: no plan, and no printed plan, ever contains a secret. */
 function assertNoSecret(plan: ImportPlan) {
-  expect(JSON.stringify(plan)).not.toContain(SENTINEL);
+  const json = JSON.stringify(plan);
+  expect(json).not.toContain(SENTINEL);
+  const saved: unknown = JSON.parse(json);
+  expect(importPlan.parse(saved)).toEqual(saved);
   expect(renderImportPlan(plan)).not.toContain(SENTINEL);
 }
 

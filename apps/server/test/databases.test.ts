@@ -127,6 +127,25 @@ describe('databases routes', () => {
     expect(engineMocks.defaultPort).toHaveBeenCalledWith('postgres');
   });
 
+  it('refuses a retained volume before writing an empty database row for an operator', async () => {
+    const insert = vi.fn(() => [dbRow({ id: 5, status: 'creating' })]);
+    engineMocks.volumeExists.mockResolvedValueOnce(true);
+    const app = await buildTestApp({ db: createFakeDb({
+      insert: { databases: insert as never }, findFirst: { databases: dbRow({ id: 5, status: 'running' }) },
+    }) });
+    await app.register(databasesRoutes);
+    const res = await app.inject({ method: 'POST', url: '/empty', headers: asUser(), payload: {
+      name: 'Imported DB', engine: 'postgres',
+    } });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error.code).toBe('fresh_volume_required');
+    expect(engineMocks.volumeExists).toHaveBeenCalledWith('nd-db-imported-db-data');
+    expect(insert).not.toHaveBeenCalled();
+    expect(engineMocks.adoptRetainedVolume).not.toHaveBeenCalled();
+    expect(engineMocks.startDatabase).not.toHaveBeenCalled();
+    await app.close();
+  });
+
   it('stores the default tag for a database created without a version, so a later default never moves it', async () => {
     const { defaultVersionTag } = await import('../src/engine/database.js');
     const inserted: Array<Record<string, unknown>> = [];

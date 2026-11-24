@@ -180,6 +180,7 @@ export function createFakeApiModule() {
       analyzeLogs: vi.fn(),
     },
     deploys: {
+      migrationReadiness: vi.fn(),
       trigger: vi.fn(),
       list: vi.fn(),
       queue: vi.fn().mockResolvedValue({ items: [], count: 0, byStatus: { queued: 0, building: 0, deploying: 0 } }),
@@ -195,6 +196,8 @@ export function createFakeApiModule() {
       reject: vi.fn(),
     },
     domains: {
+      cutoverCheck: vi.fn(),
+      cutover: vi.fn(),
       forwardAuth: { get: vi.fn().mockResolvedValue({ domainId: 0, forwardAuth: null }), set: vi.fn(), grant: vi.fn() },
       composeRoute: { get: vi.fn().mockResolvedValue({ domainId: 0, route: null, services: null }), set: vi.fn() },
       list: vi.fn(),
@@ -215,6 +218,12 @@ export function createFakeApiModule() {
       create: vi.fn(),
       update: vi.fn(),
       remove: vi.fn(),
+    },
+    volumeImports: {
+      list: vi.fn().mockResolvedValue([]),
+      importFile: vi.fn(),
+      start: vi.fn(),
+      cancel: vi.fn(),
     },
     volumeBackups: {
       list: vi.fn().mockResolvedValue([]),
@@ -306,6 +315,7 @@ export function createFakeApiModule() {
     databases: {
       list: vi.fn().mockResolvedValue([]),
       create: vi.fn(),
+      createEmpty: vi.fn(),
       get: vi.fn(),
       remove: vi.fn(),
       restart: vi.fn(),
@@ -355,7 +365,7 @@ export function createFakeApiModule() {
       },
     },
     attachments: { list: vi.fn(), create: vi.fn(), remove: vi.fn() },
-    env: { list: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn() },
+    env: { list: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn(), import: vi.fn() },
     projectEnv: { list: vi.fn().mockResolvedValue([]), create: vi.fn(), update: vi.fn(), remove: vi.fn() },
     // Usage and cost (Monitoring, operators): an empty report by default.
     usage: {

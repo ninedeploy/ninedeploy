@@ -1,4 +1,4 @@
-import { resolve4, resolve6 } from 'node:dns/promises';
+import { resolve4, resolve6, Resolver } from 'node:dns/promises';
 import { isIPv6 } from 'node:net';
 
 /**
@@ -59,4 +59,21 @@ function canonicalAddress(ip: string): string {
     }
   }
   return ip;
+}
+
+/** A cutover needs both address families checked successfully. */
+export async function resolveCutoverAddresses(hostname: string): Promise<string[]> {
+  const resolver = new Resolver({ timeout: 2500, tries: 2 });
+  const noRecords = (error: unknown) => {
+    const code = (error as NodeJS.ErrnoException | null)?.code;
+    if (code === 'ENOTFOUND' || code === 'ENODATA') return [] as string[];
+    throw error;
+  };
+  const [a, aaaa] = await Promise.all([resolver.resolve4(hostname).catch(noRecords), resolver.resolve6(hostname).catch(noRecords)]);
+  return [...new Set([...a, ...aaaa])];
+}
+
+export function allCutoverAddressesMatch(resolved: string[], expected: string[]): boolean {
+  const wanted = new Set(expected.map(canonicalAddress));
+  return resolved.length > 0 && resolved.every((ip) => wanted.has(canonicalAddress(ip)));
 }

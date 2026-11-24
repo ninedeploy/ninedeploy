@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity,
   ArrowLeft,
@@ -23,7 +23,7 @@ import {
   Cpu,
   MemoryStick,
 } from 'lucide-react';
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import type { BackupDrillEntry, DatabaseDetail as IDatabaseDetail } from '@ninedeploy/sdk';
 import { DATABASE_STUDIO_ENGINES } from '@ninedeploy/schemas';
 import { api, authedFetch } from '../lib/api.js';
@@ -53,6 +53,7 @@ import { PitrCard } from './database/PitrCard.js';
 import { RemotePitrCard } from './database/RemotePitrCard.js';
 import { UpgradeCard } from './database/UpgradeCard.js';
 import { ImportCard } from './database/ImportCard.js';
+import { IMPORT_DUMP_ANCHOR } from '../lib/importFile.js';
 import { RestoreVerifyDialog } from './database/RestoreVerifyDialog.js';
 import { PublicAccessCard } from './database/PublicAccessCard.js';
 import { TunnelHintCard } from './database/TunnelHintCard.js';
@@ -116,6 +117,8 @@ export function DatabaseDetail() {
   // like /databases/7?tab=backups land on that tab and the help drawer —
   // which resolves its topic from the same param — matches what is shown.
   const [searchParams] = useSearchParams();
+  const { hash } = useLocation();
+  const importSection = useRef<HTMLElement>(null);
   const tabParam = searchParams.get('tab');
   const activeTab: DbTab = (DB_TABS as readonly string[]).includes(tabParam ?? '') ? (tabParam as DbTab) : 'overview';
   const setActiveTab = (next: DbTab) => {
@@ -134,6 +137,12 @@ export function DatabaseDetail() {
     enabled: Number.isInteger(id) && id > 0,
     refetchInterval: 10000,
   });
+  const importFocusId = activeTab === 'backups' && hash === `#${IMPORT_DUMP_ANCHOR}` && dbQuery.data?.id === id ? id : null;
+  useEffect(() => {
+    if (importFocusId === null) return;
+    importSection.current?.scrollIntoView?.({ block: 'start' });
+    importSection.current?.focus({ preventScroll: true });
+  }, [importFocusId]);
 
   const restartMutation = useMutation({
     mutationFn: () => api.databases.restart(id),
@@ -359,7 +368,9 @@ export function DatabaseDetail() {
           <BackupReplicasCard dbId={db.id} />
           <PitrCard db={db} />
           <RemotePitrCard db={db} />
-          <ImportCard db={db} />
+          <section id={IMPORT_DUMP_ANCHOR} ref={importSection} tabIndex={-1} aria-label={t('Import a dump')}>
+            <ImportCard key={db.id} db={db} />
+          </section>
           <BackupsPanel dbId={db.id} dbName={db.name} engine={db.engine} />
         </div>
       )}

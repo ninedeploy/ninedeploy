@@ -246,8 +246,10 @@ GET /v1/services/:id/deploys/:depId/diff viewer nd://scope/read/deploys
 GET /v1/services/:id/deploys/:depId/logs viewer nd://scope/read/deploys
 GET /v1/services/:id/deploys/:depId/logs/download viewer nd://scope/read/deploys
 GET /v1/services/:id/deploys/:depId/release viewer nd://scope/read/deploys
+GET /v1/services/:id/deploys/migration-readiness operator nd://scope/read/deploys
 GET /v1/services/:id/domains viewer nd://scope/read/domains
 GET /v1/services/:id/domains/:domainId/dns viewer nd://scope/read/domains
+GET /v1/services/:id/domains/cutover operator nd://scope/read/domains
 GET /v1/services/:id/env viewer nd://scope/read/env
 GET /v1/services/:id/env/export admin nd://scope/read/env
 GET /v1/services/:id/env/preview viewer nd://scope/read/env
@@ -451,6 +453,7 @@ POST /v1/databases/:id/studio operator nd://scope/write/databases
 POST /v1/databases/:id/upgrades admin nd://scope/write/databases
 POST /v1/databases/:id/upgrades/:upgradeId/finalize admin nd://scope/write/databases
 POST /v1/databases/:id/upgrades/:upgradeId/rollback admin nd://scope/write/databases
+POST /v1/databases/empty operator nd://scope/write/databases
 POST /v1/demo/seed operator -
 POST /v1/deploy-freezes operator -
 POST /v1/deploy-hooks/:token token -
@@ -538,6 +541,7 @@ POST /v1/services/:id/deploys/bulk-delete admin nd://scope/write/deploys
 POST /v1/services/:id/domains member nd://scope/write/domains
 POST /v1/services/:id/domains/:domainId/verify member nd://scope/write/domains
 POST /v1/services/:id/domains/auto member nd://scope/write/domains
+POST /v1/services/:id/domains/cutover operator nd://scope/write/domains
 POST /v1/services/:id/env member nd://scope/write/env
 POST /v1/services/:id/env/import member nd://scope/write/env
 POST /v1/services/:id/env/preview member nd://scope/write/env

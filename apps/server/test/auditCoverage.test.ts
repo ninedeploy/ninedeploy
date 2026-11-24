@@ -101,9 +101,11 @@ const EXEMPT: Record<string, string> = {
 // setPitr (lib/pitr.ts) audits every enable, disable and retention change;
 // configureRemotePitr (lib/pitrRemote.ts) audits committed operator configuration;
 // rollbackDatabaseUpgrade and finalizeDatabaseUpgrade (lib/databaseUpgrade.ts)
-// audit their outcome once the work is done (it can still be refused).
+// audit their outcome once the work is done (it can still be refused);
+// provisionDatabase (modules/databases.ts) audits database creation for both routes;
+// createServiceDomain and verifyServiceDomain audit both direct domain changes and cutovers.
 const HELPERS =
-  /\baudit\(|\bdeactivateUser\(|\bregisterAccount\(|\bcreateFirstAdmin\(|\bimportSystemArchive\(|\bstartPanelBackup\(|\brestorePanelBackup\(|\bsetPitr\(|\bconfigureRemotePitr\(|\brollbackDatabaseUpgrade\(|\bfinalizeDatabaseUpgrade\(/;
+  /\baudit\(|\bdeactivateUser\(|\bregisterAccount\(|\bcreateFirstAdmin\(|\bimportSystemArchive\(|\bstartPanelBackup\(|\brestorePanelBackup\(|\bsetPitr\(|\bconfigureRemotePitr\(|\brollbackDatabaseUpgrade\(|\bfinalizeDatabaseUpgrade\(|\bprovisionDatabase\(|\bcreateServiceDomain\(|\bverifyServiceDomain\(/;
 const ROUTE = /\b(?:app|scope|api|r|instance|protectedScope|admin)\.(post|put|patch|delete)\b(?:<[\s\S]*?>)?\(\s*'([^']*)'/g;
 
 describe('audit coverage (r222)', () => {

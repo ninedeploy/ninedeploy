@@ -9,38 +9,11 @@
  * userinfo removed before it enters the plan. Step 2 (`import apply`, in
  * commands/importApply.ts) takes values only from .env files the person passes.
  */
-import type { CreateService } from '@ninedeploy/schemas';
-
-export type SourceKind = 'coolify' | 'dokploy' | 'caprover' | 'heroku';
+import type { ImportPlan, PlanDomain, PlanIssue, PlanService, SourceKind } from '@ninedeploy/schemas';
+export type { ImportPlan, IssueLevel, PlanDatabase, PlanDomain, PlanEngine, PlanIssue, PlanRuntime, PlanService, ServiceCreateFields, SourceKind } from '@ninedeploy/schemas';
 
 /** GET a JSON path on the source panel (auth already applied). */
 export type SourceGet = (path: string) => Promise<unknown>;
-
-export type IssueLevel = 'unsupported' | 'manual' | 'info';
-export interface PlanIssue {
-  level: IssueLevel;
-  /** The source option or field the issue is about, e.g. `build_pack`. */
-  option: string;
-  detail: string;
-}
-
-/** The createService fields a step-2 apply would send (subset, never secrets). */
-export type ServiceCreateFields = Pick<CreateService, 'name' | 'type'> &
-  Partial<Pick<CreateService, 'image' | 'repoUrl' | 'branch' | 'port' | 'publishedPort' | 'replicas' | 'cpuLimitMilli' | 'memLimitMb' | 'healthPath' | 'volumeMount'>> & {
-    build?: { buildPack?: NonNullable<CreateService['build']>['buildPack']; baseDir?: string; dockerfilePath?: string; outputDir?: string; startCmd?: string };
-  };
-
-/**
- * A domain of a service. `sourceDefault` marks a host the source generated
- * for itself (CapRover's <app>.<root domain>, Coolify's sslip.io, Dokploy's
- * traefik.me): it stays with the source and is never added to NineDeploy.
- * Optional and additive, so planVersion stays 1.
- */
-export interface PlanDomain {
-  host: string;
-  https: boolean;
-  sourceDefault?: true;
-}
 
 /** Wildcard-DNS hosts the sources generate (they resolve to an IP in the name, or to the source). */
 export function isGeneratedHost(host: string): boolean {
@@ -49,61 +22,6 @@ export function isGeneratedHost(host: string): boolean {
 
 export function planDomain(host: string, https: boolean, sourceDefault = isGeneratedHost(host)): PlanDomain {
   return sourceDefault ? { host, https, sourceDefault: true } : { host, https };
-}
-
-export interface PlanService {
-  /** Stable reference in the source (uuid / id / appName). */
-  ref: string;
-  name: string;
-  kind: 'image' | 'git' | 'compose';
-  create: ServiceCreateFields;
-  domains: PlanDomain[];
-  /** Names only. `secret` marks values the source keeps hidden or flags as secret. */
-  env: Array<{ key: string }>;
-  volumes: Array<{ mountPath: string; source: 'volume' | 'bind' | 'file'; name?: string }>;
-  issues: PlanIssue[];
-  /**
-   * Where it runs on the source host, for the volume command of `import
-   * data` (same shape as PlanDatabase.runtime). Optional and additive.
-   */
-  runtime?: PlanRuntime;
-  /** Settings apply sets right after create (an update; not create fields). Optional and additive. */
-  settings?: { healthCheck?: 'running' };
-  /** Databases of the plan to attach under a variable (Heroku add-ons). Optional and additive. */
-  attachments?: Array<{ database: string; envAlias: string }>;
-}
-
-/**
- * Where an item runs on the source: a container, a Swarm service, or (Heroku
- * add-ons) the Heroku app that owns it. Every reader switches on `kind`.
- */
-export type PlanRuntime = { kind: 'container' | 'swarm-service' | 'heroku-app'; name: string };
-
-export type PlanEngine = 'postgres' | 'mysql' | 'mariadb' | 'mongo' | 'redis' | 'keydb' | 'dragonfly' | 'clickhouse';
-export interface PlanDatabase {
-  ref: string;
-  name: string;
-  /** NineDeploy engine, or null when NineDeploy has no managed equivalent. */
-  engine: PlanEngine | null;
-  /** The source image (the version lives in its tag), when the source says. */
-  image: string | null;
-  /**
-   * Where it runs on the source host, for the dump commands of `import data`:
-   * a plain container name, or a Swarm service whose task container is found
-   * by its com.docker.swarm.service.name label. Optional and additive.
-   */
-  runtime?: PlanRuntime;
-  issues: PlanIssue[];
-}
-
-export interface ImportPlan {
-  planVersion: 1;
-  source: { kind: SourceKind; url: string; version: string | null; scope: string };
-  generatedAt: string;
-  services: PlanService[];
-  databases: PlanDatabase[];
-  /** Plan-wide notes (scope limits, what step 1 does not do). */
-  notes: string[];
 }
 
 /** Always present: what this plan is and is not. */

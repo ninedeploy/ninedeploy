@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useId, useState } from 'react';
 import { Archive, ArrowUpRight, Database, ExternalLink, FolderOpen, HardDrive, Info, Layers, Plus, Server, ShieldCheck, Trash2, Wrench, X } from 'lucide-react';
-import { Link } from 'react-router';
+import { Link, useLocation } from 'react-router';
 import type { Service, ServiceVolumeAttachment as SdkServiceVolumeAttachment } from '@ninedeploy/sdk';
 import { api } from '../../lib/api.js';
 import { useAuth } from '../../lib/auth.js';
@@ -12,6 +12,8 @@ import { fill, useT } from '../../lib/i18n.js';
 import { VolumeBrowser } from '../../components/VolumeBrowser.js';
 import { VolumeBackupsPanel } from '../../components/VolumeBackupsPanel.js';
 import { FileMountsCard } from './FileMountsCard.js';
+import { VolumeImportCard } from './VolumeImportCard.js';
+import { IMPORT_VOLUME_ANCHOR } from '../../lib/importFile.js';
 
 /** Wire shape returned by GET /v1/services/:id/volumes — extends the SDK
  *  attachment type with runtime-computed fields (size, in-use, sharing). */
@@ -24,6 +26,7 @@ type ServiceVolumeAttachment = SdkServiceVolumeAttachment & {
 export function VolumesTab({ serviceId, svc }: { serviceId: number; svc: Service }) {
   const t = useT();
   const { user } = useAuth();
+  const { hash } = useLocation();
   const isOperator = user?.isOperator === true;
   const [browsingVolume, setBrowsingVolume] = useState<string | null>(null);
   const [attaching, setAttaching] = useState(false);
@@ -202,6 +205,10 @@ export function VolumesTab({ serviceId, svc }: { serviceId: number; svc: Service
           </Card>
         )}
       </div>
+
+      {user?.isOperator && hasPrimary && svc.type === 'docker' && svc.serverId == null && svc.orchestrator !== 'swarm' && (
+        <VolumeImportCard key={user.id} svc={svc} userId={user.id} focus={hash === `#${IMPORT_VOLUME_ANCHOR}`} />
+      )}
 
       {/* Service-scoped volume attachments (multi-volume, per-service) */}
       {hasAttachments && (

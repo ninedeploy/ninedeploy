@@ -1,8 +1,10 @@
 import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createHash } from 'node:crypto';
 import { createQueryClient, renderWithProviders } from './web-utils.js';
 
 const apiMock = vi.hoisted(() => ({
+  getApiSessionGeneration: () => 0,
   api: {
     databases: {
       importFile: vi.fn(),
@@ -36,6 +38,7 @@ function renderCard(database = pg, queryClient = createQueryClient()) {
 }
 
 const pick = (file: File) => fireEvent.change(screen.getByLabelText('Dump file'), { target: { files: [file] } });
+const checksum = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
 
 describe('fileChunks', () => {
   it('slices a file from the offset on', async () => {
@@ -85,7 +88,8 @@ describe('ImportCard', () => {
     fireEvent.click(upload);
     await waitFor(() =>
       expect(apiMock.api.databases.importFile).toHaveBeenCalledWith(7, expect.any(Function), expect.objectContaining({
-        sizeBytes: 2048, filename: 'prod.dump', options: { clean: true, singleTransaction: false },
+        sizeBytes: 2048, filename: 'prod.dump', sha256: checksum(new Uint8Array(2048)),
+        options: { clean: true, singleTransaction: false },
       })),
     );
     expect(apiMock.api.databases.importFile.mock.calls[0]![2]).not.toHaveProperty('resumeImportId');
@@ -148,6 +152,25 @@ describe('ImportCard', () => {
     expect(screen.getByText(/Resuming import #5/)).toHaveTextContent('the same file');
     fireEvent.click(screen.getByTitle('Stop resuming'));
     expect(screen.queryByText(/Resuming import/)).not.toBeInTheDocument();
+  });
+
+  it('refuses a different file of the same size before sending another chunk', async () => {
+    const original = new Uint8Array([1, 2, 3, 4]);
+    apiMock.api.databases.imports.list.mockResolvedValue([
+      row({ id: 5, status: 'uploading', sizeBytes: 4, receivedBytes: 2, sha256: checksum(original) }),
+    ]);
+    apiMock.api.databases.importFile.mockResolvedValue(row({ id: 5, status: 'running' }));
+    renderCard();
+    fireEvent.click(await screen.findByTitle('Resume import #5'));
+    const resume = screen.getByRole('button', { name: /Resume upload/ });
+    pick(new File([new Uint8Array([1, 2, 5, 6])], 'prod.dump'));
+    fireEvent.click(resume);
+    expect(await screen.findByText('This file differs from the original upload. Choose the original dump.')).toBeVisible();
+    expect(apiMock.api.databases.importFile).not.toHaveBeenCalled();
+
+    pick(new File([original], 'copy.dump'));
+    fireEvent.click(resume);
+    await waitFor(() => expect(apiMock.api.databases.importFile).toHaveBeenCalledWith(7, expect.any(Function), expect.objectContaining({ resumeImportId: 5 })));
   });
 
   it('cancels an import and reports a failed cancel', async () => {
