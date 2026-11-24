@@ -98,11 +98,11 @@ async function getLatestTraefikVersion(): Promise<string | null> {
   try {
     const out = await capture('docker', ['search', '--format', '{{.Tag}}', 'traefik:3']);
     const tags = out.split('\n').filter(Boolean);
-    // v3 tag'leri arasından en yüksek semver'i bul
+    // Find the highest semver among the v3 tags
     const v3Tags = tags.filter((t) => t.startsWith('3.'));
     if (v3Tags.length === 0) return null;
     
-    // Semver karşılaştırması
+    // Semver comparison
     const sorted = v3Tags.sort((a, b) => {
       const pA = a.split('.').map((n) => Number(n) || 0);
       const pB = b.split('.').map((n) => Number(n) || 0);
@@ -115,7 +115,7 @@ async function getLatestTraefikVersion(): Promise<string | null> {
   }
 }
 
-/** İki versiyonu karşılaştır (outdated mı?) */
+/** Compare two versions (is the installed one outdated?) */
 function isOutdated(current: string | null, latest: string | null): boolean {
   if (!current || !latest) return false;
   const [cm = 0, cs = 0, cp = 0] = current.split('.').map(Number);
@@ -177,7 +177,7 @@ async function getTraefikContainerInfo(): Promise<TraefikStatus> {
   }
 }
 
-/** Sertifika bilgilerini işle */
+/** Parse the certificate details */
 function processCertificates(): TraefikCertificate[] {
   const certs = readCertificates();
   return certs.map((cert) => {
@@ -197,7 +197,7 @@ function processCertificates(): TraefikCertificate[] {
   });
 }
 
-/** Traefik loglarını al */
+/** Fetch the Traefik logs */
 async function getTraefikLogs(lines: number = 100): Promise<string[]> {
   try {
     const output = await capture('docker', ['logs', '--tail', String(lines), '--timestamps', TRAEFIK_CONTAINER]);
@@ -273,7 +273,7 @@ async function parseGeneratedConfig(dynamicPath: string): Promise<TraefikTables>
       return { routers: [], services: [], middlewares: [] };
     }
     const content = readFileSync(dynamicPath, 'utf8').replace(/\r\n/g, '\n');
-    // Basit YAML parser - gerçek uygulamada yaml paketi kullanılabilir
+    // Simple YAML parser - a real implementation would use the yaml package
     const routers: TraefikRouter[] = [];
     const services: TraefikService[] = [];
     const middlewares: TraefikMiddleware[] = [];
@@ -459,12 +459,12 @@ export const traefikRoutes: FastifyPluginAsync = async (app) => {
     return { logs };
   });
 
-  // Konfigürasyon
+  // Configuration
   app.get('/traefik/config', { preHandler: [app.authenticate, app.requireAdmin] }, async () => {
     return getTraefikConfig();
   });
 
-  // Traefik'i yeniden başlat (admin only)
+  // Restart Traefik (admin only)
   // F612: POST routes authenticate at onRequest (before the body is read and
   // parsed, the r098 rule); a preHandler ran only after parsing.
   // 0.16.1 HTTP/3: the static config has always declared `http3` on the
@@ -512,7 +512,7 @@ export const traefikRoutes: FastifyPluginAsync = async (app) => {
     }
   });
 
-  // ACME dosyasını yedekle
+  // Back up the ACME file
   app.post('/traefik/backup-certs', { onRequest: [app.authenticate], preHandler: [app.requireAdmin] }, async (req) => {
     // Resolve through config (which anchors relative data dirs to the repo
     // root) — reading the env var directly followed the process cwd, so a
@@ -543,13 +543,13 @@ export const traefikRoutes: FastifyPluginAsync = async (app) => {
     };
   });
 
-  // Traefik'i güncelle (pull new image + restart)
+  // Update Traefik (pull the new image + restart)
   app.post('/traefik/update', { onRequest: [app.authenticate], preHandler: [app.requireAdmin] }, async (req) => {
     const log = (line: string) => app.log.info({ component: 'traefik-update' }, line);
     
     log('Starting Traefik update...');
     
-    // 1. ACME dosyasını yedekle (config-anchored — see backup-certs above)
+    // 1. Back up the ACME file (config-anchored — see backup-certs above)
     const dataDir = config.paths.dataDir;
     const acmePath = `${dataDir}/traefik/acme.json`;
     const backupPath = `${dataDir}/traefik/acme-backup-${Date.now()}.json`;
@@ -559,11 +559,11 @@ export const traefikRoutes: FastifyPluginAsync = async (app) => {
       log(`Certificate backup saved to ${backupPath}`);
     }
     
-    // 2. Yeni image'ı çek
+    // 2. Pull the new image
     log(`Pulling ${TRAEFIK_IMAGE}...`);
     await pullDockerImage(TRAEFIK_IMAGE, (l) => log(l));
     
-    // 3. Eski container'ı sil
+    // 3. Remove the old container
     log('Removing old container...');
     await run('docker', ['rm', '-f', TRAEFIK_CONTAINER], {}, (l) => log(l));
     
