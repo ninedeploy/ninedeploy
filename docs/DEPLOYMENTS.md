@@ -13,7 +13,7 @@ When deploying a containerized service:
 4. **Traefik Traffic Flip**: Once the new container passes health verification, Traefik dynamically routes incoming traffic to the new container.
 5. **Graceful Drain**: The old container receives `SIGTERM` and is stopped after draining in-flight requests.
 
-### Fan-out traffic transitions (unreleased)
+### Fan-out traffic transitions (0.18.2)
 
 Each routed fan-out target keeps its previous runtime until its candidate passes
 the selected readiness check and its node confirms the loaded HTTP/TLS routing
@@ -32,7 +32,9 @@ fan-out outcome lines and per-target status. Published host ports prevent safe
 overlap, so routed fan-out with a published port is refused before retirement.
 Primary node canary has the separate eligibility requirements below; node autoscaling has its own requirements, listed under [Autoscaling](#autoscaling-01610). The 0.18.2 artifact increment also uses these guards for recorded-image fan-out promotion.
 
-### Ordered multi-node lifecycle (unreleased)
+### Ordered multi-node lifecycle (0.18.4)
+
+> **Published in 0.18.4.** This section records the increment as it was written. The same release also brought Stop across retained generations and runtime ownership; automatic sleep and wake followed in 0.18.17. Current acceptance is in [Current status](CURRENT_STATUS.md#r2-acceptance-checklist).
 
 For plain Docker services whose primary runs on a node, accepted Start, Stop and Restart commands record the primary and additional-node placements together. Every participating agent must support sealed `docker.lifecycle`, `docker.recovery`, `docker.readiness` and `proxy.routingAck`. Additional-node targets currently run one container each; the primary's replica count does not create extra target containers or routing backends.
 
@@ -40,9 +42,9 @@ The worker captures immutable container IDs separately on each node and verifies
 
 An older primary-only journal cannot silently adopt existing fan-out targets: submit a new command to capture the full placement. An unresolved fan-out deployment/recovery transition holds lifecycle effects because it may own containers outside the serving row. Coordinating Stop with those unfinished generations, deploy/scale/wake ordering and local-primary fan-out remain separate R2 work; this increment does not certify those paths.
 
-The development agent additionally advertises `docker.lifecycle.generations`. It accepts an explicit expected deployment label for every immutable target in a Stop batch, checks the entire batch before effects and verifies it again afterward. A fresh agent process can replay the same durable receipt. Explicit batches permit up to thirty targets; legacy batches remain limited to ten, and Start refuses explicit generation annotations. `NINEDEPLOY_AGENT_CONTAINER_LIFECYCLE=off` disables both forms. This agent foundation does not remove the panel's unresolved-transition hold: builders must participate in the same ordering before that path can complete safely.
+The agent additionally advertises `docker.lifecycle.generations`. It accepts an explicit expected deployment label for every immutable target in a Stop batch, checks the entire batch before effects and verifies it again afterward. A fresh agent process can replay the same durable receipt. Explicit batches permit up to thirty targets; legacy batches remain limited to ten, and Start refuses explicit generation annotations. `NINEDEPLOY_AGENT_CONTAINER_LIFECYCLE=off` disables both forms. This agent foundation does not remove the panel's unresolved-transition hold: builders must participate in the same ordering before that path can complete safely.
 
-The development panel persists one runtime ownership clock per service independently of lifecycle history. New node lifecycle commands reserve that ownership in the same transaction as their journal entry; a replaced owner invalidates old leases, continuations and retries. Migration 0102 preserves the wire revision of already-pending commands, while later commands advance beyond the retained high-water mark. Ownership metadata does not start or stop containers by itself. Already-admitted managed runSpec and runEnv creation now drains under the same agent journal lock as lifecycle effects. The lock includes create, network attachment, Start and failure cleanup, and a timed-out child remains owned until its actual close. This does not authorize or reject an older request that arrives only after a newer Stop; binding delayed creation, scale, wake and retirement requests to the persisted authority is still required. The unresolved-transition hold remains in force.
+The panel persists one runtime ownership clock per service independently of lifecycle history. New node lifecycle commands reserve that ownership in the same transaction as their journal entry; a replaced owner invalidates old leases, continuations and retries. Migration 0102 preserves the wire revision of already-pending commands, while later commands advance beyond the retained high-water mark. Ownership metadata does not start or stop containers by itself. Already-admitted managed runSpec and runEnv creation now drains under the same agent journal lock as lifecycle effects. The lock includes create, network attachment, Start and failure cleanup, and a timed-out child remains owned until its actual close. This does not authorize or reject an older request that arrives only after a newer Stop; binding delayed creation, scale, wake and retirement requests to the persisted authority is still required. The unresolved-transition hold remains in force.
 
 ### Canary releases (0.16.9)
 
@@ -89,7 +91,7 @@ After candidate qualification, the worker confirms stable-only routing and verif
 
 Failure/cancellation confirms stable routing before retiring the candidate by immutable identity. An unknown routing outcome keeps both generations for durable recovery. A hard panel restart does not replay an in-memory canary or its measurements: recovery uses the persisted stable intent. Explicit Stop remains authoritative. Readiness/observation RPCs and rollback confirmation can delay cancellation; it is checked at bounded operation boundaries.
 
-R1 has local API/worker and browser acceptance; final artifact certification and publication are tracked separately. Node multi-replica canary, autoscaling/sleep and Swarm canary are outside this increment.
+R1 shipped in 0.18.2, and the 0.19.0 release run passed its `public-canary` cohort; see [Current status](CURRENT_STATUS.md#r2-acceptance-checklist). Node multi-replica canary and Swarm canary are not offered. Node request-rate autoscaling and automatic sleep and wake shipped in 0.18.17.
 
 `pnpm smoke:node-canary --image=<candidate>` exercises the public API/worker against isolated panel/node Docker daemons and the standard bridge agent bootstrap. It covers readiness holding, healthy rollout, measured 5xx rollback, full-step promotion, concurrent domain refreshes, source loss, cancellation, Stop, owner-disabled refusal and hard panel restart. It retains proof files under `.temp_files` (or `--proof=<directory>`) and removes resources only after checking their ownership labels. The release workflow repeats this gate on the pushed version image before promotion/publication. Its Host-header fixtures do not certify public DNS or TLS termination for an operator's domain.
 
@@ -115,7 +117,7 @@ Unpredictable loopback GET markers delimit a window; each must produce an unrout
 
 Receipts carry source/agent epoch, service/node/deployment/step and target identities, coverage counts, 5xx rates and p95 at one-millisecond precision. They omit client addresses, request paths, headers and raw access records. Windows are limited to 32 MiB of stream data, 100,000 records, 16 KiB per line and 16 active reservations. Requested duration is one second to one hour; opening has a ten-second deadline, active reservations expire after 30 seconds without a poll or at duration plus 20 seconds. Completed receipts and closed-request tombstones are cached for up to 60 seconds, subject to a 128-entry capacity. Shutdown clears sessions and rotates the agent epoch. Cancellation closes a known reservation best-effort; agent expiry bounds an unconfirmed/lost open response.
 
-Expected routing is checked at observation boundaries; continuous per-request generation attestation is not claimed. The worker binds reservations to its primary transition lease, immutable stable/candidate identities, selected node and weighted step. Node promotion waits for the current complete measured step and its configured verdict before skipping remaining steps; local manual promotion retains its existing early behavior. Public node canary is limited to the single-replica scope above. Node autoscaling/sleep and additional runtime support follow in R2; local file observations retain their separate limitations above.
+Expected routing is checked at observation boundaries; continuous per-request generation attestation is not claimed. The worker binds reservations to its primary transition lease, immutable stable/candidate identities, selected node and weighted step. Node promotion waits for the current complete measured step and its configured verdict before skipping remaining steps; local manual promotion retains its existing early behavior. Public node canary is limited to the single-replica scope above. Node autoscaling and sleep shipped in 0.18.17, with their own requirements under [Autoscaling](#autoscaling-01610) and in [NODE_SLEEP_WAKE.md](NODE_SLEEP_WAKE.md); local file observations retain their separate limitations above.
 
 ### Autoscaling (0.16.10)
 
@@ -409,13 +411,13 @@ Each rule becomes one `docker run -p` operand (`-p 203.0.113.7:27015-27030:27015
 - **Monorepo Watch-Paths**: Set glob patterns (e.g. `apps/api/**`, `packages/shared/**`). Deployments trigger only when matching files change in the commit diff.
 - **CI Opt-Out**: Commits containing `[skip ci]` or `[skip cd]` in the commit message are ignored by webhook triggers.
 
-### Git LFS (0.16.3)
-
 ### Review repository settings before deploying
 
 When the deploy wizard analyzes a repository, it lists the Dockerfile and conventional Compose filenames in the selected base directory. A single literal TCP `EXPOSE` port in the Dockerfile's final stage appears as a hint. Check the runtime step for the selected port and health path before deploying. The scan leaves multiple or dynamic ports for you to verify.
 
 The wizard lists up to 100 variable names from the first readable example environment file, such as `.env.example` or `.env.sample`. Enter the values you need on the Environment step. The analysis returns only names and leaves the deploy settings as entered.
+
+### Git LFS (0.16.3)
 
 A repository that keeps models, media or datasets in Git LFS checks out *pointer files* (a few lines of text) in their place. Turn on **Service → Settings → Git LFS** and each deploy replaces them with their content before the build.
 

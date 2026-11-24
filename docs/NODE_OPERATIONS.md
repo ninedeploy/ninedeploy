@@ -124,16 +124,18 @@ Monitoring's Local Host totals stay local; selecting a node uses the existing
 node-specific live endpoint. Samples from different hosts are never summed
 into the panel host's allocation figures.
 
-The published 0.17.0/0.17.1 releases retain 24 hours. The next observability
-increment adds opt-in 1–90 day history with rollups; see
+Releases before 0.18.2 retain 24 hours. Since 0.18.2 an opt-in retention
+keeps 1–90 days of history with rollups; see
 [resource history and export](OBSERVABILITY.md). Remote Swarm task aggregation,
 fan-out destination history and node-only database history remain separate work.
 
-## Immutable controller resource samples (0.19.0 development)
+## Immutable controller resource samples (0.18.4)
 
-The development agent adds sealed `docker.metrics` for CPU/memory controller
-decisions. This is separate from the existing `agent.stats` history path and is
-not available in the published 0.18.2 agent. Requests bind an explicit node,
+> **Published in 0.18.4.** This section and the next record each increment as it was written; later 0.18.x releases extended the same operations (generation-independent Stop, ordered Start, Stop and Restart across nodes, automatic sleep and wake in 0.18.17).
+
+The agent adds sealed `docker.metrics` for CPU/memory controller
+decisions. This is separate from the existing `agent.stats` history path and
+first shipped in the 0.18.4 agent. Requests bind an explicit node,
 service/deployment and up to ten full Docker IDs with expected names. The agent
 checks managed labels, running state, restart counts and configured resource
 limits before and after one bounded sample. CPU limits use NanoCPUs or the
@@ -156,9 +158,9 @@ replacement. All owned containers and their volumes are removed afterward.
 Node autoscaling and scale to zero remain unavailable until their fenced
 runtime, readiness, routing and recovery acceptance is complete.
 
-## Ordered container lifecycle (0.19.0 development)
+## Ordered container lifecycle (0.18.4)
 
-The development agent adds the sealed `docker.lifecycle` operation for managed
+The agent adds the sealed `docker.lifecycle` operation for managed
 plain Docker containers. A command binds a service/deployment, an increasing
 revision, a request ID and up to ten full container IDs with expected names.
 The fixed actions are Start and Stop. The agent verifies ownership labels and

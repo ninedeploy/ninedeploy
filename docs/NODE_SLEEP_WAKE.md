@@ -1,6 +1,127 @@
 # Node scale to zero and wake (R2)
 
-Current behavior and publication status are summarized in [Current status](CURRENT_STATUS.md) and the generated [support matrix](SUPPORT_MATRIX.md). The dated checkpoints below retain their original source and scope. Automatic node sleep/wake is implemented under advertised agent capabilities and panel/agent switches; aggregate R2 certification remains separate.
+Current behavior and publication status are summarized in [Current status](CURRENT_STATUS.md) and the generated [support matrix](SUPPORT_MATRIX.md). The dated checkpoints below retain their original source and scope. Automatic node sleep/wake is implemented under advertised agent capabilities and panel/agent switches; aggregate R2 certification remains separate. [Current behavior](#current-behavior) describes the code as it is today; the checkpoints keep the state of each step when it was written, so their "remains open" and "disabled" notes are history, not the current state.
+
+## Current behavior
+
+Automatic node sleep and wake are released: 0.18.17 shipped them, 0.18.18 fixed wake after domain, health and limit edits and the way back with automation off, and 0.18.25 added collection of unused catchers. This section describes the code as it is. Paths are under `apps/server/src/` unless noted.
+
+### Switches
+
+| Switch | Set on | Default | Effect |
+| :--- | :--- | :--- | :--- |
+| `NINEDEPLOY_NODE_SLEEP_AUTOMATION` | panel | `on` | `off` stops the node sleep coordinator, the wake poller and the status observer. Automatic sleep, wake, catcher maintenance and collection pause, and `GET /v1/services/:id/sleep` reports `nodeControllerActive: false`. Idle windows are still opened and sampled, and the setting is kept. Explicit Start, Stop, Restart, deploy and Wake still work. |
+| `NINEDEPLOY_AGENT_PROXY_TRAFFIC` | node agent | unset, which is off | Node-owner opt-in. Any value other than `off`, `false`, `0`, `no` or `disabled` (case-insensitive), such as `on`, advertises `proxy.traffic`, `proxy.servingTraffic`, `proxy.idleWatch` and the four `wake.catcher.*` capabilities. Unset, none is advertised and every operation of those families refuses. |
+| `NINEDEPLOY_AGENT_CONTAINER_MUTATIONS` | node agent | unset, which is on | `off` also removes the four `wake.catcher.*` capabilities, because the catcher is a container the agent starts. |
+| `NINEDEPLOY_AGENT_ORDERED_PROXY` | node agent | unset, which is on | `off` also removes `wake.catcher.retire`. |
+
+### What can sleep on a node
+
+- An ordinary Docker service placed on a node: `type` `docker`, not Swarm, a node selected, status `running`, a runtime id of the form `<slug>-<deploymentId>`, 1 to 10 serving replicas and a container port. Compose, PM2 and Swarm services do not sleep on a node. A panel-host service keeps the one-minute sleeper tick and the panel's `/_nd/wake` endpoint.
+- `sleepAfterMinutes` from 5 to 1440. The setting can be saved on any Docker service; `GET /v1/services/:id/capabilities` (`scaleToZero`) says whether it acts where the service runs.
+- At least one active domain, and every attached database running on the same node as the service.
+- No fan-out target: a `service_targets` row blocks both idle observation and sleep admission.
+- A node agent reachable over sealed transport that advertises the capabilities below. The panel also refuses these operation families on plaintext transport when `NINEDEPLOY_AGENT_ALLOW_CLEARTEXT=1` opens the legacy fallback for other operations.
+
+| Step | Capabilities the agent must advertise |
+| :--- | :--- |
+| Idle observation | `docker.recovery`, `proxy.idleWatch` |
+| Sleep | `docker.mutations`, `docker.readiness`, `proxy.routingAck`, `proxy.orderedWrite`, `wake.catcher.prepare` |
+| Wake | `docker.mutations`, `docker.startSet`, `docker.readiness`, `proxy.routingAck`, `proxy.orderedWrite`, `wake.catcher` |
+| Catcher maintenance, with services asleep on the node | `wake.catcher.inventory`, `wake.catcher.retire`, `proxy.routingAck`, `proxy.orderedWrite`, `wake.catcher.prepare`, `docker.recovery`, `docker.readiness` |
+| Unused-catcher collection, with nothing asleep | `wake.catcher.inventory`, `wake.catcher.retire`, `proxy.routingAck`, `proxy.orderedWrite` |
+
+Support follows advertised capabilities, not an assumed version. For its "update the agent" message, the panel's table in `lib/agentCapabilities.ts` names 0.18.0 for `docker.readiness`, `docker.recovery` and `proxy.routingAck`, 0.18.10 for `docker.mutations`, and 0.19.0 for `docker.startSet`, `proxy.orderedWrite`, `proxy.idleWatch` and the `wake.catcher.*` operations.
+
+### Idle evidence
+
+- `plugins/sleeper.ts` runs the idle scheduler (`lib/nodeIdleScheduler.ts`) every 15 seconds (`NODE_IDLE_SAMPLE_MS`) for each eligible node service that has `sleepAfterMinutes`.
+- Each window is one minute (`IDLE_WATCH_MIN_MS`, the shortest duration `idleWatchOpen` accepts). `openServiceNodeIdleWatch` (`lib/nodeIdleWatchService.ts`) resolves every serving replica's immutable container id through `docker.identity`, checks the deployment labels, renders the node's routing and opens `proxy.idleWatch.open`.
+- The agent releases a window that is not sampled within 30 seconds. Each tick samples the active window and its successor, and the successor is opened 30 seconds before the active window ends, so the two request counters overlap.
+- A node holds paired windows for at most 8 services (`NODE_IDLE_SERVICES_PER_NODE`) within the agent's 16-window idle-watch limit (`PROXY_TRAFFIC_MAX_SESSIONS`). Other services wait for a slot.
+- `lib/nodeIdleCoverage.ts` accepts only a finished, complete window with zero requests. Windows are chained only when the proxy source, proxy id, agent epoch, routing generation, serving ids and runtime context are unchanged and the markers overlap. Chained durations are not added: monotonic panel timestamps around each opening call give a lower bound on the covered time.
+- Any request in the active or successor window resets coverage to zero. A lease lapse, a proxy or agent restart, a routing, configuration or ownership change, or a refusal resets it to unknown, which never counts as idle. Any edit to the service row discards all of its coverage.
+- After a refusal the scheduler retries after 60 seconds (`REFUSAL_RETRY_MS`).
+- The scheduler issues opaque one-use evidence valid for under 30 seconds. `admitNodeSleep` requires an observed idle time of at least `sleepAfterMinutes` at that moment; a caller cannot supply an idle value.
+
+The agent counts from the node proxy's access log. It sends a start marker into the `ninedeploy-proxy` container and streams that container's log. Only requests between the start and end markers whose router and upstream address match the selected replicas are counted, and a window is complete only when every sequence number in between was seen. A window holds at most 100,000 records and 32 MiB of log.
+
+### Sleep
+
+Only the automatic coordinator puts a node service to sleep. `POST /v1/services/:id/sleep` refuses a node service with 400 `cannot_sleep` ("manual node sleep is unavailable; configure verified automatic idle sleep"), the panel shows no **Sleep now** button for it, and the panel-host sleeper tick skips node services.
+
+`createNodeSleepCoordinator` (`lib/nodeSleepCoordinator.ts`) runs after every idle tick and on every wake-poller tick. It first resumes sleep journals whose 90-second worker lease (`NODE_SLEEP_LEASE_MS`) expired, then admits new sleeps for running node services in rotating id order, at most 4 jobs at a time (`MAX_NODE_SLEEPS`). A held job is retried after 30 seconds. Idle evidence is consumed only inside a reserved slot.
+
+Admission (`admitNodeSleep` in `lib/nodeSleepAuthority.ts`) spends the evidence and, in one transaction, re-checks eligibility, the routing context, database placement and every blocker below. It then reserves the service runtime owner with kind `sleep` and writes the journal. `node_sleep_transitions` holds one row per service with the captured immutable serving ids, the wake token, the catcher identity, the phase and the lease; the row is removed with the service.
+
+| Blocker | Where it is checked |
+| :--- | :--- |
+| A queued, building or deploying deployment | `deployments` |
+| A pending node Start, Stop or Restart | `node_lifecycle_intents` |
+| A panel-host lifecycle transition | `primary_transitions` |
+| A fan-out transition, or any fan-out target | `fanout_transitions`, `service_targets` |
+| An unfinished node scale | `node_autoscale_transitions` |
+| A node deployment preparation | `node_deployment_preparations` |
+| An active canary | `canaryActive` |
+| Unfinished catcher maintenance or collection on that node | `node_wake_maintenance` |
+| An earlier sleep or wake journal that is not `completed` or `superseded` | `node_sleep_transitions` |
+
+The controller (`lib/nodeSleepController.ts`) runs the ordered phases. Every step checkpoints the journal and extends its lease.
+
+| Phase | Effect |
+| :--- | :--- |
+| `accepted` to `fencing` | Capability check against the live agent, then `docker.runtimeFence` with the deployment watermark. |
+| `fencing` | `wake.catcher.prepare` with the node's wake key returns the catcher's immutable id, image and generation name. Three TCP samples on port 8080 prove it, and the identity is bound to the journal. |
+| `prepared` to `routing` to `routed` | The panel renders the service's domains to the catcher and requires the node's ordered proxy write to acknowledge the loaded routing. |
+| `routed` to `stopping` | A 2-second drain. The idle evidence must still be younger than 30 seconds. |
+| `stopping` to `asleep` | Catcher readiness and fallback routing are confirmed again, then `docker.stopSet` stops the captured ids (10-second grace). `asleepAt` is set and the row keeps `fallbackRouting`, which is the wake binding. |
+
+The audit event `service.sleep` with `trigger: 'node-idle'` is written only after the Stop receipt is committed.
+
+A failure before any Stop attempt restores the application and never resumes the old idle decision. Once the fallback is published, the journal enters `restoring`: restoration checks application readiness and publishes the app route before the journal completes. If nothing was published, the journal completes as aborted. A failure at or after the Stop attempt holds the journal; recovery reconfirms catcher routing and retries the same Stop, or resumes the restoration.
+
+### Wake
+
+**Catcher.** The agent runs the catcher from its own image by id, so the agent must run as the `ninedeploy-agent` container, and nothing is pulled. A new generation is named `ninedeploy-wake-g-<32 hex>`; `ninedeploy-wake` is the legacy name, kept for bindings written before migration 0122. The container joins the node's `ninedeploy` network. It runs read-only as `65534:65534` with all capabilities dropped, `no-new-privileges`, a 64 MiB memory limit, no published port and no volume. An empty 64 KB tmpfs shadows the image's `/data`, and the inherited healthcheck is disabled because it probes another port. Removal uses `rm -fv`. A same-name container the agent did not label is never touched.
+
+**Key and identity.** The panel keeps one wake key per node, `node_wake_key_<nodeId>` in `settings`: 64 hex characters, encrypted, created at the first sleep and covered by master-key rotation. The rendered Traefik middleware adds it as `x-nd-wake-key`; without it the catcher answers 404 and writes nothing. Each sleeping service gets an opaque 32-hex wake token in its journal, and a per-domain `addPrefix` middleware rewrites the path to `/_nd/wake/<token>`. The token maps to a service only on the panel, and the catcher's label holds only a hash of the key.
+
+**Page.** A keyed request gets `503`, `Retry-After: 5` and a self-reloading "Waking up" page; HEAD gets the headers only. The catcher writes one `ND-WAKE` line per token per second and at most 20 lines a second, so a burst of visitors within one second counts once.
+
+**Routing.** The route to the catcher comes after the domain's own middlewares, so basic auth and IP allow lists run first and a denied request neither wakes the service nor records demand. Maintenance mode wins over the catcher: visitors get the maintenance page and nothing wakes. Only the maintenance bypass addresses still reach the catcher.
+
+**Demand poll.** `createNodeWakePoller` (`lib/nodeWakePoller.ts`) runs every 2 seconds (`NODE_WAKE_POLL_MS`). It polls at most 4 nodes and runs at most 4 wake jobs at a time, rotating the node order, and reads each catcher's last 60 seconds through `wake.demand`. The lookback is stateless, so it survives a panel restart, and journal admission is one-use, so a re-read token cannot start a second wake. A refused read is retried after 30 seconds.
+
+**Wake procedure.** A fresh demand for the journal's current token, node and catcher admits a wake and reserves the runtime owner with kind `wake`. The controller (`lib/nodeWakeController.ts`) fences the runtime, starts the captured ids with `docker.startSet` (60-second timeout) and records the acknowledged Start in the `readiness` phase. Recovery from `readiness` or `publishing` repeats readiness and routing, never Start. Every serving replica must pass three consecutive readiness samples within one shared deadline, `healthTimeoutSeconds` (default 300 seconds). `http-strict` and `tcp` use that mode alone; the default, `running` and `command` modes also require three TCP samples. An unready application stays behind the catcher: `asleepAt` is kept and the status is `held`.
+
+**Settled.** A wake is complete only when the node has acknowledged the ordered proxy write that loads the app route. Publication runs inside the routing queue slot under a process-local promotion permission valid for 30 seconds, and completion compares the exact acknowledged generation (node, revision, request id, content digest) in the transaction that clears `asleepAt` and `fallbackRouting`. Only then is `service.wake` with `trigger: 'node-demand'` audited.
+
+**Manual wake.** `POST /v1/services/:id/wake` on an ordinary node Docker service admits the durable Start through the ordered node lifecycle and answers `202` with `pending: true`; readiness and routing settle through the normal worker. Follow it with `GET /v1/services/:id/lifecycle` or `ninedeploy services lifecycle <id>`. Compose and Swarm placement answers 422 `node_lifecycle_unsupported`. Wake also accepts a service held on the catcher by an interrupted sleep, where `asleepAt` is null. With `NINEDEPLOY_NODE_SLEEP_AUTOMATION=off` nothing settles that state automatically; Wake, Start or Restart does.
+
+**Recovery after a restart.** Journals, leases and the runtime owner are in SQLite. After a panel restart, the coordinator resumes sleep journals with an expired lease under the original command identity, and abandons unpublished idle evidence older than 30 seconds (phase `superseded`, reason `unpublished idle evidence expired`) instead of sleeping later. The wake poller resumes an expired wake journal without a new request. Idle coverage is in memory and starts again from zero after a panel restart, a deploy or any service edit. On the node, the agent keeps a retired-name fence and the ordered proxy journal, so a restarted agent neither reuses a retired catcher name nor accepts a route that references one.
+
+**Other commands.** Explicit Stop, Start, Restart and deploy supersede a pending sleep or wake: they reserve the runtime owner with a new epoch and mark the journal `superseded`. Automatic Start and automatic scaling are refused with 409 `node_sleep_pending` while a sleep or wake is pending or the service is asleep. A limit change does not supersede it: while a node service sleeps, or a sleep or wake is in flight, new CPU and memory limits are saved and applied on the next deploy. The restart-loop limit does not request its Stop while a sleep or wake is pending.
+
+### Catcher maintenance and retirement
+
+- **Maintenance** (`node_wake_maintenance`, one intent per node) is claimed when a demand read fails for a node with sleeping services, for example because the catcher is stopped or missing or the agent lacks the capability. It re-establishes a reachable catcher and confirmed fallback routing for every sleeping service, then retires every other catcher. The phases are `preparing`, `routing`, `rebinding`, `retiring` and `completed`, with `rerouting` and `retirement_rebinding` when the ready candidate changes midway. The worker lease is 120 seconds.
+- **Inventory first.** Before preparing another generation the panel reads `wake.catcher.inventory`: at most 64 catchers for the node's key, stopped ones included. It never starts or removes a container. Unknown catchers are recorded as retirement-only members of the intent, which holds at most 256 members; more needs operator review. An agent without the capability leaves maintenance held until it is upgraded.
+- **Handoff without a gap.** The new catcher is prepared beside the old one, proved with three TCP samples and routed through an acknowledged ordered write. The sleeping bindings are rebound inside the routing queue slot. Only then is the old catcher retired.
+- **Retirement.** `wake.catcher.retire` is bound to the acknowledged routing revision, request id and content hash and to the catcher's immutable id and name. It refuses a route that still names the backend, after inspecting every loaded HTTP and TLS definition. It drains 2 seconds and probes again, records the name in a persistent fence, then removes the container. Fenced names are never reused, and the fence holds up to 50,000 names. A lost removal reply keeps the intent until every older id is proved retired; an already absent id is confirmed with `removed: false`.
+- **Admission barrier.** An unfinished maintenance or collection intent on a node blocks new sleep and wake admission there, even after its worker lease expires. Other nodes are unaffected.
+- **Collection.** On a node that has a wake key but no sleeping service, the poller inventories and retires unused catchers: after demand polling, one node at a time, at most every 5 minutes per node. It never creates a catcher or a wake key, and an agent that lacks the capability acquires no barrier.
+
+### Surfaces
+
+| Surface | Control |
+| :--- | :--- |
+| API | `PATCH /v1/services/:id` with `sleepAfterMinutes` (5 to 1440; `null` turns it off); `GET /v1/services/:id/sleep` (viewer, read-only status); `POST /v1/services/:id/wake` (member); `POST /v1/services/:id/sleep` (member, panel host only); `GET /v1/services/:id/capabilities` |
+| SDK | `client.services.update(id, { sleepAfterMinutes })`; `client.services.sleepStatus(id)`; `client.services.wake(id)`; `client.services.sleep(id)` |
+| CLI | `ninedeploy sleep show <service> [--json]`; `sleep set <service> <minutes>`; `sleep off <service>`; `sleep wake <service>`; `sleep now <service>` (panel host only); `ninedeploy services lifecycle <id>` |
+| Panel | Service, Settings, **Sleep when idle** (switch, **Sleep after (minutes)**, **Save sleep setting**); the header buttons **Wake now** and **Sleep now**; a node sleep status line on the service page, polled every 5 seconds |
+| Audit | `service.sleep` with `trigger: 'node-idle'`; `service.wake` with `trigger: 'node-demand'`. On the panel host: `service.sleep` with `afterMinutes`, `service.wake` with trigger `request`, `manual`, `start` or `restart`, and `service.sleep_now` |
+
+`GET /v1/services/:id/sleep` returns `placement` (`panel`, `node` or `unsupported`), `configured`, `nodeControllerActive`, `requiredMs`, `idleMs`, `idleSatisfied`, `holding` and a coarse `phase`: `disabled`, `unsupported`, `observing`, `sleeping`, `asleep`, `waking` or `held`. It never returns the wake token, the captured container ids, a worker lease, the runtime owner or the raw worker reason; `holding` is cut to 512 characters.
 
 ## Standalone catcher collection — local development checkpoint, 2026-11-08
 
@@ -45,7 +166,7 @@ Status, 2026-11-03: durable node authority, ordered sleep/wake effects, guarded 
 
 ## Decisions
 
-1. **Continuous idle watch (new sealed agent operations).** `proxy.idleWatch.open/sample/finish/close` is a separately advertised capability under the existing owner opt-in `NINEDEPLOY_AGENT_PROXY_TRAFFIC=on`. It reuses the serving-window engine with `purpose: 'idle'` and windows of 1 minute to 1 hour (`idleWatchOpen`). A window counts requests to the selected serving leaves continuously between its start and end sequence markers. The engine releases a window that is not sampled within 30 s, so the panel samples every 15 s; that is the lease. Because `sleepAfterMinutes` can reach 24 hours, the panel chains windows. It opens the next window before finishing the previous one, so the next start counter is below the previous end counter, and requires the same source, proxy and agent epoch. Overlapping chained receipts therefore leave no unobserved gap. A proxy restart, source change, routing change, lease lapse, agent restart or any refusal ends coverage, and the idle clock starts again. A service sleeps only after a verified zero count over continuous coverage of `sleepAfterMinutes`. Unavailable coverage never counts as idle, the same rule RPS uses.
+1. **Continuous idle watch (new sealed agent operations).** `proxy.idleWatch.open/sample/finish/close` is a separately advertised capability under the existing owner opt-in `NINEDEPLOY_AGENT_PROXY_TRAFFIC=on`. It reuses the serving-window engine with `purpose: 'idle'` and windows of 1 minute to 1 hour (`idleWatchOpen`); the scheduler opens the shortest, one-minute windows. A window counts requests to the selected serving leaves continuously between its start and end sequence markers. The engine releases a window that is not sampled within 30 s, so the panel samples every 15 s; that is the lease. Because `sleepAfterMinutes` can reach 24 hours, the panel chains windows. It opens the next window 30 s before the previous one ends and finishes the previous one only afterward, so the next start counter is below the previous end counter, and requires the same source, proxy and agent epoch. Overlapping chained receipts therefore leave no unobserved gap. A proxy restart, source change, routing change, lease lapse, agent restart or any refusal ends coverage, and the idle clock starts again. A service sleeps only after a verified zero count over continuous coverage of `sleepAfterMinutes`. Unavailable coverage never counts as idle, the same rule RPS uses.
 2. **Node wake catcher.** The agent prepares private generation names, `ninedeploy-wake-g-<nonce>`, on the node's `ninedeploy` network. A previous selected catcher is retained through stable readiness, ordered route acknowledgement and retirement proof; names fenced as retired are never reused. Legacy `ninedeploy-wake` remains a compatibility identity. Each catcher runs the agent's own pinned image with no host mounts or Docker socket. It answers valid keyed requests with the "waking up" page: `503`, `Retry-After`, a self-reloading HTML body and HEAD support. Opaque wake tokens map to services only on the panel. Bounded demand counters emit bounded Docker-log records, and reads bind the immutable container plus its current process start time.
 3. **Routing.** A sleeping node domain routes to the catcher after the domain's own middlewares, so basic auth and IP allow lists still run before anything wakes, as on the panel host. Routes are written through the panel-rendered node dynamic config and confirmed with `proxy.routingAck` before any container stops.
 4. **Wake.** For each node with sleeping services, the panel polls the sealed `wake.demand` operation every 2 s. On demand it acquires the service runtime owner and starts the recorded serving count by immutable ID through the ordered node lifecycle. It then waits for readiness, restores the routes with routing confirmation, and records `service.wake`. The visitor's page reloads into the app. A cross-host redirect is not used, because a non-GET body cannot be replayed anyway.
@@ -118,7 +239,11 @@ Status, 2026-11-03: durable node authority, ordered sleep/wake effects, guarded 
    - Execution validation: 59 related tests passed in five files without coverage; server typecheck and scoped lint passed. Tests traverse the production maintenance adapter, typed sealed client, queued renderer and ordered proxy modules with fake agent I/O. They cover reachability refusal, lost route acknowledgement, repeated readiness on recovery, old-worker late responses, Stop supersession and opt-in poller recovery. They are not a zero-502 replacement certificate. Real traffic must be sampled throughout catcher recreation to prove non-disruptive replacement before activation; explicit-command fallback settlement and the full node sleep/wake acceptance remain open.
 
 6. Surfaces: lift the node refusal in `sleepHoldReason`, the service API validation and the panel/CLI copy, but only for nodes that confirm both capabilities. Older agents keep the refusal.
-7. Hosted smoke (`smoke-node-canary.mjs --sleep-only`) on isolated daemons:
+7. Hosted smoke on isolated daemons. The plan named `smoke-node-canary.mjs --sleep-only`; no such flag exists. Two cohorts cover the cases below, and both refuse anything but a GitHub-hosted runner:
+   - `scripts/smoke-node-sleep-wake.mjs` (dispatch input `node_sleep_wake` of `serving-traffic.yml`) runs a real five-minute idle and covers the six cases below: agent opt-out with no runtime effect, a serving request resetting coverage, idle admitting sleep, Basic Auth and IP denials recording no demand, and Stop superseding an in-flight wake.
+   - `smoke-node-canary.mjs --automatic-sleep-only` covers the public cycle through production timers: idle Stop, demand wake, readiness held, panel restart recovery and the two audit events. `release-publish.yml` runs it, `--manual-wake-only` and `--sleep-restoration-only` on the published image; `serving-traffic.yml` runs the same three on dispatch.
+
+   The case list:
    - an idle service sleeps after the window;
    - a request through the node proxy wakes it, and the reloaded page is served by the app;
    - a basic-auth domain asks for credentials before waking;
@@ -126,7 +251,7 @@ Status, 2026-11-03: durable node authority, ordered sleep/wake effects, guarded 
    - agent opt-in off never sleeps;
    - Stop during a wake leaves the service stopped.
 
-   Run it in CI and on the release image before node sleep is enabled.
+   The release workflow runs the three `smoke-node-canary.mjs` cohorts on the published image. `scripts/smoke-node-sleep-wake.mjs` runs only on dispatch, against the candidate image built in that workflow run.
 
 Foundation integration update: PR #12 passed all source/runtime jobs in [CI 41538310932](https://github.com/ninedeploy/ninedeploy/actions/runs/41538310932) after the retention classification fix and merged as `b75fb070`. PR #13 passed [CI 41538382781](https://github.com/ninedeploy/ninedeploy/actions/runs/41538382781) and merged as `f9b43f45`. PR #14's internal wake controller passed [CI 41538384727](https://github.com/ninedeploy/ninedeploy/actions/runs/41538384727) and merged as `1262e8b9`. These certificates cover their frozen heads and existing runtime cohorts, not the later sleep/poller/maintenance work, full hosted sleep/wake acceptance or a new release.
 

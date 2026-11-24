@@ -1,6 +1,84 @@
 # Node request-rate autoscaling implementation plan
 
-Status: agent observation accepted; panel adapter and durable observation consumption implemented, controller integration pending. Memory autoscaling has real single-node and PostgreSQL acceptance; those results do not accept request-rate autoscaling.
+Status: released. Node request-rate autoscaling is implemented end to end and enabled by `NODE_RPS_AUTOSCALING_ACCEPTED` in `lib/autoscaler.ts`; 0.18.17 shipped it after the hosted 1→2→1 and source-loss acceptance in [CI 41464316996](https://github.com/ninedeploy/ninedeploy/actions/runs/41464316996). Memory autoscaling has its own real single-node and PostgreSQL acceptance. [How it works today](#how-it-works-today) describes the current code; the [Acceptance record](#acceptance-record) and the later dated sections record each increment when it was written.
+
+## How it works today
+
+This section describes the current code. Paths are under `apps/server/src/` unless noted.
+
+### Requirements
+
+- A Docker service on a node, not Swarm. On the panel host, `rps` is still counted from traffic analytics, as before.
+- The node agent runs with `NINEDEPLOY_AGENT_PROXY_TRAFFIC=on` (any value other than `off`, `false`, `0`, `no` or `disabled`), over sealed transport, and advertises `proxy.servingTraffic`. Without it the observation refuses and the autoscaler holds, with a null value.
+- A routed domain on the node. A service without one is refused before a window opens.
+- Confirmed replica capacity (`node_autoscale_capacity`) for the current deployment. A deploy on this path creates all `maxReplicas` containers, starts the serving ones and leaves the rest stopped. The deploy pipeline in `engine/pipeline.ts` takes this path only when the service has no canary configuration, no published port and no port mappings, at least one active domain, no fan-out target, at most 8 attached databases all running on the same node, and a sealed agent advertising `docker.mutations`, `docker.prepareAttemptEnv`, `docker.retireHandoff`, `docker.startSet`, `docker.readiness`, `proxy.routingAck`, `proxy.orderedWrite`, `image.manage`, `docker.runSpec`, `docker.recovery` and, for `rps`, `proxy.servingTraffic`. Otherwise the deployment log says it continues on the existing deployment path, and the status reports `node autoscale capacity is not confirmed`.
+- `metric: rps` in the service's `autoscale` configuration, with the same bounds as the other metrics: `minReplicas` 1 to 10 (default 1), `maxReplicas` 2 to 10 and above the minimum, `scaleUpSeconds` 30 to 3600 (default 60), `scaleDownSeconds` 60 to 3600 (default 300), and optional `schedules` with `timezone`. For `rps`, `target` is requests per second per replica, above 0.
+
+Switching a deployed service from `cpu` or `memory` to `rps` without a redeploy keeps the prepared capacity. Scaling then also needs the `proxy.servingTraffic` capability at observation time, which is why the worker checks the gate and the agent again on every tick.
+
+### Where requests are counted
+
+The panel does not count node traffic. Each autoscale tick, `lib/nodeServingTrafficSample.ts` opens one 10-second window (`NODE_SERVING_WINDOW_MS`) through `proxy.servingTraffic.open`, naming the serving replicas' immutable container ids, the service port and the node's current routing render. On the node, the agent:
+
+1. inspects `ninedeploy-proxy` (running, with a `json-file` or `local` log driver) and every selected replica (immutable id, name and `ninedeploy.*` labels), and confirms the loaded routing generation over both the HTTP and the TLS handler;
+2. sends a start marker into the proxy container and streams its access log;
+3. counts only requests between the start and end markers whose router (`<slug>_<n>@file` or `<slug>_<n>_http@file`) and upstream address (`http://<replica>:<port>`) match a selected replica.
+
+A window is complete only when every sequence number between the markers was seen. Requests to other services or to a weighted canary route are not counted, and a service that has a maintenance bypass router is refused before a window opens. Missing logs, a proxy restart, a replaced replica, changed routing or a lost capability refuse the observation; none of them reads as zero.
+
+The value is `requests * 1000 / elapsedMs / replicas`, rounded to 0.1 requests per second per replica. A verified zero is a real zero; an unavailable source stays null.
+
+### Decision
+
+`plugins/autoscaler.ts` runs every 30 seconds (`AUTOSCALE_TICK_MS`; the first tick is 40 seconds after boot) and hands each node Docker service that has an `autoscale` configuration to `createNodeAutoscaleWorker` (`lib/nodeAutoscaleWorker.ts`). The worker reads the serving-traffic sample for `rps`, or container metrics for `cpu` and `memory`, and `lib/nodeAutoscaleDecision.ts` runs the same sustained window as the panel host:
+
+- the needed count is the current count scaled by value / target; within 10 % of the target nothing changes;
+- scaling up waits `scaleUpSeconds` and takes the smallest count asked for in that time; scaling down waits `scaleDownSeconds` and takes the largest;
+- a scheduled floor raises the minimum while its window is in force; a count outside the bounds moves to the bound at once, without a sustained window;
+- the window restarts when the node, runtime id, serving count or autoscale configuration changes, or when the replica set (ids, restarts and limits), proxy source, proxy, agent epoch or routing generation changes. It also restarts when the last observation is more than 90 seconds old (`AUTOSCALE_STATS_MAX_AGE_MS`) or the service is blocked. A repeated sample does not advance it.
+
+The node is skipped while a deploy or a canary is running. The decider only builds decisions; every effect goes through durable admission and the controller.
+
+### Admission, effects and recovery
+
+`admitNodeAutoscale` (`lib/nodeAutoscaleAuthority.ts`) re-reads the service row and refuses unless the measurement is at most 90 seconds old and still bound to the node, service, deployment and exact serving ids. It also refuses during a queued, building or deploying deployment, a pending node lifecycle command, a panel-host or fan-out transition, an unfinished scale, a pending sleep or wake, or an active canary. It then reserves the service runtime owner with kind `scale` and records `node_autoscale_transitions` with a 90-second worker lease (`NODE_AUTOSCALE_LEASE_MS`).
+
+The controller (`lib/nodeAutoscaleController.ts`) freezes the replica inventory, then runs ordered phases and re-checks ownership, placement, serving count and capacity around every effect:
+
+- scale up: `accepted`, `fencing`, `prepared`, `started` (start the spares with `docker.startSet`), `ready` (three consecutive readiness samples), `routing` (the node acknowledges the ordered proxy write), `handoff`, `completed`;
+- scale down: `accepted`, `fencing`, `prepared`, `routing` (route the replicas away first), `draining` (2 seconds), `stopping` (`docker.stopSet`, 10-second grace), `handoff`, `completed`.
+
+A queued deploy, or a sample that grew stale before anything was published, aborts the decision through the `abort_*` phases, releasing the node fences first. Every tick also calls `reconcileNodeAutoscale` (`lib/nodeAutoscaleRecovery.ts`), which resumes up to 4 transitions whose lease expired. An interrupted scale is therefore finished or unwound after a panel restart, also when autoscaling was turned off in the meantime. A completed transition row is deleted.
+
+Unlike the panel host, a node scale writes no `service.autoscale` audit event, and `lastEvent` is always null for a node service. The change is visible in `replicas` and in the service's routing.
+
+### Receipts
+
+Every finished window is consumed once, before it is returned. `consumeNodeServingTraffic` (`lib/nodeServingTrafficReceipt.ts`) writes `node_serving_traffic_receipts` (migration `0119`) and refuses a request or window id that was already used, and any counter interval at or below the source's retained high watermark. Counters are stored as fixed-width decimal text and compared as integers. The housekeeping step `serving-traffic-receipts` deletes a receipt 7 days after consumption unless it is the newest for its service, node and source.
+
+The agent keeps at most 16 observation windows at a time (`PROXY_TRAFFIC_MAX_SESSIONS`), releases a window that is not sampled within 30 seconds, and closes all windows when it shuts down.
+
+### Surfaces
+
+| Surface | Control |
+| :--- | :--- |
+| API | `PATCH /v1/services/:id` with `autoscale` (`null` turns it off); `GET /v1/services/:id/autoscale`; `GET /v1/services/:id/capabilities` (`autoscale`) |
+| SDK | `client.services.update(id, { autoscale })`; `client.services.autoscale(id)` |
+| CLI | `ninedeploy autoscale show <service> [--json]`; `autoscale set <service> --metric rps --target <n>` with `--min`, `--max`, `--up-seconds` and `--down-seconds`; `autoscale off <service>` |
+| Panel | Service, Settings, **Autoscaling** card: **Metric** (`Requests per second (rps)`), **Target**, **Scheduled minimums**, **Advanced** with the scale-up and scale-down windows. The **Autoscaling** panel on the Overview tab is polled every 15 seconds. |
+
+`GET /v1/services/:id/autoscale` returns `enabled`, `replicas`, `supportedMetrics`, `minReplicas`, `maxReplicas`, `metric`, `target`, `value`, `desired`, `holding`, `lastEvent` and `scheduledFloor`. For a node service:
+
+- `supportedMetrics` lists `cpu`, `memory` and `rps` while `NODE_RPS_AUTOSCALING_ACCEPTED` is true. With the gate false it lists `cpu` and `memory`, and a service stored with `rps` reports `node request-rate autoscaling is not available yet` with a null `value` and `desired`. Swarm lists none.
+- `value` and `desired` come from the last recorded node sample and return to null 90 seconds after it, with `waiting for fresh node metrics`.
+- `holding` names the reason, for example `a deploy or canary is in progress`, `node autoscale capacity is not confirmed`, `waiting for a complete node serving-traffic window`, `node autoscale database networks changed; redeploy to prepare capacity`, `node autoscale transition awaits recovery` or `node autoscale evaluation failed; see server logs`.
+- `lastEvent` is always null.
+
+The panel's **Metric** select marks a metric the placement does not support as "not available here" and disables it, unless it is the stored one. The CLI lists the acting metrics as "Metrics here" and warns when `autoscale set` stores a metric that does not act.
+
+## Acceptance record
+
+The dated paragraphs in this section and in [Confirmed boundaries](#confirmed-boundaries) keep the state of each increment when it was written.
 
 Schema contract: `servingTrafficOpen` and `servingTrafficSnapshot` model ordinary serving generations separately from canary steps. Validation rejects missing/duplicate/wrong-generation replicas, unsupported fields, invalid source/counter shapes and incomplete coverage declared complete. All 802 schema tests in 40 files passed locally.
 
@@ -63,6 +141,6 @@ The same preceding head's [full CI 41334052085](https://github.com/ninedeploy/ni
 
 `lib/nodeServingTrafficSample.ts` opens one 10-second window per autoscale tick on the serving replicas named by the deployment's capacity receipt (`node_autoscale_capacity`), at the service port, against the node's current routing render, then finishes and consumes it. A refusal at any point throws and holds the tick; it never becomes a zero reading. A service without a routed domain is refused before a window opens. The window is always closed.
 
-`lib/nodeAutoscaleWorker.ts` reads that sample for `metric: rps` and the container-metrics sample for cpu and memory. `measureNodeServingTraffic` accepts only a complete, fresh receipt bound to the node, service, selected deployment and exact serving names, and computes `requests * 1000 / elapsedMs / replicas`. `lib/nodeAutoscaleDecision.ts` runs it through the same sustained window as cpu and memory. The window restarts when the replica set, proxy source, proxy, agent epoch, routing generation or target hash changes. A repeated receipt does not advance it. The receipt's request ID and serving identities become the admission evidence, so `admitNodeAutoscale` and the controller are unchanged.
+`lib/nodeAutoscaleWorker.ts` reads that sample for `metric: rps` and the container-metrics sample for cpu and memory. `measureNodeServingTraffic` accepts only a complete, fresh receipt bound to the node, service, selected deployment and exact serving names, and computes `requests * 1000 / elapsedMs / replicas`. `lib/nodeAutoscaleDecision.ts` runs it through the same sustained window as cpu and memory. The window restarts when the service configuration, serving count, replica set, proxy source, proxy, agent epoch or routing generation changes. `targetHash` is deliberately left out: it hashes the whole observation request, including its unique `requestId`, so it differs on every window (see the hosted-acceptance bullet above). A repeated receipt does not advance it. The receipt's request ID and serving identities become the admission evidence, so `admitNodeAutoscale` and the controller are unchanged.
 
 Tests: `test/lib/nodeAutoscaleDecision.test.ts` (sustained up, verified zero scaling down, window reset per identity, repeated, incomplete, foreign and stale receipts), `test/lib/nodeServingTrafficSample.test.ts` (window inputs, close on refusal, Swarm/placement/capacity/route refusals) and `test/lib/nodeAutoscaleController.test.ts` (an RPS decision completes through durable admission and the controller; a refused window holds with no transition).

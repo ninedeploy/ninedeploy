@@ -3,10 +3,50 @@
 Resource history, Prometheus and OTLP export are implemented. For current
 acceptance and publication status, see [Current status](CURRENT_STATUS.md).
 Dated validation receipts remain in [competitive delivery](COMPETITIVE_DELIVERY.md).
+This guide also covers metric collection, log shipping and search, error tracking,
+error-rate and latency alerts, and the usage and cost report.
+
+## Metric collection
+
+The panel samples every 30 seconds; the first cycle runs 5 seconds after the
+panel starts. The alert rules are evaluated on the same cycle.
+
+**Panel host.** `docker stats --no-stream` returns CPU and memory for every
+running container, and `docker inspect` supplies each container's configured
+memory limit. The host figures are CPU cores, load average, memory and the
+disk use of the data directory. Every cycle also pings each node.
+
+**Nodes.** Each node's agent answers one `agent.stats` call with its host
+figures (cores, load, memory), its `docker stats` lines and one `df -kP` line.
+The call has a 20-second timeout and the panel asks at most four nodes at a
+time. A node service's figure is the sum of its serving replicas; when one
+replica is missing, the service has no sample for that cycle. A node sample
+older than 90 seconds counts as stale.
+
+**Swarm.** A Swarm service records one task's worth, averaged over every
+running task on the panel host and on workers that joined through NineDeploy.
+The service is unknown unless every running task can be measured.
+
+**What is stored.** Each cycle writes one CPU (percent × 100) and one memory
+(bytes) sample per service that could be measured: local, node and Swarm
+services. Once an hour the panel also stores the size of each service's
+volumes, for the [usage and cost](#usage-and-cost) report. Databases have live
+figures but no history.
+
+**Live figures and history.** `GET /v1/stats` returns the latest snapshot:
+host figures for operators only, and the containers of the services and
+databases the caller can see. `GET /v1/stats?databaseId=` returns one
+database's figures with a state (`live`, `pending`, `stale`, `unavailable` or
+`stopped`). `GET /v1/services/:id/metrics?kind=cpu|memory&minutes=N` returns a
+series for one service, with `minutes` from 1 to 90 days (default 60). Up to
+8 hours it returns the raw samples (at most 1,000 points); longer ranges
+return weighted averages of about 900 points, read from the tiers described
+under [resource history](#configure-resource-history). With no history yet,
+the route answers with one point taken from the live figure.
 
 ## Configure resource history
 
-An operator can open **Monitoring → Resource history and metrics export** or use:
+An operator can open **Monitoring → History & metrics export** or use:
 
 ```sh
 ninedeploy metrics settings
@@ -16,12 +56,17 @@ ninedeploy metrics configure --retention-days 30 --log-queue-mb 32
 The default remains **one day**, with export disabled. Retention accepts 1–90 days.
 Raw CPU/memory samples are retained for approximately 24 hours; opted-in history
 uses five-minute summaries through seven days and hourly summaries thereafter.
+At the default of one day only raw samples are written: five-minute summaries
+start at a retention above one day, and hourly summaries at a retention above
+seven days. Cleanup runs in every collection cycle and in the hourly
+housekeeping pass.
 Cleanup aligns with summary boundaries so adjacent tiers do not overlap or leave
 a partial boundary bucket missing. Chart queries return weighted averages over
 the complete requested interval, bounded to roughly 900 points. Longer charts
 therefore smooth spikes. CPU is percent (100 means one core); memory charts use MiB.
 
-Select 1 hour, 24 hours, 7, 30 or 90 days in a service's resource charts. A longer
+Select 1 hour, 24 hours, 7, 30 or 90 days in a service's resource charts, on
+the service's **Overview** tab. A longer
 selection does not recover data already removed under an earlier retention
 setting. Reducing retention deletes older summaries during the next cleanup.
 The existing per-service visibility checks still apply.
