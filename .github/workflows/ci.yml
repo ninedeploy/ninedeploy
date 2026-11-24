@@ -19,10 +19,13 @@ jobs:
   verify:
     name: Typecheck · Lint · Build · Test
     runs-on: ubuntu-latest
-    # The serialized coverage suites can exceed 30 minutes on a 2-core runner:
-    # on 2026-10-29 server and web finished just as the 30-minute job was canceled.
-    # Leave time for the post-test checks instead of discarding a completed run.
-    timeout-minutes: 45
+    # The serialized coverage suites take about 35 minutes on a 2-core runner,
+    # and a slow runner needs more: on 2026-10-29 server and web finished just
+    # as the 30-minute job was canceled, and on 2026-11-24 a runner about 1.45
+    # times slower, by every package's own timing, was cut 41 minutes into the
+    # test step. Leave time for the post-test checks instead of discarding a
+    # completed run.
+    timeout-minutes: 60
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
