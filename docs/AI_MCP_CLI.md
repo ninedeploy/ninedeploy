@@ -124,6 +124,8 @@ Swarm init/join/leave, node volumes): the MCP server only reads them.
 
 ```bash
 # Global installation
+The complete reference, generated from the CLI's own help output, is the [CLI command reference](CLI_REFERENCE.md): 66 commands and 248 subcommands at 0.19.0, each with its arguments and options. The commands below are the common ones, grouped by task.
+
 npm install -g ninedeploy
 
 # 1-Click setup & auto-start local Docker server

@@ -8,6 +8,10 @@ test failures and has a five-minute process bound. CI and `release:check`
 run it before forcing the full serialized coverage suites. It does not replace
 those suites or the real Docker/browser release smokes.
 
+`generate-cli-reference.mjs` writes `docs/CLI_REFERENCE.md` from the built CLI's
+own `--help` output. Run `pnpm build`, then `node scripts/generate-cli-reference.mjs`,
+whenever a command, argument or option changes.
+
 `recover-pitr-checkpoint.mjs /secure/recovery.json` is the offline operator tool
 for an encrypted remote PostgreSQL checkpoint or continuous archive head/catalog. It requires a built checkout or
 the packaged runtime image. See [the remote PITR runbook](../docs/PITR_REMOTE_CHECKPOINTS.md)

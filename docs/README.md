@@ -49,6 +49,7 @@ The guides are grouped by what you are doing. The last group holds the project's
 ## Reference
 
 - [API, MCP server, CLI and SDK](AI_MCP_CLI.md)
+- [CLI command reference](CLI_REFERENCE.md): every command, argument and option, generated from the CLI's own help output
 - [Plugins and the microkernel](PLUGINS_MICROKERNEL.md)
 - [Instance GitOps](INSTANCE_GITOPS.md)
 - [Template mirrors](TEMPLATE_MIRRORS.md)
