@@ -70,3 +70,4 @@ These documents are kept for transparency. They are dated, and parts of them des
 - [Swarm runtime acceptance](SWARM_RUNTIME_ACCEPTANCE.md)
 - Audits: [0.10.2](AUDIT_0.10.2.md), [0.10.8](AUDIT_0.10.8.md), [security remediation, 2026-09](SECURITY_AUDIT_2026-09.md)
 - [Persistent port ingress plan](plans/persistent-port-ingress.md)
+- [Panel sign-in for services on nodes: N11 design record](plans/node-forward-auth.md): the two ways compared, the recommendation, the behaviour to prove and the owner's decisions.

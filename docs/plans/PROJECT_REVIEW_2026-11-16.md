@@ -134,7 +134,7 @@ The [digest-pinned browser release gate](../../scripts/README.md#browser-journey
 **N11 — Node forward auth and remaining runtime cells. P2 / L. Former P2.**
 
 - Verified limit: [serviceCapabilities.ts](../../apps/server/src/lib/serviceCapabilities.ts), `forwardAuth`, refuses node/fan-out placements. Much of maintenance pages, restart limits, and hooks already exists.
-- Work: write a design record for node access to the panel and authorization revocation while the panel is down. Compare agent-mediated verification and short-lived signed authorization for latency, revocation, and failure behavior. Preserve older-agent behavior and accept remaining cells individually.
+- Work: write a design record for node access to the panel and authorization revocation while the panel is down. Compare agent-mediated verification and short-lived signed authorization for latency, revocation, and failure behavior. Preserve older-agent behavior and accept remaining cells individually. The record is [node-forward-auth.md](node-forward-auth.md).
 - Acceptance: prove the specified behavior under access revocation, role changes, and panel/node disconnection using two daemons and a real proxy. Preserve guards until the corresponding cell is supported.
 
 **N12 — Expand major upgrades, then add HA. P2 / L. Former O2.**
