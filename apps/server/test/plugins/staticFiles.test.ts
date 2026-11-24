@@ -177,6 +177,25 @@ describe('registerStaticFiles', () => {
       statusCode: 404,
     });
   });
+  // A tab from before an upgrade asks for a file of the previous build. It was answered
+  // with the entry page and status 200, a script that cannot run, where a 404 says plainly
+  // that the file is gone.
+  it('answers 404 for a file that is not in the build folder', async () => {
+    const app = await buildTestApp();
+    await registerStaticFiles(app, makeDist('missing', '<html><body>dashboard-here</body></html>'));
+
+    const missing = ['/assets/missing-AbCdEfGh.js', '/assets/fonts/missing-De8F0oAb.woff2', '/assets/missing.js?v=2'];
+    for (const method of ['GET', 'HEAD'] as const) {
+      for (const url of missing) {
+        const res = await app.inject({ method, url });
+        expect(res.statusCode, `${method} ${url}`).toBe(404);
+        expect(res.body, `${method} ${url}`).not.toContain('dashboard-here');
+      }
+    }
+    // What exists is still served, and a page is still the entry page.
+    expect((await app.inject({ method: 'GET', url: '/assets/app.js' })).statusCode).toBe(200);
+    expect((await app.inject({ method: 'GET', url: '/services/42' })).body).toContain('dashboard-here');
+  });
 });
 
 describe('staticFilesPlugin (default export)', () => {
