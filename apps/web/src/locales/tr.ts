@@ -6491,6 +6491,7 @@ export const TR: Readonly<Record<string, string>> = {
   'Detected build files': 'Bulunan yapı dosyaları',
   'Declared TCP port': 'Bildirilen TCP portu',
   'Environment keys in {file} ({count})': '{file} içindeki ortam değişkenleri ({count})',
+  'Attached': 'Bağlı',
   'Review these names and add values on the Environment step.': 'Adları inceleyin ve değerleri Ortam adımında ekleyin.',
   'Collect abandoned uploads': 'Sahipsiz yüklemeleri temizle',
   'Opt-in: scans up to 200 managed keys per pass. Unreferenced objects must be at least 24 hours old, then wait one hour after retirement. Requires ListBucket permission. Turning this off stops discovery; committed cleanup intents still complete.': 'İsteğe bağlı: her turda en fazla 200 yönetilen anahtar taranır. Başvurulmayan nesneler en az 24 saatlik olmalı ve kullanımdan çıkarıldıktan sonra bir saat beklemelidir. ListBucket izni gerekir. Kapatmak keşfi durdurur; kaydedilmiş temizlik işlemleri tamamlanır.',
