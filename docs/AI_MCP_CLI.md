@@ -93,7 +93,8 @@ whose spec entry opts in become read-only MCP tools, generated into
 `apps/server/scripts/generateMcpSpecTools.ts` (a drift test fails when the
 checked-in file differs from a fresh run). Each one is a plain `GET` through
 `client.api.get`; the generator refuses non-GET, sensitive and WebSocket routes,
-so there is no generated write tool and no "call any endpoint" tool.
+so there is no generated write tool and no "call any endpoint" tool. At 0.19.0
+this table has 22 tools; with the 42 hand-written ones the server lists 64.
 
 | Tool | Route | Who |
 |---|---|---|
@@ -101,7 +102,8 @@ so there is no generated write tool and no "call any endpoint" tool.
 | `get_database`, `get_backup_policy`, `list_backups` | `GET /v1/databases/:id…` | seat on the database (`read/databases`) |
 | `list_jobs` | `GET /v1/services/:id/jobs` | seat on the service (`read/services`) |
 | `traffic_summary` | `GET /v1/services/:id/traffic` | seat on the service (`read/services`) |
-| `list_servers`, `list_volumes`, `list_networks`, `certificate_inventory`, `doctor_report`, `instance_traffic_summary` | operator routes | operator, coarse token only |
+| `list_servers`, `list_volumes`, `list_networks`, `list_monitors`, `certificate_inventory`, `doctor_report`, `instance_traffic_summary` | operator routes | operator, coarse token only |
+| `list_ci_jobs` | `GET /v1/services/:id/ci/jobs` | seat on the service (`read/services`). Status, ref, commit, attempts and timing; no logs or variable values |
 | `list_terminal_sessions` | `GET /v1/terminals` | operator, coarse token only. Session metadata only (no transcript exists), but it **includes each session's client IP** |
 | `list_access_grants` | `GET /v1/workspaces/:wid/access-grants` | workspace admin or operator, coarse token only |
 | `my_access` | `GET /v1/access/me` | the caller (their own grants and guest workspaces), coarse token only |
@@ -122,10 +124,10 @@ Swarm init/join/leave, node volumes): the MCP server only reads them.
 
 ## 💻 2. NineDeploy Interactive CLI (`ninedeploy`)
 
-```bash
-# Global installation
 The complete reference, generated from the CLI's own help output, is the [CLI command reference](CLI_REFERENCE.md): 66 commands and 248 subcommands at 0.19.0, each with its arguments and options. The commands below are the common ones, grouped by task.
 
+```bash
+# Global installation
 npm install -g ninedeploy
 
 # 1-Click setup & auto-start local Docker server
@@ -292,7 +294,7 @@ and reads as `host:port`; the input is validated with the same schema as the
 API before anything is sent.
 
 ```bash
-# Canary releases (0.16.9; docker services on the panel host). <service> is an id, slug or name.
+# Canary releases (0.16.9 on the panel host; 0.18.2 on a node). <service> is an id, slug or name.
 ninedeploy canary show <service> [--json]                 # configuration, and the running canary: step i/n, share, time left,
                                                           # requests / 5xx % / p95 for the new and the previous release
 ninedeploy canary set <service> [--steps 10,50] [--step-seconds 120] [--max-error-rate 5] \
@@ -309,7 +311,7 @@ checked with the API's schema before anything is sent. `canary show` says when
 traffic analytics is off: the steps are then judged on the healthcheck only.
 
 ```bash
-# Autoscaling (0.16.10; docker services on the panel host). <service> is an id, slug or name.
+# Autoscaling (0.16.10 on the panel host; 0.18.15 on a node). <service> is an id, slug or name.
 ninedeploy autoscale show <service> [--json]              # bounds, metric and target (% for cpu/memory, req/s for rps),
                                                           # containers serving, last value, desired count, why it holds, last change
 ninedeploy autoscale set <service> [--min 1] [--max N] [--metric cpu|memory|rps] [--target X] \
@@ -325,7 +327,7 @@ on applies fully at the next deploy, which creates the spare containers; until
 then it can only scale down. `--json` on `show` prints `{ config, status }`.
 
 ```bash
-# Scale to zero (0.16.11; docker services on the panel host). <service> is an id, slug or name.
+# Scale to zero (0.16.11 on the panel host; 0.18.17 on a node). <service> is an id, slug or name.
 ninedeploy sleep show <service> [--json]                  # the setting, and whether it is asleep now (since when)
 ninedeploy sleep set <service> <minutes>                  # sends { sleepAfterMinutes: <5-1440> }
 ninedeploy sleep off <service>                            # sends { sleepAfterMinutes: null }

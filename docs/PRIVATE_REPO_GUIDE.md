@@ -403,7 +403,7 @@ The same works in the UI under **Service → Webhooks → Add**. The secret is s
 3. **Content type**: `application/json`.
 4. **Secret**: the secret printed by NineDeploy.
 5. **SSL verification**: enabled (the panel sits behind Traefik with Let's Encrypt by default; if you run without TLS, set `NINEDEPLOY_PUBLIC_URL` to an `https://…` you terminate elsewhere and front the panel with that).
-6. **Which events**: "Just the push event." (PR events are also handled if you want preview environments — see [DEPLOYMENTS.md §4](./DEPLOYMENTS.md#4-ephemeral-pr-preview-environments)).
+6. **Which events**: "Just the push event." (PR events are also handled if you want preview environments — see [DEPLOYMENTS.md §4](./DEPLOYMENTS.md#-4-ephemeral-pr-preview-environments)).
 7. **Active**: ✓.
 8. **Add webhook**.
 
@@ -456,9 +456,9 @@ If the deploy never queues, the most common cause is **wrong secret on the GitHu
 
 ## 9. Troubleshooting quick links
 
-- "Repository not found" at clone time → see [TROUBLESHOOTING.md → Private repository 401/404 on clone](./TROUBLESHOOTING.md#private-repository-401-or-404-on-clone).
-- "Nixpacks CLI unavailable" at build time → see [TROUBLESHOOTING.md → Nixpacks CLI not found](./TROUBLESHOOTING.md#nixpacks-cli-not-found).
-- Auto-deploy never fires after a push → see [TROUBLESHOOTING.md → Webhook signature rejected](./TROUBLESHOOTING.md#webhook-signature-rejected-401).
+- "Repository not found" at clone time → see [TROUBLESHOOTING.md → Private repository 401/404 on clone](./TROUBLESHOOTING.md#-9-private-repository-401-or-404-on-clone).
+- "Nixpacks CLI unavailable" at build time → see [TROUBLESHOOTING.md → Nixpacks CLI not found](./TROUBLESHOOTING.md#-11-nixpacks-cli-not-found).
+- Auto-deploy never fires after a push → see [TROUBLESHOOTING.md → Webhook signature rejected](./TROUBLESHOOTING.md#-10-webhook-signature-rejected-401).
 - The wizard detected no Dockerfile but there is one in a subdirectory → `buildPack: "auto"` walks two levels deep; for deeper structures set `baseDir` or `dockerfilePath` explicitly.
 
 ---
