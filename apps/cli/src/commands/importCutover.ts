@@ -7,23 +7,33 @@
  *
  * - Ready means the service is `running` and its latest deployment is
  *   `running` (succeeded). It is not an HTTP probe of the app, and this
- *   command never deploys.
+ *   command never deploys. A domain that is already attached is not held
+ *   to it: it is only reported.
  * - The DNS gate resolves each host here, with a direct DNS query (not the
  *   OS cache or hosts file), and passes when every A/AAAA address is one this
  *   panel expects: --expect, else Settings → DNS records' content. It stays
  *   strict because adding a domain makes Traefik request a certificate, and
  *   Let's Encrypt limits failed validations per hostname.
  * - --skip-dns-check <host> is for records behind a proxy (Cloudflare's
- *   orange cloud resolves to Cloudflare). It is refused unless the panel's
- *   Cloudflare integration is known to be off: that integration POSTs a new
- *   A record on every domain add, which next to a record that still points
- *   at the source would split traffic between the two hosts.
+ *   orange cloud resolves to Cloudflare). For a domain that still has to be
+ *   added or verified it is refused unless the panel's Cloudflare
+ *   integration is known to be off: that integration POSTs a new A record on
+ *   every domain add, which next to a record that still points at the source
+ *   would split traffic between the two hosts. An attached route is only
+ *   reported, so for one the skip is honored whatever that state is.
  * - It never adds the source's own generated hosts (sourceDefault) and
  *   reports wildcard hosts for a person: HTTP-01 cannot issue them.
+ * - A planned domain is left for review and recorded as `skipped` when the
+ *   plan assigns its hostname to two services or to both HTTP and HTTPS;
+ *   when an existing route of the service uses the other protocol; or when
+ *   the service's routes for that hostname are not a single root route
+ *   (another path, the www redirect, several rows). An attached wildcard is
+ *   left for review too, unless the skip names it.
  * - The panel is the truth for what exists: every run lists the service's
- *   domains first, so a domain added by hand or by a run that stopped counts
- *   as done. A `pending` domain (ownership proof outstanding) is verified
- *   once its DNS passes; the TXT challenge is printed, never stored.
+ *   domains first, so a matching domain added by hand or by a run that
+ *   stopped stays attached. Each run checks its DNS again. A `pending`
+ *   domain is verified once its DNS passes; the TXT challenge is printed,
+ *   never stored.
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { Resolver } from 'node:dns/promises';
@@ -131,7 +141,7 @@ export interface CutoverResult {
   failed: number;
 }
 
-const lower = (h: string) => h.toLowerCase().replace(/\.$/, '');
+const normalizeCutoverHost = (host: string) => host.trim().toLowerCase().replace(/\.$/, '');
 
 /** One spelling per address, so `2001:DB8:0::1` and `2001:db8::1` compare equal. */
 export function canonicalIp(ip: string): string {
@@ -158,62 +168,96 @@ export function dnsProblem(resolved: string[], expected: string[]): string | nul
 export async function cutover(plan: ImportPlan, opts: CutoverOptions, deps: CutoverDeps): Promise<CutoverResult> {
   const { client, dns, expected, receipt } = deps;
   const now = deps.now ?? (() => new Date());
-  const skip = new Set(opts.skipDnsCheck.map(lower));
+  const skip = new Set(opts.skipDnsCheck.map(normalizeCutoverHost));
   const out: string[] = [];
-  const planned = new Set(plan.services.flatMap((s) => s.domains.map((d) => lower(d.host))));
+  const planned = new Map<string, { serviceIndex: number; https: boolean }>();
+  const ambiguous = new Set<string>();
+  const servicePlans = plan.services.map((service, serviceIndex) => {
+    const hosts = new Map<string, PlanDomain>();
+    for (const domain of service.domains) {
+      if (domain.sourceDefault) continue;
+      const host = normalizeCutoverHost(domain.host);
+      const previous = planned.get(host);
+      if (previous && (previous.serviceIndex !== serviceIndex || previous.https !== domain.https)) ambiguous.add(host);
+      planned.set(host, { serviceIndex, https: domain.https });
+      hosts.set(host, domain);
+    }
+    return { service, hosts };
+  });
   for (const h of skip) if (!planned.has(h)) out.push(`  ! --skip-dns-check ${h}: no planned domain has that host`);
   const res: CutoverResult = { lines: out, added: 0, waiting: 0, failed: 0 };
   const put = (item: Omit<ReceiptItem, 'at'>) => {
     receipt.items[`domain:${item.ref}`] = { ...item, at: now().toISOString() };
     deps.save(receipt);
   };
+  const skipDomain = (ref: string, host: string, reason: string, id?: number) => {
+    out.push(`    – ${host}: ${reason}`);
+    if (opts.yes) put({ kind: 'domain', ref, name: host, state: 'skipped', id, notes: [reason] });
+    res.waiting++;
+  };
 
-  for (const s of plan.services) {
-    const hosts: PlanDomain[] = [];
-    const seen = new Set<string>();
-    for (const d of s.domains) {
-      if (d.sourceDefault || seen.has(lower(d.host))) continue;
-      seen.add(lower(d.host));
-      hosts.push(d);
+  for (const { service: s, hosts } of servicePlans) {
+    for (const host of hosts.keys()) {
+      if (!ambiguous.has(host)) continue;
+      skipDomain(`${s.ref}:${host}`, host, 'the plan assigns this hostname to different services or protocols; review the plan');
+      hosts.delete(host);
     }
-    if (hosts.length === 0) continue;
+    if (hosts.size === 0) continue;
     const created = receipt.items[`service:${s.ref}`];
     if (!created || created.state !== 'done' || created.id === undefined) {
       out.push(`  – ${s.name}: not created yet (run import apply first)`);
-      res.waiting += hosts.length;
+      res.waiting += hosts.size;
       continue;
     }
     const serviceId = created.id;
-    const existing = new Map((await client.domains.list(serviceId)).map((d) => [lower(d.hostname), d]));
+    const records = await client.domains.list(serviceId);
+    const existing = new Map<string, typeof records>();
+    for (const record of records) {
+      const host = normalizeCutoverHost(record.hostname);
+      const matches = existing.get(host) ?? [];
+      matches.push(record);
+      existing.set(host, matches);
+    }
     const svc = await client.services.get(serviceId);
     const last = (await client.deploys.list(serviceId))[0];
     const ready = svc.status === 'running' && last?.status === 'running';
     out.push(`  ${s.name} (#${serviceId}): service ${svc.status}, last deploy ${last ? last.status : 'none'}`);
 
-    for (const d of hosts) {
-      const host = lower(d.host);
+    for (const [host, d] of hosts) {
       const ref = `${s.ref}:${host}`;
-      const row = existing.get(host);
-      if (row?.status === 'active') {
-        out.push(`    ✓ ${host}: added (#${row.id})`);
-        const prev = receipt.items[`domain:${ref}`];
-        if (opts.yes && (prev?.state !== 'done' || prev.id !== row.id)) put({ kind: 'domain', ref, name: host, state: 'done', id: row.id, notes: [] });
+      const matches = existing.get(host) ?? [];
+      const [row] = matches;
+      if (matches.length > 1 || (row && ((row.path ?? '/') !== '/' || row.redirectWww))) {
+        skipDomain(ref, host, 'existing routing requires manual review in Domains');
         continue;
       }
-      if (host.startsWith('*.')) {
+      if (row && row.ssl !== d.https) {
+        const reason = `existing route uses ${row.ssl ? 'HTTPS' : 'HTTP'}, plan requires ${d.https ? 'HTTPS' : 'HTTP'}; review it in Domains`;
+        skipDomain(ref, host, reason, row.id);
+        continue;
+      }
+      const attached = row?.status === 'active' ? row : undefined;
+      const wildcard = host.startsWith('*.');
+      if (attached) {
+        const prev = receipt.items[`domain:${ref}`];
+        if (opts.yes && (prev?.state !== 'done' || prev.id !== attached.id)) {
+          put({ kind: 'domain', ref, name: host, state: 'done', id: attached.id, notes: [] });
+        }
+      }
+      if (!attached && wildcard) {
         out.push(`    – ${host}: a wildcard needs a DNS-01 certificate; add it by hand`);
         res.waiting++;
         continue;
       }
-      if (!ready) {
+      if (!attached && !ready) {
         out.push(`    – ${host}: waits until the service runs a successful deploy (deploy it and check it first)`);
         res.waiting++;
         continue;
       }
-      // DNS gate.
+      const attachment = attached ? `attached (#${attached.id}); ` : '';
       let note: string | null = null;
       if (skip.has(host)) {
-        if (expected.cloudflare !== 'off') {
+        if (!attached && expected.cloudflare !== 'off') {
           out.push(`    ✗ ${host}: --skip-dns-check refused: ${expected.cloudflare === 'on'
             ? 'the panel\'s Cloudflare integration is on and would add a second A record next to the source\'s'
             : 'only an admin can see whether the panel\'s Cloudflare integration is on (it would add a second A record next to the source\'s)'}`);
@@ -221,13 +265,23 @@ export async function cutover(plan: ImportPlan, opts: CutoverOptions, deps: Cuto
           continue;
         }
         note = 'DNS check skipped (--skip-dns-check)';
+      } else if (wildcard) {
+        out.push(`    – ${host}: ${attachment}wildcard DNS needs manual review`);
+        res.waiting++;
+        continue;
       } else {
-        const gate = dnsProblem(await resolveHost(dns, host), expected.addresses);
-        if (gate) {
-          out.push(`    ✗ ${host}: ${gate}; fix DNS first`);
+        const resolved = await resolveHost(dns, host).catch(() => null);
+        const mismatch = resolved && dnsProblem(resolved, expected.addresses);
+        if (!resolved || mismatch) {
+          const issue = mismatch ? `${mismatch}; fix DNS first` : 'DNS lookup failed; check the resolver and try again';
+          out.push(`    ✗ ${host}: ${attachment}${issue}`);
           res.waiting++;
           continue;
         }
+      }
+      if (attached) {
+        out.push(`    ✓ ${host}: ${attachment}${note ?? 'DNS points here'}`);
+        continue;
       }
       if (!opts.yes) {
         out.push(`    + ${host}: ${note ?? 'DNS points here'}; would ${row ? 'verify the pending domain' : `add it (${d.https ? 'https' : 'http'})`}`);
@@ -238,7 +292,7 @@ export async function cutover(plan: ImportPlan, opts: CutoverOptions, deps: Cuto
         // Pending ownership proof: verifying flips it live, so it waited for the gate too.
         let v: Awaited<ReturnType<CutoverClient['domains']['verify']>>;
         try {
-          v = await client.domains.verify(serviceId, row.id);
+          v = await client.domains.verify(serviceId, row.id, d.https);
         } catch (err) {
           out.push(`    ✗ ${host}: verify failed: ${err instanceof Error ? err.message : String(err)}`);
           res.failed++;

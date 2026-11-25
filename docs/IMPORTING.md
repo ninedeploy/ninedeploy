@@ -39,7 +39,7 @@ Instance operators can select **Check target** to compare the plan with the targ
 
 Instance operators can select **Prepare resources → Create resources** to create service definitions and start empty databases on the panel host. The panel rechecks the inventory at confirmation, skips unsupported items and reports conflicts for review. If a database has a retained volume under the proposed name, creation stops for that item. Service deployment, environment values, database attachments, data transfer and domain cutover are separate steps.
 
-To resume, reopen the same plan in the same browser tab as the same operator. Preparation tracks the IDs of resources it creates and checks their current names before reusing the result. Review a reported conflict if a previous request may have succeeded without returning a response. You can open the dump uploader for a prepared database from the plan as described below. The CLI steps use their own receipt beside the plan. If you started in the browser and need to continue in the CLI, first review the prepared resources and run `import apply` with the same plan to create the CLI receipt.
+To resume, reopen the same plan in the same browser tab as the same operator. The panel reads the target inventory and shows which preparations it verified by resource ID, normalized name, and service type or database engine. It also flags incomplete settings, unconfirmed requests, and missing or changed targets. **Check target** still reports names held by other resources. A verified preparation lets you continue with environment values, data transfer, deployment readiness, or domain cutover as applicable. These steps have their own checks. The CLI steps use their own receipt beside the plan. If you started in the browser and need to continue in the CLI, first review the prepared resources and run `import apply` with the same plan to create the CLI receipt.
 
 ### Migrate environment and connections
 
@@ -50,6 +50,8 @@ The panel can attach running databases specified explicitly in the plan, using t
 ### Review deployment readiness
 
 For each prepared service, use **Check deployment readiness** to compare the plan with the target. The panel checks the configured repository or image, the environment keys assembled for deployment, the planned database aliases, and any unfinished import or deployment work. The check sends key names and status only. Secret references are resolved when you deploy.
+
+Under **Data transfer on the target**, review the latest recorded status for matching planned database connections and the primary volume. An active import appears in the readiness problems. Results such as missing records, failures and completions with warnings are shown for review, so workloads that start with empty storage can still proceed. A completed record describes a past operation. Check the current data separately before switching traffic.
 
 When the review passes, use **Open deployments** to open the service's Deploys tab. Start deployment there and verify the running application before switching DNS. Readiness reflects the target at the time of the check. It does not validate secret values or test application health.
 
@@ -84,6 +86,8 @@ ninedeploy import apply plan.json --yes --project 3 --dotenv blog=./blog.env   #
 - A receipt is tied to one panel and one source. Apply refuses a receipt from another one.
 
 ## Move the data
+
+Select **Check import status** next to a prepared database or volume in the plan to see the latest recorded operation for that target. This is a read-only snapshot. Use the linked import page for details, uploads, and restores.
 
 For prepared databases with dump support, use **Import a dump into** in the migration plan to open the target database's **Backups → Import a dump** card. You can reopen the same plan in the same tab and account to return to these links. Quiesce writes on the source before taking the final dump, then choose that file and select **Upload and import**. The panel keeps the existing safety-backup workflow and shows the result in **Recent imports**.
 
@@ -151,7 +155,11 @@ Choose a `.tar.gz` and select **Upload archive** to stage it with a SHA-256 chec
 
 The migration plan shows **Cut over domains** for services prepared on the panel host. After deploying the target, verify the application and update its DNS records. In the plan, select **Check cutover**, review the expected and resolved addresses, then confirm the hostname you want the panel to route. The server checks the latest deployment and all A and AAAA answers again at confirmation. It uses the destination configured under **Settings → DNS records**, or the detected public IP when no destination is set. DNS records are managed separately from this panel action.
 
-If the domain is pending, publish the displayed TXT record and select **Verify ownership**. A domain already attached to the prepared service is shown as attached on the next check. Wildcards, shared routes, proxied records whose addresses differ from the target, and non-local service placement need manual review or the CLI options below.
+If an existing route uses a different protocol from the plan, the web panel and CLI report the difference. Review the route in **Domains** before retrying. This applies to attached routes and routes still awaiting ownership verification.
+
+If the domain is pending, publish the displayed TXT record and select **Verify ownership**. For an attached domain, **Check cutover** reports its current DNS alongside the attachment status. A DNS mismatch or lookup problem leaves the route in place. Wildcards, shared routes, proxied records whose addresses differ from the target, and non-local service placement need manual review or the CLI options below.
+
+For an attached domain, the same check inspects the proxy configuration for its hostname, protocol, and root path. It displays the routing diagnosis and links to the service's **Network** tab. Test the application from a client before switching traffic.
 
 ```bash
 ninedeploy import cutover plan.json                    # what is ready, host by host
@@ -165,9 +173,10 @@ ninedeploy import cutover plan.json --yes              # adds the domains that p
 
 The DNS check is strict on purpose. Adding a domain makes Traefik ask Let's Encrypt for a certificate, and Let's Encrypt limits failed attempts per hostname. A host that fails waits; switch its DNS and run the same command again.
 
+- **Shared hostnames.** The CLI leaves path-specific routes, www redirects, and hostnames with several existing routes for review in **Domains**. If the plan assigns a hostname to several services or both HTTP and HTTPS, resolve the assignment in the plan before retrying.
 - The source's own generated hosts (sslip.io, nip.io, traefik.me) are never added. Wildcard hosts need a DNS-01 certificate, so they are listed for you to add by hand.
-- **Proxied records.** A record behind Cloudflare's proxy resolves to Cloudflare, not to this panel. `--skip-dns-check <host>` adds it anyway, and the receipt notes the skipped check. It is refused while the panel's own Cloudflare integration is on, or when you can't tell (only an admin can). That integration creates a new A record for every domain added, and next to a record that still points at the old host it would split traffic between the two.
-- **The panel is the truth.** Each run lists the service's domains first. A domain that is already there, added by hand or by an earlier run, counts as done and is not added again.
+- **Proxied records.** For a domain that still needs to be added or verified, `--skip-dns-check <host>` lets you proceed when the panel's Cloudflare integration is known to be off. The receipt records the skipped check. An integration that is on could add an A record next to the old target and split traffic between two hosts.
+- **Attached domains.** Each run compares their current A and AAAA answers against the expected destination. A mismatch or resolver failure is reported for that host and the command continues through the rest of the plan. The route stays attached and its receipt retains the attachment. Use `--skip-dns-check <host>` to skip this read-only check for a deliberately proxied domain. Attached wildcards require manual DNS review.
 - **Ownership proof.** If you are not an operator and the host is outside this instance's zone, the panel adds it as `pending`. The command prints the TXT record to publish; the next run verifies it. The value is printed, never written to the receipt.
 
 

@@ -9,6 +9,7 @@ import type { RouteSpecMap } from '../types.js';
 export const deploysSpecs: RouteSpecMap = {
   'GET /v1/services/:id/deploys/migration-readiness': {
     summary: 'Inspect the runtime settings of a prepared migration service',
+    description: 'Includes the last recorded import status for attached databases and the primary volume where applicable. Import status describes the recorded operation and does not inspect the contents.',
     tag: 'deploys', floor: 'operator', responseType: 'MigrationReadiness',
   },
   'GET /v1/services/:id/deploys/:depId/release': {

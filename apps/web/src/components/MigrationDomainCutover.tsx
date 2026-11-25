@@ -1,17 +1,30 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Link } from 'react-router';
-import type { DomainCutoverResult } from '@ninedeploy/schemas';
+import type { DomainCutoverResult, ServiceHttpRoute } from '@ninedeploy/schemas';
 import { api } from '../lib/api.js';
 import { useT } from '../lib/i18n.js';
 import { Button } from './ui.js';
 
+type CutoverCheck = DomainCutoverResult & { routing?: ServiceHttpRoute | null };
+
 export function MigrationDomainCutover({ serviceId, serviceName, host, https }: { serviceId: number; serviceName: string; host: string; https: boolean }) {
   const t = useT();
   const queryClient = useQueryClient();
-  const [result, setResult] = useState<DomainCutoverResult>();
+  const [result, setResult] = useState<CutoverCheck>();
   const [confirm, setConfirm] = useState(false);
-  const check = useMutation({ mutationFn: () => api.domains.cutoverCheck(serviceId, host), onSuccess: setResult });
+  const check = useMutation({
+    mutationFn: async (): Promise<CutoverCheck> => {
+      const status = await api.domains.cutoverCheck(serviceId, host, https);
+      if (status.status !== 'active') return status;
+      const view = await api.services.routing(serviceId).catch(() => null);
+      const route = view?.live ? view.http.find((row) => (
+        row.hostname === status.hostname && row.ssl === https && (row.path ?? '/') === '/'
+      )) : undefined;
+      return { ...status, routing: route ?? null };
+    },
+    onSuccess: setResult,
+  });
   const apply = useMutation({
     mutationFn: () => api.domains.cutover(serviceId, { hostname: host, ssl: https }),
     onSuccess: (status) => {
@@ -34,14 +47,37 @@ export function MigrationDomainCutover({ serviceId, serviceName, host, https }: 
   const busy = check.isPending || apply.isPending;
   const canApply = result && (result.status === 'ready' || result.status === 'ownership_required');
   const scheme = https ? 'HTTPS' : 'HTTP';
+  const routing = result?.routing;
+  const routingLabels = {
+    ok: t('The proxy configuration has a matching route.'),
+    warn: t('The proxy route needs review.'),
+    error: t('The proxy reports a routing problem.'),
+    unknown: t('Could not verify the proxy configuration.'),
+  };
 
   return (
     <section aria-label={t('Cutover for {host}', { host })} className="space-y-2">
       <p className="text-slate-400">{serviceName} · {scheme}</p>
-      {result && <p role="status" className="text-slate-200">{statuses[result.status]}</p>}
+      {result && <p role="status" className="text-slate-200">
+        {result.status === 'route_conflict' && result.existingSsl !== undefined
+          ? t('The existing route uses {current}. The plan requires {planned}. Review it in Domains.', { current: result.existingSsl ? 'HTTPS' : 'HTTP', planned: scheme })
+          : statuses[result.status]}
+      </p>}
+      {result?.dnsStatus && <p role="status" className={result.dnsStatus === 'ready' ? 'text-slate-300' : 'text-amber-300'}>
+        {result.dnsStatus === 'ready' ? t('DNS addresses match the configured destination.') : statuses[result.dnsStatus]}
+      </p>}
       {result?.status === 'deployment_required' && <Link to={`/services/${serviceId}?tab=deploys`} className="text-indigo-300 underline">{t('Open deployments')}</Link>}
       {result?.expected && <p className="text-slate-400">{t('Expected DNS addresses')} <code>{result.expected.join(', ')}</code></p>}
       {!!result?.resolved?.length && <p className="text-slate-400">{t('Resolved DNS addresses')} <code>{result.resolved.join(', ')}</code></p>}
+      {routing !== undefined && (
+        <div className="space-y-1">
+          <div role="status" className={routing?.verdict === 'ok' ? 'text-slate-300' : 'text-amber-300'}>
+            <p>{routingLabels[routing?.verdict ?? 'unknown']}</p>
+            {routing?.note && <p className="text-slate-400">{routing.note}</p>}
+          </div>
+          <Link to={`/services/${serviceId}?tab=network`} className="text-indigo-300 underline">{t('Open routing details')}</Link>
+        </div>
+      )}
       {result?.verification && (
         <dl className="space-y-1 text-slate-300">
           <div><dt>{t('TXT record name')}</dt><dd><code>{result.verification.recordName}</code></dd></div>

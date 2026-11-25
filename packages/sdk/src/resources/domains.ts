@@ -38,14 +38,14 @@ export interface DomainsApi {
     list: (serviceId: number) => Promise<Domain[]>;
     /** Add a domain. A non-operator's hostname outside the instance zone comes back `pending` with a TXT `verification` challenge. */
     create: (serviceId: number, input: CreateDomainInput) => Promise<CreatedDomain>;
-    cutoverCheck: (serviceId: number, hostname: string) => Promise<DomainCutoverResult>;
+    cutoverCheck: (serviceId: number, hostname: string, ssl?: boolean) => Promise<DomainCutoverResult>;
     cutover: (serviceId: number, input: CutoverDomainInput) => Promise<DomainCutoverResult>;
     /**
      * r332: prove ownership of a `pending` domain and bring it live. Checks
      * the TXT challenge `create` returned; idempotent (an `active` domain
      * answers `verified: true`) and safe to poll while DNS propagates.
      */
-    verify: (serviceId: number, domainId: number) => Promise<DomainVerifyResult>;
+    verify: (serviceId: number, domainId: number, expectedSsl?: boolean) => Promise<DomainVerifyResult>;
     /**
      * 0.16.1 "Generate domain": add the service's automatic URL (Settings →
      * Automatic URLs: a base domain or a free sslip.io name) now, instead of
@@ -136,10 +136,10 @@ export function domainsApi(t: Transport): DomainsApi {
       },
       list: (serviceId) => get<Domain[]>(`/v1/services/${serviceId}/domains`),
       create: (serviceId, input) => send<CreatedDomain>('POST', `/v1/services/${serviceId}/domains`, input),
-      cutoverCheck: (serviceId, hostname) => get<DomainCutoverResult>(`/v1/services/${serviceId}/domains/cutover?hostname=${encodeURIComponent(hostname)}`),
+      cutoverCheck: (serviceId, hostname, ssl) => get<DomainCutoverResult>(`/v1/services/${serviceId}/domains/cutover?hostname=${encodeURIComponent(hostname)}${ssl === undefined ? '' : `&ssl=${ssl}`}`),
       cutover: (serviceId, input) => send<DomainCutoverResult>('POST', `/v1/services/${serviceId}/domains/cutover`, input),
-      verify: (serviceId, domainId) =>
-        send<DomainVerifyResult>('POST', `/v1/services/${serviceId}/domains/${domainId}/verify`, {}),
+      verify: (serviceId, domainId, ssl) =>
+        send<DomainVerifyResult>('POST', `/v1/services/${serviceId}/domains/${domainId}/verify${ssl === undefined ? '' : `?ssl=${ssl}`}`, {}),
       generate: (serviceId) => send<Domain & { created: boolean }>('POST', `/v1/services/${serviceId}/domains/auto`, {}),
       dnsCheck: (serviceId, domainId) =>
         get<{

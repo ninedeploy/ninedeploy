@@ -33,6 +33,7 @@ import { abortDeployment } from '../lib/deployAbort.js';
 import { removeInterruptedCandidates } from '../engine/interruptedRuntime.js';
 import { primaryRecoveryPending } from '../engine/primaryRecovery.js';
 import { nodePreparationExists } from '../lib/nodePreparationRetention.js';
+import { primaryServiceVolumeName } from '../lib/retainedSlugVolume.js';
 
 /**
  * Statuses that mean the worker or the pipeline may still write to the row.
@@ -94,12 +95,22 @@ export const deploysRoutes: FastifyPluginAsync = async (app) => {
     const service = await loadServiceForUser(app.db, id, req.user!);
     const { inspectRuntimeEnvKeys } = await import('../engine/pipeline.js');
     const activeImport = ['uploading', 'pending', 'running'] as const;
-    const [keys, targets, busy, activeVolume] = await Promise.all([
+    const latestDatabaseImport = app.db.select({ status: databaseImports.status }).from(databaseImports)
+      .where(eq(databaseImports.databaseId, databases.id)).orderBy(desc(databaseImports.id)).limit(1);
+    const mountPath = service.type === 'docker' && service.serverId == null && service.orchestrator !== 'swarm' ? service.volumeMount : null;
+    const [keys, targets, busy, activeVolume, latestVolumeImport] = await Promise.all([
       inspectRuntimeEnvKeys(app.db, service),
-      app.db.select({ databaseId: databases.id, alias: databaseAttachments.envAlias, slug: databases.slug, engine: databases.engine, status: databases.status })
+      app.db.select({
+        databaseId: databases.id, alias: databaseAttachments.envAlias, slug: databases.slug, engine: databases.engine, status: databases.status,
+        latestImportStatus: sql<typeof databaseImports.$inferSelect.status | null>`(${latestDatabaseImport})`,
+      })
         .from(databaseAttachments).innerJoin(databases, eq(databases.id, databaseAttachments.databaseId)).where(eq(databaseAttachments.serviceId, id)),
       app.db.query.deployments.findFirst({ where: and(eq(deployments.serviceId, id), inArray(deployments.status, CANCELLABLE_STATUSES)), columns: { id: true } }),
       app.db.query.volumeImports.findFirst({ where: and(eq(volumeImports.serviceId, id), inArray(volumeImports.status, activeImport)), columns: { id: true } }),
+      mountPath ? app.db.query.volumeImports.findFirst({
+        where: and(eq(volumeImports.serviceId, id), eq(volumeImports.volumeName, primaryServiceVolumeName(service.slug))),
+        orderBy: desc(volumeImports.id), columns: { status: true },
+      }) : undefined,
     ]);
     const activeDatabase = targets.length > 0 && await app.db.query.databaseImports.findFirst({
       where: and(inArray(databaseImports.databaseId, targets.map(({ databaseId }) => databaseId)), inArray(databaseImports.status, activeImport)), columns: { id: true },
@@ -108,6 +119,7 @@ export const deploysRoutes: FastifyPluginAsync = async (app) => {
     return {
       id, slug: service.slug, type: service.type, status: service.status, hasSource: Boolean(service.repoUrl || service.image), ...keys,
       bindings: targets.map(({ status, ...target }) => ({ ...target, running: status === 'running' })),
+      primaryVolume: mountPath ? { mountPath, latestImportStatus: latestVolumeImport?.status ?? null } : null,
       deploymentPending: Boolean(busy), volumeImportsPending: Boolean(activeVolume), databaseImportsPending: Boolean(activeDatabase),
     };
   });

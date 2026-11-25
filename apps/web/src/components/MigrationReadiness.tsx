@@ -1,7 +1,9 @@
 import { useMutation } from '@tanstack/react-query';
 import { Link } from 'react-router';
+import { DATABASE_IMPORT_ENGINE_OPTIONS, type DatabaseImportStatus } from '@ninedeploy/schemas';
 import { api } from '../lib/api.js';
 import { useT } from '../lib/i18n.js';
+import { dataImportStatusLabel } from '../lib/importFile.js';
 import type { PreparedImportService } from '../lib/prepareImportResources.js';
 import { Button } from './ui.js';
 
@@ -10,6 +12,7 @@ export function MigrationReadiness({ target }: { target: PreparedImportService }
   const check = useMutation({ mutationFn: () => api.deploys.migrationReadiness(target.id) });
   const live = check.data;
   const problems: Array<{ label: string; keys?: string[] }> = [];
+  const transfers = new Map<string, DatabaseImportStatus | null>();
   const plannedAliases = new Set(target.bindings.map(({ alias }) => alias));
   const plannedKeys = new Set(target.service.env.map(({ key }) => key));
 
@@ -22,18 +25,29 @@ export function MigrationReadiness({ target }: { target: PreparedImportService }
       const missing = [...plannedKeys].filter((key) => !plannedAliases.has(key) && !configured.has(key));
       if (missing.length) problems.push({ label: t('Planned environment keys missing on the target'), keys: missing });
       const managed = new Set(live.managedDatabaseKeys);
-      const unready = target.bindings.filter(({ alias, database }) => {
+      const unready = new Set<string>();
+      for (const { alias, database } of target.bindings) {
         const matches = live.bindings.filter((item) => item.alias === alias);
         const [binding] = matches;
-        return !database || matches.length !== 1 || !binding?.running || binding.databaseId !== database.id ||
-          binding.slug !== database.slug || binding.engine !== database.engine || !managed.has(alias);
-      });
-      if (unready.length) problems.push({ label: t('Planned database connections to review'), keys: [...new Set(unready.map(({ alias }) => alias))] });
+        if (!database || matches.length !== 1 || !binding?.running || binding.databaseId !== database.id ||
+          binding.slug !== database.slug || binding.engine !== database.engine || !managed.has(alias)) {
+          unready.add(alias);
+        } else if (binding.latestImportStatus !== undefined && Object.hasOwn(DATABASE_IMPORT_ENGINE_OPTIONS, database.engine)) {
+          transfers.set(alias, binding.latestImportStatus);
+        }
+      }
+      if (unready.size) problems.push({ label: t('Planned database connections to review'), keys: [...unready] });
+      const primary = live.primaryVolume;
+      if (primary && primary.mountPath === target.service.create.volumeMount &&
+        target.service.volumes.some(({ mountPath, source }) => mountPath === primary.mountPath && source !== 'file')) {
+        transfers.set(primary.mountPath, primary.latestImportStatus);
+      }
       if (live.volumeImportsPending || live.databaseImportsPending) problems.push({ label: t('Finish or cancel pending data imports before deploying.') });
       if (live.deploymentPending || live.status === 'deploying') problems.push({ label: t('A deployment is already queued, waiting or running.') });
     }
   }
   const references = live?.secretReferenceKeys.some((key) => plannedKeys.has(key)) ?? false;
+  const transferRows = [...transfers];
 
   return (
     <section aria-label={t('Deployment readiness for {service}', { service: target.name })} className="space-y-2">
@@ -41,6 +55,19 @@ export function MigrationReadiness({ target }: { target: PreparedImportService }
         {check.isPending ? t('Checking deployment readiness…') : t('Check deployment readiness')}
       </Button>
       {check.isError && <p role="alert" className="text-red-300">{t('Could not check deployment readiness. Try again.')}</p>}
+      {transferRows.length > 0 && <section aria-label={t('Data transfer on the target')} className="space-y-1">
+        <h4 className="font-medium text-slate-200">{t('Data transfer on the target')}</h4>
+        <dl className="space-y-1">
+          {transferRows.map(([name, status]) => (
+            <div key={name} className="flex flex-wrap gap-x-2 text-slate-300">
+              <dt><code>{name}</code></dt>
+              <dd>{status === null ? t('No data import recorded.') : dataImportStatusLabel(t, status)}</dd>
+            </div>
+          ))}
+        </dl>
+        {transferRows.some(([, status]) => status !== 'completed') &&
+          <p className="text-amber-300">{t('Review the transfer results before deploying.')}</p>}
+      </section>}
       {live && (problems.length ? (
         <ul role="status" className="list-disc space-y-1 pl-4 text-amber-300">
           {problems.map(({ label, keys }) => <li key={label}>{label}{keys && <div><code>{keys.join(', ')}</code></div>}</li>)}

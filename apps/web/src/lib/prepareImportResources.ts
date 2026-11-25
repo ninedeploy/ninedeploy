@@ -13,6 +13,11 @@ export type PreparedImportService = {
 };
 
 type Checkpoint = { id: number; done: boolean } | null;
+type PreparationIdentity = { slug: string } & (
+  { kind: 'service'; type: PlanService['create']['type'] } | { kind: 'database'; engine: PlanEngine | null }
+);
+type PreparationEntry = PreparationIdentity & { ref: string; name: string; checkpoint: Checkpoint };
+type LiveResource = { id: number; slug: string } & ({ type: string } | { engine: string });
 type Status = 'prepared' | 'occupied' | 'changed' | 'skipped' | 'failed' | 'retainedVolume';
 type Outcome = { ref: string; name: string; kind: 'service' | 'database'; status: Status };
 type Result = { duplicate: true } | { duplicate: false; outcomes: Outcome[] };
@@ -38,53 +43,91 @@ function receiptKey(plan: ImportPlan, operator: ImportOperator): string {
   return `ninedeploy.import.prepare.v1.${bytesToHex(sha256(new TextEncoder().encode(identity)))}`;
 }
 
+function readSavedPreparation(plan: ImportPlan, operator: ImportOperator) {
+  try {
+    return readReceipt(window.sessionStorage.getItem(receiptKey(plan, operator)));
+  } catch {
+    return {};
+  }
+}
+
+function serviceIdentity({ create }: PlanService): PreparationIdentity {
+  return { kind: 'service', slug: slugifyResourceName(create.name), type: create.type };
+}
+
+function databaseIdentity({ name, engine }: ImportPlan['databases'][number]): PreparationIdentity {
+  return { kind: 'database', slug: slugifyResourceName(name), engine };
+}
+
+export function readImportPreparation(plan: ImportPlan, operator: ImportOperator): PreparationEntry[] {
+  return preparationEntries(plan, readSavedPreparation(plan, operator));
+}
+
+function preparationEntries(plan: ImportPlan, saved: Record<string, Checkpoint>): PreparationEntry[] {
+  const entries = [
+    ...plan.services.map((item) => ({ ...serviceIdentity(item), ref: item.ref, name: item.create.name })),
+    ...plan.databases.map((item) => ({ ...databaseIdentity(item), ref: item.ref, name: item.name })),
+  ];
+  return entries.flatMap((entry) => {
+    const checkpoint = saved[`${entry.kind}:${entry.ref}`];
+    return checkpoint === undefined ? [] : [{ ...entry, checkpoint }];
+  });
+}
+
+function matchesResource(identity: PreparationIdentity, id: number, live: LiveResource | undefined): boolean {
+  if (live?.id !== id || live.slug !== identity.slug) return false;
+  return identity.kind === 'service'
+    ? 'type' in live && live.type === identity.type
+    : 'engine' in live && live.engine === identity.engine;
+}
+
+export function matchesPreparedImportEntry(entry: PreparationEntry, live: LiveResource | undefined): boolean {
+  return entry.checkpoint !== null && matchesResource(entry, entry.checkpoint.id, live);
+}
+
 /** A receipt identifies candidates. Confirm them against the current inventory before offering an import link. */
 export function preparedImportTargets(plan: ImportPlan, operator: ImportOperator) {
-  try {
-    const saved = readReceipt(window.sessionStorage.getItem(receiptKey(plan, operator)));
-    const preparedDatabases = new Map(plan.databases.flatMap(({ ref, name, engine }): Array<[string, PreparedImportDatabase]> => {
-      const checkpoint = saved[`database:${ref}`];
-      return checkpoint?.done && engine ? [[ref, { id: checkpoint.id, name, slug: slugifyResourceName(name), engine }]] : [];
-    }));
-    const databases = [...preparedDatabases.values()].filter(({ engine }) => Object.hasOwn(DATABASE_IMPORT_ENGINE_OPTIONS, engine));
-    const databaseNames = new Map(plan.databases.map(({ ref, name }) => [ref, name]));
-    const services = plan.services.flatMap((service): PreparedImportService[] => {
-      const checkpoint = saved[`service:${service.ref}`];
-      if (!checkpoint?.done) return [];
-      const name = service.create.name;
-      return [{ id: checkpoint.id, name, slug: slugifyResourceName(name), service, bindings: (service.attachments ?? []).map(({ database, envAlias }) => ({
-        alias: envAlias, databaseName: databaseNames.get(database) ?? database, database: preparedDatabases.get(database),
-      })) }];
-    });
-    const volumes = plan.services.flatMap(({ ref, create, volumes }) => {
-      const checkpoint = saved[`service:${ref}`];
-      const { name, volumeMount } = create;
-      if (!checkpoint?.done || create.type !== 'docker' || !volumeMount || volumes.find(({ mountPath }) => mountPath === volumeMount)?.source === 'file') return [];
-      return [{ id: checkpoint.id, name, slug: slugifyResourceName(name), volumeMount }];
-    });
-    const owners = new Map<string, Set<string>>();
-    const planned = plan.services.flatMap(({ ref, create, domains }) => domains.filter(({ sourceDefault }) => !sourceDefault)
-      .map(({ host, https }) => ({ ref, create, host: host.trim().toLowerCase().replace(/\.$/, ''), https })));
-    for (const { host, ref } of planned) {
-      const references = owners.get(host) ?? new Set<string>();
-      references.add(ref);
-      owners.set(host, references);
-    }
-    const domains = new Map<string, { id: number; name: string; slug: string; host: string; https: boolean; manual: boolean }>();
-    for (const { ref, create, host, https } of planned) {
-      const checkpoint = saved[`service:${ref}`];
-      if (!checkpoint?.done || !host) continue;
-      const key = `${checkpoint.id}:${host}`;
-      const previous = domains.get(key);
-      domains.set(key, {
-        id: checkpoint.id, name: create.name, slug: slugifyResourceName(create.name), host, https,
-        manual: host.startsWith('*.') || (owners.get(host)?.size ?? 0) > 1 || (!!previous && (previous.manual || previous.https !== https)),
-      });
-    }
-    return { databases, volumes, domains: [...domains.values()], services };
-  } catch {
-    return { databases: [], volumes: [], domains: [], services: [] };
+  const saved = readSavedPreparation(plan, operator);
+  const preparedDatabases = new Map(plan.databases.flatMap(({ ref, name, engine }): Array<[string, PreparedImportDatabase]> => {
+    const checkpoint = saved[`database:${ref}`];
+    return checkpoint?.done && engine ? [[ref, { id: checkpoint.id, name, slug: slugifyResourceName(name), engine }]] : [];
+  }));
+  const databases = [...preparedDatabases.values()].filter(({ engine }) => Object.hasOwn(DATABASE_IMPORT_ENGINE_OPTIONS, engine));
+  const databaseNames = new Map(plan.databases.map(({ ref, name }) => [ref, name]));
+  const services = plan.services.flatMap((service): PreparedImportService[] => {
+    const checkpoint = saved[`service:${service.ref}`];
+    if (!checkpoint?.done) return [];
+    const name = service.create.name;
+    return [{ id: checkpoint.id, name, slug: slugifyResourceName(name), service, bindings: (service.attachments ?? []).map(({ database, envAlias }) => ({
+      alias: envAlias, databaseName: databaseNames.get(database) ?? database, database: preparedDatabases.get(database),
+    })) }];
+  });
+  const volumes = plan.services.flatMap(({ ref, create, volumes }) => {
+    const checkpoint = saved[`service:${ref}`];
+    const { name, volumeMount } = create;
+    if (!checkpoint?.done || create.type !== 'docker' || !volumeMount || volumes.find(({ mountPath }) => mountPath === volumeMount)?.source === 'file') return [];
+    return [{ id: checkpoint.id, name, slug: slugifyResourceName(name), volumeMount }];
+  });
+  const owners = new Map<string, Set<string>>();
+  const planned = plan.services.flatMap(({ ref, create, domains }) => domains.filter(({ sourceDefault }) => !sourceDefault)
+    .map(({ host, https }) => ({ ref, create, host: host.trim().toLowerCase().replace(/\.$/, ''), https })));
+  for (const { host, ref } of planned) {
+    const references = owners.get(host) ?? new Set<string>();
+    references.add(ref);
+    owners.set(host, references);
   }
+  const domains = new Map<string, { id: number; name: string; slug: string; host: string; https: boolean; manual: boolean }>();
+  for (const { ref, create, host, https } of planned) {
+    const checkpoint = saved[`service:${ref}`];
+    if (!checkpoint?.done || !host) continue;
+    const key = `${checkpoint.id}:${host}`;
+    const previous = domains.get(key);
+    domains.set(key, {
+      id: checkpoint.id, name: create.name, slug: slugifyResourceName(create.name), host, https,
+      manual: host.startsWith('*.') || (owners.get(host)?.size ?? 0) > 1 || (!!previous && (previous.manual || previous.https !== https)),
+    });
+  }
+  return { databases, volumes, domains: [...domains.values()], services, entries: preparationEntries(plan, saved) };
 }
 
 export async function prepareImportResources(
@@ -110,13 +153,13 @@ export async function prepareImportResources(
   const outcomes: Outcome[] = [];
   const jobs = [
     ...plan.services.map((item) => ({
-      kind: 'service' as const, ref: item.ref, name: item.create.name, inventory: services,
+      identity: serviceIdentity(item), ref: item.ref, name: item.create.name, inventory: services,
       create: () => api.services.create(item.create),
       configure: item.settings?.healthCheck === 'running'
         ? (id: number) => api.services.update(id, { healthCheck: 'running' }) : undefined,
     })),
     ...plan.databases.map((item) => ({
-      kind: 'database' as const, ref: item.ref, name: item.name, inventory: databases,
+      identity: databaseIdentity(item), ref: item.ref, name: item.name, inventory: databases,
       create: () => api.databases.createEmpty({
         name: item.name, engine: item.engine!, version: importDatabaseVersion(item.engine!, item.image),
       }),
@@ -124,8 +167,9 @@ export async function prepareImportResources(
     })),
   ];
   const invalid = new Set(problems.map(({ kind, ref }) => `${kind}:${ref}`));
-  for (const { kind, ref, name, inventory, create, configure } of jobs) {
+  for (const { identity, ref, name, inventory, create, configure } of jobs) {
     if (!isActive()) break;
+    const { kind, slug } = identity;
     const entry = `${kind}:${ref}`;
     const record = (status: Status) => outcomes.push({ kind, ref, name, status });
     if (invalid.has(entry)) {
@@ -133,9 +177,9 @@ export async function prepareImportResources(
       continue;
     }
     const previous = saved[entry];
-    const existing = inventory.find(({ slug }) => slug === slugifyResourceName(name));
+    const existing = inventory.find((resource) => resource.slug === slug);
     let id = previous?.id;
-    if (id !== undefined && existing?.id !== id) {
+    if (id !== undefined && !matchesResource(identity, id, existing)) {
       record('changed');
       continue;
     }

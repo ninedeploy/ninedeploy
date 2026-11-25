@@ -160,8 +160,16 @@ test('migration prepares resources once and restores a verified dump into the pl
 
   await page.reload();
   const retry = await openPlan();
+  await expect(retry.getByRole('heading', { name: 'Verified preparation (2)' })).toBeVisible();
+  await expect(retry.getByText('Resources without a preparation record (1)')).toBeVisible();
   const importLink = retry.getByRole('link', { name: `Import a dump into ${db}` });
   await expect(importLink).toHaveAttribute('href', `/databases/${database!.id}?tab=backups#import-dump`);
+  await retry.getByRole('button', { name: 'Check import status' }).click();
+  await expect(retry.getByText('No data import recorded.')).toBeVisible();
+  const targetCheck = retry.getByRole('region', { name: 'Target checks' });
+  await targetCheck.getByRole('button', { name: 'Check target' }).click();
+  await expect(targetCheck.getByText('Target name already in use.')).toHaveCount(1);
+  await expect(targetCheck.locator('code')).toHaveText(occupied);
   expect(requestWrites).toHaveLength(3);
   await retry.getByRole('button', { name: 'Prepare resources' }).click();
   await retry.getByRole('button', { name: 'Create resources' }).click();
@@ -199,6 +207,9 @@ test('migration prepares resources once and restores a verified dump into the pl
   await checkReadiness.click();
   await expect(readiness.getByText('LEGACY_URL, MISSING')).toBeVisible();
   await expect(readiness.getByText('Planned database connections to review')).toHaveCount(0);
+  const pendingTransfer = readiness.getByRole('region', { name: 'Data transfer on the target' });
+  await expect(pendingTransfer.getByText('DATABASE_URL')).toBeVisible();
+  await expect(pendingTransfer.getByText('No data import recorded.')).toBeVisible();
   expect(requestWrites).toHaveLength(5);
 
   const container = database!.containerName;
@@ -221,6 +232,18 @@ test('migration prepares resources once and restores a verified dump into the pl
   expect(imports[0]).toMatchObject({ sha256, safetyBackupId: expect.any(Number) });
   await expect(importer.getByTestId(`import-${imports[0]!.id}`).getByText('completed', { exact: true })).toBeVisible();
   expect(docker('exec', container, 'psql', '-XAtq', '-U', 'nine', '-d', 'app', '-c', 'SELECT count(*), sum(amount) FROM orders')).toBe('3|31');
+  const writesAfterImport = requestWrites.length;
+  await page.goto('/new');
+  const restored = await openPlan();
+  await restored.getByRole('button', { name: 'Check import status' }).click();
+  await expect(restored.getByText('Latest data import: Completed', { exact: true })).toBeVisible();
+  const afterReadiness = restored.getByRole('region', { name: `Deployment readiness for ${app}` });
+  await afterReadiness.getByRole('button', { name: 'Check deployment readiness' }).click();
+  const dbTransfer = afterReadiness.getByRole('region', { name: 'Data transfer on the target' });
+  await expect(dbTransfer.getByText('DATABASE_URL')).toBeVisible();
+  await expect(dbTransfer.getByText('Completed', { exact: true })).toBeVisible();
+  await expect(dbTransfer.getByText('Review the transfer results before deploying.')).toHaveCount(0);
+  expect(requestWrites).toHaveLength(writesAfterImport);
   expect(await deploysOf(page, service.id)).toEqual([]);
   expect((await page.request.post(`/v1/services/${service.id}/deploys`, { headers, data: {} })).ok()).toBe(true);
   await expect.poll(async () => (await deploysOf(page, service.id))[0]?.status, { timeout: 150_000 }).toBe('running');
@@ -248,11 +271,15 @@ test('migration stages an archive, then restores the primary volume and preserve
   });
 
   await page.goto('/new');
-  await page.getByRole('button', { name: 'Review migration plan' }).click();
-  const review = page.getByRole('dialog', { name: 'Review migration plan' });
   const entry = plan.services[0]!;
   const file = { ...plan, databases: [], services: [{ ...entry, name, create: { ...entry.create, name, volumeMount: '/data' } }] };
-  await review.getByLabel('Migration plan JSON').setInputFiles({ name: 'plan.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(file)) });
+  const openPlan = async () => {
+    await page.getByRole('button', { name: 'Review migration plan' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Review migration plan' });
+    await dialog.getByLabel('Migration plan JSON').setInputFiles({ name: 'plan.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(file)) });
+    return dialog;
+  };
+  const review = await openPlan();
   await review.getByRole('button', { name: 'Prepare resources' }).click();
   await review.getByRole('button', { name: 'Create resources' }).click();
   const link = review.getByRole('link', { name: `Import a volume archive into ${name}` });
@@ -272,7 +299,19 @@ test('migration stages an archive, then restores the primary volume and preserve
   expect(writes.filter((path) => path.endsWith('/start'))).toEqual([]);
   expect(helper(`${target}:/data:ro`, 'cat /data/before.txt; test ! -e /data/current').toString()).toBe('old-data');
 
-  await page.reload();
+  const writesAfterUpload = writes.length;
+  await page.goto('/new');
+  const staged = await openPlan();
+  await staged.getByRole('button', { name: 'Check import status' }).click();
+  await expect(staged.getByText('Latest data import: Ready to restore')).toBeVisible();
+  const stagedReadiness = staged.getByRole('region', { name: `Deployment readiness for ${name}` });
+  await stagedReadiness.getByRole('button', { name: 'Check deployment readiness' }).click();
+  const stagedTransfer = stagedReadiness.getByRole('region', { name: 'Data transfer on the target' });
+  await expect(stagedTransfer.getByText('/data', { exact: true })).toBeVisible();
+  await expect(stagedTransfer.getByText('Ready to restore')).toBeVisible();
+  await expect(stagedReadiness.getByText('Finish or cancel pending data imports before deploying.')).toBeVisible();
+  expect(writes).toHaveLength(writesAfterUpload);
+  await staged.getByRole('link', { name: `Import a volume archive into ${name}` }).click();
   await importer.getByRole('button', { name: 'Restore archive' }).click();
   const confirm = page.getByRole('dialog', { name: 'Restore primary volume' });
   await expect(confirm).toContainText(target);
@@ -288,6 +327,16 @@ test('migration stages an archive, then restores the primary volume and preserve
     .toBe('nested/file.txt\nmigrated-data\n1234:1234:640');
   expect(await deploysOf(page, service.id)).toEqual([]);
   expect(writes.filter((path) => path.endsWith('/start'))).toHaveLength(1);
+  const writesAfterRestore = writes.length;
+  await page.goto('/new');
+  const restored = await openPlan();
+  await restored.getByRole('button', { name: 'Check import status' }).click();
+  await expect(restored.getByText('Latest data import: Completed', { exact: true })).toBeVisible();
+  const afterReadiness = restored.getByRole('region', { name: `Deployment readiness for ${name}` });
+  await afterReadiness.getByRole('button', { name: 'Check deployment readiness' }).click();
+  await expect(afterReadiness.getByRole('region', { name: 'Data transfer on the target' }).getByText('Completed', { exact: true })).toBeVisible();
+  await expect(afterReadiness.getByText('Finish or cancel pending data imports before deploying.')).toHaveCount(0);
+  expect(writes).toHaveLength(writesAfterRestore);
   w.assertClean();
 });
 
@@ -296,6 +345,7 @@ test('migration cuts over only a deployed host whose DNS still matches at confir
   const name = perLayout(layout, 'migration-cutover');
   const host = `${name}.e2e.test`;
   const wrong = 'migration-old.e2e.test';
+  const httpOnly = `${name}-http.e2e.test`;
   const panel = process.env.ND_E2E_PANEL;
   if (!panel || !/^nd-e2e-panel-[a-f0-9]{8}$/.test(panel)) throw new Error('Cutover proof needs the disposable browser panel');
   const ipOf = (container: string) => execFileSync('docker', ['inspect', '--format', '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}', container],
@@ -321,7 +371,8 @@ test('migration cuts over only a deployed host whose DNS still matches at confir
     await setDns(false, targetIp);
     const entry = plan.services[0]!;
     const file = { ...plan, databases: [], services: [{ ...entry, name, env: [], create: { ...entry.create, name },
-      domains: [{ host, https: false }, { host: wrong, https: false }, { host: 'original.e2e.test', https: true, sourceDefault: true }] }] };
+      domains: [{ host, https: false }, { host: wrong, https: false }, { host: httpOnly, https: true },
+        { host: 'original.e2e.test', https: true, sourceDefault: true }] }] };
     const open = async () => {
       await page.getByRole('button', { name: 'Review migration plan' }).click();
       const dialog = page.getByRole('dialog', { name: 'Review migration plan' });
@@ -375,6 +426,12 @@ test('migration cuts over only a deployed host whose DNS still matches at confir
     await attach.click();
     await confirm.click();
     await expect(target.getByText('Domain is attached.')).toBeVisible();
+    expect((await page.request.post(`/v1/services/${id}/domains`, { headers, data: { hostname: httpOnly, ssl: false } })).ok()).toBe(true);
+    const protocolTarget = cutover(httpOnly);
+    await protocolTarget.getByRole('button', { name: 'Check cutover' }).click();
+    await expect(protocolTarget.getByText('The existing route uses HTTP. The plan requires HTTPS. Review it in Domains.')).toBeVisible();
+    await expect(protocolTarget.getByRole('button', { name: 'Attach domain' })).toHaveCount(0);
+    expect((await domains()).filter((row) => row.hostname === httpOnly)).toEqual([expect.objectContaining({ hostname: httpOnly, status: 'active', ssl: false })]);
     expect((await domains()).filter((row) => row.hostname === host)).toEqual([expect.objectContaining({ hostname: host, status: 'active', ssl: false })]);
     await expect.poll(async () => {
       const routes = await apiGet<{ http: Array<{ hostname: string; verdict: string }> }>(page, `/v1/services/${id}/routing`);
@@ -384,6 +441,20 @@ test('migration cuts over only a deployed host whose DNS still matches at confir
     await open();
     await check.click();
     await expect(target.getByText('Domain is attached.')).toBeVisible();
+    await expect(target.getByText('DNS addresses match the configured destination.')).toBeVisible();
+    await expect(target.getByText('The proxy configuration has a matching route.')).toBeVisible();
+    await expect(target.getByRole('link', { name: 'Open routing details' })).toHaveAttribute('href', `/services/${id}?tab=network`);
+    await setDns(false, otherIp);
+    await check.click();
+    await expect(target.getByText('At least one DNS address differs from the configured destination.')).toBeVisible();
+    await expect(target.getByText('Domain is attached.')).toBeVisible();
+    await expect(target.getByText('The proxy configuration has a matching route.')).toBeVisible();
+    await expect(target.getByText(targetIp, { exact: true })).toBeVisible();
+    await expect(attach).toHaveCount(0);
+    expect((await domains()).filter((row) => row.hostname === host)).toEqual([expect.objectContaining({ hostname: host, status: 'active' })]);
+    await setDns(false, targetIp);
+    await check.click();
+    await expect(target.getByText('DNS addresses match the configured destination.')).toBeVisible();
     expect(writes).toEqual([`POST /v1/services/${id}/domains/cutover`, `POST /v1/services/${id}/domains/cutover`]);
     w.assertClean();
   } finally {

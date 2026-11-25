@@ -7,7 +7,7 @@ import { preparedImportTargets, prepareImportResources, type PreparedImportServi
 
 type Service = ImportPlan['services'][number];
 type Database = ImportPlan['databases'][number];
-type Row = { id: number; slug: string; status: string };
+type Row = { id: number; slug: string; status: string; type?: string; engine?: string };
 
 const operator = { id: 7, createdAt: '2026-11-01T00:00:00.000Z', email: 'operator@example.test' };
 const service = (fields: Partial<Service> = {}): Service => ({
@@ -92,26 +92,31 @@ describe('prepareImportResources', () => {
     ]);
     expect(receipt()).toEqual({ 'service:web': { id: 41, done: false } });
     // The service is there and idle: the configuration is finished, and nothing is created again.
-    const resuming = panel([{ id: 41, slug: 'web', status: 'idle' }]);
+    const resuming = panel([{ id: 41, slug: 'web', status: 'idle', type: 'docker' }]);
     expect(await preparedOutcomes(configured, operator, resuming as never, () => true)).toEqual([
       { kind: 'service', ref: 'web', name: 'Web', status: 'prepared' },
     ]);
     expect(resuming.services.create).not.toHaveBeenCalled();
     expect(resuming.services.update).toHaveBeenCalledWith(41, { healthCheck: 'running' });
     expect(receipt()).toEqual({ 'service:web': { id: 41, done: true } });
-    // A finished item is reported as prepared without a second look at the panel's refusal.
-    expect(await preparedOutcomes(configured, operator, panel([{ id: 41, slug: 'web', status: 'idle' }]) as never, () => true)).toEqual([
+    // A finished item remains prepared if the live identity still matches.
+    expect(await preparedOutcomes(configured, operator, panel([{ id: 41, slug: 'web', status: 'idle', type: 'docker' }]) as never, () => true)).toEqual([
       { kind: 'service', ref: 'web', name: 'Web', status: 'prepared' },
     ]);
     // Someone else's service under the same name, or one that is no longer idle, is not touched.
-    expect(await preparedOutcomes(configured, operator, panel([{ id: 99, slug: 'web', status: 'idle' }]) as never, () => true)).toEqual([
+    expect(await preparedOutcomes(configured, operator, panel([{ id: 99, slug: 'web', status: 'idle', type: 'docker' }]) as never, () => true)).toEqual([
       { kind: 'service', ref: 'web', name: 'Web', status: 'changed' },
     ]);
     sessionStorage.clear();
     expect(await preparedOutcomes(configured, operator, failing as never, () => true)).toEqual([
       { kind: 'service', ref: 'web', name: 'Web', status: 'failed' },
     ]);
-    const started = panel([{ id: 41, slug: 'web', status: 'running' }]);
+    const retyped = panel([{ id: 41, slug: 'web', status: 'idle', type: 'pm2' }]);
+    expect(await preparedOutcomes(configured, operator, retyped as never, () => true)).toEqual([
+      { kind: 'service', ref: 'web', name: 'Web', status: 'changed' },
+    ]);
+    expect(retyped.services.update).not.toHaveBeenCalled();
+    const started = panel([{ id: 41, slug: 'web', status: 'running', type: 'docker' }]);
     expect(await preparedOutcomes(configured, operator, started as never, () => true)).toEqual([
       { kind: 'service', ref: 'web', name: 'Web', status: 'changed' },
     ]);
@@ -194,7 +199,7 @@ describe('prepareImportResources', () => {
       '42:shared.example.test:manual:http', '42:api.example.test:manual:http',
     ]);
     for (let i = 0; i < sessionStorage.length; i += 1) sessionStorage.setItem(sessionStorage.key(i)!, 'not a receipt');
-    expect(preparedImportTargets(source, operator)).toEqual({ databases: [], volumes: [], domains: [], services: [] });
+    expect(preparedImportTargets(source, operator)).toEqual({ databases: [], volumes: [], domains: [], services: [], entries: [] });
   });
 });
 

@@ -32,6 +32,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   // A queued answer must not leak from one test into the next.
   for (const method of [api.deploys.migrationReadiness, api.domains.cutoverCheck, api.domains.cutover]) mockOf(method).mockReset();
+  mockOf(api.services.routing).mockReset().mockResolvedValue({ live: true, liveNote: null, container: null, http: [], ports: [] });
 });
 
 describe('MigrationReadiness', () => {
@@ -85,6 +86,36 @@ describe('MigrationReadiness', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Could not check deployment readiness. Try again.');
   });
 
+  it('shows the latest transfer for planned targets while keeping empty targets deployable', async () => {
+    const planned = { alias: 'DATABASE_URL', databaseName: 'App DB', database: pg };
+    const target = prepared([planned, planned]);
+    target.service.create.volumeMount = '/data';
+    target.service.volumes = [{ mountPath: '/data', source: 'volume', name: 'app-data' }];
+    const configured = { ...snapshot, environmentKeys: ['API_KEY'], managedDatabaseKeys: ['DATABASE_URL'] };
+    mockOf(api.deploys.migrationReadiness).mockResolvedValueOnce({
+      ...configured, primaryVolume: { mountPath: '/data', latestImportStatus: 'failed' },
+      bindings: [
+        { ...connection, latestImportStatus: null },
+        { ...connection, alias: 'EXTRA_DATABASE', latestImportStatus: 'expired' },
+      ],
+    }).mockResolvedValueOnce({
+      ...configured, primaryVolume: { mountPath: '/elsewhere', latestImportStatus: 'completed' },
+      bindings: [{ ...connection, databaseId: 81, latestImportStatus: 'completed' }],
+    });
+    renderWithProviders(<MigrationReadiness target={target} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Check deployment readiness' }));
+    const transfers = within(await screen.findByRole('region', { name: 'Data transfer on the target' }));
+    expect(transfers.getByText('DATABASE_URL')).toBeVisible();
+    expect(transfers.getByText('No data import recorded.')).toBeVisible();
+    expect(transfers.getByText('/data')).toBeVisible();
+    expect(transfers.getByText('Failed')).toBeVisible();
+    expect(transfers.queryByText('EXTRA_DATABASE')).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open deployments' })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Check deployment readiness' }));
+    await screen.findByText('Planned database connections to review');
+    expect(screen.queryByRole('region', { name: 'Data transfer on the target' })).not.toBeInTheDocument();
+  });
+
   it('opens the deployments of a service whose planned configuration is complete', async () => {
     const binding = { alias: 'DATABASE_URL', databaseName: 'App DB', database: pg };
     mockOf(api.deploys.migrationReadiness).mockResolvedValue({
@@ -125,5 +156,61 @@ describe('MigrationDomainCutover', () => {
     fireEvent.click(within(cutover).getByRole('button', { name: 'Check cutover' }));
     expect(await within(cutover).findByRole('alert')).toHaveTextContent('The DNS lookup could not be run.');
     expect(within(cutover).queryByRole('button', { name: 'Attach domain' })).not.toBeInTheDocument();
+  });
+
+  it('shows the protocol conflict without offering to attach or verify the existing route', async () => {
+    mockOf(api.domains.cutoverCheck).mockResolvedValue({ hostname: host, status: 'route_conflict', existingSsl: true });
+    const cutover = within(renderCutover());
+    fireEvent.click(cutover.getByRole('button', { name: 'Check cutover' }));
+    expect(await cutover.findByText('The existing route uses HTTPS. The plan requires HTTP. Review it in Domains.')).toBeVisible();
+    expect(api.domains.cutoverCheck).toHaveBeenCalledWith(41, host, false);
+    expect(cutover.queryByRole('button', { name: 'Attach domain' })).not.toBeInTheDocument();
+    expect(cutover.queryByRole('button', { name: 'Verify ownership' })).not.toBeInTheDocument();
+    expect(api.domains.cutover).not.toHaveBeenCalled();
+  });
+
+  it('keeps an attached route visible while showing DNS drift and recovery', async () => {
+    mockOf(api.domains.cutoverCheck)
+      .mockResolvedValueOnce({ hostname: host, status: 'active', dnsStatus: 'dns_mismatch',
+        expected: ['203.0.113.5'], resolved: ['198.51.100.5'] })
+      .mockResolvedValueOnce({ hostname: host, status: 'active', dnsStatus: 'ready',
+        expected: ['203.0.113.5'], resolved: ['203.0.113.5'] });
+    const cutover = within(renderCutover());
+    const check = cutover.getByRole('button', { name: 'Check cutover' });
+    fireEvent.click(check);
+    expect(await cutover.findByText('At least one DNS address differs from the configured destination.')).toBeVisible();
+    expect(cutover.getByText('Domain is attached.')).toBeVisible();
+    expect(cutover.getByText('198.51.100.5')).toBeVisible();
+    expect(cutover.queryByRole('button', { name: 'Attach domain' })).not.toBeInTheDocument();
+    fireEvent.click(check);
+    expect(await cutover.findByText('DNS addresses match the configured destination.')).toBeVisible();
+    expect(cutover.queryByText('198.51.100.5')).not.toBeInTheDocument();
+    expect(api.domains.cutover).not.toHaveBeenCalled();
+  });
+
+  it('checks the matching root route and keeps attachment and DNS results if the view fails', async () => {
+    mockOf(api.domains.cutoverCheck).mockResolvedValue({ hostname: host, status: 'active', dnsStatus: 'ready' });
+    const view = { live: true, liveNote: null, container: null, ports: [] };
+    const route = { domainId: 3, hostname: host, path: '/', ssl: false, router: 'web_3', upstreams: [], note: '', verdict: 'ok' as const };
+    mockOf(api.services.routing)
+      .mockResolvedValueOnce({ ...view, http: [{ ...route, ssl: true }, { ...route, path: '/other' },
+        { ...route, verdict: 'error', note: 'The router has no upstream' }] })
+      .mockRejectedValueOnce(new Error('routing unavailable'))
+      .mockResolvedValueOnce({ ...view, http: [route] });
+    const cutover = within(renderCutover());
+    const check = cutover.getByRole('button', { name: 'Check cutover' });
+    expect(api.services.routing).not.toHaveBeenCalled();
+    fireEvent.click(check);
+    expect(await cutover.findByText('The proxy reports a routing problem.')).toBeVisible();
+    expect(cutover.getByText('The router has no upstream')).toBeVisible();
+    fireEvent.click(check);
+    expect(await cutover.findByText('Could not verify the proxy configuration.')).toBeVisible();
+    expect(cutover.getByText('Domain is attached.')).toBeVisible();
+    expect(cutover.getByText('DNS addresses match the configured destination.')).toBeVisible();
+    fireEvent.click(check);
+    expect(await cutover.findByText('The proxy configuration has a matching route.')).toBeVisible();
+    expect(cutover.getByRole('link', { name: 'Open routing details' })).toHaveAttribute('href', '/services/41?tab=network');
+    expect(api.services.routing).toHaveBeenLastCalledWith(41);
+    expect(api.domains.cutover).not.toHaveBeenCalled();
   });
 });

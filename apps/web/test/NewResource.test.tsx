@@ -245,6 +245,63 @@ describe('NewResource', () => {
     expect(api.deploys.trigger).not.toHaveBeenCalled();
     expect(api.domains.create).not.toHaveBeenCalled();
     expect(await screen.findByRole('link', { name: 'Import a dump into Prepared DB' })).toHaveAttribute('href', '/databases/42?tab=backups#import-dump');
+    mockOf(api.databases.imports.list).mockResolvedValueOnce([]).mockResolvedValueOnce([
+      { status: 'completed_with_warnings', filename: 'hidden-source.sql' },
+      { status: 'completed' },
+    ] as never).mockRejectedValueOnce(new Error('private error details'));
+    expect(api.databases.imports.list).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Check import status' }));
+    expect(await screen.findByText('No data import recorded.')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Check import status' }));
+    expect(await screen.findByText('Latest data import: Completed with warnings')).toBeVisible();
+    expect(screen.queryByText('hidden-source.sql')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Check import status' }));
+    expect(await screen.findByText('Could not check import status. Try again.')).toBeVisible();
+    expect(screen.queryByText('Latest data import: Completed with warnings')).not.toBeInTheDocument();
+    expect(api.databases.imports.list).toHaveBeenLastCalledWith(42);
+  });
+
+  it('reopens saved preparation and checks current ownership without writing to the panel', async () => {
+    sessionStorage.clear();
+    const operator = { id: 1, createdAt: '2026-11-23T00:00:00Z', email: 'a@test' };
+    mockOf(useAuth).mockReturnValue({ user: { ...operator, isOperator: true }, loading: false } as never);
+    const plan = importPlan.parse({
+      planVersion: 1, generatedAt: '2026-11-23T11:00:00Z',
+      source: { kind: 'heroku', url: 'https://source.example', scope: 'Application', version: null },
+      services: [{ ref: 'web', name: 'Prepared App', kind: 'image',
+        create: { name: 'Prepared App', type: 'docker', image: 'nginx' }, env: [], domains: [], volumes: [], issues: [] },
+      { ref: 'partial', name: 'Partial App', kind: 'image', settings: { healthCheck: 'running' },
+        create: { name: 'Partial App', type: 'docker', image: 'nginx' }, env: [], domains: [], volumes: [], issues: [] }],
+      databases: [{ ref: 'db', name: 'Replaced DB', engine: 'postgres', image: null, issues: [] },
+        { ref: 'missing', name: 'Unconfirmed DB', engine: 'postgres', image: null, issues: [] }],
+      notes: [],
+    });
+    mockOf(api.services.list).mockResolvedValueOnce([]).mockResolvedValue([
+      { id: 41, slug: 'prepared-app', type: 'docker' }, { id: 43, slug: 'partial-app', type: 'docker' },
+    ] as never);
+    mockOf(api.databases.list).mockResolvedValueOnce([]).mockResolvedValue([{ id: 44, slug: 'replaced-db', engine: 'postgres' }] as never);
+    mockOf(api.services.create).mockResolvedValueOnce({ id: 41 } as never).mockResolvedValueOnce({ id: 43 } as never);
+    mockOf(api.services.update).mockRejectedValueOnce(new Error('configuration unavailable'));
+    mockOf(api.databases.createEmpty).mockResolvedValueOnce({ id: 42 } as never).mockRejectedValueOnce(new Error('creation unavailable'));
+    await prepareImportResources(plan, operator, api, () => true);
+    vi.clearAllMocks();
+    renderPage();
+    fireEvent.click(screen.getByRole('button', { name: 'Review migration plan' }));
+    fireEvent.change(screen.getByLabelText('Migration plan JSON'), { target: { files: [planFile(plan)] } });
+
+    expect(await screen.findByText('Verified preparation (1)')).toBeVisible();
+    expect(screen.getByText('Preparation needs review (3)')).toBeVisible();
+    expect(screen.getByText(/Preparation settings are incomplete/)).toBeVisible();
+    expect(screen.getByText(/Creation could not be confirmed/)).toBeVisible();
+    expect(screen.queryByRole('link', { name: 'Import a dump into Replaced DB' })).not.toBeInTheDocument();
+    const target = within(screen.getByRole('region', { name: 'Target checks' }));
+    fireEvent.click(target.getByRole('button', { name: 'Check target' }));
+    expect(await target.findByText('Review 1 planned resources')).toBeVisible();
+    expect(target.getByText('Replaced DB')).toBeVisible();
+    expect(target.queryByText('Prepared App')).not.toBeInTheDocument();
+    expect(api.services.create).not.toHaveBeenCalled();
+    expect(api.services.update).not.toHaveBeenCalled();
+    expect(api.databases.createEmpty).not.toHaveBeenCalled();
   });
 
   it('resumes the unfinished configuration without creating or changing someone else’s service', async () => {
@@ -260,7 +317,7 @@ describe('NewResource', () => {
     const occupied = { id: 70, slug: 'occupied', status: 'idle' };
     mockOf(api.databases.list).mockResolvedValue([]);
     mockOf(api.services.list).mockResolvedValueOnce([occupied] as never)
-      .mockResolvedValueOnce([occupied, { id: 71, slug: 'worker', status: 'idle' }] as never);
+      .mockResolvedValueOnce([occupied, { id: 71, slug: 'worker', status: 'idle', type: 'docker' }] as never);
     mockOf(api.services.create).mockResolvedValueOnce({ id: 71 } as never);
     mockOf(api.services.update).mockRejectedValueOnce(new Error('Temporary error')).mockResolvedValueOnce({ id: 71 } as never);
     const first = await prepareImportResources(plan, operator, api, () => true);

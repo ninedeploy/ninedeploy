@@ -23,6 +23,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Review a saved migration plan from **New resource**. The browser opens the JSON locally and shows the proposed resources and manual steps before you apply the plan.
 - Check the target from a saved migration plan to spot occupied names, repeated entries and settings that need attention before applying it.
 - From a reviewed migration plan: prepare services and empty databases, migrate variable names and database attachments, check deployment readiness, import database dumps and volume archives with a checksum and resume, and cut domains over after checking their DNS answers.
+- Reopen a prepared migration plan and see what the panel verified against the current inventory: each preparation by resource ID, name and type, with the reason for any that needs review (incomplete settings, a creation not confirmed, a target changed or removed). Environment, data, readiness and cutover steps are offered for verified preparations only.
+- Check the latest recorded data import for each attached database and for the service's data volume: **Check import status** next to a prepared database or volume, and a **Data transfer on the target** block in the deployment readiness check.
+- Check the cutover of a domain that is already attached: its current DNS answers beside the attachment, and the routing the proxy configuration holds for its hostname, protocol and root path, with a link to the service's **Network** tab. A mismatch leaves the route in place.
+- A route that uses a protocol other than the plan's is reported before a retry, in the browser and in `ninedeploy import cutover`, and verifying ownership refuses to change a route's protocol.
+- `ninedeploy import cutover` checks the DNS of attached domains on every run, reports a mismatch or a lookup failure for that host and goes on, and leaves a hostname for review when the plan assigns it twice or when the service's routes for it are not a single root route.
 - Add three source-upload starters with Dockerfiles, locked dependencies, health checks and deployment instructions. Verify all three through the panel and proxy in a dedicated workflow.
 ### Changed
 
@@ -43,6 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A `HEAD` request to a panel page now gets the same answer as `GET`, without the body. A monitor that checks the panel with `HEAD` no longer sees a 404 on a page that opens.
 - A file of the web build that no longer exists answers 404 instead of the panel's entry page. A tab open from before an upgrade is told that the file is gone, and does not get a page it cannot use as a script.
 - On a phone with the compact layout, a service's **More** button is on screen without scrolling. The six tabs scroll beside it.
+- Opening a terminal on a compose service was refused with a message that named a route which does not exist. The message now points to the panel's Docker page, and the terminal guide says the same.
 
 ### Internal
 

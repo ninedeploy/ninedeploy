@@ -1,14 +1,13 @@
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link } from 'react-router';
 import { importPlan, type ImportPlan, type PlanIssue, type PlanService } from '@ninedeploy/schemas';
 import { api, getApiSessionGeneration } from '../lib/api.js';
 import { useT } from '../lib/i18n.js';
 import { checkImportTarget } from '../lib/importTarget.js';
-import { preparedImportTargets, prepareImportResources, type ImportOperator } from '../lib/prepareImportResources.js';
-import { IMPORT_DUMP_ANCHOR, IMPORT_VOLUME_ANCHOR } from '../lib/importFile.js';
+import { matchesPreparedImportEntry, preparedImportTargets, prepareImportResources, readImportPreparation, type ImportOperator } from '../lib/prepareImportResources.js';
 import { MigrationDomainCutover } from './MigrationDomainCutover.js';
 import { MigrationEnvironment } from './MigrationEnvironment.js';
+import { MigrationImportStatus } from './MigrationImportStatus.js';
 import { MigrationReadiness } from './MigrationReadiness.js';
 import { Button, Input, Modal } from './ui.js';
 
@@ -86,7 +85,7 @@ function PlanPreview({ plan, operator, onPreparing }: { plan: ImportPlan; operat
         <PlanField title={t('Scope')} value={plan.source.scope} />
         {plan.source.version && <PlanField title={t('Version')} value={plan.source.version} />}
       </dl>
-      {operator && <TargetCheck plan={plan} />}
+      {operator && <TargetCheck key={`target:${operator.id}:${operator.createdAt}`} plan={plan} operator={operator} />}
       {operator && plan.services.length + plan.databases.length > 0 && (
         <PrepareResources key={`${operator.id}:${operator.createdAt}`} plan={plan} operator={operator} onPreparing={onPreparing} />
       )}
@@ -105,12 +104,20 @@ function PlanPreview({ plan, operator, onPreparing }: { plan: ImportPlan; operat
   );
 }
 
-function TargetCheck({ plan }: { plan: ImportPlan }) {
+function TargetCheck({ plan, operator }: { plan: ImportPlan; operator: ImportOperator }) {
   const t = useT();
   const check = useMutation({
     mutationFn: async () => {
       const [services, databases] = await Promise.all([api.services.list(), api.databases.list()]);
-      return checkImportTarget(plan, { services, databases });
+      const serviceById = new Map(services.map((service) => [service.id, service]));
+      const databaseById = new Map(databases.map((db) => [db.id, db]));
+      const owned = new Set<string>();
+      for (const entry of readImportPreparation(plan, operator)) {
+        if (!entry.checkpoint) continue;
+        const live = (entry.kind === 'service' ? serviceById : databaseById).get(entry.checkpoint.id);
+        if (matchesPreparedImportEntry(entry, live)) owned.add(`${entry.kind}:${entry.ref}`);
+      }
+      return checkImportTarget(plan, { services, databases }, (kind, ref) => owned.has(`${kind}:${ref}`));
     },
   });
   const labels = {
@@ -214,37 +221,67 @@ function PreparedMigrationActions({ plan, operator }: { plan: ImportPlan; operat
   const databases = useQuery({
     queryKey: ['databases', 'migration-dump-targets', operator.id, operator.createdAt],
     queryFn: async () => (await api.databases.list()).map(({ id, slug, engine }) => ({ id, slug, engine })),
-    enabled: candidates.databases.length > 0,
+    enabled: candidates.entries.some(({ kind }) => kind === 'database'),
     staleTime: 0,
   });
   const services = useQuery({
     queryKey: ['services', 'migration-service-targets', operator.id, operator.createdAt],
     queryFn: () => api.services.list(),
-    enabled: candidates.services.length > 0,
+    enabled: candidates.entries.some(({ kind }) => kind === 'service'),
     staleTime: 0,
   });
-  if (!candidates.databases.length && !candidates.services.length) return null;
+  if (!candidates.entries.length) return null;
 
-  const databaseById = new Map((databases.isSuccess && !databases.isFetching ? databases.data : []).map((db) => [db.id, db]));
-  const serviceById = new Map((services.isSuccess && !services.isFetching ? services.data : []).map((service) => [service.id, service]));
+  const databasesChecked = databases.isSuccess && !databases.isFetching;
+  const servicesChecked = services.isSuccess && !services.isFetching;
+  const databaseById = new Map((databasesChecked ? databases.data : []).map((db) => [db.id, db]));
+  const serviceById = new Map((servicesChecked ? services.data : []).map((service) => [service.id, service]));
+  const verifiedServices = new Set<number>();
+  const verifiedDatabases = new Set<number>();
+  const verified = [];
+  const review = [];
+  for (const entry of candidates.entries) {
+    const { kind, checkpoint } = entry;
+    if (!(kind === 'service' ? servicesChecked : databasesChecked)) continue;
+    if (!checkpoint) {
+      review.push({ ...entry, message: t('Creation could not be confirmed. Check the target before retrying.') });
+      continue;
+    }
+    const live = (kind === 'service' ? serviceById : databaseById).get(checkpoint.id);
+    if (!matchesPreparedImportEntry(entry, live)) {
+      review.push({ ...entry, message: t('Previously prepared resource changed or was removed. Review the target.') });
+      continue;
+    }
+    if (!checkpoint.done) {
+      review.push({ ...entry, message: t('Preparation settings are incomplete. Review the target before retrying.') });
+      continue;
+    }
+    verified.push(entry);
+    (kind === 'service' ? verifiedServices : verifiedDatabases).add(checkpoint.id);
+  }
+  const unrecorded = plan.services.length + plan.databases.length - candidates.entries.length;
+  const kindLabel = (kind: 'service' | 'database') => kind === 'service' ? t('Service') : t('Database');
   const isLocal = (service: NonNullable<ReturnType<typeof serviceById.get>>) => service.serverId == null && service.orchestrator !== 'swarm';
-  const dumpTargets = candidates.databases.filter(({ id, slug, engine }) => databaseById.get(id)?.slug === slug && databaseById.get(id)?.engine === engine);
-  const volumeTargets = candidates.volumes.filter(({ id, slug, volumeMount }) => {
-    const svc = serviceById.get(id);
-    return svc?.slug === slug && isLocal(svc) && svc.type === 'docker' && svc.volumeMount === volumeMount;
-  });
-  const domainTargets = candidates.domains.filter(({ id, slug }) => {
-    const svc = serviceById.get(id);
-    return svc?.slug === slug && isLocal(svc);
+  const dumpTargets = candidates.databases.filter(({ id, slug, engine }) => {
+    const db = databaseById.get(id);
+    return verifiedDatabases.has(id) && db?.slug === slug && db.engine === engine;
   });
   const serviceTargets = candidates.services.filter(({ id, slug, service }) => {
     const svc = serviceById.get(id);
-    return svc?.slug === slug && svc.type === service.create.type;
+    return verifiedServices.has(id) && svc?.slug === slug && svc.type === service.create.type;
+  });
+  const verifiedVolumes = candidates.volumes.filter(({ id }) => verifiedServices.has(id));
+  const verifiedDomains = candidates.domains.filter(({ id }) => verifiedServices.has(id));
+  const volumeTargets = verifiedVolumes.filter(({ id, slug, volumeMount }) => {
+    const svc = serviceById.get(id);
+    return svc?.slug === slug && isLocal(svc) && svc.type === 'docker' && svc.volumeMount === volumeMount;
+  });
+  const domainTargets = verifiedDomains.filter(({ id, slug }) => {
+    const svc = serviceById.get(id);
+    return svc?.slug === slug && isLocal(svc);
   });
   const environmentTargets = serviceTargets.filter(({ service, bindings }) => service.env.length > 0 || bindings.length > 0);
-  const targetChanged = (databases.isSuccess && !databases.isFetching && dumpTargets.length < candidates.databases.length) ||
-    (services.isSuccess && !services.isFetching && (volumeTargets.length < candidates.volumes.length || domainTargets.length < candidates.domains.length ||
-      serviceTargets.length < candidates.services.length));
+  const actionsUnavailable = volumeTargets.length < verifiedVolumes.length || domainTargets.length < verifiedDomains.length;
 
   return (
     <div className="space-y-2 border-t border-white/10 pt-2">
@@ -258,17 +295,18 @@ function PreparedMigrationActions({ plan, operator }: { plan: ImportPlan; operat
           }}>{t('Retry')}</Button>
         </div>
       )}
+      {verified.length > 0 && <PlanItems title={t('Verified preparation ({count})', { count: verified.length })} items={verified} expanded
+        render={({ kind }) => <p className="text-slate-400">{kindLabel(kind)}</p>} />}
+      {review.length > 0 && <PlanItems title={t('Preparation needs review ({count})', { count: review.length })} items={review} expanded
+        render={({ kind, message }) => <p className="text-amber-300">{kindLabel(kind)} · {message}</p>} />}
+      {unrecorded > 0 && <p className="text-slate-400">{t('Resources without a preparation record ({count})', { count: unrecorded })}</p>}
       {environmentTargets.length > 0 && <PlanItems title={t('Migrate environment and connections')} items={environmentTargets.map((target) => ({ ...target, ref: target.service.ref }))} expanded
         render={(target) => <MigrationEnvironment plan={plan} target={target} />} />}
       {dumpTargets.length > 0 && <PlanItems title={t('Import database dumps')} items={dumpTargets.map((target) => ({ ...target, ref: String(target.id) }))} expanded render={({ id, name }) => (
-        <Link to={`/databases/${id}?tab=backups#${IMPORT_DUMP_ANCHOR}`} className="font-medium text-indigo-300 underline underline-offset-2 hover:text-indigo-200">
-          {t('Import a dump into {name}', { name })}
-        </Link>
+        <MigrationImportStatus kind="database" id={id} name={name} />
       )} />}
       {volumeTargets.length > 0 && <PlanItems title={t('Import volume archives')} items={volumeTargets.map((target) => ({ ...target, ref: String(target.id) }))} expanded render={({ id, name }) => (
-        <Link to={`/services/${id}?tab=volumes#${IMPORT_VOLUME_ANCHOR}`} className="font-medium text-indigo-300 underline underline-offset-2 hover:text-indigo-200">
-          {t('Import a volume archive into {name}', { name })}
-        </Link>
+        <MigrationImportStatus kind="volume" id={id} name={name} />
       )} />}
       {serviceTargets.length > 0 && <PlanItems title={t('Review deployment readiness')} items={serviceTargets.map((target) => ({ ...target, ref: target.service.ref }))} expanded
         render={(target) => <MigrationReadiness target={target} />} />}
@@ -276,7 +314,7 @@ function PreparedMigrationActions({ plan, operator }: { plan: ImportPlan; operat
         render={({ id, serviceName, host, https, manual }) => manual ? <p className="text-slate-400">{t('This hostname needs manual routing review.')}</p> : (
           <MigrationDomainCutover serviceId={id} serviceName={serviceName} host={host} https={https} />
         )} />}
-      {targetChanged && <p className="text-amber-300">{t('Previously prepared resource changed or was removed. Review the target.')}</p>}
+      {actionsUnavailable && <p className="text-amber-300">{t('Some prepared resources need routing or volume settings reviewed on the target.')}</p>}
     </div>
   );
 }

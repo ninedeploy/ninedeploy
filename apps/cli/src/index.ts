@@ -752,7 +752,7 @@ importCmd
   .option('--yes', 'Add (or verify) the domains that pass')
   .option('--expect <address>', 'The address DNS must point at (repeatable; default: Settings → DNS records)', (v: string, prev: string[]) => [...prev, v], [] as string[])
   .option('--resolver <ip>', 'DNS server to query (default: the system\'s)')
-  .option('--skip-dns-check <host>', 'Skip the DNS check for a proxied host (repeatable; refused while the Cloudflare integration is on)', (v: string, prev: string[]) => [...prev, v], [] as string[])
+  .option('--skip-dns-check <host>', 'Skip the DNS check for a proxied host (repeatable). For a domain still to be added or verified it is refused while the Cloudflare integration is on; an attached route is only reported', (v: string, prev: string[]) => [...prev, v], [] as string[])
   .option('--receipt <file>', 'Receipt file (default: <plan>.receipt.json)')
   .action((plan: string, opts: ImportCutoverOpts) => importCutoverAction(plan, opts));
 

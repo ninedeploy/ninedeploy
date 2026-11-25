@@ -1,4 +1,4 @@
-import { createDomain, cutoverDomain, cutoverDomainQuery, domainPatch } from '@ninedeploy/schemas';
+import { createDomain, cutoverDomain, cutoverDomainQuery, domainPatch, verifyDomainQuery } from '@ninedeploy/schemas';
 import type { RouteSpecMap } from '../types.js';
 
 /**
@@ -22,11 +22,12 @@ export const domainsSpecs: RouteSpecMap = {
     validation: 'zod',
   },
   'GET /v1/services/:id/domains/cutover': {
-    summary: 'Check deployment and DNS for a planned domain',
+    summary: 'Check route protocol, deployment and DNS for a planned domain',
+    description: 'For an attached route, reports the current DNS comparison alongside its active status. This check leaves the route in place.',
     tag: 'domains', floor: 'operator', query: cutoverDomainQuery, responseType: 'DomainCutoverResult', validation: 'zod',
   },
   'POST /v1/services/:id/domains/cutover': {
-    summary: 'Attach a planned domain after rechecking its DNS and deployment',
+    summary: 'Attach a planned domain after rechecking its protocol, DNS and deployment',
     tag: 'domains', floor: 'operator', body: cutoverDomain, responseType: 'DomainCutoverResult', validation: 'zod',
   },
   'PATCH /v1/services/:id/domains/:domainId': {
@@ -51,7 +52,9 @@ export const domainsSpecs: RouteSpecMap = {
     summary: 'Verify a pending domain and bring it live',
     tag: 'domains',
     floor: 'member',
+    query: verifyDomainQuery,
     responseType: 'DomainVerifyResult',
+    validation: 'zod',
   },
   'POST /v1/services/:id/domains/auto': {
     summary: "Add the service's automatic URL now (Settings → Automatic URLs)",

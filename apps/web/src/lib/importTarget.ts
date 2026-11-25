@@ -3,7 +3,11 @@ import { createDatabase, createService, hasImportServiceSource, slugifyResourceN
 type ProblemCode = 'existingName' | 'repeatedName' | 'repeatedRef' | 'missingSource' | 'unsupportedEngine' | 'invalidSettings';
 type Entry = { ref: string; name: string; slug: string; problem?: ProblemCode; fields?: string[] };
 
-export function checkImportTarget(plan: ImportPlan, inventory: { services: Array<{ slug: string }>; databases: Array<{ slug: string }> }) {
+export function checkImportTarget(
+  plan: ImportPlan,
+  inventory: { services: Array<{ slug: string }>; databases: Array<{ slug: string }> },
+  ownsTarget?: (kind: 'service' | 'database', ref: string) => boolean,
+) {
   const services = plan.services.map((item): Entry => {
     const entry = { ref: item.ref, name: item.create.name, slug: slugifyResourceName(item.create.name) };
     if (!hasImportServiceSource(item)) return { ...entry, problem: 'missingSource' };
@@ -34,7 +38,7 @@ export function checkImportTarget(plan: ImportPlan, inventory: { services: Array
       const problems: ProblemCode[] = [];
       if (entry.problem) problems.push(entry.problem);
       if (entry.problem !== 'missingSource' && entry.problem !== 'unsupportedEngine') {
-        if (taken.has(entry.slug)) problems.push('existingName');
+        if (taken.has(entry.slug) && !ownsTarget?.(kind, entry.ref)) problems.push('existingName');
         if ((names.get(entry.slug) ?? 0) > 1) problems.push('repeatedName');
       }
       if ((refs.get(entry.ref) ?? 0) > 1) problems.push('repeatedRef');

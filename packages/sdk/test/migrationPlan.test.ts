@@ -11,6 +11,8 @@ it('routes the migration plan operations with their intended payloads', async ()
     [() => api.deploys.migrationReadiness(7), 'GET', '/v1/services/7/deploys/migration-readiness'],
     [() => api.domains.cutoverCheck(7, 'app.example.com'), 'GET', '/v1/services/7/domains/cutover?hostname=app.example.com'],
     [() => api.domains.cutoverCheck(7, 'a b.example.com'), 'GET', '/v1/services/7/domains/cutover?hostname=a%20b.example.com'],
+    [() => api.domains.cutoverCheck(7, 'app.example.com', false), 'GET', '/v1/services/7/domains/cutover?hostname=app.example.com&ssl=false'],
+    [() => api.domains.verify(7, 3, true), 'POST', '/v1/services/7/domains/3/verify?ssl=true', {}],
     [() => api.domains.cutover(7, cutover as never), 'POST', '/v1/services/7/domains/cutover', cutover],
   ];
   for (const [invoke, method, path, body] of cases) {

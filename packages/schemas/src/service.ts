@@ -7,6 +7,8 @@ export const SLEEP_AFTER_MAX = 1440;
 import { canaryConfig } from './canary.js';
 import { dockerLabels } from './dockerLabels.js';
 import { containerPath, dockerVolumeName, envVarName, gitBranch, gitRepoUrl, httpPath, providerBaseUrl, repoBaseDir, repoRelativePath, slug } from './common.js';
+import { databaseImportStatus } from './databaseImport.js';
+import { volumeImportStatus } from './volumeImport.js';
 
 export const serviceType = z.enum(['pm2', 'docker', 'compose']);
 export const serviceOrchestrator = z.enum(['container', 'swarm']);
@@ -657,7 +659,14 @@ export const migrationReadiness = service.pick({ id: true, slug: true, type: tru
   environmentKeys: z.array(z.string()),
   managedDatabaseKeys: z.array(z.string()),
   secretReferenceKeys: z.array(z.string()),
-  bindings: z.array(z.object({ databaseId: z.number().int(), alias: z.string(), slug: z.string(), engine: z.string(), running: z.boolean() })),
+  bindings: z.array(z.object({
+    databaseId: z.number().int(), alias: z.string(), slug: z.string(), engine: z.string(), running: z.boolean(),
+    latestImportStatus: databaseImportStatus.nullable().optional(),
+  })),
+  primaryVolume: z.object({
+    mountPath: z.string(),
+    latestImportStatus: volumeImportStatus.nullable(),
+  }).nullable().optional(),
   deploymentPending: z.boolean(),
   volumeImportsPending: z.boolean(),
   databaseImportsPending: z.boolean(),
@@ -777,15 +786,19 @@ export const createDomain = z.object({
 export type CreateDomainInput = z.input<typeof createDomain>;
 
 export const cutoverDomain = createDomain.pick({ hostname: true, ssl: true });
-export const cutoverDomainQuery = cutoverDomain.pick({ hostname: true });
+export const verifyDomainQuery = z.object({ ssl: z.enum(['true', 'false']).optional() });
+export const cutoverDomainQuery = cutoverDomain.pick({ hostname: true }).extend(verifyDomainQuery.shape);
 export type CutoverDomainInput = z.input<typeof cutoverDomain>;
 
+const cutoverDnsStatus = z.enum(['ready', 'expected_unavailable', 'dns_unavailable', 'dns_unresolved', 'dns_mismatch']);
 export const domainCutoverResult = z.object({
   hostname: z.string(),
-  status: z.enum(['ready', 'active', 'ownership_required', 'deployment_required', 'manual', 'route_conflict',
-    'expected_unavailable', 'dns_unavailable', 'dns_unresolved', 'dns_mismatch']),
+  status: z.enum(['active', 'ownership_required', 'deployment_required', 'manual', 'route_conflict', ...cutoverDnsStatus.options]),
   expected: z.array(z.string()).optional(),
   resolved: z.array(z.string()).optional(),
+  /** An attached route stays active when this read-only DNS check reports a problem. */
+  dnsStatus: cutoverDnsStatus.optional(),
+  existingSsl: z.boolean().optional(),
   verification: z.object({ recordName: z.string(), recordType: z.literal('TXT'), recordValue: z.string() }).optional(),
 });
 export type DomainCutoverResult = z.infer<typeof domainCutoverResult>;

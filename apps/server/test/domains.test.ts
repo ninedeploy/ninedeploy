@@ -1,5 +1,8 @@
 ﻿import { describe, expect, it, vi } from 'vitest';
 import { domainsRoutes } from '../src/modules/domains.js';
+import { fileURLToPath } from 'node:url';
+import { createDb, domains, runMigrations, services } from '@ninedeploy/db';
+import { eq } from 'drizzle-orm';
 import { asUser, buildTestApp, createFakeDb, domainRow, svcRow } from './helpers.js';
 
 const proxyMocks = vi.hoisted(() => ({
@@ -557,6 +560,85 @@ vi.mock('node:dns/promises', () => ({ ...dnsMocks, Resolver: class {
 } }));
 
 describe('domain cutover', () => {
+  it('rechecks DNS for an attached route without writing it or requiring a running deployment', async () => {
+    const host = 'app.example.test';
+    const existing = domainRow({ hostname: host, ssl: false, status: 'active' });
+    const update = vi.fn(() => [existing]);
+    const db = createFakeDb({
+      findFirst: { services: svcRow({ status: 'stopped' }) },
+      findMany: { domains: [existing] },
+      update: { domains: update as never },
+    });
+    const app = await buildTestApp({ db });
+    await app.register(domainsRoutes);
+    const check = () => app.inject({ method: 'GET', url: `/1/domains/cutover?hostname=${host}&ssl=false`, headers: asUser() });
+    const dns = (ipv6: string[]) => {
+      cfMocks.getDnsRecordsConfig.mockResolvedValueOnce({ enabled: false, token: null, content: '203.0.113.5' });
+      dnsMocks.resolve4.mockResolvedValueOnce(['203.0.113.5']);
+      dnsMocks.resolve6.mockResolvedValueOnce(ipv6);
+    };
+    try {
+      dns(['2001:db8::5']);
+      expect((await check()).json()).toEqual({
+        hostname: host, status: 'active', dnsStatus: 'dns_mismatch', expected: ['203.0.113.5'], resolved: ['203.0.113.5', '2001:db8::5'],
+      });
+      dns([]);
+      expect((await check()).json()).toMatchObject({ hostname: host, status: 'active', dnsStatus: 'ready', resolved: ['203.0.113.5'] });
+      const apply = await app.inject({ method: 'POST', url: '/1/domains/cutover', headers: asUser(), payload: { hostname: host, ssl: false } });
+      expect(apply.json()).toEqual({ hostname: host, status: 'active' });
+      expect(update).not.toHaveBeenCalled();
+    } finally { await app.close(); }
+  });
+
+  it.each(['active', 'pending'])('reports an existing %s HTTP route when the plan requires HTTPS', async (status) => {
+    const host = 'app.example.test';
+    const existing = domainRow({ hostname: host, ssl: false, status, verificationToken: 'fixture-challenge' });
+    const update = vi.fn(() => [existing]);
+    const db = createFakeDb({
+      findFirst: { services: svcRow({ status: 'running' }), deployments: { status: 'running' }, domains: existing },
+      findMany: { domains: [existing] },
+      update: { domains: update as never },
+    });
+    const app = await buildTestApp({ db });
+    await app.register(domainsRoutes);
+    try {
+      const check = await app.inject({ method: 'GET', url: `/1/domains/cutover?hostname=${host}&ssl=true`, headers: asUser() });
+      expect(check.statusCode).toBe(200);
+      expect(check.json()).toEqual({ hostname: host, status: 'route_conflict', existingSsl: false });
+      const confirm = await app.inject({ method: 'POST', url: '/1/domains/cutover', headers: asUser(), payload: { hostname: host, ssl: true } });
+      expect(confirm.statusCode).toBe(200);
+      expect(confirm.json()).toEqual(check.json());
+      const legacyCheck = await app.inject({ method: 'GET', url: `/1/domains/cutover?hostname=${host}`, headers: asUser() });
+      expect(legacyCheck.json().status).not.toBe('route_conflict');
+      expect(update).not.toHaveBeenCalled();
+    } finally { await app.close(); }
+  });
+
+  it('leaves a claim pending when its protocol changes during the ownership check', async () => {
+    const { db, client } = createDb({ url: ':memory:' });
+    await runMigrations(db, fileURLToPath(new URL('../../../packages/db/src/migrations', import.meta.url)));
+    const [service] = await db.insert(services).values({ name: 'Shop', slug: 'shop', image: 'nginx', type: 'docker' }).returning();
+    const [pending] = await db.insert(domains).values({
+      serviceId: service!.id, hostname: 'pending.example.test', ssl: false, status: 'pending', verificationToken: 'fixture-challenge',
+    }).returning();
+    const app = await buildTestApp({ db });
+    await app.register(domainsRoutes);
+    dnsMocks.resolveTxt.mockImplementationOnce(async () => {
+      await db.update(domains).set({ ssl: true }).where(eq(domains.id, pending!.id));
+      return [['fixture-challenge']];
+    });
+    try {
+      const response = await app.inject({
+        method: 'POST', url: `/${service!.id}/domains/${pending!.id}/verify?ssl=false`, headers: asUser(),
+      });
+      expect(response.statusCode).toBe(409);
+      await expect(db.query.domains.findFirst({ where: eq(domains.id, pending!.id) })).resolves.toMatchObject({ ssl: true, status: 'pending' });
+    } finally {
+      await app.close();
+      client?.close();
+    }
+  });
+
   it('keeps a route unchanged when an A record matches but an AAAA record still points elsewhere', async () => {
     const insert = vi.fn(() => [domainRow({ hostname: 'app.example.test' })]);
     const db = createFakeDb({
@@ -606,8 +688,8 @@ describe('domain cutover', () => {
 
   it('requires ownership proof for an existing pending domain and fails closed on a lookup error', async () => {
     const host = 'pending.example.test';
-    const pending = domainRow({ hostname: host, status: 'pending', verificationToken: 'fixture-challenge' });
-    const update = vi.fn(() => [domainRow({ hostname: host, status: 'active' })]);
+    const pending = domainRow({ hostname: host, ssl: true, status: 'pending', verificationToken: 'fixture-challenge' });
+    const update = vi.fn(() => [domainRow({ hostname: host, ssl: true, status: 'active' })]);
     const db = createFakeDb({
       findFirst: { services: svcRow({ status: 'running' }), domains: pending, deployments: { status: 'running' } },
       findMany: { domains: [pending] },

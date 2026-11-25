@@ -1,8 +1,24 @@
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
+import type { DatabaseImportStatus } from '@ninedeploy/schemas';
+import type { Translate } from './i18n.js';
 
 export const IMPORT_DUMP_ANCHOR = 'import-dump';
 export const IMPORT_VOLUME_ANCHOR = 'import-volume';
+
+export function dataImportStatusLabel(t: Translate, status: DatabaseImportStatus): string {
+  const labels = {
+    uploading: t('Uploading'),
+    pending: t('Ready to restore'),
+    running: t('Restoring…'),
+    completed: t('Completed'),
+    completed_with_warnings: t('Completed with warnings'),
+    failed: t('Failed'),
+    cancelled: t('Cancelled'),
+    expired: t('Expired'),
+  };
+  return labels[status];
+}
 
 /** Read from the requested offset in bounded slices. The SDK re-cuts these to its upload size. */
 export function fileChunks(file: Blob, step = 4 * 1024 * 1024): (offset: number) => AsyncIterable<Uint8Array> {

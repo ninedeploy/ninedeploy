@@ -35,14 +35,14 @@ function fakeDns(records: Record<string, string[]>): DnsLookup {
 interface PanelState {
   status?: string;
   deploy?: string | null;
-  domains?: Array<{ id: number; hostname: string; status: string }>;
+  domains?: Array<{ id: number; hostname: string; status: string; ssl?: boolean; path?: string; redirectWww?: boolean }>;
   dnsSettings?: { enabled: boolean; content: string | null } | 'forbidden';
   createStatus?: string;
   createFails?: boolean;
   verified?: boolean;
 }
 function fakePanel(st: PanelState = {}) {
-  const domains = [...(st.domains ?? [])];
+  const domains = (st.domains ?? []).map((row) => ({ ...row, ssl: row.ssl ?? true, path: row.path ?? '/', redirectWww: row.redirectWww ?? false }));
   const client: CutoverClient = {
     services: { get: vi.fn(async () => ({ status: st.status ?? 'running' })) },
     deploys: { list: vi.fn(async () => (st.deploy === null ? [] : [{ id: 3, status: st.deploy ?? 'running' }, { id: 2, status: 'failed' }])) },
@@ -51,7 +51,7 @@ function fakePanel(st: PanelState = {}) {
       create: vi.fn(async (_id, input) => {
         if (st.createFails) throw new Error('boom');
         const status = st.createStatus ?? 'active';
-        const d = { id: 40 + domains.length, hostname: input.hostname, status };
+        const d = { id: 40 + domains.length, hostname: input.hostname, status, ssl: input.ssl ?? true, path: input.path ?? '/', redirectWww: input.redirectWww ?? false };
         domains.push(d);
         return { ...d, dnsWarning: null, verification: status === 'pending' ? { recordName: `_nd.${input.hostname}`, recordType: 'TXT', recordValue: 'TXT-SENTINEL-9' } : null } as never;
       }),
@@ -122,6 +122,69 @@ describe('expectedAddresses', () => {
 });
 
 describe('cutover', () => {
+  it.each([
+    ['a path-only claim', [{ id: 7, status: 'pending', path: '/shop' }]],
+    ['a redirecting route', [{ id: 7, status: 'active', redirectWww: true }]],
+    ['a shared hostname', [{ id: 7, status: 'active', path: '/shop' }, { id: 8, status: 'active', path: '/' }]],
+  ] satisfies Array<[string, Array<Omit<NonNullable<PanelState['domains']>[number], 'hostname'>>]>)(
+    'leaves %s for manual review during hostname cutover', async (_label, rows) => {
+      const host = 'shop.example.com';
+      const client = fakePanel({ domains: rows.map((row) => ({ hostname: host, ...row })) });
+      const dns = fakeDns({ [host]: [HERE] });
+      const r = receipt();
+      const outcome = await run(plan([{ host, https: true }]), r, client, dns).result;
+      expect(outcome).toMatchObject({ added: 0, waiting: 1, failed: 0 });
+      expect(outcome.lines.join('\n')).toContain('existing routing requires manual review');
+      expect(client.domains.verify).not.toHaveBeenCalled();
+      expect(client.domains.create).not.toHaveBeenCalled();
+      expect(dns.resolve4).not.toHaveBeenCalled();
+      expect(r.items['domain:web:shop.example.com']?.state).toBe('skipped');
+    },
+  );
+
+  it('skips a hostname assigned to multiple services or protocols and continues other hosts', async () => {
+    const p = plan([
+      { host: 'shared.example.com', https: true },
+      { host: 'protocol.example.com', https: true },
+      { host: 'PROTOCOL.EXAMPLE.COM.', https: false },
+      { host: 'fresh.example.com', https: true },
+    ]);
+    p.services.push({
+      ...p.services[0]!, ref: 'second', name: 'Second',
+      domains: [{ host: ' SHARED.EXAMPLE.COM. ', https: true }, { host: 'fresh.example.com', https: false, sourceDefault: true }],
+    });
+    const r = receipt();
+    r.items['service:second'] = { ...r.items['service:web']!, id: 13, ref: 'second', name: 'Second' };
+    const client = fakePanel();
+    const dns = fakeDns({ 'shared.example.com': [HERE], 'protocol.example.com': [HERE], 'fresh.example.com': [HERE] });
+    const outcome = await run(p, r, client, dns).result;
+    expect(outcome).toMatchObject({ added: 1, waiting: 3, failed: 0 });
+    expect(client.domains.create).toHaveBeenCalledExactlyOnceWith(12, { hostname: 'fresh.example.com', ssl: true });
+    expect(dns.resolve4).toHaveBeenCalledExactlyOnceWith('fresh.example.com');
+    expect(r.items['domain:web:shared.example.com']?.state).toBe('skipped');
+    expect(r.items['domain:web:protocol.example.com']?.state).toBe('skipped');
+    expect(r.items['domain:second:shared.example.com']?.state).toBe('skipped');
+  });
+
+  it('leaves both attached and pending routes for review if their protocol differs', async () => {
+    const client = fakePanel({ domains: [
+      { id: 7, hostname: 'shop.example.com', status: 'active', ssl: false },
+      { id: 8, hostname: 'admin.example.com', status: 'pending', ssl: true },
+    ] });
+    const dns = fakeDns({ 'admin.example.com': [HERE] });
+    const r = receipt();
+    const { result } = run(plan([{ host: 'shop.example.com', https: true }, { host: 'admin.example.com', https: false }]), r, client, dns);
+    const outcome = await result;
+    expect(outcome).toMatchObject({ added: 0, waiting: 2, failed: 0 });
+    expect(outcome.lines.join('\n')).toContain('uses HTTP, plan requires HTTPS');
+    expect(outcome.lines.join('\n')).toContain('uses HTTPS, plan requires HTTP');
+    expect(client.domains.verify).not.toHaveBeenCalled();
+    expect(client.domains.create).not.toHaveBeenCalled();
+    expect(dns.resolve4).not.toHaveBeenCalled();
+    expect(r.items['domain:web:shop.example.com']?.state).toBe('skipped');
+    expect(r.items['domain:web:admin.example.com']?.state).toBe('skipped');
+  });
+
   it('adds a host whose DNS points here, with the plan\'s https, and records it', async () => {
     const client = fakePanel();
     const r = receipt();
@@ -168,10 +231,41 @@ describe('cutover', () => {
   it('takes the panel as the truth: a domain already there is done, with no second add', async () => {
     const client = fakePanel({ domains: [{ id: 7, hostname: 'shop.example.com', status: 'active' }], status: 'stopped' });
     const r = receipt();
-    const res = await run(plan([{ host: 'shop.example.com', https: true }]), r, client, fakeDns({})).result;
+    const res = await run(plan([{ host: 'shop.example.com', https: true }]), r, client, fakeDns({ 'shop.example.com': [HERE] })).result;
     expect(client.domains.create).not.toHaveBeenCalled();
     expect(res.waiting).toBe(0);
     expect(r.items['domain:web:shop.example.com']).toMatchObject({ state: 'done', id: 7 });
+  });
+
+  it('reports DNS drift and lookup errors per host without changing attached routes', async () => {
+    const client = fakePanel({ domains: [
+      { id: 7, hostname: 'shop.example.com', status: 'active' },
+      { id: 8, hostname: 'lookup.example.com', status: 'active' },
+    ] });
+    const p = plan(['shop.example.com', 'lookup.example.com', 'new.example.com'].map((host) => ({ host, https: true })));
+    const dns = fakeDns({ 'shop.example.com': [HERE, '2001:db8::5'], 'new.example.com': [HERE] });
+    const resolve4 = dns.resolve4;
+    dns.resolve4 = vi.fn(async (host) => {
+      if (host === 'lookup.example.com') throw Object.assign(new Error('timeout'), { code: 'ETIMEOUT' });
+      return resolve4(host);
+    });
+    const r = receipt();
+    const first = await run(p, r, client, dns).result;
+    expect(first).toMatchObject({ added: 1, waiting: 2, failed: 0 });
+    const output = first.lines.join('\n');
+    expect(output).toContain('shop.example.com: attached (#7); AAAA 2001:db8::5');
+    expect(output).toContain('lookup.example.com: attached (#8); DNS lookup failed');
+    expect(client.domains.create).toHaveBeenCalledExactlyOnceWith(12, { hostname: 'new.example.com', ssl: true });
+    expect(client.domains.verify).not.toHaveBeenCalled();
+    expect(r.items['domain:web:shop.example.com']).toMatchObject({ state: 'done', id: 7 });
+    const recovered = run(p, r, client, fakeDns({
+      'shop.example.com': [HERE], 'lookup.example.com': [HERE], 'new.example.com': [HERE],
+    }), false);
+    const second = await recovered.result;
+    expect(second).toMatchObject({ added: 0, waiting: 0, failed: 0 });
+    expect(second.lines.join('\n')).toContain('shop.example.com: attached (#7); DNS points here');
+    expect(recovered.save).not.toHaveBeenCalled();
+    expect(client.domains.create).toHaveBeenCalledOnce();
   });
 
   it('verifies a pending domain only once its DNS passes, and prints the TXT without storing it', async () => {
@@ -182,7 +276,7 @@ describe('cutover', () => {
     client = fakePanel({ domains: pending });
     const r = receipt();
     res = await run(plan([{ host: 'shop.example.com', https: true }]), r, client, fakeDns({ 'shop.example.com': [HERE] })).result;
-    expect(client.domains.verify).toHaveBeenCalledWith(12, 7);
+    expect(client.domains.verify).toHaveBeenCalledWith(12, 7, true);
     expect(res.lines.join('\n')).toContain('publish TXT _nd.x = TXT-SENTINEL-9');
     expect(JSON.stringify(r)).not.toContain('TXT-SENTINEL-9');
     client = fakePanel({ domains: pending, verified: true });
@@ -224,6 +318,24 @@ describe('cutover', () => {
     res = await run(plan([{ host: 'shop.example.com', https: true }]), receipt(false), client, fakeDns({})).result;
     expect(res.lines.join('\n')).toMatch(/not created yet/);
     expect(client.domains.create).not.toHaveBeenCalled();
+  });
+
+  it('reports attached wildcards for manual DNS review and honors an explicit skip without touching the route', async () => {
+    const host = '*.example.com';
+    const client = fakePanel({ domains: [{ id: 7, hostname: host, status: 'active' }] });
+    const p = plan([{ host, https: true }]);
+    const dns = fakeDns({});
+    const r = receipt();
+    const manual = await run(p, r, client, dns).result;
+    expect(manual.waiting).toBe(1);
+    expect(manual.lines.join('\n')).toContain('attached (#7); wildcard DNS needs manual review');
+    const skipped = await run(p, r, client, dns, true, [host], exp({ cloudflare: 'on' })).result;
+    expect(skipped.waiting).toBe(0);
+    expect(skipped.lines.join('\n')).toContain('attached (#7); DNS check skipped (--skip-dns-check)');
+    expect(r.items['domain:web:*.example.com']).toMatchObject({ state: 'done', id: 7 });
+    expect(dns.resolve4).not.toHaveBeenCalled();
+    expect(client.domains.create).not.toHaveBeenCalled();
+    expect(client.domains.verify).not.toHaveBeenCalled();
   });
 
   it('records a failed add, and changes nothing without --yes', async () => {
