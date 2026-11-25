@@ -1,5 +1,17 @@
 [
   {
+    "version": "0.20.0",
+    "date": "2026-11-25",
+    "title": "Compact layout by default, framework starters, migration plans and browser-gated releases",
+    "changes": [
+      "Releases now require successful core browser journeys on the exact image offered to operators.",
+      "Deploy Next.js, Laravel, and FastAPI from a local folder using the new framework starters.",
+      "The compact panel layout is now the default for browsers that have not chosen one. A stored Classic choice is kept.",
+      "No action is needed. To keep the classic layout, choose it once under Settings → Appearance → Layout; the choice is kept per browser.",
+      "A saved migration plan is reviewed in the browser before anything is created. To resume one, reopen it in the same browser tab as the same operator."
+    ]
+  },
+  {
     "version": "0.19.0",
     "date": "2026-11-18",
     "title": "Remote PostgreSQL recovery, proxy safeguards and disaster recovery",

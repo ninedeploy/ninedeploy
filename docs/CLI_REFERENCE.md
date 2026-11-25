@@ -1,6 +1,6 @@
 # CLI command reference
 
-Every command of the `ninedeploy` CLI at version **0.19.0**, generated from the CLI's own `--help` output by `scripts/generate-cli-reference.mjs`. Each entry gives the usage line, the description and the options exactly as the CLI prints them. For sign-in, configuration, examples and the SDK and MCP references, see [API, MCP, CLI and SDK](AI_MCP_CLI.md).
+Every command of the `ninedeploy` CLI at version **0.20.0**, generated from the CLI's own `--help` output by `scripts/generate-cli-reference.mjs`. Each entry gives the usage line, the description and the options exactly as the CLI prints them. For sign-in, configuration, examples and the SDK and MCP references, see [API, MCP, CLI and SDK](AI_MCP_CLI.md).
 
 The same text is available in a terminal with `ninedeploy <command> --help` or `ninedeploy <command> <subcommand> --help`.
 
@@ -1153,7 +1153,7 @@ Add the planned domains once each service runs a successful deploy and the hostn
 | `--yes` | Add (or verify) the domains that pass |
 | `--expect <address>` | The address DNS must point at (repeatable; default: Settings → DNS records) (default: []) |
 | `--resolver <ip>` | DNS server to query (default: the system's) |
-| `--skip-dns-check <host>` | Skip the DNS check for a proxied host (repeatable; refused while the Cloudflare integration is on) (default: []) |
+| `--skip-dns-check <host>` | Skip the DNS check for a proxied host (repeatable). For a domain still to be added or verified it is refused while the Cloudflare integration is on; an attached route is only reported (default: []) |
 | `--receipt <file>` | Receipt file (default: <plan>.receipt.json) |
 
 ## `sso`

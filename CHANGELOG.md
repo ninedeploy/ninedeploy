@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-11-25
+
 **Highlights**
 
 - Releases now require successful core browser journeys on the exact image offered to operators.
