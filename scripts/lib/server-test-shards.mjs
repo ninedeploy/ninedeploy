@@ -24,6 +24,24 @@ export function shardCount(value, parallelism, totalGiB = Number.POSITIVE_INFINI
   return Math.max(1, Math.min(12, parallelism * 2, Math.floor((totalGiB - 2) / SHARD_GIB)));
 }
 
+/** What `vitest list --filesOnly` printed: one path a line, under `test/`. */
+export function parseFileList(text) {
+  return text.split(/\r?\n/).map((line) => line.trim()).filter((line) => line.startsWith('test/'));
+}
+
+/**
+ * The files in small chunks for the processes to take in turn, in Vitest's order and every file
+ * in one chunk. Four chunks a process: the last chunk a process takes is then a quarter of its
+ * work, where Vitest's own `--shard` leaves one alphabetical range a process — and the heaviest
+ * files sit together in the alphabet (11.5 minutes against an average of 6.6, November 25, 2026).
+ */
+export function chunkFiles(files, workers) {
+  const size = Math.max(1, Math.ceil(files.length / (workers * 4)));
+  const chunks = [];
+  for (let at = 0; at < files.length; at += size) chunks.push(files.slice(at, at + size));
+  return chunks;
+}
+
 /**
  * The four global floors as apps/server/vitest.config.ts names them, so the floors have one home.
  * The block carries comments, so the numbers are read from the last `thresholds: {` in the file.

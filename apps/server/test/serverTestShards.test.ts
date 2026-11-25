@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { load } from 'js-yaml';
 import { describe, expect, it } from 'vitest';
-import { SHARD_GIB, directoryRows, keysFromRoot, mergeReports, percentages, readThresholds, shardCount, summaryDocument, unmetThresholds } from '../../../scripts/lib/server-test-shards.mjs';
+import { SHARD_GIB, chunkFiles, directoryRows, keysFromRoot, mergeReports, parseFileList, percentages, readThresholds, shardCount, summaryDocument, unmetThresholds } from '../../../scripts/lib/server-test-shards.mjs';
 
 // The server unit suite runs in several processes at once (scripts/test-server-sharded.mjs).
 // These hold what that relies on: the floors are read from the one place they are written, a
@@ -95,6 +95,24 @@ describe('the server suite in shards', () => {
     expect(Object.keys(document).sort()).toEqual(['/repo/apps/server/src/lib/a.ts', '/repo/apps/server/src/lib/b.ts', 'total']);
     expect(document.total.statements).toMatchObject({ total: 4, covered: 2, pct: 50 });
     expect(document['/repo/apps/server/src/lib/b.ts'].statements).toMatchObject({ total: 2, covered: 1, pct: 50 });
+  });
+
+  it('reads what Vitest lists and cuts it into four chunks a process, every file once and in order', () => {
+    // Vitest prints one path a line; a blank line, a padded line and a notice are not files.
+    expect(parseFileList(['test/a.test.ts', '', ' test/lib/b.test.ts', 'No test files found in test/diag', ''].join('\n'))).toEqual(['test/a.test.ts', 'test/lib/b.test.ts']);
+    expect(parseFileList('test/a.test.ts\r\ntest/lib/b.test.ts')).toEqual(['test/a.test.ts', 'test/lib/b.test.ts']);
+    expect(parseFileList('')).toEqual([]);
+    const listed = Array.from({ length: 889 }, (_, i) => `test/file-${String(i).padStart(3, '0')}.test.ts`);
+    const chunks = chunkFiles(listed, 6);
+    expect(chunks).toHaveLength(24);
+    expect(chunks.map((chunk) => chunk.length)).toEqual([...Array(23).fill(38), 15]);
+    expect(chunks.flat()).toEqual(listed);
+    // Fewer files than chunks: one file a chunk, and no empty chunk.
+    expect(chunkFiles(['test/only.test.ts'], 6)).toEqual([['test/only.test.ts']]);
+    expect(chunkFiles([], 6)).toEqual([]);
+    // A process that takes chunks in turn ends a quarter of its work after its last chunk starts.
+    const many = Array.from({ length: 4000 }, (_, i) => `test/f${i}.test.ts`);
+    expect(chunkFiles(many, 12)).toHaveLength(48);
   });
 
   it('is what CI and the release gate run', () => {
