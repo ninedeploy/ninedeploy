@@ -53,21 +53,28 @@ const userRow = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
-const invitationRow = (over: Record<string, unknown> = {}) => ({
-  id: 50,
-  workspaceId: 1,
-  email: 'bob@example.com',
-  role: 'member',
-  token: 'a'.repeat(64),
-  invitedByUserId: 2,
-  expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-  acceptedAt: null,
-  acceptedByUserId: null,
-  revokedAt: null,
-  createdAt: new Date(),
-  updatedAt: new Date(),
-  ...over,
-});
+// One moment for the two dates: the route calls an invitation refreshed when they differ, and a
+// table gives both the same statement's time. Two separate `new Date()` calls could fall either
+// side of a millisecond under load, and the "creates a new invitation" test failed that way in
+// hosted CI on November 25, 2026.
+const invitationRow = (over: Record<string, unknown> = {}) => {
+  const now = new Date();
+  return {
+    id: 50,
+    workspaceId: 1,
+    email: 'bob@example.com',
+    role: 'member',
+    token: 'a'.repeat(64),
+    invitedByUserId: 2,
+    expiresAt: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000),
+    acceptedAt: null,
+    acceptedByUserId: null,
+    revokedAt: null,
+    createdAt: now,
+    updatedAt: now,
+    ...over,
+  };
+};
 
 describe('invitation helpers', () => {
   describe('generateInvitationToken', () => {
