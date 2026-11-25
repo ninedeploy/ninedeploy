@@ -1006,10 +1006,17 @@ describe('dockerBuilder.isHealthy', () => {
 
   it('returns false when the service never becomes healthy', async () => {
     fetchMock.mockResolvedValue({ status: 503 });
-
-    await expect(
-      dockerBuilder.isHealthy({ runtimeId: 'r', port: 3000, healthPath: '/' }, 20),
-    ).resolves.toBe(false);
+    // A clock that moves only when it is read. On a busy runner 20 real milliseconds can pass
+    // before the first probe ends, and then there is nothing left to sleep (November 26, 2026).
+    let now = 1_000;
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => (now += 1));
+    try {
+      await expect(
+        dockerBuilder.isHealthy({ runtimeId: 'r', port: 3000, healthPath: '/' }, 20),
+      ).resolves.toBe(false);
+    } finally {
+      clock.mockRestore();
+    }
     expect(fetchMock).toHaveBeenCalled();
     expect(h.sleep).toHaveBeenCalled();
     expect(h.sleep.mock.calls.every(([ms]) => ms > 0 && ms <= 20)).toBe(true);
