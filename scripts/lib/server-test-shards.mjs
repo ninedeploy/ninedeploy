@@ -72,14 +72,24 @@ export function passedFiles(line) {
 }
 
 /**
- * The two streams `pnpm test:workspace` runs at once: every other package's suite, one package
- * at a time as before; and the server suite in its processes. They ran one after the other
- * until November 26, 2026, and the other packages' minutes were all on the verify job's time.
+ * What `pnpm test:workspace` runs: one group of packages alone, then two streams at once — the
+ * other group, one package at a time, and beside it the server suite in its processes. The
+ * groups are told apart by their tests' time limit: the web and CLI suites allow a test 30
+ * seconds, every other package runs on Vitest's 5. On November 26, 2026, with every package
+ * beside the server suite, a packages/db test that starts two child runs of the migrations —
+ * four seconds alone — passed its own limit at 5053 ms. The alone group names what it leaves
+ * out, so a package added to the workspace runs alone, as every package always did before
+ * November 26, 2026. The filters name directories, not package names: the CLI package is
+ * published as ninedeploy.
  */
-export function workspaceStreams() {
+export function workspacePlan() {
+  const turbo = ['turbo', 'run', 'test', '--concurrency=1', '--force'];
   return {
-    packages: ['turbo', 'run', 'test', '--concurrency=1', '--force', '--filter=!@ninedeploy/server'],
-    server: ['test:server'],
+    alone: [...turbo, '--filter=!./apps/server', '--filter=!./apps/web', '--filter=!./apps/cli'],
+    beside: {
+      packages: [...turbo, '--filter=./apps/web', '--filter=./apps/cli'],
+      server: ['test:server'],
+    },
   };
 }
 
@@ -88,7 +98,6 @@ export function streamOutcome(code, signal) {
   if (signal) return `killed by ${signal}`;
   return code === 0 ? 'passed' : `FAILED (exit ${code})`;
 }
-
 /**
  * The four global floors as apps/server/vitest.config.ts names them, so the floors have one home.
  * The block carries comments, so the numbers are read from the last `thresholds: {` in the file.

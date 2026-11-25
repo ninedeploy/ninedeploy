@@ -89,15 +89,18 @@ jobs:
         run: pnpm check:contracts
 
       - name: Test
-        # Two streams at once (scripts/test-workspace.mjs): every package but
-        # the server one at a time, and beside it the server package in
-        # several processes, each with its files one after another, its
-        # coverage floors checked once on the merged report
+        # The packages whose tests keep Vitest's 5-second limit run first,
+        # alone; then two streams at once (scripts/test-workspace.mjs): the
+        # web and CLI suites, which allow a test 30 seconds, one package at
+        # a time, and beside them the server package in several processes
+        # at a lower CPU priority, each with its files one after another,
+        # its coverage floors checked once on the merged report
         # (scripts/test-server-sharded.mjs). The packages among themselves
-        # stay one at a time: server and web coverage suites starve each other
-        # on a small runner when turbo runs them in parallel (intermittent 30s
-        # waitFor failures that grow with the test count). In one process the
-        # server suite took 39 minutes of a runner on November 25, 2026.
+        # stay one at a time: server and web coverage suites starve each
+        # other on a small runner when turbo runs them in parallel
+        # (intermittent 30s waitFor failures that grow with the test count).
+        # In one process the server suite took 39 minutes of a runner on
+        # November 25, 2026.
         run: pnpm test:workspace
 
       # Schema↔snapshot drift guard: 'drizzle-kit generate' must be a no-op.

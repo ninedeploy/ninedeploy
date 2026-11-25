@@ -1,8 +1,8 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { load } from 'js-yaml';
 import { describe, expect, it } from 'vitest';
-import { SHARD_GIB, chunkFiles, directoryRows, keysFromRoot, lineSplitter, mergeReports, parseFileList, passedFiles, percentages, readThresholds, shardCount, streamOutcome, summaryDocument, unmetThresholds, workspaceStreams } from '../../../scripts/lib/server-test-shards.mjs';
+import { SHARD_GIB, chunkFiles, directoryRows, keysFromRoot, lineSplitter, mergeReports, parseFileList, passedFiles, percentages, readThresholds, shardCount, streamOutcome, summaryDocument, unmetThresholds, workspacePlan } from '../../../scripts/lib/server-test-shards.mjs';
 
 // The server unit suite runs in several processes at once (scripts/test-server-sharded.mjs).
 // These hold what that relies on: the floors are read from the one place they are written, a
@@ -130,19 +130,35 @@ describe('the server suite in shards', () => {
     const coloured = ` ${esc}[1m${esc}[32m Test Files ${esc}[39m${esc}[22m 38 passed (38)`;
     expect(passedFiles(coloured)).toBe(38);
   });
-  it('runs the other packages beside the server suite, and reports each stream on its own', () => {
-    // One after the other, the other packages' minutes were all on the verify job's time.
-    const streams = workspaceStreams();
-    expect(Object.keys(streams)).toEqual(['packages', 'server']);
-    // The packages still run one at a time, uncached, and the server package is left to its own stream.
-    expect(streams.packages).toEqual(['turbo', 'run', 'test', '--concurrency=1', '--force', '--filter=!@ninedeploy/server']);
-    expect(streams.server).toEqual(['test:server']);
+  it('runs the packages that keep the 5-second test limit alone, then the web and CLI suites beside the server suite', () => {
+    // On November 26, 2026, with every package beside the server suite, a packages/db test that
+    // starts two child runs of the migrations passed its own 5-second limit at 5053 ms.
+    const plan = workspacePlan();
+    const turbo = ['turbo', 'run', 'test', '--concurrency=1', '--force'];
+    // The alone group names what it leaves out, by directory: a package added to the workspace
+    // runs alone. (The CLI package is published as ninedeploy, so package names would not do.)
+    expect(plan.alone).toEqual([...turbo, '--filter=!./apps/server', '--filter=!./apps/web', '--filter=!./apps/cli']);
+    expect(plan.beside.packages).toEqual([...turbo, '--filter=./apps/web', '--filter=./apps/cli']);
+    expect(plan.beside.server).toEqual(['test:server']);
+    // Only a suite that allows a test 30 seconds goes beside the server suite.
+    for (const group of ['apps', 'packages']) {
+      for (const directory of readdirSync(new URL(`${group}/`, root))) {
+        const place = `./${group}/${directory}`;
+        if (place === './apps/server') continue;
+        const config = at(`${place.slice(2)}/vitest.config.ts`);
+        if (plan.beside.packages.includes(`--filter=${place}`)) expect(config).toMatch(/testTimeout:\s*30_?000/);
+        else expect(config).not.toMatch(/testTimeout:\s*\d/);
+      }
+    }
     expect(streamOutcome(0, null)).toBe('passed');
     expect(streamOutcome(1, null)).toBe('FAILED (exit 1)');
     expect(streamOutcome(null, 'SIGKILL')).toBe('killed by SIGKILL');
-    expect(readFileSync(new URL('../../../scripts/test-workspace.mjs', import.meta.url), 'utf8')).toContain("stdio: ['ignore', 'inherit', 'inherit']");
+    // The server stream starts at a lower CPU priority, so a package's test never waits behind a
+    // server process for a core; and a stream's output is the run's own.
+    const runner = at('scripts/test-workspace.mjs');
+    expect(runner).toContain("spawn(nice ? 'nice' : 'pnpm', nice ? ['-n', '10', 'pnpm', ...args] : args");
+    expect(runner).toContain("stdio: ['ignore', 'inherit', 'inherit']");
   });
-
   it('is what CI and the release gate run', () => {
     const pkg = JSON.parse(at('package.json')) as { scripts: Record<string, string> };
     const ci = load(at('.github/workflows/ci.yml')) as { jobs: { verify: { steps: { name?: string; run?: string }[] } } };
