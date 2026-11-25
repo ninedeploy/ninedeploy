@@ -996,12 +996,22 @@ Guides: [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md),
 Test files are counted in the tree; the floors are the thresholds in each
 `vitest.config.ts`. The server, web, CLI and MCP floors sit below 100, with
 the reasoning recorded inline in each config. A full local `release:check`
-takes about 40 minutes; the last recorded run (November 18, 2026, the 0.19.0
-candidate) passed 20,155 tests with zero failures.
+in Linux took 37 minutes on November 25, 2026, for the 0.20.0 candidate, with
+20,259 tests, no failure and no skip, while the server suite still ran in one
+process; `release:check` now runs it through `pnpm test:server`.
 
-- **Unit, route and regression tests** run by default (`fileParallelism` is
-  off for the server: the suites boot a real Fastify kernel against an
-  in-memory database)
+- **Unit, route and regression tests** run by default. `fileParallelism` is
+  off for the server: an invocation has one data root, and the suites boot
+  a real Fastify kernel against an in-memory database. `pnpm test:server`
+  gets its parallelism another way: several processes at once over small
+  chunks of the files. A process is an invocation of its own, with a data
+  root of its own and its files still one after another; it takes the next
+  chunk when its ends. The chunks deal the files round-robin, because the
+  heaviest files sit together in the alphabet. The chunks' coverage is
+  merged and the four floors are checked once
+  (`scripts/test-server-sharded.mjs`). On GitHub's runner (4 cores,
+  15.6 GiB) that is 6 processes over 24 chunks; on November 25, 2026 the
+  suite took 11.6 minutes where, in one process, it took 38.9.
 - **Integration tests** (`apps/server/test/integration/`, 14 files) use
   testcontainers with real PostgreSQL, MySQL, Redis and MongoDB and real
   Docker. They are excluded from the default config and run only through
@@ -1021,10 +1031,14 @@ candidate) passed 20,155 tests with zero failures.
 CI (`ci.yml`) runs on every push and pull request: typecheck → lint → build →
 contract preflight → test, a **schema-drift check** (regenerating migrations
 must produce no diff) and a **deprecated-dependency check**, a Node security
-baseline, an installer sanity check and smoke, then a job that builds the
-image and verifies the in-place upgrade, node autoscaling, the canary
-lifecycle, readiness, serving-traffic observation and the wake catcher on
-real routing, and finally the integration job.
+baseline, an installer sanity check and smoke. Beside that job run the
+integration job and an image job that is a matrix of six groups: each job
+builds the image and runs its own smokes on real routing (the in-place
+upgrade, node autoscaling, the canary lifecycle, readiness, serving-traffic
+observation and the wake catcher). In one job those smokes took 43 minutes
+on November 25, 2026; the longest group takes about 13. The main image is
+published only after the verify job and every group have passed, and the
+Release workflow starts its nine cohorts all at once.
 
 The schema-drift gate is **functional** as of 0.6.0: the CI step requires the
 literal `No schema changes, nothing to migrate` line plus a clean `git

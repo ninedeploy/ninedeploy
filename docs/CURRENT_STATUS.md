@@ -1,6 +1,6 @@
 # Current implementation and acceptance status
 
-Snapshot: **November 25, 2026**. The published base is **0.20.0**, tagged at `fbb94e91e2defbcc1f9d8d77526099b036651465` and published on November 25, 2026. It holds the thirty-seven commits, the release metadata and one merge that follow 0.19.0, for the capacity baseline (N06), the browser promotion gate (N08), the framework starters with first-deploy fixes (N09), the compact layout (N10), the N11 design record, and the deploy-wizard preflight and migration-plan work that concurrent sessions had left uncommitted. Local and remote `main` are at the release commit. Work that exists only in an uncommitted working tree is not described here.
+Snapshot: **November 25, 2026**. The published base is **0.20.0**, tagged at `fbb94e91e2defbcc1f9d8d77526099b036651465` and published on November 25, 2026. It holds the thirty-seven commits, the release metadata and one merge that follow 0.19.0, for the capacity baseline (N06), the browser promotion gate (N08), the framework starters with first-deploy fixes (N09), the compact layout (N10), the N11 design record, and the deploy-wizard preflight and migration-plan work that concurrent sessions had left uncommitted. Local and remote `main` also hold three changes that shorten verification (below). Work that exists only in an uncommitted working tree is not described here.
 
 This is the current status summary. [SUPPORT_MATRIX.md](SUPPORT_MATRIX.md) is generated from the same evaluators and guards used by service settings, database APIs, preview creation and build admission. Older roadmap and acceptance documents retain their dated evidence; their open-item lists and numerical inventories describe their original checkpoint.
 
@@ -145,6 +145,23 @@ Thirty-seven commits follow the published tag, and one merge brings in the remot
 | `b1c2d380` | The migration plan's checks against the panel: which preparations a resumed plan can still verify, the latest recorded import, a cutover check that sends the plan's protocol and shows the DNS of an attached domain and the proxy's routing for it, and the CLI's review skips. | Two read-only reviews found no high finding; the cutover and readiness routes stay operator-only. With the release metadata it passed the Linux release gate, 20,259 tests (above), and the release commit's hosted chain. | None beyond the open environment acceptances above. |
 | `c0b0738e` | The 0.20.0 release metadata, the CLI command reference generated again, and the changelog section, with one fix added that was missing from it. | The release gate ran on the tree of this commit (`1c1caa85`). | None beyond the open environment acceptances above. |
 | `2219e851` | Documentation: the N05 public staging preflight record. | None required. | None. |
+
+## Verification speed after 0.20.0
+
+The owner asked on November 25, 2026 why a push and a release wait as long as they do. The times below are the jobs' own step times from GitHub, and the test log broken down by file.
+
+| Where | Before | After | Commit |
+|---|---|---|---|
+| The server unit suite, in the CI verify job | 38.9 min: its 888 files ran one after another in one process | 11.6 min with the files dealt round-robin into 24 chunks for 6 processes, on a slow runner; 10.3 min on `main` | `dc45c7a9`, `381d7d0a` |
+| The CI verify job (`Typecheck · Lint · Build · Test`) | 49.0 min | 17.1 min on `main` on November 25; 19.0 min on a slow runner, where the suite in six ranges took 27.5 | `dc45c7a9`, `9f090ad7`, `381d7d0a` |
+| The CI image job | 43.2 min: twelve node smokes one after another in one job | 13.1 min: six smoke groups, each on its own runner, on `main`; the shortest group 5.0 | `9f090ad7` |
+| A push's CI run | 59.2 min | 26.0 min on `main` ([run](https://github.com/ninedeploy/ninedeploy/actions/runs/45654397892)) | |
+| A push's chain, to the end of the browser gate | 79.2 min | 45.5 min on `main` ([browser](https://github.com/ninedeploy/ninedeploy/actions/runs/45659169797): 77 of 77) | |
+| The Release workflow's cohorts | 54 min: nine cohorts three at a time | all nine start at once; no release has run with it yet | `dc45c7a9` |
+
+The shards' and chunks' coverage is merged, and the four floors are checked once on the merged report; the merged coverage is the one-process coverage. The files still run one after another inside a process, so tests that share a data root never overlap. `serverTestShards.test.ts` holds the shard count, the merge, the floor check and the chunking; `releaseSmokeMatrix.test.ts` and `release-workflows.test.ts` pin the smoke groups and that CI and the release gate run the same tests.
+
+Still open, in the order of what each is worth: the publish job builds the image again for two architectures (9 to 12 minutes); a documentation-only push runs the smoke groups and the browser gate; the other packages run one at a time beside the server suite (about 7 minutes); the six slowest test files hold a third of the suite's time.
 
 ## Operational switches and live checks
 
