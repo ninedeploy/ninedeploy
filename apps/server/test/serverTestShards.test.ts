@@ -97,22 +97,22 @@ describe('the server suite in shards', () => {
     expect(document['/repo/apps/server/src/lib/b.ts'].statements).toMatchObject({ total: 2, covered: 1, pct: 50 });
   });
 
-  it('reads what Vitest lists and cuts it into four chunks a process, every file once and in order', () => {
-    // Vitest prints one path a line; a blank line, a padded line and a notice are not files.
-    expect(parseFileList(['test/a.test.ts', '', ' test/lib/b.test.ts', 'No test files found in test/diag', ''].join('\n'))).toEqual(['test/a.test.ts', 'test/lib/b.test.ts']);
-    expect(parseFileList('test/a.test.ts\r\ntest/lib/b.test.ts')).toEqual(['test/a.test.ts', 'test/lib/b.test.ts']);
+  it('reads what Vitest lists and deals it into four chunks a process, every file once', () => {
+    expect(parseFileList(['test/a.test.ts', '', ' test/lib/b.test.ts ', 'No test files found in test/diag', ''].join('\n'))).toEqual(['test/a.test.ts', 'test/lib/b.test.ts']);
+    expect(parseFileList(['test/a.test.ts', 'test/lib/b.test.ts'].join(String.fromCharCode(13, 10)))).toEqual(['test/a.test.ts', 'test/lib/b.test.ts']);
     expect(parseFileList('')).toEqual([]);
-    const listed = Array.from({ length: 889 }, (_, i) => `test/file-${String(i).padStart(3, '0')}.test.ts`);
+    const listed = Array.from({ length: 889 }, (_, i) => `test/file-`.concat(String(i).padStart(3, '0'), '.test.ts'));
     const chunks = chunkFiles(listed, 6);
     expect(chunks).toHaveLength(24);
-    expect(chunks.map((chunk) => chunk.length)).toEqual([...Array(23).fill(38), 15]);
-    expect(chunks.flat()).toEqual(listed);
+    // Dealt round-robin: the first chunk one file longer, and neighbours in different chunks.
+    expect(chunks.map((chunk) => chunk.length)).toEqual([38, ...Array(23).fill(37)]);
+    expect(chunks[0].slice(0, 3)).toEqual(['test/file-000.test.ts', 'test/file-024.test.ts', 'test/file-048.test.ts']);
+    expect(chunks.flat().sort()).toEqual([...listed].sort());
+    expect(new Set(chunks.flat()).size).toBe(listed.length);
     // Fewer files than chunks: one file a chunk, and no empty chunk.
     expect(chunkFiles(['test/only.test.ts'], 6)).toEqual([['test/only.test.ts']]);
+    expect(chunkFiles(['test/a.test.ts', 'test/b.test.ts'], 6)).toEqual([['test/a.test.ts'], ['test/b.test.ts']]);
     expect(chunkFiles([], 6)).toEqual([]);
-    // A process that takes chunks in turn ends a quarter of its work after its last chunk starts.
-    const many = Array.from({ length: 4000 }, (_, i) => `test/f${i}.test.ts`);
-    expect(chunkFiles(many, 12)).toHaveLength(48);
   });
 
   it('reads a summary from a stream that hands its lines over in pieces', () => {

@@ -30,15 +30,21 @@ export function parseFileList(text) {
 }
 
 /**
- * The files in small chunks for the processes to take in turn, in Vitest's order and every file
- * in one chunk. Four chunks a process: the last chunk a process takes is then a quarter of its
- * work, where Vitest's own `--shard` leaves one alphabetical range a process — and the heaviest
- * files sit together in the alphabet (11.5 minutes against an average of 6.6, November 25, 2026).
+ * The files in small chunks for the processes to take in turn, every file in one chunk. Four
+ * chunks a process, so the last chunk a process takes is a quarter of its work.
+ *
+ * A chunk takes every n-th file of Vitest's order rather than a stretch of it. The heaviest files
+ * sit together in the alphabet, and a stretch kept them together: on GitHub's runner one
+ * stretch of 38 files took 7.4 minutes alone and started 10 minutes in (November 25, 2026). Dealt
+ * round-robin, a chunk is a small sample of the whole list, and no chunk is much heavier than
+ * its heaviest file.
  */
 export function chunkFiles(files, workers) {
+  if (!files.length) return [];
   const size = Math.max(1, Math.ceil(files.length / (workers * 4)));
-  const chunks = [];
-  for (let at = 0; at < files.length; at += size) chunks.push(files.slice(at, at + size));
+  const count = Math.ceil(files.length / size);
+  const chunks = Array.from({ length: count }, () => []);
+  for (const [index, file] of files.entries()) chunks[index % count].push(file);
   return chunks;
 }
 
