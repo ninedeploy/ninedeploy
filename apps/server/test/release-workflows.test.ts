@@ -161,7 +161,9 @@ describe('release delivery invariants', () => {
     expect(verify).toBeDefined();
     expect(script).toContain("job='Typecheck · Lint · Build · Test'");
     const runs = verify!.steps.map((step) => step.run);
-    const order = ['pnpm install --frozen-lockfile', 'pnpm typecheck', 'pnpm lint', 'pnpm build', 'pnpm check:contracts', 'pnpm test:workspace'].map((cmd) => runs.indexOf(cmd));
+        const order = ['pnpm install --frozen-lockfile', 'pnpm typecheck', 'pnpm lint', 'pnpm build', 'pnpm check:contracts', 'pnpm test:server'].map((cmd) => runs.indexOf(cmd));
+    // The other packages' suites are that run's too, in a job of their own; a run succeeds only when every job in it did.
+    expect(Object.values(ci).find((candidate) => candidate.name === "Other packages' suites")?.steps.map((step) => step.run)).toContain('pnpm test:packages');
     for (const at of order) expect(at).toBeGreaterThan(-1);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
     const preflight = verify!.steps.find(step => step.run === 'pnpm check:contracts');
@@ -191,8 +193,9 @@ describe('release delivery invariants', () => {
     ]);
     expect(builds['runs-on']).toBe('${{ matrix.runner }}');
     expect(builds.strategy?.['fail-fast']).toBe(false);
-    // Only after the suite, the integration tests and every smoke group; the merge needs both builds.
-    expect([builds.needs ?? []].flat()).toEqual(['verify', 'integration', 'docker-image']);
+    // Only after the server suite, the other packages' suites, the integration tests and every smoke group;
+    // the merge needs both builds.
+    expect([builds.needs ?? []].flat()).toEqual(['verify', 'package-tests', 'integration', 'docker-image']);
     expect([merge.needs ?? []].flat()).toEqual(['publish-image']);
     expect(builds.if).toBe("github.event_name == 'push' && github.ref == 'refs/heads/main'");
     // No condition of its own: on a pull request the merge is skipped with its build.
@@ -260,6 +263,7 @@ describe('release delivery invariants', () => {
     const pkg = JSON.parse(readFileSync(new URL('../../../package.json', import.meta.url), 'utf8'));
     expect(pkg.scripts['check:contracts']).toBe('node scripts/check-contracts.mjs');
     expect(pkg.scripts['release:check']).toBe('node scripts/check-node-version.mjs && pnpm typecheck && pnpm lint && pnpm build && pnpm check:contracts && pnpm test:workspace');
+    expect(pkg.scripts['test:workspace']).toBe('pnpm test:packages && pnpm test:server');
   });
 
   it('r475: the pnpm pins in the Dockerfile and installer track packageManager', () => {

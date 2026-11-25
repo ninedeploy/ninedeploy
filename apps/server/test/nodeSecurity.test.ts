@@ -53,8 +53,9 @@ describe('Node security baseline', () => {
         if (install >= 0) expect(install).toBeGreaterThan(check);
       }
     }
-    // ci.yml: three jobs. release-publish.yml: three, the browser release gate since N08. publish-npm.yml: one.
-    expect(found).toBe(7);
+    // ci.yml: four jobs, the other packages' suites on a runner of their own since November 26, 2026.
+    // release-publish.yml: three, the browser release gate since N08. publish-npm.yml: one.
+    expect(found).toBe(8);
   });
 });
 
