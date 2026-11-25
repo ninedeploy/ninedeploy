@@ -28,4 +28,5 @@ it('reopens standalone catcher retirement targets without invented service autho
     expect(reopened.row).toEqual({ phase: 'collecting', snapshot, catcher_id: null, worker_token: null });
     expect(reopened.count).toEqual(before.count);
   } finally { rmSync(folder, { recursive: true, force: true }); }
-});
+  // Each child run may take 20 seconds of its own; the test's limit can hardly be Vitest's 5.
+}, 2 * 20_000 + 5_000);
