@@ -89,14 +89,12 @@ jobs:
         run: pnpm check:contracts
 
       - name: Test
-        # Packages one at a time: server and web coverage suites starve each
-        # other on a small runner when turbo runs them in parallel (intermittent
-        # 30s waitFor failures that grow with the test count). The server
-        # package runs in several processes at once, each with its files one
-        # after another, and its coverage floors are checked once, on the
-        # merged report (scripts/test-server-sharded.mjs): in one process its
-        # 888 files took 39 minutes of a runner on November 25, 2026.
-        run: pnpm test:workspace
+        # The server suite. It runs in several processes at once, each with its
+        # files one after another, and its coverage floors are checked once, on
+        # the merged report (scripts/test-server-sharded.mjs): in one process its
+        # 888 files took 39 minutes of a runner on November 25, 2026. The other
+        # packages' suites run in package-tests, on a runner of their own.
+        run: pnpm test:server
 
       # Schema↔snapshot drift guard: 'drizzle-kit generate' must be a no-op.
       # Any change (edited snapshot, new migration) means schema.ts and the
@@ -443,9 +441,10 @@ jobs:
     # for every fork PR.
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     # The image must never reach `:edge` (what --channel=main installs
-    # pull) before the full suite and the integration tests are green —
-    # an independent job would happily publish a broken commit.
-    needs: [verify, integration, docker-image]
+    # pull) before the server suite, the other packages' suites, the
+    # integration tests and the image smokes are green — an independent
+    # job would happily publish a broken commit.
+    needs: [verify, package-tests, integration, docker-image]
     # L-14: least privilege. `packages: write` is the only permission
     # this job needs; everything else stays at the workflow default
     # of `contents: read`.
@@ -482,6 +481,43 @@ jobs:
             ghcr.io/ninedeploy/ninedeploy:main-${{ github.sha }}
           cache-from: type=registry,ref=ghcr.io/ninedeploy/ninedeploy:edge
           cache-to: type=inline
+
+  # The other packages' suites, on a runner of their own. Until November 26, 2026 they
+  # ran in the verify job before the server suite: 4.8 minutes of it on November 25,
+  # 2026, 3.8 of them the web suite's, and all on a push's critical path. They do not
+  # fit beside the server suite on one runner. In parallel they starve each other
+  # (intermittent 30s waitFor failures that grow with the test count); beside the
+  # server suite's processes on November 26, 2026, a packages/db test that starts two
+  # child runs of the migrations passed its own 5-second limit at 5053 ms, and with the
+  # server processes at a lower CPU priority a server test with a 20 ms deadline was
+  # starved past it. The packages still run one at a time, each with its own coverage
+  # floors; `release:check` runs them and the server suite one after the other
+  # (`pnpm test:workspace`).
+  package-tests:
+    name: Other packages' suites
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 26.12.1
+          cache: pnpm
+
+      - name: Verify Node security baseline
+        run: node -e "if (process.versions.node !== '26.12.1') throw new Error('Unexpected Node runtime')"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # turbo builds what a suite needs first (schemas and sdk).
+      - name: Test
+        run: pnpm test:packages
 
   integration:
     name: Integration tests (real Docker + PostgreSQL)

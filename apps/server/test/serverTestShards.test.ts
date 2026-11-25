@@ -132,10 +132,18 @@ describe('the server suite in shards', () => {
   });
   it('is what CI and the release gate run', () => {
     const pkg = JSON.parse(at('package.json')) as { scripts: Record<string, string> };
-    const ci = load(at('.github/workflows/ci.yml')) as { jobs: { verify: { steps: { name?: string; run?: string }[] } } };
-    const test = ci.jobs.verify.steps.find((step) => step.name === 'Test');
-    expect(test?.run).toContain('pnpm test:workspace');
-    expect(pkg.scripts['test:workspace']).toBe('pnpm turbo run test --concurrency=1 --force --filter=!@ninedeploy/server && pnpm test:server');
+    type Job = { name?: string; needs?: string | string[]; steps: { name?: string; run?: string }[] };
+    const ci = load(at('.github/workflows/ci.yml')) as { jobs: Record<string, Job> };
+    const testOf = (id: string) => ci.jobs[id]!.steps.find((step) => step.name === 'Test')?.run;
+    // CI: the server suite in the verify job, the other packages' suites in a job on a runner of their own,
+    // and the image only after both.
+    expect(ci.jobs.verify!.name).toBe('Typecheck · Lint · Build · Test');
+    expect(testOf('verify')).toBe('pnpm test:server');
+    expect(testOf('package-tests')).toBe('pnpm test:packages');
+    expect([ci.jobs['publish-image']!.needs ?? []].flat()).toEqual(['verify', 'package-tests', 'integration', 'docker-image']);
+    // The release gate runs the same two, one after the other.
+    expect(pkg.scripts['test:packages']).toBe('pnpm turbo run test --concurrency=1 --force --filter=!@ninedeploy/server');
+    expect(pkg.scripts['test:workspace']).toBe('pnpm test:packages && pnpm test:server');
     expect(pkg.scripts['test:server']).toBe('node scripts/test-server-sharded.mjs');
     expect(pkg.scripts['release:check'].startsWith('node scripts/check-node-version.mjs && ')).toBe(true);
     expect(pkg.scripts['release:check'].endsWith('pnpm test:workspace')).toBe(true);

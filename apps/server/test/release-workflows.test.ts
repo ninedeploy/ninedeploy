@@ -161,7 +161,9 @@ describe('release delivery invariants', () => {
     expect(verify).toBeDefined();
     expect(script).toContain("job='Typecheck · Lint · Build · Test'");
     const runs = verify!.steps.map((step) => step.run);
-    const order = ['pnpm install --frozen-lockfile', 'pnpm typecheck', 'pnpm lint', 'pnpm build', 'pnpm check:contracts', 'pnpm test:workspace'].map((cmd) => runs.indexOf(cmd));
+        const order = ['pnpm install --frozen-lockfile', 'pnpm typecheck', 'pnpm lint', 'pnpm build', 'pnpm check:contracts', 'pnpm test:server'].map((cmd) => runs.indexOf(cmd));
+    // The other packages' suites are that run's too, in a job of their own; a run succeeds only when every job in it did.
+    expect(Object.values(ci).find((candidate) => candidate.name === "Other packages' suites")?.steps.map((step) => step.run)).toContain('pnpm test:packages');
     for (const at of order) expect(at).toBeGreaterThan(-1);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
     const preflight = verify!.steps.find(step => step.run === 'pnpm check:contracts');
@@ -213,6 +215,7 @@ describe('release delivery invariants', () => {
     const pkg = JSON.parse(readFileSync(new URL('../../../package.json', import.meta.url), 'utf8'));
     expect(pkg.scripts['check:contracts']).toBe('node scripts/check-contracts.mjs');
     expect(pkg.scripts['release:check']).toBe('node scripts/check-node-version.mjs && pnpm typecheck && pnpm lint && pnpm build && pnpm check:contracts && pnpm test:workspace');
+    expect(pkg.scripts['test:workspace']).toBe('pnpm test:packages && pnpm test:server');
   });
 
   it('r475: the pnpm pins in the Dockerfile and installer track packageManager', () => {
