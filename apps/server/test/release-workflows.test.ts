@@ -161,7 +161,7 @@ describe('release delivery invariants', () => {
     expect(verify).toBeDefined();
     expect(script).toContain("job='Typecheck · Lint · Build · Test'");
     const runs = verify!.steps.map((step) => step.run);
-    const order = ['pnpm install --frozen-lockfile', 'pnpm typecheck', 'pnpm lint', 'pnpm build', 'pnpm check:contracts', 'pnpm turbo run test --concurrency=1 --force'].map((cmd) => runs.indexOf(cmd));
+    const order = ['pnpm install --frozen-lockfile', 'pnpm typecheck', 'pnpm lint', 'pnpm build', 'pnpm check:contracts', 'pnpm test:workspace'].map((cmd) => runs.indexOf(cmd));
     for (const at of order) expect(at).toBeGreaterThan(-1);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
     const preflight = verify!.steps.find(step => step.run === 'pnpm check:contracts');
@@ -212,7 +212,7 @@ describe('release delivery invariants', () => {
     // from CI's sequential invocations (the 0.10.30 escape class).
     const pkg = JSON.parse(readFileSync(new URL('../../../package.json', import.meta.url), 'utf8'));
     expect(pkg.scripts['check:contracts']).toBe('node scripts/check-contracts.mjs');
-    expect(pkg.scripts['release:check']).toBe('node scripts/check-node-version.mjs && pnpm typecheck && pnpm lint && pnpm build && pnpm check:contracts && pnpm turbo run test --concurrency=1 --force');
+    expect(pkg.scripts['release:check']).toBe('node scripts/check-node-version.mjs && pnpm typecheck && pnpm lint && pnpm build && pnpm check:contracts && pnpm test:workspace');
   });
 
   it('r475: the pnpm pins in the Dockerfile and installer track packageManager', () => {

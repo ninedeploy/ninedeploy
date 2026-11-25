@@ -66,10 +66,12 @@ describe('complete parallel release smoke gate', () => {
     expect(rps?.['continue-on-error']).not.toBe(true);
     expect([ci['publish-image'].needs ?? []].flat()).toContain('docker-image');
   });
-  it('keeps all mandatory cohorts bounded to three independent runners', () => {
+  it('starts every mandatory cohort at once, on one runner each', () => {
     const smoke = jobs()['smoke-published-image'];
     expect(smoke.strategy?.matrix?.suite).toEqual(suites);
-    expect(smoke.strategy?.['max-parallel']).toBe(3);
+    // Three at a time left the 26-minute node-sleep-wake cohort 27 minutes in the queue, on
+    // November 18 and 25, 2026: the cohorts took 54 minutes where the longest one needs 26.
+    expect(smoke.strategy?.['max-parallel']).toBe(smoke.strategy?.matrix?.suite?.length);
     expect(smoke.strategy?.['fail-fast']).toBe(false);
     expect(smoke['continue-on-error']).not.toBe(true); expect(smoke.if).toBeUndefined();
     expect(smoke.permissions).toEqual({ contents: 'read', packages: 'read' });

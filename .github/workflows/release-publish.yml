@@ -367,9 +367,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     # Each cohort owns isolated Docker fixtures; promotion needs all cohorts.
+    # Every cohort starts at once. With three at a time the 26-minute
+    # node-sleep-wake cohort waited 27 minutes for a runner on November 18 and
+    # 25, 2026, and the cohorts took 54 minutes instead of the longest one's.
     strategy:
       fail-fast: false
-      max-parallel: 3
+      max-parallel: 9
       matrix:
         suite: [upgrade-journey, agent-runtime, panel-lifecycle, public-canary, public-lifecycle, replica-databases, node-infrastructure, swarm-artifacts, node-sleep-wake]
     permissions:
