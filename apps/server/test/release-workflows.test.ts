@@ -173,14 +173,61 @@ describe('release delivery invariants', () => {
     expect(node?.with?.['node-version']).toBe(releaseNode?.with?.['node-version']);
   });
 
-  it('uses lowercase OCI repository names on the main publishing path', () => {
-    const steps = readWorkflow('ci.yml').jobs['publish-image']!.steps;
-    const push = steps.find((step) => step.with?.['push'] === true)!;
-    const tags = String(push.with?.['tags']);
-    expect(tags).not.toContain('github.repository');
-    expect(tags).toContain('ghcr.io/ninedeploy/ninedeploy:edge');
-  });
+  it('builds the main image on a runner of each architecture, and names the tags only once both exist', () => {
+    // One amd64 runner built both architectures until November 26, 2026, the arm64 one under
+    // emulation: on November 25 its build steps took 63 seconds for amd64 and 383 for arm64.
+    type JobDef = {
+      name?: string; 'runs-on'?: string; needs?: string | string[]; if?: string;
+      permissions?: Record<string, string>; strategy?: Record<string, unknown>;
+      steps: (Step & { id?: string; 'working-directory'?: string })[];
+    };
+    const jobs = readWorkflow('ci.yml').jobs as unknown as Record<string, JobDef>;
+    const builds = jobs['publish-image']!;
+    const merge = jobs['merge-image']!;
+    const include = ((builds.strategy?.matrix ?? {}) as { include?: Record<string, string>[] }).include ?? [];
+    expect(include.map((entry) => [entry.slug, entry.platform, entry.runner])).toEqual([
+      ['amd64', 'linux/amd64', 'ubuntu-latest'],
+      ['arm64', 'linux/arm64', 'ubuntu-24.04-arm'],
+    ]);
+    expect(builds['runs-on']).toBe('${{ matrix.runner }}');
+    expect(builds.strategy?.['fail-fast']).toBe(false);
+    // Only after the suite, the integration tests and every smoke group; the merge needs both builds.
+    expect([builds.needs ?? []].flat()).toEqual(['verify', 'integration', 'docker-image']);
+    expect([merge.needs ?? []].flat()).toEqual(['publish-image']);
+    expect(builds.if).toBe("github.event_name == 'push' && github.ref == 'refs/heads/main'");
+    // No condition of its own: on a pull request the merge is skipped with its build.
+    expect(merge.if).toBeUndefined();
+    expect(builds.permissions).toEqual({ contents: 'read', 'packages': 'write' });
+    expect(merge.permissions).toEqual({ packages: 'write' });
 
+    // Each build pushes one architecture by digest, and names no tag.
+    const push = builds.steps.find((step) => step.with?.['push'] === true)!;
+    expect(push.with?.['push-by-digest']).toBe(true);
+    expect(push.with?.['platforms']).toBe('${{ matrix.platform }}');
+    expect(push.with).not.toHaveProperty('tags');
+    const write = builds.steps.find((step) => step.env?.['DIGEST'] === '${{ steps.push.outputs.digest }}')!;
+    expect(write.run).toContain('^sha256:[0-9a-f]{64}$');
+    const upload = builds.steps.find((step) => step.name === 'Keep the digest for merge-image')!;
+    expect(upload.with).toMatchObject({ name: 'image-digest-${{ github.run_id }}-${{ matrix.slug }}', 'if-no-files-found': 'error' });
+
+    // The tags are named here alone, lowercase, and only with two digests in hand.
+    const download = merge.steps.findIndex((step) => String(step.uses ?? '').startsWith('actions/download-artifact'));
+    expect(merge.steps[download]!.with).toMatchObject({ pattern: 'image-digest-${{ github.run_id }}-*', path: '/tmp/image-digests', 'merge-multiple': true });
+    const create = merge.steps.findIndex((step) => step.run?.includes('imagetools create'));
+    expect(create).toBeGreaterThan(download);
+    expect(merge.steps[create]!.run).toContain('[ "$count" -ne 2 ]');
+    expect(merge.steps[create]!.run).toContain('-t "$repo:edge" -t "$repo:main-${{ github.sha }}"');
+    expect(merge.steps[create]!.run).not.toContain('github.repository');
+    expect(merge.steps[create]!['working-directory']).toBe('/tmp/image-digests');
+    const check = merge.steps.findIndex((step) => step.name === 'Check that the published image has both architectures');
+    expect(check).toBeGreaterThan(create);
+    expect(merge.steps[check]!.run).toContain('for platform in linux/amd64 linux/arm64; do');
+    expect(merge.steps[check]!.run).toContain('grep -qx "$platform" <<<"$platforms"');
+    for (const [id, job] of Object.entries(jobs)) {
+      if (id === 'merge-image') continue;
+      for (const step of job.steps ?? []) expect(step.run ?? '', `${id}: ${step.name ?? ''}`).not.toMatch(/imagetools create|--tag |-t "/);
+    }
+  });
   it('r475: verifies version provenance before anything is built or pushed', () => {
     // Tags are typed by hand; a stale or mistyped tag would pass every check
     // (it IS a green commit) and publish a mislabeled image that also

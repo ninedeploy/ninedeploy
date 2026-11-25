@@ -434,9 +434,17 @@ jobs:
   # so an unauthenticated `docker pull` works for fresh installs. This
   # is a GitHub Packages UI setting; there is no API call that can do
   # it from CI.
+  #
+  # Two jobs, two runners. Until November 26, 2026 one job built both
+  # architectures on an amd64 runner, the arm64 one under emulation: on
+  # November 25 its build steps took 63 seconds for amd64 and 383 for arm64,
+  # in a job of 7.3 minutes. Now each architecture is built on a runner of
+  # its own kind and pushed by digest, which names no tag; merge-image
+  # below puts the two under the tags. A failed build therefore leaves
+  # `:edge` where it was, as before.
   publish-image:
-    name: Publish Docker image to GHCR
-    runs-on: ubuntu-latest
+    name: Build the image for GHCR (${{ matrix.platform }})
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 20
     # Only build + push from main. PRs run the build-only job above
     # to keep the workflow cheap and to avoid forking a public image
@@ -446,6 +454,20 @@ jobs:
     # pull) before the full suite and the integration tests are green —
     # an independent job would happily publish a broken commit.
     needs: [verify, integration, docker-image]
+    # Both builds run whatever the other does; neither is cancelled when
+    # the other fails.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - slug: amd64
+            platform: linux/amd64
+            runner: ubuntu-latest
+          - slug: arm64
+            platform: linux/arm64
+            # GitHub's arm64 runner builds natively: cold, the whole image
+            # took 63 seconds there on November 25, 2026.
+            runner: ubuntu-24.04-arm
     # L-14: least privilege. `packages: write` is the only permission
     # this job needs; everything else stays at the workflow default
     # of `contents: read`.
@@ -462,26 +484,103 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Build the multi-arch image (amd64 + arm64) and push only on main.
-      # The cache-from layer accelerates the next push and keeps the
-      # build under the 20-minute job timeout even on a clean runner.
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@988b5a0280414f521da01fcc63a27aeeb4b104db # v6.7.0
+        with:
+          # The runner leaves with the job, so no builder has to be removed:
+          # that took 20 seconds at the end of the arm64 probe on November 25, 2026.
+          cleanup: false
 
-      - name: Build and push (edge + main-<sha>)
+      # One architecture, pushed by digest: nothing here names a tag. The
+      # cache-from layer accelerates the next push and keeps the build under
+      # the job's timeout even on a clean runner.
+      - name: Build and push by digest
+        id: push
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
+          platforms: ${{ matrix.platform }}
           push: true
-          platforms: linux/amd64,linux/arm64
-          # `:edge` is what `install.sh --channel=main` pulls; the
-          # sha-pinned tag is the immutable artifact a release manager
-          # can re-tag to `:latest` (or roll back to) without rebuilding.
-          tags: |
-            ghcr.io/ninedeploy/ninedeploy:edge
-            ghcr.io/ninedeploy/ninedeploy:main-${{ github.sha }}
+          push-by-digest: true
+          # Buildx's default, written out: each architecture is pushed as
+          # an index of its image and its provenance manifest, and
+          # merge-image's index keeps both, as the one-runner build's did.
+          provenance: mode=min
           cache-from: type=registry,ref=ghcr.io/ninedeploy/ninedeploy:edge
           cache-to: type=inline
+
+      - name: Write the digest down
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          set -euo pipefail
+          if ! printf '%s' "$DIGEST" | grep -Eq '^sha256:[0-9a-f]{64}$'; then
+            echo "::error::build-push-action reported no image digest ('${DIGEST}')"
+            exit 1
+          fi
+          mkdir -p /tmp/image-digests
+          touch "/tmp/image-digests/${DIGEST#sha256:}"
+
+      - name: Keep the digest for merge-image
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: image-digest-${{ github.run_id }}-${{ matrix.slug }}
+          path: /tmp/image-digests/
+          if-no-files-found: error
+          retention-days: 1
+
+  # The moment `:edge` moves. It needs both builds, and a job is skipped
+  # when a job it needs was skipped, so on a pull request it never runs.
+  merge-image:
+    name: Publish Docker image to GHCR (edge, main-<sha>)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: publish-image
+    permissions:
+      packages: write
+    steps:
+      - name: Take the two digests
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: image-digest-${{ github.run_id }}-*
+          path: /tmp/image-digests
+          merge-multiple: true
+
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # `:edge` is what `install.sh --channel=main` pulls; the
+      # sha-pinned tag is the immutable artifact a release manager
+      # can re-tag to `:latest` (or roll back to) without rebuilding.
+      - name: Put both architectures under the tags
+        working-directory: /tmp/image-digests
+        run: |
+          set -euo pipefail
+          repo=ghcr.io/ninedeploy/ninedeploy
+          count="$(find . -type f | wc -l)"
+          if [ "$count" -ne 2 ]; then
+            echo "::error::expected one digest per architecture and got $count"
+            exit 1
+          fi
+          docker buildx imagetools create \
+            -t "$repo:edge" -t "$repo:main-${{ github.sha }}" \
+            $(printf '%s@sha256:%s ' "$repo" *)
+
+      - name: Check that the published image has both architectures
+        run: |
+          set -euo pipefail
+          image="ghcr.io/ninedeploy/ninedeploy:main-${{ github.sha }}"
+          platforms="$(docker buildx imagetools inspect "$image" \
+            --format '{{range .Manifest.Manifests}}{{.Platform.OS}}/{{.Platform.Architecture}}{{"\n"}}{{end}}')"
+          for platform in linux/amd64 linux/arm64; do
+            grep -qx "$platform" <<<"$platforms" || { echo "::error::$image has no $platform manifest"; exit 1; }
+          done
+          echo "$image:"
+          printf '%s\n' "$platforms"
 
   integration:
     name: Integration tests (real Docker + PostgreSQL)
