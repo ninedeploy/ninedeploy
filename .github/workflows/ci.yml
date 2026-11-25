@@ -89,13 +89,15 @@ jobs:
         run: pnpm check:contracts
 
       - name: Test
-        # Packages one at a time: server and web coverage suites starve each
-        # other on a small runner when turbo runs them in parallel (intermittent
-        # 30s waitFor failures that grow with the test count). The server
-        # package runs in several processes at once, each with its files one
-        # after another, and its coverage floors are checked once, on the
-        # merged report (scripts/test-server-sharded.mjs): in one process its
-        # 888 files took 39 minutes of a runner on November 25, 2026.
+        # Two streams at once (scripts/test-workspace.mjs): every package but
+        # the server one at a time, and beside it the server package in
+        # several processes, each with its files one after another, its
+        # coverage floors checked once on the merged report
+        # (scripts/test-server-sharded.mjs). The packages among themselves
+        # stay one at a time: server and web coverage suites starve each other
+        # on a small runner when turbo runs them in parallel (intermittent 30s
+        # waitFor failures that grow with the test count). In one process the
+        # server suite took 39 minutes of a runner on November 25, 2026.
         run: pnpm test:workspace
 
       # Schema↔snapshot drift guard: 'drizzle-kit generate' must be a no-op.

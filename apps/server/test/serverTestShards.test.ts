@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { load } from 'js-yaml';
 import { describe, expect, it } from 'vitest';
-import { SHARD_GIB, chunkFiles, directoryRows, keysFromRoot, lineSplitter, mergeReports, parseFileList, passedFiles, percentages, readThresholds, shardCount, summaryDocument, unmetThresholds } from '../../../scripts/lib/server-test-shards.mjs';
+import { SHARD_GIB, chunkFiles, directoryRows, keysFromRoot, lineSplitter, mergeReports, parseFileList, passedFiles, percentages, readThresholds, shardCount, streamOutcome, summaryDocument, unmetThresholds, workspaceStreams } from '../../../scripts/lib/server-test-shards.mjs';
 
 // The server unit suite runs in several processes at once (scripts/test-server-sharded.mjs).
 // These hold what that relies on: the floors are read from the one place they are written, a
@@ -130,12 +130,25 @@ describe('the server suite in shards', () => {
     const coloured = ` ${esc}[1m${esc}[32m Test Files ${esc}[39m${esc}[22m 38 passed (38)`;
     expect(passedFiles(coloured)).toBe(38);
   });
+  it('runs the other packages beside the server suite, and reports each stream on its own', () => {
+    // One after the other, the other packages' minutes were all on the verify job's time.
+    const streams = workspaceStreams();
+    expect(Object.keys(streams)).toEqual(['packages', 'server']);
+    // The packages still run one at a time, uncached, and the server package is left to its own stream.
+    expect(streams.packages).toEqual(['turbo', 'run', 'test', '--concurrency=1', '--force', '--filter=!@ninedeploy/server']);
+    expect(streams.server).toEqual(['test:server']);
+    expect(streamOutcome(0, null)).toBe('passed');
+    expect(streamOutcome(1, null)).toBe('FAILED (exit 1)');
+    expect(streamOutcome(null, 'SIGKILL')).toBe('killed by SIGKILL');
+    expect(readFileSync(new URL('../../../scripts/test-workspace.mjs', import.meta.url), 'utf8')).toContain("stdio: ['ignore', 'inherit', 'inherit']");
+  });
+
   it('is what CI and the release gate run', () => {
     const pkg = JSON.parse(at('package.json')) as { scripts: Record<string, string> };
     const ci = load(at('.github/workflows/ci.yml')) as { jobs: { verify: { steps: { name?: string; run?: string }[] } } };
     const test = ci.jobs.verify.steps.find((step) => step.name === 'Test');
     expect(test?.run).toContain('pnpm test:workspace');
-    expect(pkg.scripts['test:workspace']).toBe('pnpm turbo run test --concurrency=1 --force --filter=!@ninedeploy/server && pnpm test:server');
+    expect(pkg.scripts['test:workspace']).toBe('node scripts/test-workspace.mjs');
     expect(pkg.scripts['test:server']).toBe('node scripts/test-server-sharded.mjs');
     expect(pkg.scripts['release:check'].startsWith('node scripts/check-node-version.mjs && ')).toBe(true);
     expect(pkg.scripts['release:check'].endsWith('pnpm test:workspace')).toBe(true);

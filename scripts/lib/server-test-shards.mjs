@@ -72,6 +72,24 @@ export function passedFiles(line) {
 }
 
 /**
+ * The two streams `pnpm test:workspace` runs at once: every other package's suite, one package
+ * at a time as before; and the server suite in its processes. They ran one after the other
+ * until November 26, 2026, and the other packages' minutes were all on the verify job's time.
+ */
+export function workspaceStreams() {
+  return {
+    packages: ['turbo', 'run', 'test', '--concurrency=1', '--force', '--filter=!@ninedeploy/server'],
+    server: ['test:server'],
+  };
+}
+
+/** How a stream ended, for the log. */
+export function streamOutcome(code, signal) {
+  if (signal) return `killed by ${signal}`;
+  return code === 0 ? 'passed' : `FAILED (exit ${code})`;
+}
+
+/**
  * The four global floors as apps/server/vitest.config.ts names them, so the floors have one home.
  * The block carries comments, so the numbers are read from the last `thresholds: {` in the file.
  */
