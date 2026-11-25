@@ -203,11 +203,13 @@ describe('release delivery invariants', () => {
     expect(builds.permissions).toEqual({ contents: 'read', 'packages': 'write' });
     expect(merge.permissions).toEqual({ packages: 'write' });
 
-    // Each build pushes one architecture by digest, and names no tag.
-    const push = builds.steps.find((step) => step.with?.['push'] === true)!;
-    expect(push.with?.['push-by-digest']).toBe(true);
+    // Each build pushes one architecture by digest, and names no tag. push-by-digest is an option
+    // of buildx's image exporter; the action has no such input, and on November 25, 2026 a build
+    // step that gave it one pushed with no tag at all.
+    const push = builds.steps.find((step) => String(step.uses ?? '').startsWith('docker/build-push-action'))!;
+    expect(push.with?.['outputs']).toBe('type=image,name=ghcr.io/ninedeploy/ninedeploy,push-by-digest=true,name-canonical=true,push=true');
     expect(push.with?.['platforms']).toBe('${{ matrix.platform }}');
-    expect(push.with).not.toHaveProperty('tags');
+    for (const key of ['tags', 'push', 'push-by-digest']) expect(push.with).not.toHaveProperty(key);
     const write = builds.steps.find((step) => step.env?.['DIGEST'] === '${{ steps.push.outputs.digest }}')!;
     expect(write.run).toContain('^sha256:[0-9a-f]{64}$');
     const upload = builds.steps.find((step) => step.name === 'Keep the digest for merge-image')!;

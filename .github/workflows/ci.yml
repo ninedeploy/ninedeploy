@@ -499,8 +499,11 @@ jobs:
         with:
           context: .
           platforms: ${{ matrix.platform }}
-          push: true
-          push-by-digest: true
+          # The image exporter pushes under the name, by digest only. `push-by-digest`
+          # is its option, not one of the action: the action passes over inputs it does
+          # not know, and on November 25, 2026 the first push to main with one of those
+          # failed with "tag is needed when pushing to registry".
+          outputs: type=image,name=ghcr.io/ninedeploy/ninedeploy,push-by-digest=true,name-canonical=true,push=true
           # Buildx's default, written out: each architecture is pushed as
           # an index of its image and its provenance manifest, and
           # merge-image's index keeps both, as the one-runner build's did.
