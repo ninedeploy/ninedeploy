@@ -1,10 +1,11 @@
 import { readFileSync } from 'node:fs';
 import { load } from 'js-yaml';
 import { describe, expect, it } from 'vitest';
-type Step = { id?: string; run?: string; if?: string; 'continue-on-error'?: boolean; 'timeout-minutes'?: number; name?: string; with?: { path?: string } };
+type Step = { id?: string; run?: string; if?: string; 'continue-on-error'?: boolean; 'timeout-minutes'?: number; name?: string; uses?: string; with?: { path?: string } };
 type Job = { needs?: string | string[]; if?: string; 'continue-on-error'?: boolean; permissions?: Record<string, string>;
-  strategy?: { 'fail-fast'?: boolean; 'max-parallel'?: number; matrix?: { suite?: string[] } }; steps?: Step[] };
+  strategy?: { 'fail-fast'?: boolean; 'max-parallel'?: number; matrix?: { suite?: string[]; group?: string[] } }; steps?: Step[] };
 const jobs = () => (load(readFileSync(new URL('../../../.github/workflows/release-publish.yml', import.meta.url), 'utf8')) as { jobs: Record<string, Job> }).jobs;
+const imageJob = () => (load(readFileSync(new URL('../../../.github/workflows/ci.yml', import.meta.url), 'utf8')) as { jobs: Record<string, Job> }).jobs['docker-image'];
 const suites = ['upgrade-journey', 'agent-runtime', 'panel-lifecycle', 'public-canary', 'public-lifecycle', 'replica-databases', 'node-infrastructure', 'swarm-artifacts', 'node-sleep-wake'];
 // biome-ignore lint/suspicious/noTemplateCurlyInString: Literal GitHub shell variable in the actual smoke commands.
 const image = 'ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}';
@@ -39,7 +40,7 @@ describe('complete parallel release smoke gate', () => {
   it('requires staged catcher traffic acceptance and uploads only its public evidence in CI and release runs', () => {
     const ci = (load(readFileSync(new URL('../../../.github/workflows/ci.yml', import.meta.url), 'utf8')) as { jobs: Record<string, Job> }).jobs;
     for (const [steps, proof, condition] of [
-      [ci['docker-image'].steps!, '.temp_files/ci-wake-recovery', undefined],
+      [ci['docker-image'].steps!, '.temp_files/ci-wake-recovery', "matrix.group == 'routing'"],
       [jobs()['smoke-published-image'].steps!, '.temp_files/release-wake-recovery', "matrix.suite == 'agent-runtime'"],
     ] as const) {
       const smoke = steps.find(step => step.run?.includes('scripts/smoke-wake-recovery.mjs'));
@@ -55,16 +56,53 @@ describe('complete parallel release smoke gate', () => {
     const build = ci['docker-image'];
     const step = build.steps!.find(item => item.run?.includes('--autoscale-only'));
     expect(step?.run).toBe('node scripts/smoke-node-canary.mjs --image=ninedeploy:ci --autoscale-only --proof=.temp_files/ci-node-autoscale');
+    expect(step?.if).toBe("matrix.group == 'autoscaling'");
     expect(step?.['continue-on-error']).not.toBe(true);
     const sql = build.steps!.find(item => item.run?.includes('--autoscale-database-only'));
     expect(sql?.run).toBe('node scripts/smoke-node-canary.mjs --image=ninedeploy:ci --autoscale-database-only --proof=.temp_files/ci-node-autoscale-database');
-    expect(sql?.if).toBeUndefined();
+    expect(sql?.if).toBe("matrix.group == 'databases'");
     expect(sql?.['continue-on-error']).not.toBe(true);
     const rps = build.steps!.find(item => item.run?.includes('--autoscale-rps-only'));
     expect(rps?.run).toBe('node scripts/smoke-node-canary.mjs --image=ninedeploy:ci --autoscale-rps-only --proof=.temp_files/ci-node-autoscale-rps');
-    expect(rps?.if).toBeUndefined();
+    expect(rps?.if).toBe("matrix.group == 'autoscaling-rps'");
     expect(rps?.['continue-on-error']).not.toBe(true);
     expect([ci['publish-image'].needs ?? []].flat()).toContain('docker-image');
+  });
+  it('runs the image job as six smoke groups, every smoke and its evidence in exactly one of them', () => {
+    // One after another the smokes took 43 minutes of a runner on November 25, 2026, on every
+    // push and every pull request. Each group's smokes own their Docker fixtures.
+    const build = imageJob();
+    const groups = build.strategy?.matrix?.group ?? [];
+    expect(groups).toEqual(['canary', 'autoscaling', 'autoscaling-rps', 'databases', 'lifecycle', 'routing']);
+    expect(build.strategy?.['fail-fast']).toBe(false);
+    expect(build.strategy?.['max-parallel']).toBeUndefined();
+    expect((build.strategy?.matrix as Record<string, unknown> | undefined)?.suite).toBeUndefined();
+    const steps = build.steps ?? [];
+    const setup = ['Verify Node security baseline', 'Setup pnpm', 'Install dependencies', 'Build the image'];
+    const imageIsBuilt = steps.findIndex(step => step.name === 'Build the image');
+    const smokes = new Set<string>();
+    for (const [index, step] of steps.entries()) {
+      const selected = /^(?:always\(\) && )?matrix\.group == '([a-z-]+)'$/.exec(step.if ?? '');
+      if (!step.if) {
+        // Only a checkout and the setup steps run in every group.
+        expect(step.run === undefined || setup.includes(step.name ?? '')).toBe(true);
+        continue;
+      }
+      expect(selected, `${step.name}: ${step.if}`).not.toBeNull();
+      expect(groups).toContain(selected![1]);
+      if (step.run?.startsWith('node scripts/smoke-')) {
+        smokes.add(selected![1]);
+        expect(step['continue-on-error']).not.toBe(true);
+        expect(index).toBeGreaterThan(imageIsBuilt);
+        expect(step['timeout-minutes']).toBeGreaterThan(0);
+      }
+      if (step.uses?.startsWith('actions/upload-artifact')) {
+        // Evidence is kept when its smoke fails too.
+        expect(step.if).toMatch(/^always\(\) && /);
+        expect(step.name).toMatch(/^Preserve /);
+      }
+    }
+    expect([...smokes].sort()).toEqual([...groups].sort());
   });
   it('starts every mandatory cohort at once, on one runner each', () => {
     const smoke = jobs()['smoke-published-image'];
