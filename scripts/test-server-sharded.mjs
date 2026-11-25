@@ -17,7 +17,7 @@ import { appendFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from '
 import { availableParallelism, totalmem } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { chunkFiles, directoryRows, keysFromRoot, mergeReports, parseFileList, percentages, readThresholds, shardCount, summaryDocument, unmetThresholds } from './lib/server-test-shards.mjs';
+import { chunkFiles, directoryRows, keysFromRoot, lineSplitter, mergeReports, parseFileList, passedFiles, percentages, readThresholds, shardCount, summaryDocument, unmetThresholds } from './lib/server-test-shards.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const server = path.join(root, 'apps', 'server');
@@ -56,17 +56,22 @@ const run = (chunk, i, worker) => new Promise((resolve) => {
   const child = spawn(process.execPath, args, { cwd: server, stdio: ['ignore', 'pipe', 'pipe'] });
   const outcome = { n: i + 1, files: chunk.length, passed: 0, ok: false, killed: false, line: '' };
   // A chunk's output goes to its own file as it comes, and to the log under its heading at the end.
+  // Its lines arrive in pieces, so they are joined before one is read.
+  const complete = lineSplitter();
+  const note = (line) => {
+    if (!line.trim()) return;
+    const clean = line.replace(ANSI, '');
+    logs[i].push(clean);
+    const passed = passedFiles(clean);
+    if (passed !== null) outcome.passed = passed;
+  };
   const take = (stream) => stream.setEncoding('utf8').on('data', (text) => {
     appendFileSync(path.join(dir, 'vitest.log'), text);
-    for (const line of text.replaceAll('\r\n', '\n').split('\n')) {
-      if (!line.trim()) continue;
-      logs[i].push(line.replace(ANSI, ''));
-      const summary = /^\s*Test Files\s+(\d+) passed/.exec(line);
-      if (summary) outcome.passed = Number(summary[1]);
-    }
+    for (const line of complete(text)) note(line);
   });
   take(child.stdout); take(child.stderr);
   const ended = (code, signal) => {
+    for (const line of complete('', true)) note(line);
     outcome.ok = code === 0;
     outcome.killed = Boolean(signal);
     outcome.line = `server chunk ${i + 1}/${chunks.length} (${chunk.length} files, process ${worker + 1}): ${signal ? `killed by ${signal}` : outcome.ok ? 'passed' : `FAILED (exit ${code})`} after ${minutes()}`;

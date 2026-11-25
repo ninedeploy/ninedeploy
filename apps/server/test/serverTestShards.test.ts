@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { load } from 'js-yaml';
 import { describe, expect, it } from 'vitest';
-import { SHARD_GIB, chunkFiles, directoryRows, keysFromRoot, mergeReports, parseFileList, percentages, readThresholds, shardCount, summaryDocument, unmetThresholds } from '../../../scripts/lib/server-test-shards.mjs';
+import { SHARD_GIB, chunkFiles, directoryRows, keysFromRoot, lineSplitter, mergeReports, parseFileList, passedFiles, percentages, readThresholds, shardCount, summaryDocument, unmetThresholds } from '../../../scripts/lib/server-test-shards.mjs';
 
 // The server unit suite runs in several processes at once (scripts/test-server-sharded.mjs).
 // These hold what that relies on: the floors are read from the one place they are written, a
@@ -115,6 +115,21 @@ describe('the server suite in shards', () => {
     expect(chunkFiles(many, 12)).toHaveLength(48);
   });
 
+  it('reads a summary from a stream that hands its lines over in pieces', () => {
+    const complete = lineSplitter();
+    const esc = String.fromCharCode(27);
+    // The piece left over is put in front of what comes next, so the summary is one line again.
+    const first = [' ✓ test/a.test.ts (2 tests) 5ms', ''].join('\n');
+    expect(complete(`${first}  Test Files `)).toEqual([' ✓ test/a.test.ts (2 tests) 5ms']);
+    const rest = ['2 passed (2)', '      Tests  2 passed (2)', ''].join('\n');
+    expect(complete(rest)).toEqual(['  Test Files 2 passed (2)', '      Tests  2 passed (2)']);
+    expect(complete('', true)).toEqual([]);
+    // Vitest's summary as a pipe handed it over on GitHub's runner on November 25, 2026: no colour.
+    const plain = [' ✓ test/a.test.ts (2 tests) 5ms', ' Test Files  2 passed (2)', '', '  Tests  2 passed (2)'].join('\n');
+    expect(plain.split('\n').map(passedFiles)).toEqual([null, 2, null, null]);
+    const coloured = ` ${esc}[1m${esc}[32m Test Files ${esc}[39m${esc}[22m 38 passed (38)`;
+    expect(passedFiles(coloured)).toBe(38);
+  });
   it('is what CI and the release gate run', () => {
     const pkg = JSON.parse(at('package.json')) as { scripts: Record<string, string> };
     const ci = load(at('.github/workflows/ci.yml')) as { jobs: { verify: { steps: { name?: string; run?: string }[] } } };

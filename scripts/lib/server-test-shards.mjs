@@ -42,6 +42,29 @@ export function chunkFiles(files, workers) {
   return chunks;
 }
 
+// ANSI colour sequences. ESC is built at runtime: Biome rejects control characters in a literal.
+const ANSI = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, 'g');
+
+/**
+ * Complete lines out of a stream that arrives in pieces of its own choosing: a pipe can hand a
+ * line over in two, and Vitest's summary arrived as " Test Files " and "38 passed (38)".
+ * Call with the last piece and `true` at the end.
+ */
+export function lineSplitter() {
+  let rest = '';
+  return (text, final = false) => {
+    const lines = `${rest}${text}`.replaceAll('\r\n', '\n').split('\n');
+    rest = lines.pop();
+    return final ? (rest ? [...lines, rest] : lines) : lines;
+  };
+}
+
+/** How many files a chunk's summary line says passed, coloured or not; null for any other line. */
+export function passedFiles(line) {
+  const summary = /^\s*Test Files\s+(\d+) passed/.exec(line.replace(ANSI, ''));
+  return summary ? Number(summary[1]) : null;
+}
+
 /**
  * The four global floors as apps/server/vitest.config.ts names them, so the floors have one home.
  * The block carries comments, so the numbers are read from the last `thresholds: {` in the file.
