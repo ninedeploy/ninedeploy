@@ -14,6 +14,56 @@ This is the current status summary. [SUPPORT_MATRIX.md](SUPPORT_MATRIX.md) is ge
 
 Do not turn one accepted scenario into a claim about every fault timing, runtime or environment. Live agent capability checks and job-time preflight remain authoritative.
 
+## What is open
+
+Reconciled on November 27, 2026. This is the one list. The plans keep the evidence and the history of each item: the [competitive roadmap](plans/COMPETITIVE_ROADMAP_2026-11.md) (C, S, A, P, O and X items), the [November work plan](plans/PROJECT_REVIEW_2026-11-16.md) (N items) and the [roadmap](ROADMAP.md) (R items). The G items of the [October gap list](GAP_ROADMAP.md) are all done.
+
+**The owner's decisions and actions**
+
+| What | Why it waits |
+|---|---|
+| Add `STABLE_TAG_TOKEN` before December 2, 2026 | [The stable channel](#the-stable-channel): v0.20.0 qualifies that day, and the daily run cannot move the tag without it. |
+| Keep the compact layout as the default, or hold it back | N10 shipped in 0.20.0 on automated evidence; no person has used either layout for the record. To hold it back, set `DEFAULT_LAYOUT` in `apps/web/src/lib/layout.ts`. |
+| The five decisions of N11, panel sign-in on nodes | [Design record, section 11](plans/node-forward-auth.md). No code before them. |
+| The public launch | Approved on November 9, and the exit evidence of phase 2 exists. It has not been announced. On November 27 the repository has 20 stars, 3 forks and no issue ever opened; Coolify has 66,582 stars and Dokploy 38,731. |
+| Accounts, names and certificates | N04: a managed S3 bucket. N05: a Cloudflare token, zone and suffix. N09: a public hostname and origin. N18: cloud provider accounts and signing certificates. |
+
+**Product work not started**, in the order proposed on November 27
+
+| ID | Work |
+|---|---|
+| A4 | Seven more framework guides with starters: Django, Rails, Express, Astro, Go, Spring and a static site. |
+| A2 | Route the panel's own domain to the panel container over the `ninedeploy` network. Today it reaches the panel only through the Docker gateway on host port 3000. |
+| A3 | Group the 20 sections of instance Settings by task. |
+| A8 | Rename the `coolify-*` template slugs, with redirects. Approved on November 9. |
+| X2 | Deploy by polling Git, for servers that cannot receive webhooks. |
+| N11 | Panel sign-in for services on nodes, after the decisions. |
+| N07 | Panel state that a user notices losing on a restart: canaries, sleep tracking, forward-auth codes. |
+| N12 | Node database upgrades and MongoDB, then replicas with a manual promote. |
+| N13 | Preview database copies for MySQL, MariaDB, MongoDB and nodes. |
+| N14 | GitOps for databases, build, storage and secret references; Compose release fidelity. |
+| S5 | Hot or relational settings state, moved into columns or tables. |
+| N20 | Declared shapes for the about 54 singleton settings keys. |
+| N15 | Deployment-linked logs, source maps for error ingest, then OTLP tracing. |
+| N16, O5 | A metrics-only token; a credential inventory with guided rotation. |
+| N17 | Workspace quotas and a billing export, for agencies. |
+| X4 | Network policy per project and environment. |
+| O3 | What keeps serving while the panel is down, written as a set. A standby is undecided. |
+| N19 | Object storage as a managed resource; agent sandboxes behind approvals. |
+| A5, A9 | A hero GIF for the README; signed desktop installers, after certificates. |
+| S9 | The hot files, split only while an item already changes them. |
+
+**Verification and release**
+
+| Work | Where it stands |
+|---|---|
+| The Release's smoke cohorts | Nine start at once. The longest cohort is 26 minutes, because the cohorts are grouped by feature; dealt by time, the longest would be about 14. No release has run with nine at once. |
+| The Release build from main CI's layers, and the checks it skips | Both are measured, and neither has run in a release. The next release is the first. |
+| R2 as an aggregate milestone | Its components shipped in patches. The checklist below separates the accepted cohorts from the remaining certification. |
+| Documentation-only pushes | They run the six smoke groups and the browser gate. |
+| The slowest test files, and each file's import | Six files are a third of the suite's time, and imports are 9 to 51 % of a chunk. |
+| CI's build stage | It runs again when the context changes although its inputs did not, about a minute a push. Not explained. |
+
 ## The published 0.20.0 release
 
 The release run ([45602786958](https://github.com/ninedeploy/ninedeploy/actions/runs/45602786958)) and the CI run on the same commit ([45589926528](https://github.com/ninedeploy/ninedeploy/actions/runs/45589926528)) succeeded on November 25, 2026. The job results below were read from GitHub on November 25, 2026.
