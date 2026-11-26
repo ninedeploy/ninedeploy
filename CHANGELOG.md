@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+**Highlights**
+
+- Fixes reach a release sooner: a push's verification takes 35 to 44 minutes instead of 79, and a release builds its image in about 30 seconds where 0.20.0 took 7.5 minutes.
+
+**Action needed:** No.
+
+### Internal
+
+- Run the server unit suite in processes that take chunks of files from a queue, and pack the chunks by what each file took in the run before. On GitHub's runner the suite went from 38.9 minutes to 11 to 15, and a push's chain from 79 minutes to 35 to 44.
+- Run the image job's twelve node smokes as six groups, each on its own runner. The job went from 43.2 minutes to about 13.
+- Build the main image on two runners, one per architecture, and put the two under `:edge` and `:main-<sha>`. The publish path went from 7 to 12 minutes to 1 to 2. The other packages' suites and the contract preflight run in jobs of their own.
+- Let the Release build take the layers main CI built for the tagged commit, and skip the workspace build and the database integration checks when main CI passed on the same commit.
+- The stable channel workflow reads the tag back before it reports a move.
+- Three tests that keep a real clock no longer fail under load: the invitation fixture takes its two dates at one moment, the wake-collection test allows its two child runs their time, and the "never becomes healthy" probe moves on a clock that is read.
+
 ## [0.20.0] - 2026-11-25
 
 **Highlights**

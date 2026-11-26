@@ -1,6 +1,6 @@
 # Current implementation and acceptance status
 
-Snapshot: **November 25, 2026**. The published base is **0.20.0**, tagged at `fbb94e91e2defbcc1f9d8d77526099b036651465` and published on November 25, 2026. It holds the thirty-seven commits, the release metadata and one merge that follow 0.19.0, for the capacity baseline (N06), the browser promotion gate (N08), the framework starters with first-deploy fixes (N09), the compact layout (N10), the N11 design record, and the deploy-wizard preflight and migration-plan work that concurrent sessions had left uncommitted. Local and remote `main` also hold three changes that shorten verification (below). Work that exists only in an uncommitted working tree is not described here.
+Snapshot: **November 27, 2026**. The published base is **0.20.0**, tagged at `fbb94e91e2defbcc1f9d8d77526099b036651465` and published on November 25, 2026. It holds the thirty-seven commits, the release metadata and one merge that follow 0.19.0, for the capacity baseline (N06), the browser promotion gate (N08), the framework starters with first-deploy fixes (N09), the compact layout (N10), the N11 design record, and the deploy-wizard preflight and migration-plan work that concurrent sessions had left uncommitted. Local and remote `main` also hold the changes that shorten verification (below). Work that exists only in an uncommitted working tree is not described here.
 
 This is the current status summary. [SUPPORT_MATRIX.md](SUPPORT_MATRIX.md) is generated from the same evaluators and guards used by service settings, database APIs, preview creation and build admission. Older roadmap and acceptance documents retain their dated evidence; their open-item lists and numerical inventories describe their original checkpoint.
 
@@ -27,7 +27,7 @@ The release run ([45602786958](https://github.com/ninedeploy/ninedeploy/actions/
 | Desktop | Test, package and launch passed on macOS, Ubuntu and Windows. |
 | Promotion and packages | `promote-release` and `publish-npm` succeeded: `ninedeploy`, `@ninedeploy/sdk`, `@ninedeploy/schemas`, `@ninedeploy/mcp` and `@ninedeploy/plugin-sdk` at 0.20.0. The release carries the source archive, `install.sh`, `CHANGELOG.md`, five desktop installers, `SHA256SUMS` and `SHA256SUMS.sigstore.json`. |
 
-The `stable` tag still pointed at v0.18.28 (`f238463e`) after publication, so the stable channel offers that release until 0.20.0 is seven days old.
+The `stable` tag still pointed at v0.18.28 (`f238463e`) after publication, so the stable channel offers that release until 0.20.0 is seven days old. What happened to the tag next is under [The stable channel](#the-stable-channel).
 
 ## The published 0.19.0 release
 
@@ -176,7 +176,19 @@ The Release workflow's build takes the layers main CI built for the tagged commi
 
 The contract preflight (`pnpm check:contracts`, 23 of the server's files) left the verify job for a job on a runner of its own: it needs the built workspace, not the suite, and its 1.9 minutes were on the job's time. The publish jobs wait for it as for the verify job, so nothing reaches `:edge` that a guard would have refused.
 
-Still open, in the order of what each is worth: a documentation-only push runs the smoke groups and the browser gate; the backup integration checks and the workspace build still run in the Release workflow's job when main CI passed them on the same commit (about 3 minutes); the browser gate is 18 minutes of journeys that build on one another, one worker by design; the six slowest test files; the canary smoke group, at 13.2 minutes on that run, is now the longest of the other jobs. One of the slowest files is not quick to make faster: `accessGrantsProperties.test.ts` gives 200 random grants and, after each, works out the user's every access decision again (172 seconds in one test on a slow runner). Every file also loads the application once more, which is 9 to 51 % of a chunk.
+The Release workflow's `publish-image` job skips the workspace build and the database integration checks as well, when main CI passed on the tagged commit. Its reuse step now reads two jobs of that CI run by name: the one that runs the suites, and the integration job, which runs the same command as the step it stands for. In 0.20.0 the two steps took 2.1 of the job's 10.4 minutes, and nothing after them reads the built workspace: the Dockerfile builds from the source tree in its own stage, and `.dockerignore` keeps the built workspace out of its context. The step's shell was run against GitHub's API for two commits with a green main CI (`reuse=true`) and for one that never was main's head (`false`). No release has run with it yet.
+
+Still open, in the order of what each is worth: a documentation-only push runs the smoke groups and the browser gate; the browser gate is 18 minutes of journeys that build on one another, one worker by design; the six slowest test files; the canary smoke group, at 13.2 minutes on that run, is now the longest of the other jobs. One of the slowest files is not quick to make faster: `accessGrantsProperties.test.ts` gives 200 random grants and, after each, works out the user's every access decision again (172 seconds in one test on a slow runner). Every file also loads the application once more, which is 9 to 51 % of a chunk.
+
+The Release workflow's smokes have a longer tail than their work needs. In 0.20.0 the nine cohorts ran three at a time: three started at once and the other six waited 9 to 28 minutes for a runner, and the whole workflow took 66.5 minutes. Nine start at once since `dc45c7a9`, which no release has run with yet; then the longest cohort decides, and that is `node-sleep-wake` at 25.9 minutes, followed by `public-canary` at 25.5. The cohorts are grouped by feature, so each of these holds three smokes of 5 to 11 minutes. The nine took 128 minutes in all, 14 on average, so dealing the smokes by their time would bring the longest down to about that.
+
+## The stable channel
+
+On November 27, 2026 the `stable` tag was still at v0.18.28 (`f238463e`), although v0.19.0 had been published eight days before. The daily Stable channel workflow chose v0.19.0 on November 25 and on November 26, and could not move the tag on either day.
+
+The cause is measured. The built-in `GITHUB_TOKEN` may write a ref only when the target commit's `.github/workflows` equals the default branch's, and a release commit's do not once main touches a workflow file, which the seven-day soak nearly always sees. Of the workflow's seven runs that had a tag to write up to November 26, the two whose target still equalled main (November 13 and 14) went through, and the other five were refused with 403. A probe on November 27 ([run 45909813365](https://github.com/ninedeploy/ninedeploy/actions/runs/45909813365)) showed that `git push` is refused the same way: GitHub names the first workflow file that differs and the missing `workflows` permission. The workflow writes the tag with the `STABLE_TAG_TOKEN` secret when it is set. That secret has never been set.
+
+The tag was moved to v0.19.0 (`0a59b5ed`) by hand on November 27, with the workflow's own call, and the workflow now reads the tag back before it reports a move. v0.20.0 qualifies for stable on December 2, 2026. Until a fine-grained token for this repository with Contents and Workflows read and write is stored as `STABLE_TAG_TOKEN`, each promotion needs a hand move, and the daily run fails on the days between.
 
 ## Operational switches and live checks
 

@@ -77,6 +77,8 @@ Every release is offered at once to panels on the default channel. Panels on the
 
 The tag never moves backwards. To promote a tag by hand, run the workflow with its `tag` input. Use `dry_run` to see what it would do.
 
+The workflow moves the tag with the `STABLE_TAG_TOKEN` repository secret: a fine-grained token for this repository with Contents and Workflows read and write. The built-in `GITHUB_TOKEN` cannot do it. GitHub lets a token without the `workflows` permission write a ref only when the target commit's `.github/workflows` equals the default branch's, and a release commit's do not once main touches a workflow file. Without the secret, the run fails on each day a promotion is due and stable stays where it is ([Current status](docs/CURRENT_STATUS.md#the-stable-channel)). A fine-grained token expires within a year. When it does, the run fails the same way, so store a new one before then.
+
 ## Pull requests
 
 - Keep one change per pull request, and describe what an operator will notice.

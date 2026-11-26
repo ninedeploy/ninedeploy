@@ -1063,9 +1063,12 @@ section without them), a commit, and a lightweight `vX.Y.Z` tag. Pushing the
 tag runs `.github/workflows/release-publish.yml`:
 
 1. **publish-image** — tag format, provenance (tag = `package.json` =
-   `version.ts`), a successful main CI on the same commit, the release checks
-   (typecheck, lint, build, test), the backup integration checks, then a
-   multi-architecture build pushed as `:vX.Y.Z` only. The build takes
+   `version.ts`), then the workspace build, the release checks (typecheck,
+   lint, build, test) and the backup integration checks. None of the three
+   is repeated when main CI passed on the same commit: the reuse step reads
+   two jobs of that run by name, the one that runs the suites and the one
+   that runs the same integration command. Then a multi-architecture build
+   pushed as `:vX.Y.Z` only. The build takes
    the layers main CI built for the commit when main CI published
    their image (30 seconds on a runner; the build with no cache took
    7.5 minutes), and builds as before for a commit main CI published
@@ -1080,9 +1083,10 @@ tag runs `.github/workflows/release-publish.yml`:
    `public-canary`, `replica-databases` and `swarm-artifacts`
 3. **desktop** — the installers are built and launched on macOS, Ubuntu and
    Windows (signing only when certificates exist)
-4. **browser-release-gate** — the core Playwright journeys run against the
-   signed image digest. This gate is in no published release: it was added
-   in commit `e264a77c`, after v0.19.0, which did not include it
+4. **browser-release-gate** — the five Playwright projects of the main
+   browser gate (`setup`, `desktop`, `phone`, `desktop-compact`,
+   `phone-compact`) run against the signed image digest. 0.20.0 was the
+   first release to require it: it passed in 20 minutes
 5. **promote-release** — only when all of the above pass: decide whether the
    tag is the highest (only then does `:latest` move), build and sign the
    integrity assets (`ninedeploy-vX.Y.Z.tar.gz` from `git archive`,
@@ -1104,8 +1108,10 @@ smokes can be run by hand against any published pair:
 **Channels.** The default channel offers every release. The **stable**
 channel offers only the release the `stable` tag points at;
 `.github/workflows/stable-channel.yml` moves it daily to the newest release
-that is at least 7 days old, never backwards. A release's notes can carry
-`<!-- stable: hold -->` (keep it off stable) or `<!-- stable: security -->`
+that is at least 7 days old, never backwards. It uses the `STABLE_TAG_TOKEN`
+secret for that, because the built-in token cannot write a ref on a release
+commit whose workflow files differ from `main`'s. A release's notes can
+carry `<!-- stable: hold -->` (keep it off stable) or `<!-- stable: security -->`
 (promote it at the next run). See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## 14. Installation, updates and supervision
