@@ -1006,12 +1006,15 @@ process; `release:check` now runs it through `pnpm test:server`.
   gets its parallelism another way: several processes at once over small
   chunks of the files. A process is an invocation of its own, with a data
   root of its own and its files still one after another; it takes the next
-  chunk when its ends. The chunks deal the files round-robin, because the
-  heaviest files sit together in the alphabet. The chunks' coverage is
-  merged and the four floors are checked once
-  (`scripts/test-server-sharded.mjs`). On GitHub's runner (4 cores,
-  15.6 GiB) that is 6 processes over 24 chunks; on November 25, 2026 the
-  suite took 11.6 minutes where, in one process, it took 38.9.
+  chunk when its ends. Without a history the chunks deal the files
+  round-robin, because the heaviest files sit together in the alphabet.
+  CI keeps what each file took in the run before (in GitHub's
+  cache), and the runner packs the chunks by it, the heaviest first, so
+  that the processes end together. The chunks' coverage is merged, then
+  the four floors are checked once (`scripts/test-server-sharded.mjs`).
+  On GitHub's runner (4 cores, 15.6 GiB) that is 6 processes over 24
+  chunks. On November 25, 2026 the suite took 11.6 minutes where, in one
+  process, it took 38.9.
 - **Integration tests** (`apps/server/test/integration/`, 14 files) use
   testcontainers with real PostgreSQL, MySQL, Redis and MongoDB and real
   Docker. They are excluded from the default config and run only through

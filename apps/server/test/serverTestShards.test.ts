@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { load } from 'js-yaml';
 import { describe, expect, it } from 'vitest';
-import { SHARD_GIB, chunkFiles, directoryRows, keysFromRoot, lineSplitter, mergeReports, parseFileList, passedFiles, percentages, readThresholds, shardCount, summaryDocument, unmetThresholds } from '../../../scripts/lib/server-test-shards.mjs';
+import { SHARD_GIB, chunkFiles, directoryRows, durationsDocument, fileDuration, keysFromRoot, lineSplitter, mergeReports, parseDurations, parseFileList, passedFiles, percentages, readThresholds, shardCount, summaryDocument, unmetThresholds } from '../../../scripts/lib/server-test-shards.mjs';
 
 // The server unit suite runs in several processes at once (scripts/test-server-sharded.mjs).
 // These hold what that relies on: the floors are read from the one place they are written, a
@@ -115,6 +115,53 @@ describe('the server suite in shards', () => {
     expect(chunkFiles([], 6)).toEqual([]);
   });
 
+  it('packs the chunks by what each file took in the run before, the heaviest first', () => {
+    // Which chunk the queue ended with was chance, and on November 26, 2026 the last one cost
+    // the suite from a minute on a fast runner to four on a slow one.
+    const listed = Array.from({ length: 48 }, (_, i) => `test/file-${String(i).padStart(2, '0')}.test.ts`);
+    const files = Object.fromEntries(listed.map((file, i) => [file, i === 7 ? 240_000 : 1000 * (i % 5)]));
+    const durations = parseDurations(JSON.stringify({ version: 1, load: 1600, median: 2000, files }))!;
+    const cost = (file: string) => (durations.files[file] ?? durations.median) + durations.load;
+    const weight = (chunk: string[]) => chunk.reduce((sum, file) => sum + cost(file), 0);
+    const chunks = chunkFiles(listed, 6, durations);
+    expect(chunks).toHaveLength(24);
+    // Every file once, and the heaviest chunks first in the queue.
+    expect([...chunks.flat()].sort()).toEqual([...listed].sort());
+    expect(new Set(chunks.flat()).size).toBe(listed.length);
+    const weights = chunks.map(weight);
+    expect(weights).toEqual([...weights].sort((a, b) => b - a));
+    // The one heavy file has a chunk to itself, and the rest are level to within one file.
+    expect(chunks[0]).toEqual(['test/file-07.test.ts']);
+    expect(Math.max(...weights.slice(1)) - Math.min(...weights.slice(1))).toBeLessThanOrEqual(Math.max(...listed.slice(8).map(cost)));
+    // Fewer files than chunks: one file a chunk, and no empty chunk.
+    expect(chunkFiles(['test/only.test.ts'], 6, durations)).toEqual([['test/only.test.ts']]);
+    expect(chunkFiles([], 6, durations)).toEqual([]);
+    // Without durations the files are dealt round-robin.
+    expect(chunkFiles(listed, 6)).toEqual(chunkFiles(listed, 6, null));
+  });
+
+  it("reads each file's own time from the lines a chunk printed, and leaves them for the next run", () => {
+    expect(fileDuration(' ✓ test/a.test.ts (14 tests) 354ms')).toEqual(['test/a.test.ts', 354]);
+    expect(fileDuration(' ✓ test/b.test.ts (3 tests | 1 skipped) 77ms')).toEqual(['test/b.test.ts', 77]);
+    const green = String.fromCharCode(27);
+    expect(fileDuration(` ${green}[32m✓${green}[39m test/c.test.ts (1 test) 5ms`)).toEqual(['test/c.test.ts', 5]);
+    // A failed file, or the summary: nothing to take.
+    expect(fileDuration(' ❯ test/d.test.ts (2 tests | 1 failed) 9ms')).toBeNull();
+    expect(fileDuration(' Test Files  3 passed (3)')).toBeNull();
+    const lines = [' ✓ test/a.test.ts (14 tests) 354ms', 'noise', ' ✓ test/b.test.ts (3 tests | 1 skipped) 77ms', ' ✓ test/c.test.ts (1 test) 5ms'];
+    const document = durationsDocument(lines, 60_000, 3);
+    expect(document).toEqual({ version: 1, load: (60_000 - 436) / 3, median: 77, files: { 'test/a.test.ts': 354, 'test/b.test.ts': 77, 'test/c.test.ts': 5 } });
+    // What was written is what the next run reads.
+    expect(parseDurations(JSON.stringify(document))).toEqual(document);
+    // The same file printed twice keeps the longer time.
+    expect(durationsDocument([' ✓ test/a.test.ts (14 tests) 354ms', ' ✓ test/a.test.ts (14 tests) 400ms'], 0, 1).files).toEqual({ 'test/a.test.ts': 400 });
+    expect(durationsDocument([], 0, 0)).toEqual({ version: 1, load: 0, median: 0, files: {} });
+    // Nothing, or not one: no durations.
+    expect(parseDurations('')).toBeNull();
+    expect(parseDurations('{"version":2,"load":1,"median":1,"files":{}}')).toBeNull();
+    expect(parseDurations('{"version":1,"load":1,"median":1,"files":null}')).toBeNull();
+  });
+
   it('reads a summary from a stream that hands its lines over in pieces', () => {
     const complete = lineSplitter();
     const esc = String.fromCharCode(27);
@@ -132,7 +179,7 @@ describe('the server suite in shards', () => {
   });
   it('is what CI and the release gate run', () => {
     const pkg = JSON.parse(at('package.json')) as { scripts: Record<string, string> };
-    type Job = { name?: string; needs?: string | string[]; steps: { name?: string; run?: string }[] };
+    type Job = { name?: string; needs?: string | string[]; steps: { name?: string; run?: string; uses?: string; with?: Record<string, unknown>; env?: Record<string, string> }[] };
     const ci = load(at('.github/workflows/ci.yml')) as { jobs: Record<string, Job> };
     const testOf = (id: string) => ci.jobs[id]!.steps.find((step) => step.name === 'Test')?.run;
     // CI: the server suite in the verify job, the other packages' suites in a job on a runner of their own,
@@ -145,6 +192,17 @@ describe('the server suite in shards', () => {
     expect(pkg.scripts['test:packages']).toBe('pnpm turbo run test --concurrency=1 --force --filter=!@ninedeploy/server');
     expect(pkg.scripts['test:workspace']).toBe('pnpm test:packages && pnpm test:server');
     expect(pkg.scripts['test:server']).toBe('node scripts/test-server-sharded.mjs');
+    // CI hands the runner what the run before wrote for each file, and keeps what this one writes.
+    const steps = ci.jobs.verify!.steps;
+    const test = steps.findIndex((step) => step.name === 'Test');
+    const taken = steps.findIndex((step) => String(step.uses ?? '').startsWith('actions/cache@'));
+    expect(taken).toBeGreaterThan(-1);
+    expect(taken).toBeLessThan(test);
+    expect(steps[taken]!.with).toMatchObject({ path: 'apps/server/.test-durations.json', 'restore-keys': 'server-test-durations-' });
+    expect(steps[test]!.env).toEqual({ SERVER_TEST_DURATIONS: 'apps/server/.test-durations.json' });
+    // The release gate sets nothing: there the chunks are dealt round-robin.
+    expect(at('scripts/test-server-sharded.mjs')).toContain('chunkFiles(files, workers, durations)');
+    expect(at('.gitignore')).toContain('apps/server/.test-durations.json');
     expect(pkg.scripts['release:check'].startsWith('node scripts/check-node-version.mjs && ')).toBe(true);
     expect(pkg.scripts['release:check'].endsWith('pnpm test:workspace')).toBe(true);
   });

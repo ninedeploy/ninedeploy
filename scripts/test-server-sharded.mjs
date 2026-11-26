@@ -12,12 +12,18 @@
 // `--shard` cuts alphabetical ranges, and the heaviest files sit together in them: with six
 // ranges on GitHub's runner the slowest took 11.5 minutes against an average of 6.6. A chunk is
 // a quarter of a process's work, so the suite ends little later than its slowest chunk.
+//
+// Which chunk the queue ends with is chance, and on November 26, 2026 the last one cost the
+// suite from a minute on a fast runner to four on a slow one. So when SERVER_TEST_DURATIONS names
+// a file, the run writes there how long each file took, and the next one packs the chunks by it,
+// the heaviest first; CI keeps the file from run to run. Without it the chunks are dealt
+// round-robin.
 import { execFileSync, spawn } from 'node:child_process';
-import { appendFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { availableParallelism, totalmem } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { chunkFiles, directoryRows, keysFromRoot, lineSplitter, mergeReports, parseFileList, passedFiles, percentages, readThresholds, shardCount, summaryDocument, unmetThresholds } from './lib/server-test-shards.mjs';
+import { chunkFiles, directoryRows, durationsDocument, keysFromRoot, lineSplitter, mergeReports, parseDurations, parseFileList, passedFiles, percentages, readThresholds, shardCount, summaryDocument, unmetThresholds } from './lib/server-test-shards.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const server = path.join(root, 'apps', 'server');
@@ -27,6 +33,10 @@ const vitest = path.join(root, 'node_modules', 'vitest', 'vitest.mjs');
 const gib = totalmem() / 2 ** 30;
 // biome-ignore lint/suspicious/noUndeclaredEnvVars: a setting for this standalone runner, outside any Turbo task.
 const workers = shardCount(process.env.SERVER_TEST_SHARDS, availableParallelism(), gib);
+// What each file took in the run before, when there is one; without it the chunks are dealt round-robin.
+// biome-ignore lint/suspicious/noUndeclaredEnvVars: a setting for this standalone runner, outside any Turbo task.
+const durationsFile = process.env.SERVER_TEST_DURATIONS;
+const durations = durationsFile && existsSync(durationsFile) ? parseDurations(readFileSync(durationsFile, 'utf8')) : null;
 const started = Date.now();
 const minutes = () => `${((Date.now() - started) / 60_000).toFixed(1)} minutes`;
 // ANSI colour sequences. ESC is built at runtime: Biome rejects control characters in a literal.
@@ -35,15 +45,17 @@ const ANSI = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, 'g');
 // The files as Vitest itself picks them, so nothing runs that it would not, and nothing is missed.
 const files = parseFileList(execFileSync(process.execPath, [vitest, 'list', '--filesOnly'], { cwd: server, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
 if (!files.length) throw new Error('Vitest listed no test files for apps/server');
-const chunks = chunkFiles(files, workers);
+const chunks = chunkFiles(files, workers, durations);
 rmSync(chunksDir, { recursive: true, force: true });
 mkdirSync(chunksDir, { recursive: true });
-console.log(`server unit suite: ${files.length} files in ${chunks.length} chunks, ${workers} processes at once, on ${availableParallelism()} cores with ${gib.toFixed(1)} GiB`);
+console.log(`server unit suite: ${files.length} files in ${chunks.length} chunks (${durations ? 'packed by what each file took in the run before' : 'dealt round-robin'}), ${workers} processes at once, on ${availableParallelism()} cores with ${gib.toFixed(1)} GiB`);
 
 // Each chunk writes the `json` reporter's document, for the merge. Its own floors are set to zero:
 // a chunk covers one part of the source, and the floors are checked once, on the merged report.
 const outcomes = new Array(chunks.length);
 const logs = chunks.map(() => []);
+// How long the processes were busy in all, for the loading a file pays (durationsDocument).
+let busyMs = 0;
 let next = 0;
 const run = (chunk, i, worker) => new Promise((resolve) => {
   const dir = path.join(chunksDir, `chunk-${i + 1}`);
@@ -54,6 +66,7 @@ const run = (chunk, i, worker) => new Promise((resolve) => {
     ...chunk,
   ];
   const child = spawn(process.execPath, args, { cwd: server, stdio: ['ignore', 'pipe', 'pipe'] });
+  const began = Date.now();
   const outcome = { n: i + 1, files: chunk.length, passed: 0, ok: false, killed: false, line: '' };
   // A chunk's output goes to its own file as it comes, and to the log under its heading at the end.
   // Its lines arrive in pieces, so they are joined before one is read.
@@ -72,6 +85,7 @@ const run = (chunk, i, worker) => new Promise((resolve) => {
   take(child.stdout); take(child.stderr);
   const ended = (code, signal) => {
     for (const line of complete('', true)) note(line);
+    busyMs += Date.now() - began;
     outcome.ok = code === 0;
     outcome.killed = Boolean(signal);
     outcome.line = `server chunk ${i + 1}/${chunks.length} (${chunk.length} files, process ${worker + 1}): ${signal ? `killed by ${signal}` : outcome.ok ? 'passed' : `FAILED (exit ${code})`} after ${minutes()}`;
@@ -85,6 +99,12 @@ const run = (chunk, i, worker) => new Promise((resolve) => {
 await Promise.all(Array.from({ length: workers }, async (_, worker) => {
   for (let i = next++; i < chunks.length; i = next++) await run(chunks[i], i, worker);
 }));
+
+// What this run leaves for the next one, as soon as every chunk has ended.
+if (durationsFile) {
+  mkdirSync(path.dirname(path.resolve(durationsFile)), { recursive: true });
+  writeFileSync(durationsFile, `${JSON.stringify(durationsDocument(logs.flat(), busyMs, files.length), null, 1)}\n`);
+}
 
 // Every chunk's output goes to the log as the single invocation's did: which files ran, how long
 // each took, and what failed.

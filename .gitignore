@@ -49,6 +49,8 @@ backups
 .zcode/
 # test coverage artifacts
 coverage
+# How long each server test file took in the run before (CI keeps it in its cache).
+apps/server/.test-durations.json
 .cov-tmp
 .mimosa/
 

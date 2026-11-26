@@ -33,19 +33,36 @@ export function parseFileList(text) {
  * The files in small chunks for the processes to take in turn, every file in one chunk. Four
  * chunks a process, so the last chunk a process takes is a quarter of its work.
  *
- * A chunk takes every n-th file of Vitest's order rather than a stretch of it. The heaviest files
- * sit together in the alphabet, and a stretch kept them together: on GitHub's runner one
- * stretch of 38 files took 7.4 minutes alone and started 10 minutes in (November 25, 2026). Dealt
- * round-robin, a chunk is a small sample of the whole list, and no chunk is much heavier than
- * its heaviest file.
+ * With `durations`, what each file took in the run before (`parseDurations`), the heaviest file
+ * goes to the chunk that has the least, and the heaviest chunks go first in the queue, so the
+ * processes end together.
+ *
+ * Without them, a chunk takes every n-th file of Vitest's order rather than a stretch of it.
+ * The heaviest files sit together in the alphabet, and a stretch kept them together: on
+ * GitHub's runner one stretch of 38 files took 7.4 minutes alone and started 10 minutes in
+ * (November 25, 2026). Dealt round-robin, no chunk is much heavier than its heaviest file, but
+ * which chunk the queue ends with is chance: on November 26, 2026 the last one cost the suite
+ * from a minute on a fast runner to four on a slow one.
  */
-export function chunkFiles(files, workers) {
+export function chunkFiles(files, workers, durations) {
   if (!files.length) return [];
-  const size = Math.max(1, Math.ceil(files.length / (workers * 4)));
-  const count = Math.ceil(files.length / size);
+  const count = Math.ceil(files.length / Math.max(1, Math.ceil(files.length / (workers * 4))));
+  if (!durations) {
+    const dealt = Array.from({ length: count }, () => []);
+    for (const [index, file] of files.entries()) dealt[index % count].push(file);
+    return dealt;
+  }
+  const weight = (file) => (durations.files[file] ?? durations.median) + durations.load;
+  const heaviestFirst = files.map((file, index) => ({ file, index })).sort((a, b) => weight(b.file) - weight(a.file) || a.index - b.index);
   const chunks = Array.from({ length: count }, () => []);
-  for (const [index, file] of files.entries()) chunks[index % count].push(file);
-  return chunks;
+  const load = new Array(count).fill(0);
+  for (const { file } of heaviestFirst) {
+    let least = 0;
+    for (let k = 1; k < count; k += 1) if (load[k] < load[least]) least = k;
+    chunks[least].push(file);
+    load[least] += weight(file);
+  }
+  return chunks.sort((a, b) => b.reduce((sum, file) => sum + weight(file), 0) - a.reduce((sum, file) => sum + weight(file), 0));
 }
 
 // ANSI colour sequences. ESC is built at runtime: Biome rejects control characters in a literal.
@@ -69,6 +86,52 @@ export function lineSplitter() {
 export function passedFiles(line) {
   const summary = /^\s*Test Files\s+(\d+) passed/.exec(line.replace(ANSI, ''));
   return summary ? Number(summary[1]) : null;
+}
+
+/**
+ * A file's own time as the default reporter ends a file, coloured or not:
+ * ` ✓ test/x.test.ts (14 tests) 354ms`, or ` ✓ test/x.test.ts (3 tests | 1 skipped) 77ms`. The
+ * loading of the application that went before it is not in it (Vitest counts that apart); null
+ * for any other line.
+ */
+export function fileDuration(line) {
+  const ended = /^\s*✓ (test\/\S+) \(\d+ tests?(?:\s*\|\s*\d+ skipped)?\) (\d+)ms$/.exec(line.replace(ANSI, ''));
+  return ended ? [ended[1], Number(ended[2])] : null;
+}
+
+/**
+ * What the run before wrote, as `durationsDocument` does: `{ version, load, median, files }`. A
+ * file's cost is its own time and `load`, the loading every file pays; a file the run before did
+ * not have takes the median. Null when there is none or it is not one, and the chunks are then
+ * dealt round-robin.
+ */
+export function parseDurations(text) {
+  try {
+    const parsed = JSON.parse(text);
+    if (parsed?.version !== 1 || typeof parsed.load !== 'number' || typeof parsed.median !== 'number' || typeof parsed.files !== 'object' || parsed.files === null) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * What a run leaves for the next one, from every line its chunks printed and the time the
+ * processes were busy: each file's own time, the median of them for a file there is no time for,
+ * and the loading a file pays, which is what is left when the files' own times are taken from
+ * the time the chunks ran, over the files.
+ */
+export function durationsDocument(lines, busyMs, fileCount) {
+  const files = {};
+  for (const line of lines) {
+    const ended = fileDuration(line);
+    if (ended) files[ended[0]] = Math.max(files[ended[0]] ?? 0, ended[1]);
+  }
+  const times = Object.values(files).sort((a, b) => a - b);
+  const middle = Math.floor(times.length / 2);
+  const median = times.length ? (times.length % 2 ? times[middle] : (times[middle - 1] + times[middle]) / 2) : 0;
+  const own = times.reduce((sum, ms) => sum + ms, 0);
+  return { version: 1, load: fileCount ? Math.max(0, (busyMs - own) / fileCount) : 0, median, files };
 }
 
 /**
