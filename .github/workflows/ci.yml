@@ -568,9 +568,13 @@ jobs:
             echo "::error::expected one digest per architecture and got $count"
             exit 1
           fi
+          # One source per digest, named one at a time: one printf for the repository and
+          # both digests reuses its format, and named the second "<digest>@sha256:".
+          sources=()
+          for digest in *; do sources+=("$repo@sha256:$digest"); done
           docker buildx imagetools create \
             -t "$repo:edge" -t "$repo:main-${{ github.sha }}" \
-            $(printf '%s@sha256:%s ' "$repo" *)
+          "${sources[@]}"
 
       - name: Check that the published image has both architectures
         run: |

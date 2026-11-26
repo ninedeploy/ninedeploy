@@ -221,6 +221,11 @@ describe('release delivery invariants', () => {
     const create = merge.steps.findIndex((step) => step.run?.includes('imagetools create'));
     expect(create).toBeGreaterThan(download);
     expect(merge.steps[create]!.run).toContain('[ "$count" -ne 2 ]');
+    // Each digest is named on its own: one printf for the repository and two digests reuses its
+    // format, and on November 25, 2026 the second source came out as "<digest>@sha256:".
+    expect(merge.steps[create]!.run).toContain('for digest in *; do sources+=("$repo@sha256:$digest"); done');
+    expect(merge.steps[create]!.run).toContain('"${sources[@]}"');
+    expect(merge.steps[create]!.run).not.toContain('$(printf');
     expect(merge.steps[create]!.run).toContain('-t "$repo:edge" -t "$repo:main-${{ github.sha }}"');
     expect(merge.steps[create]!.run).not.toContain('github.repository');
     expect(merge.steps[create]!['working-directory']).toBe('/tmp/image-digests');
