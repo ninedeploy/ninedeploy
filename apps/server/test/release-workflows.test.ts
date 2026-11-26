@@ -659,6 +659,28 @@ describe('r700/r701: the release is signed (Sigstore keyless) and published with
     });
   });
 
+  it('takes the layers main CI built for the commit, and builds without them when it published none', () => {
+    // The two-platform build took 7.5 of publish-image's 10.4 minutes in 0.20.0. Main CI builds
+    // the image of the commit from the same context, and a build from its layers took 30 seconds
+    // on a runner (November 26, 2026).
+    const steps = jobs()['publish-image']!.steps!;
+    const login = steps.findIndex((s) => uses(s, 'docker/login-action'));
+    const layers = steps.findIndex((s) => s.id === 'layers');
+    const push = steps.findIndex((s) => s.with?.['push'] === true);
+    expect(layers).toBeGreaterThan(login);
+    expect(push).toBeGreaterThan(layers);
+    expect(steps[layers]!.env?.['COMMIT']).toBe('${{ steps.source.outputs.commit }}');
+    const run = steps[layers]!.run!;
+    // Nothing is taken until the image is seen, and the commit is the one checked out.
+    expect(run.indexOf('cache=""')).toBeLessThan(run.indexOf('if docker buildx imagetools inspect "$image" > /dev/null 2>&1; then'));
+    expect(run).toContain('image="ghcr.io/ninedeploy/ninedeploy:main-${COMMIT}"');
+    expect(run).toContain('echo "cache-from=${cache}" >> "$GITHUB_OUTPUT"');
+    expect(steps[push]!.with?.['cache-from']).toBe('${{ steps.layers.outputs.cache-from }}');
+    // The image is still this job's own, pushed here under its tag with its label.
+    expect(steps[push]!.with?.['tags']).toBe('${{ steps.meta.outputs.tags }}');
+    expect(steps[push]!.with?.['labels']).toBe('${{ steps.meta.outputs.labels }}');
+  });
+
   it('r700/r701: only the two jobs that sign hold an OIDC token', () => {
     const all = jobs();
     expect(all['publish-image']!.permissions?.['id-token']).toBe('write');

@@ -1062,10 +1062,13 @@ tag runs `.github/workflows/release-publish.yml`:
 1. **publish-image** — tag format, provenance (tag = `package.json` =
    `version.ts`), a successful main CI on the same commit, the release checks
    (typecheck, lint, build, test), the backup integration checks, then a
-   multi-architecture build pushed as `:vX.Y.Z` only, with the manifest
-   smoke-checked, the index **digest** signed with cosign keyless (GitHub
-   OIDC → Fulcio, logged in Rekor; no maintainer key) and SLSA build
-   provenance attached
+   multi-architecture build pushed as `:vX.Y.Z` only. The build takes
+   the layers main CI built for the commit when main CI published
+   their image (30 seconds on a runner; the build with no cache took
+   7.5 minutes), and builds as before for a commit main CI published
+   none for. The manifest is then smoke-checked, the index **digest**
+   signed with cosign keyless (GitHub OIDC → Fulcio, logged in Rekor; no
+   maintainer key) and SLSA build provenance attached
 2. **smoke-published-image** — on that pushed image, in privileged
    Docker-in-Docker: the upgrade smoke from the previous published release
    (the same data volume), the user-journey smoke and nine cohorts —

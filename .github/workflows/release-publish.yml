@@ -277,6 +277,31 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Main CI builds the image of every commit it publishes (ci.yml, `:main-<sha>`), from
+      # the context this job checks out. buildx keeps each layer it built in that image (its
+      # inline cache), and a build takes a layer from there instead of building it again: on
+      # November 26, 2026 a two-platform build of an unchanged context from them took 30
+      # seconds, where the build with no cache took 7.5 of this job's 10.4 minutes in 0.20.0.
+      # A commit main CI published no image for (a tag on a commit that never was main's
+      # head, a failed run) is built as before. The image is this job's own either way: its
+      # tag, its label, its signature and its provenance come from the steps below.
+      - name: Take the layers main CI built for this commit, when it published them
+        if: success()
+        id: layers
+        env:
+          COMMIT: ${{ steps.source.outputs.commit }}
+        run: |
+          set -euo pipefail
+          image="ghcr.io/ninedeploy/ninedeploy:main-${COMMIT}"
+          cache=""
+          if docker buildx imagetools inspect "$image" > /dev/null 2>&1; then
+            cache="type=registry,ref=${image}"
+            echo "Main CI published ${image}: its layers are taken."
+          else
+            echo "Main CI published no image for ${COMMIT}: the build takes no layers."
+          fi
+          echo "cache-from=${cache}" >> "$GITHUB_OUTPUT"
+
       # Keep historical images: version-pinned installs and rollback depend on them.
       - name: Build and push
         if: success()
@@ -293,6 +318,8 @@ jobs:
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # Empty when main CI published no image for the commit: the build then takes no layers.
+          cache-from: ${{ steps.layers.outputs.cache-from }}
 
       # Docker integration gate: the tag this release is about must exist in
       # the registry with BOTH platform manifests present. Without this, a
