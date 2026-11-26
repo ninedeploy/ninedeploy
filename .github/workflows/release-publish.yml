@@ -147,10 +147,15 @@ jobs:
       # lint, build, then every suite with coverage): ~39 of the release's ~95
       # minutes in v0.18.22 and v0.18.23. When main CI's run for this very
       # commit succeeded, its verdict is reused: a run succeeds only when every
-      # job in it did: the server suite's job, whose name is read below, and
-      # the jobs beside it, the contract preflight and the other packages'
-      # suites, each on a runner of its own since November 26, 2026. Anything
-      # else runs the checks here, as before: no run, a
+      # job in it did. Two are read by name below: the server suite's job and
+      # the integration job, which runs the same command as "Database backup
+      # integration checks" here. The jobs beside them, the contract preflight
+      # and the other packages' suites, each on a runner of its own since
+      # November 26, 2026, are covered by the run's own success. Reused, the
+      # checks, the workspace build and the integration checks do not run
+      # here: in 0.20.0 the last two took 2.1 of this job's 10.4 minutes, on
+      # the release's critical path, and nothing after them reads the built
+      # workspace. Anything else runs them here, as before: no run, a
       # failed or cancelled one, one still running, or a tag on a commit that
       # never was main's head. The commit is read from the checkout, because a
       # manual run's GITHUB_SHA is the dispatching branch, not the tag.
@@ -160,22 +165,25 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           sha="$(git rev-parse HEAD)"
-          job='Typecheck · Lint · Build · Test'
+          suite='Typecheck · Lint · Build · Test'
+          integration='Integration tests (real Docker + PostgreSQL)'
           reuse=false
           runs="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$sha&branch=main&event=push&per_page=50" \
             -q ".workflow_runs[] | select(.head_sha == \"$sha\" and .head_branch == \"main\" and .event == \"push\" and .status == \"completed\" and .conclusion == \"success\") | .id")" || runs=""
           for id in $runs; do
-            verdict="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$id/jobs?per_page=100" \
-              -q "[.jobs[] | select(.name == \"$job\") | .conclusion] | first // \"\"")" || verdict=""
-            if [ "$verdict" = success ]; then
+            suite_verdict="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$id/jobs?per_page=100" \
+              -q "[.jobs[] | select(.name == \"$suite\") | .conclusion] | first // \"\"")" || suite_verdict=""
+            integration_verdict="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$id/jobs?per_page=100" \
+              -q "[.jobs[] | select(.name == \"$integration\") | .conclusion] | first // \"\"")" || integration_verdict=""
+            if [ "$suite_verdict" = success ] && [ "$integration_verdict" = success ]; then
               reuse=true
-              echo "Main CI run $id passed '$job' on $sha; the release checks are not repeated." | tee -a "$GITHUB_STEP_SUMMARY"
+              echo "Main CI run $id passed '$suite' and '$integration' on $sha; the checks are not repeated." | tee -a "$GITHUB_STEP_SUMMARY"
               echo "Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$id" >> "$GITHUB_STEP_SUMMARY"
               break
             fi
           done
           if [ "$reuse" != true ]; then
-            echo "No completed main CI run passed '$job' on $sha; the full release checks run here." | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "No completed main CI run passed '$suite' and '$integration' on $sha; the full release checks run here." | tee -a "$GITHUB_STEP_SUMMARY"
           fi
           echo "reuse=$reuse" >> "$GITHUB_OUTPUT"
 
@@ -199,8 +207,11 @@ jobs:
       # built web dashboard layout (apps/web/dist) and turbo has no dependency
       # edge forcing web#build ahead of server#test, so the serialized
       # release:check alone can schedule them in either order. CI's test job
-      # builds first for exactly this reason.
+      # builds first for exactly this reason. Skipped with the checks when
+      # main CI passed on this commit: the image is built from the source
+      # tree in its own stages, and no later step here reads the workspace.
       - name: Build workspace
+        if: steps.mainci.outputs.reuse != 'true'
         run: pnpm build
 
       # A tag is a release artifact — never push an image that does not pass
@@ -210,7 +221,10 @@ jobs:
         if: steps.mainci.outputs.reuse != 'true'
         run: pnpm release:check
 
+      # The same command as main CI's integration job, read by name in the
+      # reuse step: skipped when that job passed on this commit.
       - name: Database backup integration checks
+        if: steps.mainci.outputs.reuse != 'true'
         run: pnpm --filter @ninedeploy/server exec vitest run --config vitest.integration.config.ts
         env:
           RUN_INTEGRATION: '1'

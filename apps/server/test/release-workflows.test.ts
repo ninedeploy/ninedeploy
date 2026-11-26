@@ -110,23 +110,35 @@ describe('release delivery invariants', () => {
   });
 
   it('runs real database integration checks before publishing a release image', () => {
-    const steps = readWorkflow('release-publish.yml').jobs['publish-image']!.steps;
+    // Skipped only when main CI's integration job passed on the tagged commit
+    // (the reuse step reads it by name); it runs the same command.
+    type StepIf = Step & { if?: string };
+    const steps = readWorkflow('release-publish.yml').jobs['publish-image']!.steps as StepIf[];
     const integration = steps.findIndex((step) => step.run?.includes('vitest.integration.config.ts'));
     const push = steps.findIndex((step) => step.with?.['push'] === true);
     expect(integration).toBeGreaterThan(-1);
     expect(steps[integration]!.env?.['RUN_INTEGRATION']).toBe('1');
     expect(push).toBeGreaterThan(integration);
+    expect(steps[integration]!.if).toBe("steps.mainci.outputs.reuse != 'true'");
   });
 
-  it('builds the workspace before the release checks', () => {
+  it('builds the workspace before the release checks, and skips both when main CI passed', () => {
     // Server tests resolve the built web dashboard layout; turbo has no edge
     // forcing web#build ahead of server#test, so the checks alone can run
-    // them in either order (this raced a v0.10.3 release attempt).
-    const steps = readWorkflow('release-publish.yml').jobs['publish-image']!.steps;
+    // them in either order (this raced a v0.10.3 release attempt). The image
+    // is built from the source tree in the Dockerfile's own stage, and
+    // .dockerignore keeps the built workspace out of its context, so the
+    // build serves the checks alone.
+    type StepIf = Step & { if?: string };
+    const steps = readWorkflow('release-publish.yml').jobs['publish-image']!.steps as StepIf[];
     const build = steps.findIndex((step) => step.run === 'pnpm build');
     const checks = steps.findIndex((step) => step.run === 'pnpm release:check');
     expect(build).toBeGreaterThan(-1);
     expect(checks).toBeGreaterThan(build);
+    expect(steps[build]!.if).toBe("steps.mainci.outputs.reuse != 'true'");
+    const dockerfile = readFileSync(new URL('../../../Dockerfile', import.meta.url), 'utf8');
+    expect(dockerfile).toMatch(/^RUN node scripts\/check-node-version\.mjs && pnpm build$/m);
+    expect(readFileSync(new URL('../../../.dockerignore', import.meta.url), 'utf8')).toContain('**/dist');
   });
 
   it('reuses main CI only when its full-suite job passed on the exact tagged commit', () => {
@@ -151,7 +163,7 @@ describe('release delivery invariants', () => {
       expect(script).toContain(guard);
     }
     expect(script).toContain('reuse=false');
-    expect(script).toMatch(/if \[ "\$verdict" = success \]; then\s+reuse=true/);
+    expect(script).toMatch(/if \[ "\$suite_verdict" = success \] && \[ "\$integration_verdict" = success \]; then\s+reuse=true/);
 
     // The job it trusts must exist under that name and run what release:check
     // runs, in the same order, on the same Node; otherwise the skip would
@@ -159,7 +171,21 @@ describe('release delivery invariants', () => {
     const ci = readWorkflow('ci.yml').jobs as unknown as Record<string, JobDef>;
     const verify = Object.values(ci).find((candidate) => candidate.name === 'Typecheck · Lint · Build · Test');
     expect(verify).toBeDefined();
-    expect(script).toContain("job='Typecheck · Lint · Build · Test'");
+    expect(script).toContain("suite='Typecheck · Lint · Build · Test'");
+    // The integration checks are skipped on the same terms: a CI job under
+    // the name the script reads, running the release's own command.
+    expect(script).toContain("integration='Integration tests (real Docker + PostgreSQL)'");
+    const integrationJob = Object.values(ci).find((candidate) => candidate.name === 'Integration tests (real Docker + PostgreSQL)');
+    expect(integrationJob).toBeDefined();
+    const integrationStep = integrationJob!.steps.find((step) => step.run?.includes('vitest.integration.config.ts'));
+    expect(integrationStep).toBeDefined();
+    expect(integrationStep!.env?.['RUN_INTEGRATION']).toBe('1');
+    expect(integrationJob!.steps.indexOf(integrationStep!)).toBeGreaterThan(
+      integrationJob!.steps.map((step) => step.run).indexOf('pnpm build'),
+    );
+    const release = readWorkflow('release-publish.yml').jobs['publish-image'] as unknown as JobDef;
+    const releaseIntegration = release.steps.find((step) => step.run?.includes('vitest.integration.config.ts'));
+    expect(releaseIntegration!.run).toBe(integrationStep!.run);
     const runs = verify!.steps.map((step) => step.run);
         const order = ['pnpm install --frozen-lockfile', 'pnpm typecheck', 'pnpm lint', 'pnpm build', 'pnpm test:server'].map((cmd) => runs.indexOf(cmd));
     // The other packages' suites and the contract preflight are that run's too, in jobs of their
