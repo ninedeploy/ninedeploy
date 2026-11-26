@@ -1025,19 +1025,22 @@ process; `release:check` now runs it through `pnpm test:server`.
   backup and restore, approval, member access, compact and phone layouts,
   domain routing and PR previews
 - **Contract preflight** (`pnpm check:contracts`) runs the fast guard suites
-  before the long coverage run: release notes and workflows, the
-  documentation index, audit coverage of every mutating route, capabilities
+  in a job of their own beside the verify job. Until November 26, 2026 it ran
+  in that job, before its long coverage run. They cover release notes
+  and workflows, the documentation index, audit coverage of every mutating
+  route, capabilities
   and node refusals, proxy setting application, PITR contracts, the
   environment reference, the smoke inventory, owned settings, import cycles,
   the Swarm reader, the OpenAPI document and the test cache inputs
 
 CI (`ci.yml`) runs on every push and pull request: typecheck → lint → build →
-contract preflight → the server suite, a **schema-drift check** (regenerating
-migrations must produce no diff) and a **deprecated-dependency check**, a Node
-security baseline, an installer sanity check and smoke. Beside that job runs
-the job for the other packages' suites, each package alone on a separate
-runner (on one runner they would starve each other), the integration job
-and an image job that is a matrix of six groups. Each group builds the image
+the server suite, a **schema-drift check** (regenerating migrations must
+produce no diff) and a **deprecated-dependency check**, a Node security
+baseline, an installer sanity check and smoke. Beside that job run
+the contract preflight and the job for the other packages' suites (each
+package alone, because on one runner they would starve each other)
+alongside the integration job and an image job that is a matrix of six
+groups. Each group builds the image
 and runs its own smokes on real routing (the in-place upgrade, node
 autoscaling, the canary lifecycle, readiness, serving-traffic observation
 and the wake catcher). In one job those smokes took 43 minutes on November

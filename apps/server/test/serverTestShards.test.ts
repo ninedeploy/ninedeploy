@@ -187,7 +187,7 @@ describe('the server suite in shards', () => {
     expect(ci.jobs.verify!.name).toBe('Typecheck · Lint · Build · Test');
     expect(testOf('verify')).toBe('pnpm test:server');
     expect(testOf('package-tests')).toBe('pnpm test:packages');
-    expect([ci.jobs['publish-image']!.needs ?? []].flat()).toEqual(['verify', 'package-tests', 'integration', 'docker-image']);
+    expect([ci.jobs['publish-image']!.needs ?? []].flat()).toEqual(['verify', 'contract-preflight', 'package-tests', 'integration', 'docker-image']);
     // The release gate runs the same two, one after the other.
     expect(pkg.scripts['test:packages']).toBe('pnpm turbo run test --concurrency=1 --force --filter=!@ninedeploy/server');
     expect(pkg.scripts['test:workspace']).toBe('pnpm test:packages && pnpm test:server');

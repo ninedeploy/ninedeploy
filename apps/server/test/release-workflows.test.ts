@@ -161,18 +161,29 @@ describe('release delivery invariants', () => {
     expect(verify).toBeDefined();
     expect(script).toContain("job='Typecheck · Lint · Build · Test'");
     const runs = verify!.steps.map((step) => step.run);
-        const order = ['pnpm install --frozen-lockfile', 'pnpm typecheck', 'pnpm lint', 'pnpm build', 'pnpm check:contracts', 'pnpm test:server'].map((cmd) => runs.indexOf(cmd));
-    // The other packages' suites are that run's too, in a job of their own; a run succeeds only when every job in it did.
+        const order = ['pnpm install --frozen-lockfile', 'pnpm typecheck', 'pnpm lint', 'pnpm build', 'pnpm test:server'].map((cmd) => runs.indexOf(cmd));
+    // The other packages' suites and the contract preflight are that run's too, in jobs of their
+    // own; a run succeeds only when every job in it did.
     expect(Object.values(ci).find((candidate) => candidate.name === "Other packages' suites")?.steps.map((step) => step.run)).toContain('pnpm test:packages');
     for (const at of order) expect(at).toBeGreaterThan(-1);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
-    const preflight = verify!.steps.find(step => step.run === 'pnpm check:contracts');
-    expect(preflight?.env?.['DOCKER_HOST']).toBe('tcp://127.0.0.1:9');
+    // The contract preflight left the verify job on November 26, 2026: install, build, then the
+    // guards, on the release's Node, with the daemon port closed as it was there.
+    expect(runs).not.toContain('pnpm check:contracts');
+    const preflightJob = Object.values(ci).find((candidate) => candidate.name === 'Contract preflight')!;
+    expect(preflightJob).toBeDefined();
+    const preflightRuns = preflightJob.steps.map((step) => step.run);
+    const guardedAt = preflightRuns.indexOf('pnpm check:contracts');
+    expect(guardedAt).toBeGreaterThan(preflightRuns.indexOf('pnpm build'));
+    expect(preflightRuns.indexOf('pnpm build')).toBeGreaterThan(preflightRuns.indexOf('pnpm install --frozen-lockfile'));
+    const preflight = preflightJob.steps[guardedAt]!;
+    expect(preflight.env?.['DOCKER_HOST']).toBe('tcp://127.0.0.1:9');
     const launcher = readFileSync(new URL('../../../scripts/check-contracts.mjs', import.meta.url), 'utf8');
     expect(launcher).toContain("'test/swarmRuntime.test.ts'");
     const node = verify!.steps.find((step) => String(step.uses ?? '').startsWith('actions/setup-node'));
     const releaseNode = job.steps.find((step) => String(step.uses ?? '').startsWith('actions/setup-node'));
     expect(node?.with?.['node-version']).toBe(releaseNode?.with?.['node-version']);
+    expect(preflightJob.steps.find((step) => String(step.uses ?? '').startsWith('actions/setup-node'))?.with?.['node-version']).toBe(releaseNode?.with?.['node-version']);
   });
 
   it('builds the main image on a runner of each architecture, and names the tags only once both exist', () => {
@@ -195,7 +206,7 @@ describe('release delivery invariants', () => {
     expect(builds.strategy?.['fail-fast']).toBe(false);
     // Only after the server suite, the other packages' suites, the integration tests and every smoke group;
     // the merge needs both builds.
-    expect([builds.needs ?? []].flat()).toEqual(['verify', 'package-tests', 'integration', 'docker-image']);
+    expect([builds.needs ?? []].flat()).toEqual(['verify', 'contract-preflight', 'package-tests', 'integration', 'docker-image']);
     expect([merge.needs ?? []].flat()).toEqual(['publish-image']);
     expect(builds.if).toBe("github.event_name == 'push' && github.ref == 'refs/heads/main'");
     // No condition of its own: on a pull request the merge is skipped with its build.

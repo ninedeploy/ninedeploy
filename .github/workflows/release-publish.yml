@@ -147,9 +147,10 @@ jobs:
       # lint, build, then every suite with coverage): ~39 of the release's ~95
       # minutes in v0.18.22 and v0.18.23. When main CI's run for this very
       # commit succeeded, its verdict is reused: a run succeeds only when every
-      # job in it did, the server suite's job, whose name is read below, and the
-      # other packages' suites' job (package-tests, since November 26, 2026)
-      # included. Anything else runs the checks here, as before: no run, a
+      # job in it did: the server suite's job, whose name is read below, and
+      # the jobs beside it, the contract preflight and the other packages'
+      # suites, each on a runner of its own since November 26, 2026. Anything
+      # else runs the checks here, as before: no run, a
       # failed or cancelled one, one still running, or a tag on a commit that
       # never was main's head. The commit is read from the checkout, because a
       # manual run's GITHUB_SHA is the dispatching branch, not the tag.
