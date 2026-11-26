@@ -1029,16 +1029,19 @@ process; `release:check` now runs it through `pnpm test:server`.
   the Swarm reader, the OpenAPI document and the test cache inputs
 
 CI (`ci.yml`) runs on every push and pull request: typecheck → lint → build →
-contract preflight → test, a **schema-drift check** (regenerating migrations
-must produce no diff) and a **deprecated-dependency check**, a Node security
-baseline, an installer sanity check and smoke. Beside that job run the
-integration job and an image job that is a matrix of six groups: each job
-builds the image and runs its own smokes on real routing (the in-place
-upgrade, node autoscaling, the canary lifecycle, readiness, serving-traffic
-observation and the wake catcher). In one job those smokes took 43 minutes
-on November 25, 2026; the longest group takes about 13. The main image is
-published only after the verify job and every group have passed, and the
-Release workflow starts its nine cohorts all at once.
+contract preflight → the server suite, a **schema-drift check** (regenerating
+migrations must produce no diff) and a **deprecated-dependency check**, a Node
+security baseline, an installer sanity check and smoke. Beside that job runs
+the job for the other packages' suites, each package alone on a separate
+runner (on one runner they would starve each other), the integration job
+and an image job that is a matrix of six groups. Each group builds the image
+and runs its own smokes on real routing (the in-place upgrade, node
+autoscaling, the canary lifecycle, readiness, serving-traffic observation
+and the wake catcher). In one job those smokes took 43 minutes on November
+25, 2026. The longest group takes about 13. The main image is published
+only after all of them have passed. Two runners build it, one for each
+architecture, each pushing by digest, and a third job puts both under `:edge`
+and `:main-<sha>`. The Release workflow starts its nine cohorts all at once.
 
 The schema-drift gate is **functional** as of 0.6.0: the CI step requires the
 literal `No schema changes, nothing to migrate` line plus a clean `git
