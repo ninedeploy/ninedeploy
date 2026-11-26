@@ -68,12 +68,21 @@ jobs:
           fi
           echo "target=$target" >> "$GITHUB_OUTPUT"
 
-      # GitHub refused the built-in GITHUB_TOKEN this ref ("Resource not
-      # accessible by integration", 403) although the job has contents: write,
-      # most likely because the release commit has other workflow files than
-      # the default branch, as every release does once main moves on. So the
-      # tag is written with STABLE_TAG_TOKEN: a fine-grained token for
-      # this repository with Contents and Workflows read and write.
+      # The built-in GITHUB_TOKEN cannot do this, although the job has
+      # contents: write. GitHub lets a token without the `workflows` permission
+      # write a ref only when the target commit's .github/workflows equals the
+      # default branch's. A release commit's equals main's only until main
+      # touches a workflow file, which the seven-day soak nearly always sees.
+      # Measured over the seven runs that had a tag to write up to 2026-11-26:
+      # the two whose target's workflow files still equalled main's (November
+      # 13 and 14) went through, the other five were refused ("Resource not
+      # accessible by integration", 403). A probe on 2026-11-27 showed `git
+      # push` is refused the same way, naming the first differing file and
+      # the missing permission. So the tag is written with STABLE_TAG_TOKEN: a
+      # fine-grained token for this repository with Contents and Workflows
+      # read and write. Without it, stable stays where it is and this run
+      # fails each day until a maintainer moves the tag by hand (as on
+      # 2026-11-27) or adds the secret.
       - name: Move the stable tag
         if: steps.pick.outputs.target != ''
         env:
@@ -101,3 +110,18 @@ jobs:
             gh api -X POST "repos/$REPO/git/refs" -f ref=refs/tags/stable -f sha="$sha" >/dev/null || hint
           fi
           echo "### Stable is now $TARGET" >> "$GITHUB_STEP_SUMMARY"
+
+      # Read the ref back: a move is reported only when GitHub shows it.
+      - name: Confirm the stable tag
+        if: steps.pick.outputs.target != '' && inputs.dry_run != true
+        env:
+          TARGET: ${{ steps.pick.outputs.target }}
+        run: |
+          set -euo pipefail
+          want=$(gh api "repos/$REPO/git/ref/tags/$TARGET" --jq .object.sha)
+          have=$(gh api "repos/$REPO/git/ref/tags/stable" --jq .object.sha)
+          if [ "$have" != "$want" ]; then
+            echo "::error::stable is at $have, not at $TARGET ($want). The move did not take; see the step before."
+            exit 1
+          fi
+          echo "Confirmed: stable is at $TARGET ($have)"

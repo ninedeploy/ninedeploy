@@ -87,6 +87,20 @@ describe('.github/workflows/stable-channel.yml', () => {
     // A forced tag must be a published release.
     expect(runs).toContain('.draft == false and .prerelease == false');
   });
+
+  it('reports a move only after reading the tag back, and skips that on a dry run', () => {
+    const steps = wf.jobs.promote.steps;
+    const move = steps.findIndex((s) => s.run?.includes('-X PATCH "repos/$REPO/git/refs/tags/stable"'));
+    const confirm = steps.findIndex((s) => s.run?.includes('have=$(gh api "repos/$REPO/git/ref/tags/stable" --jq .object.sha)'));
+    expect(move).toBeGreaterThan(0);
+    expect(confirm).toBeGreaterThan(move);
+    // (wf is typed with run and uses only; the conditions are read from the loaded file.)
+    const raw = wf.jobs.promote.steps as Array<{ if?: string }>;
+    expect(raw[confirm]!.if).toContain("inputs.dry_run != true");
+    expect(raw[move]!.if).toContain("steps.pick.outputs.target != ''");
+    // The built-in token cannot make this move; the workflow says which secret can.
+    expect(runs).toContain('STABLE_TAG_TOKEN');
+  });
 });
 
 describe('panel: update check on the stable channel', () => {
