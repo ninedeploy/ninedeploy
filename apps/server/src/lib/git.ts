@@ -1,6 +1,8 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { simpleGit, type SimpleGit, type SimpleGitOptions } from 'simple-git';
+import { capture } from './exec.js';
 import { type CloneTargetPin, curlResolveEntry, vetCloneTarget } from './gitEgress.js';
 
 /** Unique, non-empty known_hosts lines, in order. */
@@ -118,6 +120,9 @@ function sameRemote(current: string, repoUrl: string): boolean {
 }
 
 const MAX_SUBMODULE_DEPTH = 5;
+
+/** No credential helper is consulted or told: the call reads and stores nothing in the host's credential store. */
+const NO_CREDENTIAL_HELPER = 'credential.helper=';
 
 /** Redirect hardening (r099) — on every git invocation. */
 const NO_REDIRECTS = 'http.followRedirects=false';
@@ -403,6 +408,157 @@ export async function checkoutCommit(
     if (creds?.deployKey) {
       rmSync(keyFile, { force: true });
       rmSync(knownHostsFile, { force: true });
+    }
+  }
+}
+
+/** A branch as `git ls-remote` may take it as a pattern: no option, no wildcard, no space or control character. */
+const REMOTE_BRANCH_RE = /^(?!-)[A-Za-z0-9][A-Za-z0-9._/+_-]*$/;
+/** The object id `ls-remote` prints: SHA-1, or SHA-256 where the remote uses it. */
+const REMOTE_OBJECT_ID_RE = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
+
+/**
+ * What one call of {@link remoteBranchHead} runs: for its tests, and for
+ * nothing else. The credential is in the URL or in a key file, as for a
+ * checkout, never in the environment.
+ */
+export interface RemoteHeadCommand {
+  cwd: string;
+  args: string[];
+  env: Record<string, string>;
+  /** The key file the command names, when it names one. */
+  keyFile?: string;
+  knownHostsFile: string;
+}
+
+/** The host's settings a git network call needs, and no other variable of the panel's. */
+const GIT_NETWORK_ENV = ['HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY', 'http_proxy', 'https_proxy', 'all_proxy', 'no_proxy', 'GIT_SSL_CAINFO', 'SSL_CERT_FILE'];
+
+/**
+ * Assembles the `git ls-remote` call: the egress gate first, then the
+ * checkout's settings as `-c` options, the credential, and a directory of
+ * the call's own for git to run in and the key to live in.
+ */
+export async function prepareRemoteHeadCommand(repoUrl: string, branch: string, creds: CloneCreds | undefined): Promise<RemoteHeadCommand> {
+  if (!REMOTE_BRANCH_RE.test(branch)) {
+    throw new Error(`Refusing to read a branch of that shape: ${JSON.stringify(branch.slice(0, 80))}`);
+  }
+  // Egress gate (see lib/gitEgress.ts): refuse private-network remotes before
+  // any git starts. For http(s) it also returns the addresses it vetted,
+  // which the call below is pinned to (r355).
+  const pin = await vetCloneTarget(repoUrl);
+  const useKey = !!creds?.deployKey && (isSshUrl(repoUrl) || !creds?.token);
+  const pinning = useKey && creds?.pinHostKeys === true;
+  const dir = mkdtempSync(path.join(tmpdir(), 'ninedeploy-ls-remote-'));
+  const keyFile = path.join(dir, 'key');
+  const knownHostsFile = path.join(dir, 'known_hosts');
+  // The helper list is reset first: without this, a host with a storing
+  // credential helper (Git for Windows ships one) keeps the token after the
+  // first authenticated call, and a call made without a credential reads
+  // whatever the helper holds for that host. Measured on such a host.
+  const config = [NO_CREDENTIAL_HELPER, NO_REDIRECTS, NO_HOOKS, ...pinConfig(pin)];
+  let url = repoUrl;
+  if (useKey) {
+    writeFileSync(keyFile, creds!.deployKey!, { mode: 0o600 });
+    // A pinned source starts from the keys it already trusts; ssh then refuses a CHANGED key.
+    if (pinning && hostKeyLines(creds?.hostKeys).length > 0) writeFileSync(knownHostsFile, `${hostKeyLines(creds!.hostKeys).join('\n')}\n`, { mode: 0o600 });
+    url = toSshUrl(repoUrl);
+    config.push(`core.sshCommand=${sshCommandFor(keyFile, knownHostsFile, pinning)}`);
+  } else if (creds?.token && /^https?:\/\//.test(repoUrl)) {
+    url = injectToken(repoUrl, creds.token, creds.type);
+  }
+  const env: Record<string, string> = { GIT_TERMINAL_PROMPT: '0' };
+  for (const name of GIT_NETWORK_ENV) {
+    const value = process.env[name];
+    if (value) env[name] = value;
+  }
+  return {
+    cwd: dir,
+    args: [...config.flatMap((setting) => ['-c', setting]), 'ls-remote', '--', url, `refs/heads/${branch}`],
+    env,
+    ...(useKey ? { keyFile } : {}),
+    knownHostsFile,
+  };
+}
+
+function sshCommandFor(keyFile: string, knownHostsFile: string, pinning: boolean): string {
+  return `ssh -i "${keyFile}" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new${pinning ? ' -o HashKnownHosts=no' : ''} -o UserKnownHostsFile="${knownHostsFile}"`;
+}
+
+/**
+ * X2: the commit the `branch`'s head is at on `repoUrl`, read with
+ * `git ls-remote` and nothing else: no checkout, no fetch. Null when the
+ * remote has no such branch.
+ *
+ * It runs under the checkout's rules (see checkoutCommit): the egress gate
+ * before any git starts, the vetted addresses pinned, redirects never
+ * followed, hooks never run, and the source's credential in the URL or in a
+ * deploy key written for the call and removed after it. It runs in a
+ * directory of its own, so a deploy's checkout is never touched, through
+ * lib/exec.ts: a time limit that stops git and its children, a ceiling on
+ * what it may print, and none of the panel's own variables in its
+ * environment. An error never carries the token: git repeats the URL it was
+ * given.
+ */
+export async function remoteBranchHead(
+  repoUrl: string,
+  branch: string,
+  creds: CloneCreds | undefined,
+  limits: { timeoutMs?: number } = {},
+): Promise<string | null> {
+  const command = await prepareRemoteHeadCommand(repoUrl, branch, creds);
+  try {
+    let out: string;
+    try {
+      // `--` ends the options: the repository can never be read as one.
+      out = await capture('git', command.args, { cwd: command.cwd, env: command.env, timeoutMs: limits.timeoutMs ?? 20_000, maxOutputBytes: 1024 * 1024 });
+    } catch (err) {
+      const text = err instanceof Error ? `${err.message}` : String(err);
+      const hidden = creds?.token ? text.split(creds.token).join('***').split(encodeURIComponent(creds.token)).join('***') : text;
+      throw new Error(`git ls-remote failed for ${maskUrl(repoUrl)}: ${hidden.slice(0, 500)}`);
+    }
+    let head: string | null = null;
+    for (const line of out.split('\n')) {
+      const [id, ref] = line.trim().split(/\s+/);
+      if (ref === `refs/heads/${branch}` && id && REMOTE_OBJECT_ID_RE.test(id)) head = id;
+    }
+    // Trust on first use, after a call only the holder of the deploy key could finish.
+    const pinned = hostKeyLines(creds?.hostKeys);
+    if (head && creds?.pinHostKeys === true && creds.onHostKeys) {
+      const merged = hostKeyLines([...pinned, ...hostKeyLines(readFileIfExists(command.knownHostsFile))].join('\n'));
+      if (merged.length > pinned.length) {
+        try {
+          await creds.onHostKeys(`${merged.join('\n')}\n`);
+        } catch {
+          /* the key is learnt again on the next call */
+        }
+      }
+    }
+    return head;
+  } finally {
+    await removeCallDirectory(command.cwd, command.keyFile, command.knownHostsFile);
+  }
+}
+
+/**
+ * Removes a call's directory once git has let go of it: an aborted git may
+ * still be exiting in it, and Windows refuses to remove a process's working
+ * directory. The key goes first, and a key that cannot be removed is thrown:
+ * a deploy key must never outlive its call.
+ */
+async function removeCallDirectory(dir: string, keyFile: string | undefined, knownHostsFile: string): Promise<void> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      if (keyFile) rmSync(keyFile, { force: true });
+      rmSync(knownHostsFile, { force: true });
+      rmSync(dir, { recursive: true, force: true });
+      return;
+    } catch (err) {
+      if (attempt >= 50) {
+        if (keyFile && existsSync(keyFile)) throw new Error(`the deploy key could not be removed after the call: ${keyFile}`);
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
     }
   }
 }

@@ -13,9 +13,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Fixes reach a release sooner: a push's verification takes 35 to 44 minutes instead of 79, and a release builds its image in about 30 seconds where 0.20.0 took 7.5 minutes.
 - A panel installed with a domain in Docker mode answers on that domain whether its port is bound to `127.0.0.1`, published on another port, or not published at all.
-- The stable update channel no longer depends on a maintainer secret to move.
+- A service can deploy by asking its Git server for new commits, for a repository whose host cannot reach the panel with a webhook.
 
 **Action needed:** No.
+
+### Added
+
+- **Deploy by polling Git.** Under **Service → Settings → Git polling**, a member turns polling on for a service and picks an interval, from once a minute to once a day. The panel reads the head of the branch with `git ls-remote`, under the same rules as a checkout, and deploys a commit the service does not run yet through the push path, with its CI gate and its authorization. Watch paths and the `[skip cd]` markers do not apply, because a poll reads the head and nothing else. The card shows the last check, the commit it found and a failure, which is tried again at the next interval. API `GET` and `PUT /v1/services/:id/git-poll`; SDK `services.gitPoll`. A clone or a service bundle carries the interval only.
 
 ### Fixed
 
@@ -30,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Let the Release build take the layers main CI built for the tagged commit, and skip the workspace build and the database integration checks when main CI passed on the same commit.
 - Run the Release's published-image smokes in thirteen cohorts that each hold one theme, where four of nine cohorts held two or three. The longest holds 13.6 minutes of smoke time where it held 25.9, and a rerun after one failed smoke repeats that theme alone.
 - The stable channel workflow reads the tag back before it reports a move.
+- The call that reads a branch's head for Git polling consults no git credential helper, so the source's token is not kept in the host's credential store.
 - Three tests that keep a real clock no longer fail under load: the invitation fixture takes its two dates at one moment, the wake-collection test allows its two child runs their time, and the "never becomes healthy" probe moves on a clock that is read.
 
 ## [0.20.0] - 2026-11-25

@@ -4,11 +4,13 @@ import {
   composeRoute,
   errorPagesInput,
   forwardAuthConfig,
+  gitPollConfig,
   maintenanceConfig,
   restartLimitConfig,
   type CiPipeline,
   type ComposeRoute,
   type ForwardAuthConfig,
+  type GitPollConfig,
   type MaintenanceConfig,
   type RestartLimitConfig,
 } from '@ninedeploy/schemas';
@@ -18,6 +20,7 @@ import { getPipeline, setPipeline } from './ci.js';
 import { getComposeRoute, setComposeRoute } from './composeRoutes.js';
 import { getForwardAuth, setForwardAuth } from './forwardAuth.js';
 import { getCommitStatusSetting, setCommitStatusSetting } from './gitCommitStatus.js';
+import { getGitPoll, gitPollSupported, setGitPoll } from './gitPoll.js';
 import { getInlineDockerfile, setInlineDockerfile } from './inlineDockerfile.js';
 import { getErrorPages, getMaintenance, setErrorPages, setMaintenance } from './maintenance.js';
 import { getRestartLimit, restartLimitSupported, setRestartLimit } from './restartLimit.js';
@@ -38,6 +41,7 @@ import { getSettingString, setSettingString } from './settings.js';
 
 export interface PortableServiceSettings {
   restartLimit?: RestartLimitConfig;
+  gitPoll?: GitPollConfig;
   maintenance?: MaintenanceConfig;
   errorPages?: Partial<Record<'502' | '503' | '504', string>>;
   inlineDockerfile?: string;
@@ -65,6 +69,8 @@ export async function readPortableServiceSettings(db: DB, serviceId: number): Pr
   const out: PortableServiceSettings = {};
   const limit = await getRestartLimit(db, serviceId);
   if (limit) out.restartLimit = { maxRestarts: limit.maxRestarts, windowMinutes: limit.windowMinutes };
+  const poll = await getGitPoll(db, serviceId);
+  if (poll) out.gitPoll = { intervalSeconds: poll.intervalSeconds };
   const maint = await getMaintenance(db, serviceId);
   if (maint) {
     const { since: _since, ...config } = maint;
@@ -103,6 +109,7 @@ export async function notCarriedSecrets(db: DB, serviceId: number): Promise<stri
 
 const SERVICE_FIELDS = {
   restartLimit: restartLimitConfig,
+  gitPoll: gitPollConfig,
   maintenance: maintenanceConfig,
   errorPages: errorPagesInput.shape.pages,
   inlineDockerfile: z.string(),
@@ -112,6 +119,7 @@ const SERVICE_FIELDS = {
 } as const;
 const FIELD_LABEL: Record<keyof typeof SERVICE_FIELDS, string> = {
   restartLimit: 'restart limit',
+  gitPoll: 'Git polling',
   maintenance: 'maintenance mode',
   errorPages: 'error pages',
   inlineDockerfile: 'inline Dockerfile',
@@ -143,12 +151,14 @@ function parseServiceSettings(raw: unknown, report: PortableReport): PortableSer
 
 const portableDomainShape = z.object({ forwardAuth: forwardAuthConfig.optional(), composeRoute: composeRoute.optional() }).strict();
 
-type Target = Pick<Service, 'id' | 'type' | 'serverId' | 'orchestrator'>;
+type Target = Pick<Service, 'id' | 'type' | 'serverId' | 'orchestrator' | 'repoUrl'>;
 
 /**
  * Write `raw` (from a bundle or a source service) to `target`. `kind: 'clone'`
  * leaves maintenance mode off: a new copy should not start out "down for
- * maintenance". An import restores the same service, so it keeps it.
+ * maintenance", and it does not poll the source's repository: a copy that
+ * deployed at every commit of the same branch would surprise. An import
+ * restores the same service, so it keeps both.
  */
 export async function applyPortableServiceSettings(db: DB, target: Target, raw: unknown, opts: { kind: 'import' | 'clone' }): Promise<PortableReport> {
   const report: PortableReport = { applied: [], skipped: [] };
@@ -170,6 +180,12 @@ export async function applyPortableServiceSettings(db: DB, target: Target, raw: 
     }
   };
   await step('restart limit', !!s.restartLimit, () => setRestartLimit(db, target.id, s.restartLimit!), restartLimitSupported(target) ? null : 'only docker services, and PM2 services on the panel host, have one');
+  await step(
+    'Git polling',
+    !!s.gitPoll,
+    () => setGitPoll(db, target.id, s.gitPoll!),
+    opts.kind === 'clone' ? 'a new copy does not poll its repository; turn polling on for it' : gitPollSupported(target) ? null : 'the service has no Git repository to poll',
+  );
   await step(
     'maintenance mode',
     !!s.maintenance,

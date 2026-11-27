@@ -421,6 +421,8 @@ Pushes that don't touch those globs (e.g. a docs-only commit) are silently ignor
 
 You can also use `[skip ci]` or `[skip cd]` in the commit message to opt a specific commit out of auto-deploy, matching standard CI conventions.
 
+**When the Git server cannot reach the panel.** A webhook needs a route from the Git server to this panel. For a repository on a private network, or a self-hosted Git server behind NAT, turn on **Service → Settings → Git polling** instead: the panel asks the Git server for the head of the branch on an interval you choose, and deploys a new commit as a push would. Watch paths and the skip markers do not apply to a poll, which reads the head and nothing else. Details are in the [deployments guide](./DEPLOYMENTS.md), under *Git polling*.
+
 ### 7.4 Webhook smoke test
 
 ```bash

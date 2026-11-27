@@ -21,6 +21,7 @@ import { AutoscaleCard } from './AutoscaleCard.js';
 import { SizingCard } from './SizingCard.js';
 import { PendingChangesTray } from './PendingChangesTray.js';
 import { RestartLimitCard } from './RestartLimitCard.js';
+import { GitPollCard } from './GitPollCard.js';
 import { MaintenanceCard } from './MaintenanceCard.js';
 import { ForwardAuthCard } from './ForwardAuthCard.js';
 import { CapabilityLimitsCard } from './CapabilityLimitsCard.js';
@@ -46,6 +47,8 @@ export function SettingsTab({ serviceId, svc }: { serviceId: number; svc: Servic
     { key: 'pending', node: <PendingChangesTray serviceId={serviceId} /> },
     { key: 'settings', node: <SettingsCard serviceId={serviceId} /> },
     { key: 'github', node: <GithubCard svc={svc} /> },
+    // X2: deploys by asking the Git server for the branch head, where no webhook can reach the panel.
+    { key: 'git-poll', fold: 'gitPoll', node: <GitPollCard svc={svc} /> },
     { key: 'tags', node: <TagsCard serviceId={serviceId} svc={svc} /> },
     { key: 'previews', node: <PreviewEnvironmentsCard svc={svc} /> },
     { key: 'target', fold: 'target', node: <TargetNodeCard svc={svc} /> },

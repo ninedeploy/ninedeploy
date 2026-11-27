@@ -27,6 +27,7 @@ import { errorIngestPublicRoutes } from './modules/errorIngest.js';
 import gitopsSchedulerPlugin from './plugins/gitopsScheduler.js';
 import sharedCertificateSyncPlugin from './plugins/sharedCertificateSync.js';
 import restartLimiterPlugin from './plugins/restartLimiter.js';
+import gitPollerPlugin from './plugins/gitPoller.js';
 import collectorPlugin from './plugins/collector.js';
 import observabilityPlugin from './plugins/observability.js';
 import uptimePlugin from './plugins/uptime.js';
@@ -213,6 +214,8 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(sharedCertificateSyncPlugin);
   // G1.3: stop services that keep crashing past their opt-in limit
   await app.register(restartLimiterPlugin);
+  // X2: poll the repositories of services that cannot receive webhooks
+  await app.register(gitPollerPlugin);
   // Periodic log/audit/notification-log retention (disk-fill prevention)
   await app.register(housekeepingPlugin);
   // Container output → configured log drains (r231: drains had no sender)

@@ -62,6 +62,7 @@ export interface OwnedSettingDef {
 export const OWNED_SETTINGS: readonly OwnedSettingDef[] = [
   // Services
   { prefix: 'restart_limit:', owner: 'service', shape: 'id', secret: false, portability: 'copy' },
+  { prefix: 'git_poll:', owner: 'service', shape: 'id', secret: false, portability: 'copy' },
   { prefix: 'maintenance:', owner: 'service', shape: 'id', secret: false, portability: 'copy' },
   { prefix: 'error_pages:', owner: 'service', shape: 'id', secret: false, portability: 'copy' },
   { prefix: 'inline_dockerfile:', owner: 'service', shape: 'id', secret: false, portability: 'copy' },

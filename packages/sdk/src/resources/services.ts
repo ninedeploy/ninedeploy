@@ -5,6 +5,8 @@ import type {
   Attachment,
   AutoscaleStatusView,
   SizingReport,
+  GitPollConfig,
+  GitPollView,
   RestartLimitConfig,
   RestartLimitView,
   ServiceCapabilitiesView,
@@ -278,6 +280,11 @@ export interface ServicesApi {
       get: (id: number) => Promise<RestartLimitView>;
       set: (id: number, limit: RestartLimitConfig | null) => Promise<RestartLimitView>;
     };
+    /** X2: read the branch head on an interval and deploy a new one (opt-in; member to set). */
+    gitPoll: {
+      get: (id: number) => Promise<GitPollView>;
+      set: (id: number, poll: GitPollConfig | null) => Promise<GitPollView>;
+    };
     /**
      * G5.2 pending changes tray. With staging on, edits collect (`stage`, a
      * PATCH body) instead of applying; `apply` sends them through
@@ -478,6 +485,10 @@ export function servicesApi(t: Transport): ServicesApi {
       restartLimit: {
         get: (id) => get<RestartLimitView>(`/v1/services/${id}/restart-limit`),
         set: (id, limit) => send<RestartLimitView>('PUT', `/v1/services/${id}/restart-limit`, { limit }),
+      },
+      gitPoll: {
+        get: (id) => get<GitPollView>(`/v1/services/${id}/git-poll`),
+        set: (id, poll) => send<GitPollView>('PUT', `/v1/services/${id}/git-poll`, { poll }),
       },
       pending: {
         get: (id) => get<PendingChangesView>(`/v1/services/${id}/pending`),

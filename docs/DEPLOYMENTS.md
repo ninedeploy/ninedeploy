@@ -282,6 +282,7 @@ Several service settings live in the settings table rather than on the service r
 **What travels:**
 - the inline Dockerfile;
 - the restart-loop limit;
+- Git polling: the interval, never what the polls found;
 - custom error pages;
 - the CI pipeline;
 - commit statuses;
@@ -409,7 +410,7 @@ Each rule becomes one `docker run -p` operand (`-p 203.0.113.7:27015-27030:27015
 
 - **Push Webhooks**: Automatic deployments on GitHub/GitLab pushes with HMAC-SHA256 signature verification.
 - **Monorepo Watch-Paths**: Set glob patterns (e.g. `apps/api/**`, `packages/shared/**`). Deployments trigger only when matching files change in the commit diff.
-- **CI Opt-Out**: Commits containing `[skip ci]` or `[skip cd]` in the commit message are ignored by webhook triggers.
+- **CI Opt-Out**: Commits containing `[skip ci]` or `[skip cd]` in the commit message are ignored by webhook triggers. They do not apply to Git polling (section 5), which reads the head of the branch and nothing else.
 
 ### Review repository settings before deploying
 
@@ -578,6 +579,26 @@ curl -fsS -X POST https://panel.example.com/v1/deploy-hooks/<token>
 - Only the member it deploys as sees the URL. Another member of the service sees that a hook is on and can rotate it, which makes it theirs, running with their own access; the previous URL stops working.
 - POST only, so a link preview or a crawler that sees the URL deploys nothing. Rotating gives a new URL and the old one answers 404; turning it off does the same. Treat the URL like a password.
 - API: `GET`/`POST`/`DELETE /v1/services/:id/deploy-hook` (member), public `POST /v1/deploy-hooks/:token`; SDK `services.deployHook`; CLI `ninedeploy services deploy-hook <id> [--enable|--disable]`.
+
+### Git polling: deploy by asking the repository (X2)
+
+A webhook needs the Git server to reach the panel. **Service → Settings → Git polling** is for when it cannot: a repository on a private network, a self-hosted Gitea or Forgejo behind NAT, or a server that sends no webhooks. Turn it on, pick an interval (from a minute to once a day), and the panel asks the Git server for the head of the service's branch. A head the service does not run yet is deployed as a push would be.
+
+**What a poll does**
+- Every fifteen seconds the panel runs the polls that are due, one after another. A poll is due when its interval has passed since its last run; the first one runs within fifteen seconds of polling being turned on.
+- It reads the head with `git ls-remote`, and nothing else: no checkout, no fetch. The call runs under the checkout's rules: the egress gate, the vetted addresses pinned, redirects never followed, the source's credential (a token in the URL, or a deploy key written for the call and removed after it), and a twenty-second limit. No git credential helper is consulted, so the token is not kept in the host's credential store.
+- A head the service already runs is left alone, and so is a head a poll has offered before. A new head goes the way a push goes: a CI job when the pipeline asks for one on push, the same authorization as a webhook (against the service owner's privileges), the duplicate guard, then a queued deployment. It is listed with the `webhook` trigger, without a commit message or author, because a poll reads neither.
+- A poll that could not read the head, or whose deploy was refused, keeps the message on the service (**The last check failed: …** on the card) and tries again at the next interval. A head that was offered is not offered again while it stays, so a failed deploy is not restarted every interval: push a new commit, or redeploy.
+
+**What a poll does not apply:** watch paths and the `[skip ci]` / `[skip cd]` markers are read from a push payload. Every new commit on the branch deploys. Use a webhook where those are needed.
+
+**Beside a webhook:** whichever sees a new commit first deploys it. The other finds that deployment in progress, or the service already running the commit, and deploys nothing.
+
+**Storage and limits**
+- A settings row, `git_poll:<serviceId>`: no migration. Turning polling off removes the row, and with it what the polls found; changing the interval keeps them.
+- A service that deploys an image has nothing to poll: turning polling on for it is refused (`422`). A service that stops having a repository has its polling turned off.
+- A clone or a service bundle carries the interval, never what the polls found. An import to a service without a repository skips it and says why.
+- API: `GET /v1/services/:id/git-poll` (viewer) and `PUT /v1/services/:id/git-poll` (member) with `{ "poll": { "intervalSeconds": 300 } }` or `{ "poll": null }`; any interval from 60 to 86,400 seconds. SDK `services.gitPoll.get` and `services.gitPoll.set`. Audited as `service.git_poll.set`.
 
 ### Deploy status badge (0.16.1)
 

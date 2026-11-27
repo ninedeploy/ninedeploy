@@ -5,6 +5,7 @@ import {
   composeRoute,
   errorPagesInput,
   forwardAuthConfig,
+  gitPollConfig,
   githubRunnerConfig,
   imageScanResult,
   maintenanceConfig,
@@ -15,6 +16,17 @@ import { OWNED_SETTINGS } from './ownedSettings.js';
 import { getSettingJson } from './settings.js';
 import { proxySettingJournal } from './proxySettingState.js';
 import { pitrRemoteConfig, pitrRemoteState, pitrStreamState } from './pitrRemoteState.js';
+
+/** X2: what `lib/gitPoll.ts` stores: the setting, and what the last poll found. */
+export const gitPollStored = gitPollConfig
+  .extend({
+    lastSha: z.string().nullable().optional(),
+    lastPolledAt: z.string().nullable().optional(),
+    lastError: z.string().nullable().optional(),
+    lastDeploymentId: z.number().int().nullable().optional(),
+  })
+  .strict();
+export type GitPollStored = z.infer<typeof gitPollStored>;
 
 /**
  * COMPETITIVE_ROADMAP_2026-11 S1: the stored shape of every per-entity
@@ -40,6 +52,7 @@ const isoish = z.string().min(1).max(64);
 export const OWNED_SETTING_SCHEMAS: Readonly<Record<string, ZodType>> = {
   // Services
   'restart_limit:': restartLimitConfig.extend({ trippedAt: z.string().nullable().optional() }),
+  'git_poll:': gitPollStored,
   'maintenance:': maintenanceConfig.extend({ since: z.string().nullable().optional() }),
   'error_pages:': errorPagesInput,
   'inline_dockerfile:': z.string(),

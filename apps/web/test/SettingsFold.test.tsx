@@ -42,10 +42,11 @@ describe('A3 settings fold: which features count as on', () => {
     const r = on({}, [
       [['maintenance', 7], { maintenance: { since: '2026-11-11T00:00:00Z' } }],
       [['restart-limit', 7], { limit: { maxRestarts: 5, windowMinutes: 10 } }],
+      [['git-poll', 7], { poll: { intervalSeconds: 300 } }],
       [['inline-dockerfile', 7], { content: 'FROM nginx' }],
       [['registry-hook', 7], { enabled: true }],
     ]);
-    expect([...r.result.current].sort()).toEqual(['inlineDockerfile', 'maintenance', 'registryHook', 'restartLimit']);
+    expect([...r.result.current].sort()).toEqual(['gitPoll', 'inlineDockerfile', 'maintenance', 'registryHook', 'restartLimit']);
   });
 
   it('counts custom error pages as maintenance being on, and follows the cache as it changes', async () => {

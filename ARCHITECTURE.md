@@ -83,7 +83,7 @@ ninedeploy/                         pnpm 11.23 workspace + Turborepo
 │   │   ├── src/agentOps/           36 source files registering 37 modules and 86 operations — §9
 │   │   ├── src/kernel/             microkernel core, drivers/ (16), plugins/ (12 built-in),
 │   │   │                           sandbox/ (isolated plugin host)
-│   │   ├── src/plugins/           40 Fastify plugins: request guards, worker, schedulers — §6
+│   │   ├── src/plugins/           41 Fastify plugins: request guards, worker, schedulers — §6
 │   │   ├── src/openapi/            OpenAPI 3.1 builder, specs/ (21 files), MCP tool generation
 │   │   ├── src/templates/          bundled template registry (322 entries) and mirrors
 │   │   ├── src/agent.ts            the remote agent (plus agentApp.ts, wakeCatcher.ts,
@@ -395,7 +395,7 @@ cors → websocket → securityHeaders → rateLimit → rawBody → db → pane
   → collector → observability → uptime → autoscaler → sleeper
   → backupScheduler → pitrScheduler → autoUpdateScheduler → githubRunnerScheduler
   → ciScheduler → cloudNodeScheduler → imageScanScheduler → gitopsScheduler
-  → sharedCertificateSync → restartLimiter → housekeeping → logShipper
+  → sharedCertificateSync → restartLimiter → gitPoller → housekeeping → logShipper
   → jobScheduler → panelBackupScheduler → staticFiles (SPA catch-all, LAST)
 ```
 
@@ -419,7 +419,7 @@ host-privileged routes, `assertServiceRole` / `assertDatabaseRole` /
 | `/workspaces`, `/access` | workspaces, invitations, emailTemplates, accessGrants, twoFactorPolicy | workspace CRUD and roles, invitations (public token lookup, authenticated accept), email templates, project and environment access grants, the caller's own grants |
 | `/users`, `/demo` | users, demo | user list, operator flag, reset links, delete (operator only); demo seed (operator only) |
 | `/projects`, `/labels`, `/env` | projects, env, accessGrants, labels | project CRUD and project-scope env, the cross-scope env key search, who reaches a project, labels, a service's tag sets |
-| `/services` | services, deploys, env, domains, serviceVolumes, serviceFiles, serviceMigration, serviceMoveWithData, sourceUploads, hostAddresses, inlineDockerfile, manifest, hooks, deployHooks, serviceGithub, databases (attachments), jobs, badges, commitStatus, insights, stats, traffic, servicePlacement, imageTransfers, serviceTags, imageScans, pendingChanges, restartLimit, serviceCapabilities, maintenance, errorIngest, ci, serviceTunnel, volumeImports | the service surface: CRUD, runtime commands, deploys (trigger, list, rollback, cancel, remove, diff, WS logs and exec), environment, domains, volumes and files, export/import and moves with data, source upload, inline Dockerfile, manifest, hooks and GitHub links, scheduled jobs, status badges, commit statuses, insights, metrics, traffic, build placement, image scans, the pending-changes tray, restart limit, capabilities, maintenance pages and error pages, error ingest, CI, tunnels, volume imports |
+| `/services` | services, deploys, env, domains, serviceVolumes, serviceFiles, serviceMigration, serviceMoveWithData, sourceUploads, hostAddresses, inlineDockerfile, manifest, hooks, deployHooks, serviceGithub, databases (attachments), jobs, badges, commitStatus, insights, stats, traffic, servicePlacement, imageTransfers, serviceTags, imageScans, pendingChanges, restartLimit, gitPoll, serviceCapabilities, maintenance, errorIngest, ci, serviceTunnel, volumeImports | the service surface: CRUD, runtime commands, deploys (trigger, list, rollback, cancel, remove, diff, WS logs and exec), environment, domains, volumes and files, export/import and moves with data, source upload, inline Dockerfile, manifest, hooks and GitHub links, scheduled jobs, status badges, commit statuses, insights, metrics, traffic, build placement, image scans, the pending-changes tray, restart limit, Git polling, capabilities, maintenance pages and error pages, error ingest, CI, tunnels, volume imports |
 | `/databases` | databases, backups, backupPolicy, databasePublicAccess, databaseTunnel, databaseImports, databaseUpgrades, studioProxy, pgbouncer, pitr | CRUD, limits, credentials, Studio proxy, backups and restore, backup policy, public access, tunnels, dump imports, major upgrades, PgBouncer, PITR |
 | `/backups`, `/backup-destinations` | backups, backupDestinations | list, delete, download; S3-compatible destinations |
 | `/volumes`, `/servers/:serverId/volumes` | volumes, volumeBackups, nodeVolumeFiles | inventory, delete, browse, volume backups; node volume files |
@@ -492,6 +492,7 @@ Registered in `plugins/` in the order of §5.
 | gitopsScheduler | Reads the instance file on its interval and alerts on drift |
 | sharedCertificateSync | Pushes renewed panel certificates to node proxies |
 | restartLimiter | Stops services that keep crashing past their opt-in limit |
+| gitPoller | Every 15 s, reads the branch head of the services whose Git polling is due, and queues a deploy for a new one (`lib/gitPoll.ts`) |
 | housekeeping | Hourly retention: deploy logs **and finished deployment rows** 30 d, audit 90 d, notification log 30 d, job runs 30 d, dead sessions 7 d, expired reset tokens, drills 90 d, retired invitations and transfers 30 d, cold build-cache rows 90 d, CI jobs 30 d, error events 30 d, plus scratch files |
 | logShipper | Forwards container output to configured drains every 10 s over a durable queue |
 | jobScheduler | Cron-scheduled per-service jobs via croner; reloads the job set every 5 minutes |

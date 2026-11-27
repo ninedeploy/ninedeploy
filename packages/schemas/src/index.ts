@@ -65,3 +65,4 @@ export * from './instanceGitops.js';
 export * from './errorIngest.js';
 export * from './ci.js';
 export * from './serviceSleep.js';
+export * from './gitPoll.js';

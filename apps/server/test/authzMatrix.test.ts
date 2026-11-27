@@ -71,6 +71,8 @@ vi.mock('../src/plugins/imageScanScheduler.js', () => noop('authz-image-scans'))
 vi.mock('../src/plugins/gitopsScheduler.js', () => noop('authz-gitops'));
 vi.mock('../src/plugins/sharedCertificateSync.js', () => noop('authz-shared-certificates'));
 vi.mock('../src/plugins/restartLimiter.js', () => noop('authz-restart-limit'));
+// X2: the Git polling tick (git, timers).
+vi.mock('../src/plugins/gitPoller.js', () => noop('authz-git-poll'));
 vi.mock('../src/plugins/housekeeping.js', () => noop('authz-housekeeping'));
 vi.mock('../src/plugins/logShipper.js', () => noop('authz-logshipper'));
 vi.mock('../src/plugins/jobScheduler.js', () => noop('authz-jobs'));
@@ -829,6 +831,8 @@ export const MATRIX: Record<string, Rule> = {
   'GET /v1/services/:id/capabilities': R('viewer'),
   'GET /v1/services/:id/restart-limit': R('viewer'),
   'PUT /v1/services/:id/restart-limit': R('member', { body: () => ({ limit: null }) }),
+  'GET /v1/services/:id/git-poll': R('viewer'),
+  'PUT /v1/services/:id/git-poll': R('member', { body: () => ({ poll: null }) }),
   'GET /v1/services/:id/maintenance': R('viewer'),
   'PUT /v1/services/:id/maintenance': R('member', { body: () => ({ maintenance: null }) }),
   'GET /v1/services/:id/error-pages': R('viewer'),

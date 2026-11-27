@@ -26,6 +26,7 @@ const counts = { critical: 0, high: 1, medium: 0, low: 0, unknown: 0 };
 /** One value per prefix, as its writer stores it. */
 const WRITTEN: Record<string, unknown> = {
   'restart_limit:': { maxRestarts: 3, windowMinutes: 10, trippedAt: null },
+  'git_poll:': { intervalSeconds: 300, lastSha: 'a'.repeat(40), lastPolledAt: NOW, lastError: null, lastDeploymentId: 9 },
   'maintenance:': { title: 'Down', message: 'Back soon', retryAfterSeconds: 300, bypass: [], since: NOW },
   'error_pages:': { pages: { '502': '<h1>x</h1>' } },
   'inline_dockerfile:': 'FROM nginx:1.27\n',

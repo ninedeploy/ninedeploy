@@ -6,6 +6,7 @@ import {
   serviceMoveInput,
   forwardAuthGrantInput,
   forwardAuthInput,
+  gitPollInput,
   maintenanceInput,
   restartLimitInput,
   pendingApplyInput,
@@ -197,6 +198,20 @@ export const servicesSpecs: RouteSpecMap = {
     body: restartLimitInput,
     validation: 'zod',
     responseType: 'RestartLimitView',
+  },
+  'GET /v1/services/:id/git-poll': {
+    summary: "A service's Git polling (X2), and what its last poll found",
+    tag: 'services',
+    floor: 'viewer',
+    responseType: 'GitPollView',
+  },
+  'PUT /v1/services/:id/git-poll': {
+    summary: 'Read the branch head every N seconds and deploy a new one, for a server that cannot receive webhooks (null turns it off)',
+    tag: 'services',
+    floor: 'member',
+    body: gitPollInput,
+    validation: 'zod',
+    responseType: 'GitPollView',
   },
   'GET /v1/services/:id/maintenance': {
     summary: "A service's maintenance mode (G2.2)",

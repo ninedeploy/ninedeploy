@@ -5729,6 +5729,23 @@ export const TR: Readonly<Record<string, string>> = {
   'last stopped by the limit {time}': 'sınır en son {time} tarihinde durdurdu',
   '{n} restarts in the window now': 'şu an pencerede {n} yeniden başlatma',
 
+  // ── Git polling (X2) ──────────────────────────────────────────────────
+  'Git polling': 'Git yoklaması',
+  'Git polling saved': 'Git yoklaması kaydedildi',
+  'Git polling turned off': 'Git yoklaması kapatıldı',
+  'Asks the Git server for the branch head on an interval and deploys a new commit, as a push webhook would. For a Git server that cannot reach this panel with a webhook. Every new commit deploys: [skip cd] and watch paths are not read.':
+    'Belli aralıklarla Git sunucusuna dalın en yeni commit\'ini sorar ve yeni bir commit\'i, bir push webhook\'u gibi deploy eder. Webhook\'uyla bu panele erişemeyen bir Git sunucusu içindir. Her yeni commit deploy edilir: [skip cd] ve izleme yolları okunmaz.',
+  'Interval': 'Aralık',
+  'Every minute': 'Her dakika',
+  'Every {n} minutes': 'Her {n} dakikada bir',
+  'Every hour': 'Her saat',
+  'Every {n} hours': 'Her {n} saatte bir',
+  'Every {n} seconds': 'Her {n} saniyede bir',
+  'The first check runs within fifteen seconds.': 'İlk yoklama on beş saniye içinde yapılır.',
+  'Last checked {time}': 'Son yoklama {time}',
+  'The last check failed: {error}': 'Son yoklama başarısız oldu: {error}',
+  'queued deployment #{id}': '#{id} numaralı deploy kuyruğa alındı',
+
   // ── Registry webhook (G1.7) ───────────────────────────────────────────
   'Registry webhook': 'Registry webhook\'u',
   'Registry webhook on': 'Registry webhook\'u açıldı',
@@ -6358,7 +6375,7 @@ export const TR: Readonly<Record<string, string>> = {
   'More': 'Diğer',
   'More settings': 'Diğer ayarlar',
   'Open a tab above to close More': 'Diğer bölümünü kapatmak için yukarıdaki bir sekmeyi açın',
-  'Placement, container options, canary, hooks, maintenance and restart limit': 'Yerleşim, konteyner seçenekleri, canary, kancalar, bakım ve yeniden başlatma sınırı',
+  'Placement, container options, canary, hooks, Git polling, maintenance and restart limit': 'Yerleşim, konteyner seçenekleri, canary, kancalar, Git yoklaması, bakım ve yeniden başlatma sınırı',
   // O2: database major upgrade (routes/database/UpgradeCard.tsx)
   'Back on {engine} {version}': 'Yeniden {engine} {version} sürümünde',
   'Compared before the switch: {tables} tables, {rows} rows, {sequences} sequences.': 'Geçişten önce karşılaştırıldı: {tables} tablo, {rows} satır, {sequences} dizi.',
