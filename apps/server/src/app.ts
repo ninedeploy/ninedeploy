@@ -55,6 +55,7 @@ import staticFilesPlugin from './plugins/staticFiles.js';
 import traefikPlugin from './plugins/traefik.js';
 import publicDatabaseAccessPlugin from './plugins/publicDatabaseAccess.js';
 import databaseImportsPlugin from './plugins/databaseImports.js';
+import serviceMoveRecoveryPlugin from './plugins/serviceMoveRecovery.js';
 import terminalsPlugin from './plugins/terminals.js';
 import trafficAnalyticsPlugin from './plugins/trafficAnalytics.js';
 import nodeDatabasesPlugin from './plugins/nodeDatabases.js';
@@ -174,6 +175,8 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(publicDatabaseAccessPlugin);
   // Database dump imports: boot recovery + hourly expiry sweep (0.14)
   await app.register(databaseImportsPlugin);
+  // N07: a move with data the previous process was running is marked failed at boot
+  await app.register(serviceMoveRecoveryPlugin);
   // Terminal sessions: boot recovery + 60s reaper (0.15)
   await app.register(terminalsPlugin);
   // Traffic analytics access-log tailer, idle unless enabled (0.15)

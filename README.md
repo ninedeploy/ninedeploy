@@ -696,7 +696,7 @@ NineDeploy/                    pnpm 11 workspace + Turborepo
 ├── desktop/                   Electron desktop client (own lockfile)
 ├── e2e/                       Playwright browser journeys (own lockfile)
 ├── examples/                  Ten framework starters, from Next.js to a static site
-├── docs/                      52 documents: operator guides, dated records and plans
+├── docs/                      53 documents: operator guides, dated records and plans
 ├── install.sh                 one-command installer and upgrader
 ├── Dockerfile                 multi-stage, non-root, checksum-pinned build tools
 └── ARCHITECTURE.md            the full internal design spec

@@ -82,6 +82,8 @@ vi.mock('../src/plugins/githubFeedback.js', () => noop('authz-github-feedback'))
 // 0.14: public-database sidecar reconcile (docker) and import boot recovery / expiry sweep (timers).
 vi.mock('../src/plugins/publicDatabaseAccess.js', () => noop('authz-public-db-access'));
 vi.mock('../src/plugins/databaseImports.js', () => noop('authz-database-imports'));
+// N07: boot recovery for moves with data (settings rows of the previous process).
+vi.mock('../src/plugins/serviceMoveRecovery.js', () => noop('authz-move-recovery'));
 // 0.15: terminal boot recovery / reaper (docker: helper containers) and the traffic log tailer (timers, files).
 vi.mock('../src/plugins/terminals.js', () => noop('authz-terminals'));
 vi.mock('../src/plugins/trafficAnalytics.js', () => noop('authz-traffic-analytics'));

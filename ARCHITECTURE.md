@@ -83,7 +83,7 @@ ninedeploy/                         pnpm 11.23 workspace + Turborepo
 │   │   ├── src/agentOps/           36 source files registering 37 modules and 86 operations — §9
 │   │   ├── src/kernel/             microkernel core, drivers/ (16), plugins/ (12 built-in),
 │   │   │                           sandbox/ (isolated plugin host)
-│   │   ├── src/plugins/           41 Fastify plugins: request guards, worker, schedulers — §6
+│   │   ├── src/plugins/           42 Fastify plugins: request guards, worker, schedulers — §6
 │   │   ├── src/openapi/            OpenAPI 3.1 builder, specs/ (21 files), MCP tool generation
 │   │   ├── src/templates/          bundled template registry (322 entries) and mirrors
 │   │   ├── src/agent.ts            the remote agent (plus agentApp.ts, wakeCatcher.ts,
@@ -389,7 +389,7 @@ cors → websocket → securityHeaders → rateLimit → rawBody → db → pane
   → kernel → githubFeedback → auth → error handler
   → health → events (WS) → /v1 (route modules) → public status pages → wake
   → maintenance pages → forwardAuth verify → error ingest → MCP OAuth discovery
-  → /scim/v2 → worker → traefik → publicDatabaseAccess → databaseImports
+  → /scim/v2 → worker → traefik → publicDatabaseAccess → databaseImports → serviceMoveRecovery
   → terminals → trafficAnalytics → nodeDatabases → runtimeState
   → fanoutRecovery → primaryRecovery → nodeLifecycle → swarmRecovery
   → collector → observability → uptime → autoscaler → sleeper
@@ -473,6 +473,7 @@ Registered in `plugins/` in the order of §5.
 | traefik | Ensures the `ninedeploy` network, the Traefik container and the dynamic routing config at boot, and heals the proxy |
 | publicDatabaseAccess | Boot reconcile and a 5-minute watchdog for public database sidecars |
 | databaseImports | Boot recovery and an hourly expiry sweep for dump and volume imports |
+| serviceMoveRecovery | At boot, marks a move of a service with its data that the previous process was running as failed, with the reason ([what a restart keeps and loses](docs/RESTART_STATE.md)) |
 | terminals | Boot recovery and a 60-second reaper for terminal sessions |
 | trafficAnalytics | Access-log tailer (10 s) into minute and hour rollups; idle while analytics is off |
 | nodeDatabases | Every 60 s, reconciles the status of databases hosted on nodes |

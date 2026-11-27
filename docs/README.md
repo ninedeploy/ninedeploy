@@ -43,6 +43,7 @@ The guides are grouped by what you are doing. The last group holds the project's
 **Observability**
 - [Resource history, metrics export and durable logs](OBSERVABILITY.md)
 - [Capacity baseline](CAPACITY_BASELINE.md)
+- [What a panel restart keeps and loses](RESTART_STATE.md): what is recovered at boot, what starts again by design, one-time codes, and replay protection.
 - [Uptime monitors and status pages](UPTIME.md)
 - [AI assistant](AI.md)
 

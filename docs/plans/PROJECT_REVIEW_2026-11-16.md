@@ -101,6 +101,7 @@ The [capacity baseline](../CAPACITY_BASELINE.md) records the healthy load and co
 - Source: [canaryState.ts](../../apps/server/src/engine/canaryState.ts) intentionally keeps measurements in memory; the durable runtime recovery journal is separate. Recovery is therefore not entirely absent.
 - Work: inventory canary observations, idle observations, one-time forward-auth codes, export status, and similar state. Choose resume, safe abort, or restart behavior for each. Persist only the state that needs it.
 - Acceptance: test the expected behavior and operator message after a hard kill at critical transitions; stale asynchronous work cannot publish into a newer generation.
+- Record, November 27, 2026: the inventory is [What a panel restart keeps and loses](../RESTART_STATE.md). Most in-memory state is lost by design and says so where it lives (canary measurements, request rates, idle and autoscale windows, lockouts, alert throttles); each kind of in-flight work has a recovery at boot. One had none: a move of a service with its data left its row `running` forever. It is marked failed at boot now, with the reason and what to do (`plugins/serviceMoveRecovery.ts`, `serviceMoveRecovery.test.ts`). Open: whether replay ids (webhook deliveries, SAML assertions) move from memory to the database, and a restart test for a canary and an idle window.
 
 ### 3. User journeys and adoption
 
