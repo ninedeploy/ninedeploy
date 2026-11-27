@@ -62,6 +62,11 @@ describe('the setting', () => {
     expect(lib.gitPollSupported({ repoUrl: null })).toBe(false);
     expect(lib.gitProviderOf('https://github.com/acme/web.git')).toBe('github');
     expect(lib.gitProviderOf('git@github.com:acme/web.git')).toBe('github');
+    // A host under github.com.
+    expect(lib.gitProviderOf('https://repos.github.com/acme/web.git')).toBe('github');
+    expect(lib.gitProviderOf('ssh://git@gitlab.example.com:2222/acme/web.git')).toBe('gitlab');
+    // Any other Git server is named as the one whose webhook dialect it shares.
+    expect(lib.gitProviderOf('https://github.acme.test/acme/web.git')).toBe('gitea');
     expect(lib.gitProviderOf('https://gitlab.com/acme/web.git')).toBe('gitlab');
     expect(lib.gitProviderOf('https://bitbucket.org/acme/web.git')).toBe('bitbucket');
     expect(lib.gitProviderOf('https://git.example.com/acme/web.git')).toBe('gitea');
@@ -196,6 +201,18 @@ describe('pollDueGitServices', () => {
     expect(await lib.getGitPoll(db, 5)).toMatchObject({ lastSha: NEXT, lastError: null });
   });
 
+  it('reads the clock itself when none is given, and keeps a failure that is not an Error', async () => {
+    await lib.setGitPoll(db, 5, { intervalSeconds: 60 });
+    const push = vi.fn();
+    const before = Date.now();
+    // No clock and a plain string thrown, as a library might.
+    expect(await lib.pollDueGitServices(db, { head: async () => { throw 'connection reset'; }, push: push as never })).toEqual({ due: 1, queued: 0, unchanged: 0, failed: 1 });
+    const stored = await lib.getGitPoll(db, 5);
+    expect(stored?.lastError).toBe('connection reset');
+    expect(Math.abs(Date.parse(stored!.lastPolledAt!) - before)).toBeLessThan(30_000);
+    expect(push).not.toHaveBeenCalled();
+  });
+
   it('marks a poll as run before it starts, so a slow one is not started twice', async () => {
     await lib.setGitPoll(db, 5, { intervalSeconds: 60 });
     let release!: () => void;
@@ -270,6 +287,9 @@ describe('routes', () => {
     expect((await app.inject({ method: 'PUT', url: '/services/5/git-poll', headers: asUser(1), payload: { poll: { intervalSeconds: 86_400 } } })).statusCode).toBe(200);
     expect(await lib.getGitPoll(db, 5)).toEqual({ intervalSeconds: 86_400 });
     expect(audit).toHaveBeenCalledTimes(1);
+    // No body at all is refused the same way.
+    const bare = await app.inject({ method: 'PUT', url: '/services/5/git-poll', headers: asUser(1) });
+    expect(bare.statusCode).toBe(400);
   });
 
   it('refuses polling for a service that deploys an image; turning it off stays allowed', async () => {

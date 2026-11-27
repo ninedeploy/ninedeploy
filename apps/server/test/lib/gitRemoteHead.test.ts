@@ -4,7 +4,7 @@
  */
 import { spawnSync, type SpawnSyncOptions } from 'node:child_process';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -212,7 +212,10 @@ describe('the call remoteBranchHead assembles', () => {
     // No token anywhere, and the directory of the call holds nothing else.
     expect(command.args.join(' ')).not.toContain('PRIVATE KEY');
     // The key is for its owner alone (a Windows directory has no such mode).
-    if (process.platform !== 'win32') expect(readFileSync(command.keyFile!).mode & 0o777).toBe(0o600);
+    if (process.platform !== 'win32') {
+      expect(statSync(command.keyFile!).mode & 0o777).toBe(0o600);
+      expect(statSync(command.knownHostsFile).mode & 0o777).toBe(0o600);
+    }
   });
 
   it("carries the host's proxy and certificate settings, and no other variable", async () => {
