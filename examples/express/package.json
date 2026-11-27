@@ -1,0 +1,18 @@
+{
+  "name": "ninedeploy-express-starter",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "A minimal Express service with a health check, ready to deploy on NineDeploy",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "dependencies": {
+    "express": "5.3.0"
+  }
+}

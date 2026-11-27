@@ -1,0 +1,8 @@
+vendor/bundle
+.bundle
+log
+tmp
+storage
+.env
+.env.*
+.git

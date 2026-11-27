@@ -1,12 +1,21 @@
 # Framework starters
 
-Deploy a small Next.js, Laravel, or FastAPI application from a local folder. Each example includes a Dockerfile, a dependency lockfile and a `.ninedeploy` manifest that sets the application port and the `/healthz` readiness path.
+Deploy a small application in one of ten frameworks from a local folder: Next.js, Laravel, FastAPI, Django, Rails, Express, Astro, Go, Spring Boot, or a static site. Each example includes a Dockerfile, a `.ninedeploy` manifest that sets the application port and the `/healthz` readiness path, and a lockfile where the framework has one. Each home page names its starter, and `/healthz` answers `{"status":"ok"}`.
 
 | Starter | Runtime | Container port |
 | --- | --- | ---: |
 | [Next.js](../examples/nextjs) | Node.js 24, Next.js standalone server | 3000 |
 | [Laravel](../examples/laravel) | PHP 8.4 and Apache | 80 |
 | [FastAPI](../examples/fastapi) | Python 3.14 and Uvicorn | 8000 |
+| [Django](../examples/django) | Python 3.14, Django 6.1 and Gunicorn | 8000 |
+| [Rails](../examples/rails) | Ruby 3.4, Rails 8.1 and Puma | 3000 |
+| [Express](../examples/express) | Node.js 26, Express 5 | 3000 |
+| [Astro](../examples/astro) | Node.js 26 builds the site; nginx serves it | 8080 |
+| [Go](../examples/go) | Go 1.27, the standard library only | 8080 |
+| [Spring Boot](../examples/spring) | Java 21, Spring Boot 4.2 with an embedded Tomcat | 8080 |
+| [Static site](../examples/static) | nginx; nothing is built | 8080 |
+
+The images run as a user of their own, with the exception of Laravel's Apache, which starts as root and passes each request to `www-data` as the base image does.
 
 ## Deploy from your machine
 
@@ -17,6 +26,13 @@ Deploy a small Next.js, Laravel, or FastAPI application from a local folder. Eac
    ninedeploy deploy up ./examples/nextjs --create nextjs-starter
    ninedeploy deploy up ./examples/laravel --create laravel-starter --exclude vendor
    ninedeploy deploy up ./examples/fastapi --create fastapi-starter
+   ninedeploy deploy up ./examples/django --create django-starter
+   ninedeploy deploy up ./examples/rails --create rails-starter --exclude vendor .bundle
+   ninedeploy deploy up ./examples/express --create express-starter
+   ninedeploy deploy up ./examples/astro --create astro-starter
+   ninedeploy deploy up ./examples/go --create go-starter
+   ninedeploy deploy up ./examples/spring --create spring-starter --exclude target
+   ninedeploy deploy up ./examples/static --create static-starter
    ```
 
 3. Open the service in the panel and wait for the deployment to finish. If a build fails, open its deployment log. Use the service URL to open `/` and confirm the framework's starter message. Request `/healthz` to check for HTTP 200 and `{"status":"ok"}`.
@@ -37,10 +53,17 @@ On November 22, 2026, the browser journey reproduced the missing **Deploys** han
 - **Next.js** uses App Router with `app/page.js` as its entry page. The runtime image copies the standalone server and the generated static assets. If you add a `public/` directory, add a Dockerfile `COPY` for it into the runtime image. Regenerate `package-lock.json` with `npm install` from the project directory when you change dependencies. [Next.js standalone output](https://nextjs.org/docs/app/api-reference/config/next-config-js/output)
 - **Laravel** serves the `public/` directory and registers the example routes in `routes/web.php`. The sample is stateless. When adding sessions or authentication, provide `APP_KEY` through service environment variables and configure persistence for your application. Use PHP 8.4 and run `composer update` from the project directory to regenerate `composer.lock`. [Laravel deployment guide](https://laravel.com/framework/docs/13.x/deployment)
 - **FastAPI** serves `main:app` with Uvicorn. Change `requirements.in` and run `uv pip compile requirements.in --python-version 3.14 --universal --generate-hashes --output-file requirements.txt` from the project directory to update the hash-checked lockfile. [FastAPI container guide](https://fastapi.tiangolo.com/deployment/docker/)
+- **Django** serves the `project` application with Gunicorn on two workers. It registers no application and keeps no database. When you attach a managed database to the service, its URL arrives in the environment as `DATABASE_URL` ([databases and backups](DATABASES_BACKUPS.md)); add `django.db` to `INSTALLED_APPS`, give `DATABASES` a setting that reads it, and run the migrations from the service's pre-deploy hook (an instance operator sets hooks). `ALLOWED_HOSTS` accepts any hostname because the proxy in front decides who may reach the service. Django refuses to start without a key, so the starter sets a placeholder: set `DJANGO_SECRET_KEY` in the environment before you add sessions or anything signed. Update `requirements.in` with the same `uv pip compile` command as FastAPI. [Django deployment checklist](https://docs.djangoproject.com/en/stable/howto/deployment/checklist/)
+- **Rails** is a full-stack application without Active Record, the mailers, Active Storage, Action Cable and an asset pipeline: `config/application.rb` lists what it loads. Puma reads `PORT` (3000) and `RAILS_ENV` from the environment. `config.hosts.clear` accepts any hostname, and the placeholder `secret_key_base` exists because Rails refuses to serve production without one; set `SECRET_KEY_BASE` in the environment (`bin/rails secret` writes a value) before you add sessions. To add a database, require `active_record/railtie` and write `config/database.yml` from the environment's `DATABASE_URL`. Regenerate `Gemfile.lock` with `bundle lock --add-platform x86_64-linux --add-platform aarch64-linux` from the project directory, so both CPU architectures the panel deploys to stay in the lockfile. [Configuring a Rails application](https://guides.rubyonrails.org/configuring.html)
+- **Express** serves `server.js`. It reads `PORT`, falling back to 3000, which is also the port the manifest names. Regenerate `package-lock.json` with `npm install` from the project directory when you change dependencies. [Express behind a proxy](https://expressjs.com/en/guide/behind-proxies.html)
+- **Astro** builds a static site with `output: 'static'`. `src/pages/healthz.ts` is a prerendered endpoint, so `/healthz` is a file the web server answers; `src/pages/` holds the pages. For server-rendered pages, follow Astro's [on-demand rendering guide](https://docs.astro.build/en/guides/on-demand-rendering/): install an adapter, set `output` to `'server'`, and give the Dockerfile a Node runtime in place of nginx. An unknown path is a 404: change `try_files` in `deploy/default.conf` to fall back to `index.html` for a single-page app. [Astro deployments](https://docs.astro.build/en/guides/deploy/)
+- **Go** uses the standard library only, so there is nothing to lock: the base image pins the Go toolchain, and `go.mod` records the language version. It reads `PORT`, falling back to 8080. The runtime image is Distroless without a shell, which the HTTP health check does not need. With a dependency, `go mod tidy` writes `go.sum`; the Dockerfile already copies it with `go.mod`. [Go modules reference](https://go.dev/ref/mod)
+- **Spring Boot** builds with Maven into one jar and runs it on a Java 21 runtime. `spring-boot-starter-parent` in `pom.xml` names the version of every Spring dependency and build plugin, so a build resolves the same libraries until that version changes; a build downloads them from Maven Central. The service listens on 8080. Spring Boot's own health checks live under `/actuator`; this starter answers `/healthz` from a controller so that no extra dependency is needed. [Spring Boot Maven plugin](https://docs.spring.io/spring-boot/maven-plugin/)
+- **Static site** copies `public/` into nginx. Nothing is built. `deploy/default.conf` is the server block: add MIME types or caching headers there. An unknown path is a 404; change `try_files` to fall back to `index.html` for a single-page app, and put the build step of your site generator into the Dockerfile before the copy. [nginx beginners' guide](https://nginx.org/en/docs/beginners_guide.html)
 
 ## Verify deployments
 
-The **Framework starters** GitHub Actions workflow runs after successful main push CI and uses the panel image from that commit. You can also dispatch it with a candidate image reference. For a local run, use Node.js, `tar` and a local Linux Docker engine that supports a privileged Docker-in-Docker fixture. Network access is required for the framework base images and packages.
+The **Framework starters** GitHub Actions workflow runs after successful main push CI and uses the panel image from that commit. It builds and routes every starter of the table above, one after another. You can also dispatch it with a candidate image reference. For a local run, use Node.js, `tar` and a local Linux Docker engine that supports a privileged Docker-in-Docker fixture. Network access is required for the framework base images and packages. On Windows, start it from a shell whose `tar` is the one Windows ships (`C:\Windows\System32\tar.exe`): the GNU tar of Git Bash reads the `D:\…` source path as a remote host and fails.
 
 ```bash
 docker build -t ninedeploy:framework-starters .
@@ -63,7 +86,26 @@ The smoke passed on a Linux amd64 panel image built locally from the updated sou
 | Laravel | 42.7 s | 46.2 s |
 | FastAPI | 22.4 s | 24.5 s |
 
-These timings cover a single run against a fresh isolated Docker daemon. The first hosted framework workflow run is pending.
+These timings cover a single run against a fresh isolated Docker daemon. Hosted runs of the workflow are listed under [Framework starters](https://github.com/ninedeploy/ninedeploy/actions/workflows/framework-starters.yml).
+
+### Local acceptance of the ten starters on 2026-11-27
+
+The seven new starters were built and asked on their own first, then the smoke passed with all ten against the image CI publishes for `main` (`ghcr.io/ninedeploy/ninedeploy:main-407b56e3…`, image `sha256:dbf421ffffad3d9d1d398a367f712870b97603ace9362481aba513691bed6123`, panel 0.20.0), on a fresh isolated Docker daemon on a Windows machine with Docker Desktop. Every deployment passed its readiness check, Traefik returned HTTP 200 with the expected response on `/` and `/healthz` for all ten, and the run removed its containers, network and volume. From the fixture's start to the receipt took about seven and a half minutes, six and a half of them the ten deployments.
+
+| Framework | Upload to deployment success | Upload to verified HTTP routes |
+| --- | ---: | ---: |
+| Next.js | 45.8 s | 47.5 s |
+| Laravel | 37.6 s | 40.5 s |
+| FastAPI | 24.4 s | 28.4 s |
+| Static site | 18.3 s | 20.0 s |
+| Express | 22.5 s | 24.6 s |
+| Astro | 25.5 s | 28.6 s |
+| Go | 58.1 s | 59.9 s |
+| Django | 27.4 s | 31.3 s |
+| Rails | 64.0 s | 66.3 s |
+| Spring Boot | 80.1 s | 83.3 s |
+
+The images the Dockerfiles build run as a user of their own (`uid` 1000 for Express and Rails, 10001 for Django, 1001 for Spring Boot, 101 for the two nginx sites, and Distroless' `nonroot` for Go); Laravel's Apache is the exception named above. What each build produced on the same machine: Go 15 MiB, the two nginx sites 86 MiB each, Django 237 MiB, Express 337 MiB, Spring Boot 443 MiB, Rails 466 MiB.
 
 ## Clean-server first deployment
 

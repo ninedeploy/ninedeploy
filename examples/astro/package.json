@@ -1,0 +1,15 @@
+{
+  "name": "ninedeploy-astro-starter",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "A minimal static Astro site with a health check, ready to deploy on NineDeploy",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview"
+  },
+  "dependencies": {
+    "astro": "7.4.13"
+  }
+}

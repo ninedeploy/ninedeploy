@@ -34,7 +34,7 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 26.12.1
-      - name: Build and route all three starters
+      - name: Build and route every starter
         env:
           IMAGE: ${{ inputs.image || format('ghcr.io/ninedeploy/ninedeploy:main-{0}', github.event.workflow_run.head_sha) }}
         run: node scripts/smoke-framework-starters.mjs --image="$IMAGE" --proof=framework-starter-receipts

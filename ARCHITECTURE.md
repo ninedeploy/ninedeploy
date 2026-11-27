@@ -111,7 +111,7 @@ ninedeploy/                         pnpm 11.23 workspace + Turborepo
 │   └── plugin-sdk/  definePlugin + scopedConfig helpers for kernel plugins
 ├── desktop/         Electron 44 desktop client (outside the pnpm workspace, own lockfile)
 ├── e2e/             Playwright 1.64 browser journeys (own lockfile)
-├── examples/        Next.js, Laravel and FastAPI starters
+├── examples/        Ten framework starters (see docs/FRAMEWORK_STARTERS.md)
 ├── scripts/         release tooling, contract preflight, 35 smoke scripts
 ├── docs/            operator guides and dated records — index in docs/README.md
 ├── .github/workflows/   ci.yml, release-publish.yml, browser-e2e.yml, desktop.yml,

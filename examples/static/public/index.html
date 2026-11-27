@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>NineDeploy static site starter</title>
+    <style>
+      body { margin: 0; min-height: 100vh; display: grid; place-items: center; font: 18px/1.5 system-ui, sans-serif; background: #0b1020; color: #e6e9f2; }
+      main { max-width: 34rem; padding: 2rem; }
+      code { padding: 0.1rem 0.35rem; border-radius: 0.3rem; background: #1b2340; }
+      a { color: #8ab4ff; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>NineDeploy static site starter</h1>
+      <p>
+        This page is served by nginx, without a build step and without root. Replace the files in
+        <code>public/</code> with your own site, or with what your build writes.
+      </p>
+      <p><code>/healthz</code> answers the health check the deployment waits for.</p>
+      <p><a href="/healthz">See the health check</a></p>
+    </main>
+  </body>
+</html>

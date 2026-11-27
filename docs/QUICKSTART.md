@@ -95,7 +95,7 @@ docker run -d --name ninedeploy \
 
 After the first admin signs in, the Dashboard shows a **Getting started** checklist and a **Deploy your first app** card. The **New** button (top bar, or `/new`) opens the resource picker: a Git repository, a Docker image, a Dockerfile, an uploaded `.zip` / `.tar.gz` of a project folder, a static site, a Compose stack, one of 11 database engines, or a one-click app from the catalog. Without a Git repository, `ninedeploy deploy up ./my-app --create my-app` deploys a local folder ([details](./DEPLOYMENTS.md#deploy-without-git-uploaded-source-0161)).
 
-To start from a working Dockerfile and health check, deploy a [Next.js, Laravel, or FastAPI starter](FRAMEWORK_STARTERS.md).
+To start from a working Dockerfile and health check, deploy a [framework starter](FRAMEWORK_STARTERS.md): Next.js, Laravel, FastAPI, Django, Rails, Express, Astro, Go, Spring Boot or a static site.
 
 If you are joining an existing instance with registration closed, ask the instance operator to create your account. A workspace owner or admin can then invite you as a `member`. Sign in, open **New**, and choose a permitted source such as **Docker image** or **Upload source**. The instance operator handles the initial setup checklist and built-in demo. [Workspace permissions](WORKSPACES_RBAC.md#-2-role-hierarchy--permission-matrix)
 

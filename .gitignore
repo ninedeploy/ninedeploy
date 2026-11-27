@@ -62,7 +62,9 @@ security-report/
 
 
 *.txt
+# The starters' locked Python requirements are source, not scratch output.
 !examples/fastapi/requirements.txt
+!examples/django/requirements.txt
 *.tar.gz
 
 # Coverage artifacts (v8 json reporter scratch output)

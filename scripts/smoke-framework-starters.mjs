@@ -8,10 +8,19 @@ import { setTimeout as pause } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import { removeOwnedSmokeResource } from './lib/owned-smoke-resources.mjs';
 
+// Each `examples/<name>`: the port its `.ninedeploy` names and a text its home page holds.
+// The quick builds first, so a failure shows early; Spring and Rails download the most.
 const starters = [
   { name: 'nextjs', port: 3000, marker: 'NineDeploy Next.js starter' },
   { name: 'laravel', port: 80, marker: 'NineDeploy Laravel starter' },
   { name: 'fastapi', port: 8000, marker: 'NineDeploy FastAPI starter' },
+  { name: 'static', port: 8080, marker: 'NineDeploy static site starter' },
+  { name: 'express', port: 3000, marker: 'NineDeploy Express starter' },
+  { name: 'astro', port: 8080, marker: 'NineDeploy Astro starter' },
+  { name: 'go', port: 8080, marker: 'NineDeploy Go starter' },
+  { name: 'django', port: 8000, marker: 'NineDeploy Django starter' },
+  { name: 'rails', port: 3000, marker: 'NineDeploy Rails starter' },
+  { name: 'spring', port: 8080, marker: 'NineDeploy Spring starter' },
 ];
 const option = name => process.argv.find(arg => arg.startsWith(`--${name}=`))?.slice(name.length + 3);
 const image = option('image');
@@ -107,7 +116,8 @@ async function deployStarter({ name, port, marker }) {
   receipt.starters.push(receiptRow);
   const source = fileURLToPath(new URL(`../examples/${name}`, import.meta.url));
   const archive = join(proof, `${name}.tar.gz`);
-  const excludes = ['.git', '.env', '.env.*', '.next', 'node_modules', 'vendor', '.venv', '__pycache__'];
+  // What a developer's copy of a starter may hold and the image must not: dependencies, build output, secrets.
+  const excludes = ['.git', '.env', '.env.*', '.next', '.astro', 'node_modules', 'vendor', '.venv', '__pycache__', 'dist', 'target', 'log', 'tmp', 'storage'];
   const packed = command('tar', ['-czf', archive, ...excludes.map(value => `--exclude=${value}`), '-C', source, '.']);
   assert.equal(packed.status, 0, (packed.stderr || packed.error?.message || '').trim());
   const service = await api('/v1/services', { name: `Starter ${name}`, type: 'docker' });

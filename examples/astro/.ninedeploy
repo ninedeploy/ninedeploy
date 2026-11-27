@@ -1,0 +1,4 @@
+version: "1"
+run:
+  port: 8080
+  healthcheck: /healthz

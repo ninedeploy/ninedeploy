@@ -693,7 +693,7 @@ NineDeploy/                    pnpm 11 workspace + Turborepo
 │   └── plugin-sdk/            definePlugin + scoped config helpers
 ├── desktop/                   Electron desktop client (own lockfile)
 ├── e2e/                       Playwright browser journeys (own lockfile)
-├── examples/                  Next.js, Laravel and FastAPI starters
+├── examples/                  Ten framework starters, from Next.js to a static site
 ├── docs/                      52 documents: operator guides, dated records and plans
 ├── install.sh                 one-command installer and upgrader
 ├── Dockerfile                 multi-stage, non-root, checksum-pinned build tools
@@ -752,7 +752,7 @@ or reported as a clean audit. Remove the patch when an upstream fix is adopted.
 | Guide | What is in it |
 | :--- | :--- |
 | [Quickstart & upgrading](./docs/QUICKSTART.md) | Install modes, environment variables, systemd internals, in-place upgrades |
-| [Framework starters](./docs/FRAMEWORK_STARTERS.md) | Deploying the bundled Next.js, Laravel and FastAPI examples from a local folder |
+| [Framework starters](./docs/FRAMEWORK_STARTERS.md) | Deploying the bundled examples from a local folder: Next.js, Laravel, FastAPI, Django, Rails, Express, Astro, Go, Spring Boot and a static site |
 | [Support matrix](./docs/SUPPORT_MATRIX.md) | Which service features work on the panel host, on nodes, on Swarm, and for Compose and PM2; generated from the code |
 | [Current status](./docs/CURRENT_STATUS.md) | What is implemented, accepted and published |
 | [Deployments & pipelines](./docs/DEPLOYMENTS.md) | Builds, health checks, zero-downtime releases, canaries, autoscaling, scale to zero, previews, protected lanes and approvals |

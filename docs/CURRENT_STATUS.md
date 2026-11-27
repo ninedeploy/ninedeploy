@@ -33,7 +33,6 @@ Reconciled on November 27, 2026. This is the one list. The plans keep the eviden
 
 | ID | Work |
 |---|---|
-| A4 | Seven more framework guides with starters: Django, Rails, Express, Astro, Go, Spring and a static site. |
 | A3 | Group the 20 sections of instance Settings by task. |
 | A8 | Rename the `coolify-*` template slugs, with redirects. Approved on November 9. |
 | N11 | Panel sign-in for services on nodes, after the decisions. |
@@ -109,6 +108,7 @@ The `stable` tag pointed at v0.18.28 (`f238463e`) on November 23, 2026, so the s
 | Desktop | Installers and tests exist; signing is conditional on certificates. | The 0.19.0 release run packaged all three platforms. | Installers are published with every release since 0.18.25, unsigned. Physical-Mac Keychain use and published installer signatures are not independently verified (N18). |
 | The panel's own domain in Docker mode | Implemented on `main` after 0.20.0. Once a domain is set, the panel container joins the proxy's network at boot, and the router of the domain, the forward-auth check and the wake endpoint reach it under its alias. The installer checks that the domain answers instead of guessing from the published port. On bare metal Traefik still reaches the panel through the Docker gateway. | `smoke-panel-domain.mjs` on an isolated daemon: the panel with a domain and no published port, six cases. It runs in CI's routing group and in the `agent-runtime` release cohort. | Unreleased. |
 | Git polling | Implemented on `main` after 0.20.0. A member turns it on per service, for a Git server that cannot reach the panel with a webhook: every 60 seconds to 24 hours the head of the branch is read with `git ls-remote` under the checkout's rules, and a head the service does not run goes through the push path. Watch paths and skip markers do not apply, because a poll reads the head and nothing else. | [Deployments guide, Git polling](DEPLOYMENTS.md): the poller and its routes on a migrated SQLite, a poll through the push path, and a real `git ls-remote` against a Git server the test starts. No release has carried it. | Unreleased. |
+| Framework starters | Implemented on `main` after 0.20.0: seven more beside the three of 0.20.0, which are Django, Rails, Express, Astro, Go, Spring Boot and a static site. Each is a directory under `examples/` with a Dockerfile, a `.ninedeploy` manifest, a lockfile where the framework has one, a home page that names the starter and a `/healthz` that answers `{"status":"ok"}`; the image runs as a user of its own, except Laravel's Apache, which was already published. | `smoke-framework-starters.mjs` with all ten against the `main` image, on an isolated daemon on a local machine: every deployment reached `running` and answered through Traefik, in [the starters guide](FRAMEWORK_STARTERS.md). The hosted workflow runs the same smoke after each main push. | The three of 0.20.0 are published; the seven others are unreleased. |
 
 ## Packages published in 0.19.0
 
