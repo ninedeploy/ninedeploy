@@ -70,14 +70,19 @@ Maintainers tag releases. Each release's `CHANGELOG.md` section opens with a blo
 
 The Release workflow checks the signed build digest and runs the core Playwright journeys from its source commit. Release promotion requires the browser gate, the Docker smokes, and the desktop installers to succeed. The browser job retains the report and any failure traces. [Browser journey commands](scripts/README.md#browser-journeys)
 
-Every release is offered at once to panels on the default channel. Panels on the **stable** channel get only the release that the `stable` tag points at. Once a day, `.github/workflows/stable-channel.yml` moves that tag to the newest release that has been out for 7 days. Two markers in a GitHub release's notes change that:
+Every release is offered at once to panels on the default channel. Panels on the **stable** channel get only the release the stable channel names. Once a day, `.github/workflows/stable-channel.yml` keeps it on the newest release that has been out for 7 days. Two markers in a GitHub release's notes change that:
 
 - `<!-- stable: hold -->` keeps a release off stable, for example while a regression is investigated.
 - `<!-- stable: security -->` promotes it at the next run without waiting.
 
-The tag never moves backwards. To promote a tag by hand, run the workflow with its `tag` input. Use `dry_run` to see what it would do.
+Stable never moves backwards. To name a release by hand, run the workflow with its `tag` input. Use `dry_run` to see what it would do.
 
-The workflow moves the tag with the `STABLE_TAG_TOKEN` repository secret: a fine-grained token for this repository with Contents and Workflows read and write. The built-in `GITHUB_TOKEN` cannot do it. GitHub lets a token without the `workflows` permission write a ref only when the target commit's `.github/workflows` equals the default branch's, and a release commit's do not once main touches a workflow file. Without the secret, the run fails on each day a promotion is due and stable stays where it is ([Current status](docs/CURRENT_STATUS.md#the-stable-channel)). A fine-grained token expires within a year. When it does, the run fails the same way, so store a new one before then.
+The channel has two carriers, and the workflow writes both of them.
+
+- **The `STABLE` file on the `stable` branch**, which holds the release's tag. The built-in `GITHUB_TOKEN` writes it: the commit is built on `main`'s tree with that one file, so its `.github/workflows` is `main`'s, which is the one case where GitHub lets that token write a ref.
+- **The lightweight `stable` tag** on the release's commit, which versions before the `STABLE` file read. It takes the `STABLE_TAG_TOKEN` repository secret: a fine-grained token for this repository with Contents and Workflows read and write. Without it the tag stays where it is and the run says so as a warning; the channel is still served by the `STABLE` file. A secret that is set and fails ends the run with an error, since it has expired or lacks a permission. A fine-grained token expires within a year, so store a new one before then.
+
+Panels and the installer take the newer release the two name. [Current status](docs/CURRENT_STATUS.md#the-stable-channel) records how the channel behaved before the file existed.
 
 ## Pull requests
 

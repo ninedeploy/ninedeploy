@@ -22,7 +22,7 @@ Reconciled on November 27, 2026. This is the one list. The plans keep the eviden
 
 | What | Why it waits |
 |---|---|
-| Add `STABLE_TAG_TOKEN` before December 2, 2026 | [The stable channel](#the-stable-channel): v0.20.0 qualifies that day, and the daily run cannot move the tag without it. |
+| Add `STABLE_TAG_TOKEN` when convenient | [The stable channel](#the-stable-channel): it no longer needs the secret, since the `STABLE` file on the `stable` branch names the release. The secret moves the `stable` tag, which versions before this change read. |
 | Keep the compact layout as the default, or hold it back | N10 shipped in 0.20.0 on automated evidence; no person has used either layout for the record. To hold it back, set `DEFAULT_LAYOUT` in `apps/web/src/lib/layout.ts`. |
 | The five decisions of N11, panel sign-in on nodes | [Design record, section 11](plans/node-forward-auth.md). No code before them. |
 | The public launch | Approved on November 9, and the exit evidence of phase 2 exists. It has not been announced. On November 27 the repository has 20 stars, 3 forks and no issue ever opened; Coolify has 66,582 stars and Dokploy 38,731. |
@@ -240,6 +240,8 @@ On November 27, 2026 the `stable` tag was still at v0.18.28 (`f238463e`), althou
 The cause is measured. The built-in `GITHUB_TOKEN` may write a ref only when the target commit's `.github/workflows` equals the default branch's, and a release commit's do not once main touches a workflow file, which the seven-day soak nearly always sees. Of the workflow's seven runs that had a tag to write up to November 26, the two whose target still equalled main (November 13 and 14) went through, and the other five were refused with 403. A probe on November 27 ([run 45909813365](https://github.com/ninedeploy/ninedeploy/actions/runs/45909813365)) showed that `git push` is refused the same way: GitHub names the first workflow file that differs and the missing `workflows` permission. The workflow writes the tag with the `STABLE_TAG_TOKEN` secret when it is set. That secret has never been set.
 
 The tag was moved to v0.19.0 (`0a59b5ed`) by hand on November 27, with the workflow's own call, and the workflow now reads the tag back before it reports a move. v0.20.0 qualifies for stable on December 2, 2026. Until a fine-grained token for this repository with Contents and Workflows read and write is stored as `STABLE_TAG_TOKEN`, each promotion needs a hand move, and the daily run fails on the days between.
+
+**The changes on `main` after 0.20.0 take the secret out of the channel's way.** The workflow now writes the release's tag into a `STABLE` file on a `stable` branch, with the built-in token: the commit is built on `main`'s tree with that one file, so its `.github/workflows` is `main`'s, which is the one case where GitHub lets that token write a ref (a probe on November 27 created the branch, moved it and read the file back). Panels and the installer ask both carriers and take the newer release either names, so a tag that stays behind is no longer felt. The tag is still moved when `STABLE_TAG_TOKEN` is set; without it the run warns and stays green. The `stable` branch was first written by hand on November 27 with the workflow's own steps, run from a signed-in account: it names v0.19.0 (`8eea5534`). The installer was checked against GitHub with a stand-in for each carrier: a tag stuck behind the file and a file stuck behind the tag both resolve to the newer release. Unreleased: panels and installers before this change read only the tag.
 
 ## Operational switches and live checks
 

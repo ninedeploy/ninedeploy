@@ -1110,13 +1110,18 @@ smokes can be run by hand against any published pair:
 `pnpm smoke:user-journey --image=ghcr.io/ninedeploy/ninedeploy:vB`.
 
 **Channels.** The default channel offers every release. The **stable**
-channel offers only the release the `stable` tag points at;
-`.github/workflows/stable-channel.yml` moves it daily to the newest release
-that is at least 7 days old, never backwards. It uses the `STABLE_TAG_TOKEN`
-secret for that, because the built-in token cannot write a ref on a release
-commit whose workflow files differ from `main`'s. A release's notes can
-carry `<!-- stable: hold -->` (keep it off stable) or `<!-- stable: security -->`
-(promote it at the next run). See [CONTRIBUTING.md](CONTRIBUTING.md).
+channel offers only the release the stable channel names.
+`.github/workflows/stable-channel.yml` keeps it daily on the newest release
+that is at least 7 days old, never backwards. The `stable` branch carries
+a `STABLE` file that names the release. The built-in token may write
+this file: the commit is built on `main`'s tree, so its workflow files
+are `main`'s. The `stable` tag on the release's commit names the release
+as well. It takes `STABLE_TAG_TOKEN`, because GitHub refuses the built-in
+token a ref on a commit whose workflow files differ from `main`'s. Panels
+and the installer take the newer release the two name. A release's notes
+can carry `<!-- stable: hold -->` (keep it off stable), while
+`<!-- stable: security -->` promotes it at the next run. See
+[CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## 14. Installation, updates and supervision
 
