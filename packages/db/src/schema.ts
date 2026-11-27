@@ -3206,3 +3206,24 @@ export const errorEvents = sqliteTable(
   }),
 );
 export type ErrorEvent = typeof errorEvents.$inferSelect;
+
+// ── N07: the replay window ─────────────────────────────────────────────────
+/**
+ * What the two replay checks remember, so that a panel restart no longer lets
+ * a captured request through once more: webhook deliveries (lib/webhooks.ts)
+ * and SAML assertions (lib/saml.ts) of the server. A row is the kind and a
+ * digest of what identifies the request, never the request itself. It is
+ * forgotten when `expires_at` passes (lib/replayWindow.ts, swept hourly).
+ */
+export const replayWindow = sqliteTable(
+  'replay_window',
+  {
+    /** `<kind>:<sha256 of what identifies the request>`. */
+    key: text('key').primaryKey(),
+    /** In milliseconds, unlike the other timestamps here: the windows it serves are measured in them. */
+    expiresAt: integer('expires_at', { mode: 'timestamp_ms' }).notNull(),
+    createdAt: ts('created_at'),
+  },
+  (t) => ({ expiresIdx: index('replay_window_expires_at_idx').on(t.expiresAt) }),
+);
+export type ReplayWindow = typeof replayWindow.$inferSelect;

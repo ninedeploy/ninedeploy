@@ -1177,8 +1177,31 @@ describe('POST /v1/sso/:name/saml-callback', () => {
     return Buffer.from(s, 'utf8').toString('base64');
   }
 
+  /** N07: the replay window is a table (lib/replayWindow.ts). The stub keeps its rows for the test, so an
+   * assertion ID accepted once is refused from then on; that an expired row is taken over is proven on a real
+   * database (test/lib/replayWindow.test.ts). Every other table is a recording mock that is awaited. */
+  function replayInsert() {
+    const replayRows = new Set<string>();
+    // Synchronous, as drizzle's is: the replay insert is chained, the others are awaited.
+    return vi.fn((table: unknown) =>
+      (table as Record<symbol, unknown>)[Symbol.for('drizzle:Name')] === 'replay_window'
+        ? {
+            values: (rows: Array<{ key: string }>) => ({
+              onConflictDoUpdate: () => ({
+                returning: async () => rows.filter((row) => !replayRows.has(row.key) && (replayRows.add(row.key), true)).map((row) => ({ key: row.key })),
+              }),
+            }),
+          }
+        : Promise.resolve(undefined),
+    );
+  }
+
+  /** The inserts that are not the replay window's own, which a verified assertion always writes. */
+  const writes = (insert: { mock: { calls: unknown[][] } }) =>
+    insert.mock.calls.filter(([table]) => (table as Record<symbol, unknown> | undefined)?.[Symbol.for('drizzle:Name')] !== 'replay_window').length;
+
   function wiredDb(email: string, _meta: string) {
-    const insert = vi.fn(async () => undefined);
+    const insert = replayInsert();
     const update = vi.fn(async () => undefined);
     const ssoRows: Array<Record<string, unknown>> = [];
     const userRows: Array<Record<string, unknown>> = [{ id: 1, email, tokenVersion: 0 }];
@@ -1391,7 +1414,7 @@ describe('POST /v1/sso/:name/saml-callback', () => {
     const meta = idpMetadata();
     const db = {
       select: () => ({ from: () => Promise.resolve([]) }),
-      insert: vi.fn(async () => undefined),
+      insert: replayInsert(),
       update: vi.fn(async () => undefined),
       delete: () => ({ where: () => Promise.resolve() }),
       query: {
@@ -1520,7 +1543,7 @@ describe('POST /v1/sso/:name/saml-callback', () => {
     const body = res.json() as { ok: boolean; error?: string };
     expect(body.ok).toBe(false);
     expect(body.error).toMatch(/digest/i);
-    expect(insert).not.toHaveBeenCalled();
+    expect(writes(insert)).toBe(0);
     await app.close();
   });
 
@@ -1599,7 +1622,7 @@ describe('POST /v1/sso/:name/saml-callback', () => {
     const body = res.json() as { ok: boolean; error?: string };
     expect(body.ok).toBe(false);
     expect(body.error).toMatch(/issuer/i);
-    expect(insert).not.toHaveBeenCalled();
+    expect(writes(insert)).toBe(0);
     await app.close();
   });
 
@@ -1626,7 +1649,7 @@ describe('POST /v1/sso/:name/saml-callback', () => {
     const body = res.json() as { ok: boolean; error?: string };
     expect(body.ok).toBe(false);
     expect(body.error).toMatch(/InResponseTo/i);
-    expect(insert).not.toHaveBeenCalled();
+    expect(writes(insert)).toBe(0);
     await app.close();
   });
 
@@ -1650,7 +1673,7 @@ describe('POST /v1/sso/:name/saml-callback', () => {
     const body = res.json() as { ok: boolean; error?: string };
     expect(body.ok).toBe(false);
     expect(body.error).toMatch(/Audience/i);
-    expect(insert).not.toHaveBeenCalled();
+    expect(writes(insert)).toBe(0);
     await app.close();
   });
 
@@ -1676,7 +1699,7 @@ describe('POST /v1/sso/:name/saml-callback', () => {
     const body = res.json() as { ok: boolean; error?: string };
     expect(body.ok).toBe(false);
     expect(body.error).toMatch(/Destination/i);
-    expect(insert).not.toHaveBeenCalled();
+    expect(writes(insert)).toBe(0);
     await app.close();
   });
 
@@ -1697,7 +1720,7 @@ describe('POST /v1/sso/:name/saml-callback', () => {
     const body = res.json() as { ok: boolean; error?: string };
     expect(body.ok).toBe(false);
     expect(body.error).toMatch(/Audience/i);
-    expect(insert).not.toHaveBeenCalled();
+    expect(writes(insert)).toBe(0);
     await app.close();
   });
 
@@ -1724,7 +1747,7 @@ describe('POST /v1/sso/:name/saml-callback', () => {
     const body = res.json() as { ok: boolean; error?: string };
     expect(body.ok).toBe(false);
     expect(body.error).toMatch(/Recipient/i);
-    expect(insert).not.toHaveBeenCalled();
+    expect(writes(insert)).toBe(0);
     await app.close();
   });
 

@@ -32,6 +32,7 @@ import { pruneTrafficRollups } from '../lib/trafficAnalytics.js';
 import { pruneImageTransfers } from '../lib/imageTransferRetention.js';
 import { pruneUptime } from '../lib/uptime.js';
 import { sweepMcpOAuth } from '../lib/mcpOAuth.js';
+import { forgetExpiredReplayKeys } from '../lib/replayWindow.js';
 import { pruneCiJobs } from '../lib/ci.js';
 import { sweepOrphanPreviewCopies } from '../lib/previewDatabases.js';
 import { pruneReleaseImages } from '../lib/releaseImageRetention.js';
@@ -474,9 +475,11 @@ function pruneExportLeftovers(maxAgeMs: number): void {
  * archived metric-history rows, and dangling Docker images so a long-running
  * instance doesn't slowly fill its disk. Live metric retention is handled by
  * the collector plugin (a 24h ring, matching the 1440-minute cap the
- * `/services/:id/metrics` query accepts). It also marks backups, drills
- * (r543) and scheduled-job runs (r594) a stopped process left `running` as
- * failed — once at boot, then hourly.
+ * `/services/:id/metrics` query accepts). It also forgets the replay window
+ * (N07, lib/replayWindow.ts): the webhook deliveries and SAML assertions
+ * remembered against replay, once their time has passed. And it marks
+ * backups, drills (r543) and scheduled-job runs (r594) a stopped process left
+ * `running` as failed — once at boot, then hourly.
  */
 export default fp(
   async (fastify) => {
@@ -550,6 +553,8 @@ export default fp(
         await step('error-events', () => pruneErrorEvents(fastify.db, now));
         // R4 remote MCP: expired OAuth refresh tokens, their grants, and clients never used.
         await step('mcp-oauth', () => sweepMcpOAuth(fastify.db, now));
+        // N07: webhook deliveries and SAML assertions remembered against replay, once their window has passed.
+        await step('replay-window', () => forgetExpiredReplayKeys(fastify.db, now));
         // R5 CI: finished jobs (and their logs) after 30 days.
         await step('ci-jobs', () => pruneCiJobs(fastify.db, 30, now));
         // R2 node serving-traffic receipts: superseded rows after 7 days.

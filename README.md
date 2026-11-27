@@ -260,7 +260,7 @@ by TLS to github.com only.
       ║ ─────────────────────────────────────────────────────────────────── ║
       ║  118 route modules                deploy engine (queue + worker)    ║
       ║  microkernel: events · hooks      shapes:  docker·pm2·compose·swarm ║
-      ║  SQLite (98 tables, Drizzle)      AES-256-GCM vault + key ring      ║
+      ║  SQLite (99 tables, Drizzle)      AES-256-GCM vault + key ring      ║
       ╚═══╤═══════════════╤═══════════════════╤══════════════════╤══════════╝
           │ docker.sock   │ docker.sock       │ sealed transport │ S3 API
           ▼               ▼                   ▼                  ▼
@@ -688,7 +688,7 @@ NineDeploy/                    pnpm 11 workspace + Turborepo
 │   ├── web/                   React 19 + Vite 8 + Tailwind v4 dashboard
 │   └── cli/                   `ninedeploy` (commander 15)
 ├── packages/
-│   ├── db/                    Drizzle schema (98 tables) + 126 SQL migrations
+│   ├── db/                    Drizzle schema (99 tables) + 127 SQL migrations
 │   ├── schemas/               Zod v4 DTOs shared by server, web, CLI, SDK and MCP
 │   ├── sdk/                   typed API client over an injectable fetch
 │   ├── mcp/                   Model Context Protocol server (64 tools, stdio and HTTP)

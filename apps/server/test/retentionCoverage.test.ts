@@ -70,6 +70,8 @@ const RETENTION: Record<string, Retention> = {
   // A1 (migration 0124)
   database_upgrades: { config: "swept by the import plugin (plugins/databaseImports.ts step 'upgrade-retention'): failed and finalized rows go after 180 days; completed and rolled-back ones still hold a volume and stay until finalized; cascades with the database" },
   volume_imports: { config: "swept by the import plugin (plugins/databaseImports.ts step 'volume-retention'): finished rows go after 90 days, idle uploads expire after 24h; cascades with the service" },
+  // N07 (migration 0127): the replay window. A row is taken over when its time has passed (lib/replayWindow.ts), and swept after it.
+  replay_window: { swept: 'replay-window' },
 };
 
 /** The tables of v0.14.0 (migrations through 0070), frozen. */

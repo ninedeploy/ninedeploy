@@ -302,7 +302,7 @@ export const githubAppHookRoutes: FastifyPluginAsync = async (app) => {
     if (isPing(req.headers, 'github')) return { ok: 'pong' };
 
     // Same replay window as the per-service hook, scoped to this App.
-    if (isReplayedDelivery(req.headers, 'github', { rawBody, scope: `app:${ghApp.id}` })) {
+    if (await isReplayedDelivery(app.db, req.headers, 'github', { rawBody, scope: `app:${ghApp.id}` })) {
       return { ok: 'ignored', reason: 'replayed_delivery' };
     }
 

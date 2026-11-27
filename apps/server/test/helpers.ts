@@ -48,6 +48,11 @@ export interface FakeDbOpts {
   update?: Record<string, RowsResolver>;
   /** Rows returned by db.delete(table).where(...).returning(). */
   delete?: Record<string, RowsResolver>;
+  /**
+   * N07: the clock of the fake's replay window (lib/replayWindow.ts), in milliseconds. Without it a
+   * delivery the fake remembered stays remembered for the whole test.
+   */
+  now?: number;
   /** When set, db.select().from(table) rejects with this error (drives catch branches). */
   selectError?: Record<string, Error>;
   /** When true, db.run() rejects (drives health degraded branch). */
@@ -246,10 +251,39 @@ export function createFakeDb(opts: FakeDbOpts = {}): DB {
     },
   });
 
+  // N07: the replay window (lib/replayWindow.ts) is a table with a rule, and a route test sends
+  // the same signed body twice to see the second one refused. The fake keeps that table's rows
+  // for one instance, by the same rule: a row that is still live is left as it is, and is not
+  // returned. A delete forgets every row (the tests' reset).
+  const replayRows = new Map<string, Date>();
+  const remember = (rows: Row | Row[]) => {
+    const accepted: Row[] = [];
+    for (const row of (Array.isArray(rows) ? rows : [rows]) as Array<{ key: string; expiresAt: Date }>) {
+      const existing = replayRows.get(row.key);
+      if (existing !== undefined && (opts.now === undefined || existing.getTime() >= opts.now)) continue;
+      replayRows.set(row.key, row.expiresAt);
+      accepted.push(row as Row);
+    }
+    return accepted;
+  };
+
   const insert = (table: unknown) => {
     const name = tableName(table);
     const snake = name.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
     const camel = snake.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+    if (name === 'replay_window') {
+      return {
+        values: (v: Row | Row[]) => ({
+          returning: () => Promise.resolve(remember(v)),
+          onConflictDoUpdate: () => ({ returning: () => Promise.resolve(remember(v)) }),
+          // biome-ignore lint/suspicious/noThenProperty: intentional thenable — the fake DB insert result must be awaitable by the code under test.
+          then: (ok: (v: unknown) => unknown, rej?: (e: Error) => unknown) => {
+            Promise.resolve(remember(v)).then(ok, rej);
+            return undefined;
+          },
+        }),
+      };
+    }
     const lookup = (table: string): unknown =>
       opts.insert?.[table] !== undefined ? opts.insert[table] : undefined;
     const target = lookup(name) ?? lookup(snake) ?? lookup(camel);
@@ -342,6 +376,23 @@ export function createFakeDb(opts: FakeDbOpts = {}): DB {
     const name = tableName(table);
     const snake = name.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
     const camel = snake.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+    if (name === 'replay_window') {
+      const forget = () => {
+        const gone = [...replayRows.keys()].map((key) => ({ key }));
+        replayRows.clear();
+        return gone;
+      };
+      return {
+        where: () => ({
+          returning: () => Promise.resolve(forget()),
+          // biome-ignore lint/suspicious/noThenProperty: intentional thenable — the fake DB delete result must be awaitable by the code under test.
+          then: (ok: (v?: unknown) => unknown) => {
+            Promise.resolve(forget()).then(() => ok(undefined));
+            return undefined;
+          },
+        }),
+      };
+    }
     const lookup = (table: string): unknown =>
       opts.delete?.[table] !== undefined ? opts.delete[table] : undefined;
     const target = lookup(name) ?? lookup(snake) ?? lookup(camel);

@@ -1,4 +1,6 @@
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
+import type { DB } from '@ninedeploy/db';
+import { forgetReplayKind, rememberReplayKeys } from './replayWindow.js';
 
 export type Provider = 'github' | 'gitlab' | 'gitea' | 'bitbucket';
 
@@ -89,11 +91,10 @@ export function isPing(headers: Record<string, string | string[] | undefined>, p
 // (still-valid) payload can be replayed much later to redeploy an old commit;
 // the deployment-status dedup only covers SHAs currently queued/building.
 // Providers stamp every delivery with a unique id; remembering those ids for
-// a window closes most of the replay surface. In-memory is a deliberate
-// mitigation rather than a guarantee: a panel restart clears it.
+// a window closes most of the replay surface. Since N07 (lib/replayWindow.ts)
+// they are remembered in the `replay_window` table: a panel restart no longer
+// clears them, and the hourly sweep forgets them once the window has passed.
 const REPLAY_WINDOW_MS = 24 * 60 * 60 * 1000;
-const REPLAY_MAP_SOFT_CAP = 10_000;
-const seenDeliveries = new Map<string, number>();
 
 function deliveryId(headers: Record<string, string | string[] | undefined>, provider: Provider): string | null {
   const h = (k: string) => {
@@ -104,6 +105,25 @@ function deliveryId(headers: Record<string, string | string[] | undefined>, prov
   if (provider === 'gitea') return h('x-gitea-delivery') ?? null;
   if (provider === 'bitbucket') return h('x-request-uuid') ?? null;
   return h('x-gitlab-uuid') ?? null;
+}
+
+/**
+ * What makes this delivery recognisable when it is sent again: its id, and
+ * the digest of its body scoped to the service that received it. Nothing,
+ * for a delivery that carries neither.
+ */
+export function deliveryReplayKeys(
+  headers: Record<string, string | string[] | undefined>,
+  provider: Provider,
+  body?: { rawBody: string; scope: string | number },
+): string[] {
+  const keys: string[] = [];
+  const id = deliveryId(headers, provider);
+  if (id) keys.push(`id:${JSON.stringify([provider, body?.scope ?? null, id])}`);
+  if (body?.rawBody) {
+    keys.push(`body:${provider}:${body.scope}:${createHash('sha256').update(body.rawBody).digest('hex')}`);
+  }
+  return keys;
 }
 
 /**
@@ -121,48 +141,24 @@ function deliveryId(headers: Record<string, string | string[] | undefined>, prov
  * Absent ids (older providers, hand-rolled senders) fail OPEN on the id
  * check — the HMAC remains the primary authentication — but the body check
  * still applies whenever `rawBody` is given.
+ *
+ * Every key is remembered by the call, so a replay caught by one key still
+ * pins the other (a fresh id on an old body must not become reusable).
  */
-export function isReplayedDelivery(
+export async function isReplayedDelivery(
+  db: DB,
   headers: Record<string, string | string[] | undefined>,
   provider: Provider,
   body?: { rawBody: string; scope: string | number },
-): boolean {
-  const keys: string[] = [];
-  const id = deliveryId(headers, provider);
-  if (id) keys.push(`id:${JSON.stringify([provider, body?.scope ?? null, id])}`);
-  if (body?.rawBody) {
-    keys.push(`body:${provider}:${body.scope}:${createHash('sha256').update(body.rawBody).digest('hex')}`);
-  }
-  if (keys.length === 0) return false;
+): Promise<boolean> {
   const now = Date.now();
-  if (seenDeliveries.size > REPLAY_MAP_SOFT_CAP) {
-    for (const [k, at] of seenDeliveries) {
-      if (now - at > REPLAY_WINDOW_MS) seenDeliveries.delete(k);
-    }
-    // Still oversized (a flood of unique ids): evict oldest-first. Map
-    // iteration is insertion order, so this bounds memory deterministically.
-    let excess = seenDeliveries.size - REPLAY_MAP_SOFT_CAP;
-    if (excess > 0) {
-      for (const k of seenDeliveries.keys()) {
-        if (excess-- <= 0) break;
-        seenDeliveries.delete(k);
-      }
-    }
-  }
-  // Record EVERY key before answering, so a replay caught by one key still
-  // pins the other (a fresh id on an old body must not become reusable).
-  let replayed = false;
-  for (const key of keys) {
-    const seenAt = seenDeliveries.get(key);
-    if (seenAt !== undefined && now - seenAt <= REPLAY_WINDOW_MS) replayed = true;
-    seenDeliveries.set(key, now);
-  }
-  return replayed;
+  const replayed = await rememberReplayKeys(db, 'webhook', deliveryReplayKeys(headers, provider, body), now, now + REPLAY_WINDOW_MS);
+  return replayed.length > 0;
 }
 
-/** Test hook: forget every remembered delivery (the window is process-global). */
-export function resetReplayWindowForTests(): void {
-  seenDeliveries.clear();
+/** Test hook: forget every remembered delivery. */
+export function resetReplayWindowForTests(db: DB): Promise<number> {
+  return forgetReplayKind(db, 'webhook');
 }
 
 /** Collect added/modified/removed paths from a commits array. */

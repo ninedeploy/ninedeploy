@@ -1,4 +1,6 @@
 import { createHash, createVerify } from 'node:crypto';
+import type { DB } from '@ninedeploy/db';
+import { rememberReplayKeys } from './replayWindow.js';
 
 /**
  * Minimal SAML 2.0 client — Sprint 5, Gap G-22.
@@ -261,57 +263,30 @@ export function checkAssertionConditions(assertionXml: string, now: Date = new D
   }
 }
 
-// ── assertion replay cache ─────────────────────────────────────────────────
+// ── assertion replay ───────────────────────────────────────────────────────
 //
 // The validity window above is minutes wide; within it a captured (correctly
-// signed) response replays as a fresh sign-in. The cache remembers every
-// accepted assertion ID for the longest window we are willing to honour and
-// refuses duplicates. Process-local by design: a restarted panel forgets —
-// the acceptable residual is one replay per panel restart, not one per
-// attacker attempt.
+// signed) response replays as a fresh sign-in. Every accepted assertion ID is
+// remembered for the longest window we are willing to honour, and duplicates
+// are refused. Since N07 the ids are in the `replay_window` table
+// (lib/replayWindow.ts): a restarted panel no longer forgets them, where
+// before the residual was one replay per panel restart.
 
-/** Assertion ID → the instant after which the entry may be forgotten (F197). */
-const SEEN_ASSERTION_IDS = new Map<string, number>();
 const REPLAY_TTL_MS = 6 * 60 * 60 * 1000;
-const REPLAY_CACHE_MAX = 10_000;
-
-function pruneReplayCache(now: number): void {
-  for (const [id, forgetAfter] of SEEN_ASSERTION_IDS) {
-    if (now > forgetAfter) SEEN_ASSERTION_IDS.delete(id);
-  }
-  // Hard size bound regardless of age (an ID-flooding peer must not grow the
-  // map without limit): evict the entry that would be forgotten soonest.
-  while (SEEN_ASSERTION_IDS.size >= REPLAY_CACHE_MAX) {
-    let oldestId: string | null = null;
-    let oldestSeenAt = Number.POSITIVE_INFINITY;
-    for (const [id, forgetAfter] of SEEN_ASSERTION_IDS) {
-      if (forgetAfter < oldestSeenAt) {
-        oldestId = id;
-        oldestSeenAt = forgetAfter;
-      }
-    }
-    if (oldestId === null) break;
-    SEEN_ASSERTION_IDS.delete(oldestId);
-  }
-}
 
 /**
  * Refuse an assertion whose ID was already accepted, and record it otherwise.
  * SAMLCore requires the ID attribute, so its absence is itself a refusal.
- * Call this ONLY after signature and digest verification — the cache assumes
+ * Call this ONLY after signature and digest verification — the table assumes
  * everything reaching it is authentically signed.
  */
-export function checkAssertionNotReplayed(assertionXml: string, now: number = Date.now()): void {
+export async function checkAssertionNotReplayed(db: DB, assertionXml: string, now: number = Date.now()): Promise<void> {
   // The ID is read with `parseAttrs` (not a quote-specific regex) so a
-  // spec-legal single-quoted ID='…' is cached exactly like a double-quoted
+  // spec-legal single-quoted ID='…' is remembered exactly like a double-quoted
   // one — the same opening tag `locateSignedAssertion` already accepts.
   const openTag = assertionXml.match(/<(?:[A-Za-z0-9]+:)?Assertion\b[^>]*>/)?.[0];
   const id = openTag ? parseAttrs(openTag).ID : undefined;
   if (!id) throw new Error('SAML response: assertion carries no ID attribute');
-  pruneReplayCache(now);
-  if (SEEN_ASSERTION_IDS.has(id)) {
-    throw new Error('SAML response: assertion was already used (replay refused)');
-  }
   // F197: remember the ID for at least as long as the assertion itself can
   // still be accepted — a fixed TTL shorter than the IdP's NotOnOrAfter let a
   // still-valid assertion replay once its ID was pruned.
@@ -320,7 +295,10 @@ export function checkAssertionNotReplayed(assertionXml: string, now: number = Da
     const t = parseSamlInstant(m[1] ?? m[2] ?? '');
     if (t !== null && t > forgetAfter) forgetAfter = t;
   }
-  SEEN_ASSERTION_IDS.set(id, forgetAfter);
+  const replayed = await rememberReplayKeys(db, 'saml', [`assertion:${id}`], now, forgetAfter);
+  if (replayed.length > 0) {
+    throw new Error('SAML response: assertion was already used (replay refused)');
+  }
 }
 
 /** Read the `<Issuer>` element of an XML block (response-level or assertion-level). */

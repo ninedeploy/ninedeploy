@@ -1,4 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { replayWindow, type DB } from '@ninedeploy/db';
+import { closeMigratedDb, migratedDb } from './githubAppKit.js';
 import {
   canonicalDigest,
   checkAssertionConditions,
@@ -367,48 +369,56 @@ describe('lib/saml', () => {
     });
   });
 
-  describe('assertion replay cache', () => {
+  // N07: the ids are remembered in the replay_window table, so each test has a migrated database of its own.
+  describe('assertion replay window', () => {
+    let db: DB;
+    beforeEach(async () => {
+      db = await migratedDb();
+    });
+    afterEach(() => closeMigratedDb(db));
     const assertionWithId = (id: string) => `<saml:Assertion ID="${id}"><saml:NameID>a@b.c</saml:NameID></saml:Assertion>`;
+    const accepted = (xml: string, now: number) => expect(checkAssertionNotReplayed(db, xml, now)).resolves.toBeUndefined();
+    const refused = (xml: string, now: number) => expect(checkAssertionNotReplayed(db, xml, now)).rejects.toThrow(/replay/);
 
-    it('accepts an assertion once and refuses the second acceptance', () => {
+    it('accepts an assertion once and refuses the second acceptance', async () => {
       const xml = assertionWithId('_once');
       const t0 = 1_000_000;
-      expect(() => checkAssertionNotReplayed(xml, t0)).not.toThrow();
-      expect(() => checkAssertionNotReplayed(xml, t0 + 1)).toThrow(/replay/);
+      await accepted(xml, t0);
+      await refused(xml, t0 + 1);
     });
 
-    it('refuses an assertion that carries no ID attribute', () => {
-      expect(() => checkAssertionNotReplayed('<saml:Assertion><saml:NameID>x</saml:NameID></saml:Assertion>', 0))
-        .toThrow(/no ID attribute/);
+    it('refuses an assertion that carries no ID attribute', async () => {
+      await expect(checkAssertionNotReplayed(db, '<saml:Assertion><saml:NameID>x</saml:NameID></saml:Assertion>', 0))
+        .rejects.toThrow(/no ID attribute/);
     });
 
-    it('accepts a single-quoted ID like the rest of the module reads attributes, then refuses its replay', () => {
+    it('accepts a single-quoted ID like the rest of the module reads attributes, then refuses its replay', async () => {
       const xml = `<saml:Assertion ID='_sq'><saml:NameID>a@b.c</saml:NameID></saml:Assertion>`;
       const t0 = 1_000_000;
-      expect(() => checkAssertionNotReplayed(xml, t0)).not.toThrow();
-      expect(() => checkAssertionNotReplayed(xml, t0 + 1)).toThrow(/replay/);
+      await accepted(xml, t0);
+      await refused(xml, t0 + 1);
     });
 
-    it('prunes aged entries so the cache stays bounded and old IDs free up', () => {
+    it('forgets an ID once its time has passed, without the sweep having run, and takes its row over', async () => {
       const hour = 60 * 60 * 1000;
-      // Fill past the age window with distinct IDs at t=0, then re-use the
-      // FIRST id well past the TTL: the prune must have evicted it.
       for (let i = 0; i < 50; i++) {
-        checkAssertionNotReplayed(assertionWithId(`_old-${i}`), i * 1000);
+        await accepted(assertionWithId(`_old-${i}`), i * 1000);
       }
+      // Well past the six hours: the first ID is free again, and no row was added for it.
       const t = 7 * hour + 1000;
-      expect(() => checkAssertionNotReplayed(assertionWithId('_old-0'), t)).not.toThrow();
+      await accepted(assertionWithId('_old-0'), t);
+      expect(await db.select().from(replayWindow)).toHaveLength(50);
     });
 
-    it('F197: keeps an ID until the assertion itself expires, not just for the fixed TTL', () => {
+    it('F197: keeps an ID until the assertion itself expires, not just for the fixed TTL', async () => {
       const hour = 60 * 60 * 1000;
       const t0 = Date.parse('2026-10-07T12:00:00Z');
       const xml = `<saml:Assertion ID="_f197-long"><saml:Conditions NotOnOrAfter="2026-10-08T12:00:00Z"/></saml:Assertion>`;
       checkAssertionConditions(xml, new Date(t0));
-      checkAssertionNotReplayed(xml, t0);
+      await accepted(xml, t0);
       // +7h is past the 6h TTL but inside the 24h window: still a replay.
       checkAssertionConditions(xml, new Date(t0 + 7 * hour));
-      expect(() => checkAssertionNotReplayed(xml, t0 + 7 * hour)).toThrow(/replay/);
+      await refused(xml, t0 + 7 * hour);
     });
 
     it('readIssuer extracts the Issuer element and returns null when absent', () => {

@@ -446,9 +446,9 @@ export const ssoRoutes: FastifyPluginAsync = async (app) => {
         checkAssertionConditions(assertionBlock);
         // Replay defence: the conditions window is minutes wide, so a
         // captured (correctly signed) response replays as a fresh sign-in
-        // within it. The cache refuses a second acceptance of the same
-        // assertion ID.
-        checkAssertionNotReplayed(assertionBlock);
+        // within it. The replay window (lib/replayWindow.ts) refuses a second
+        // acceptance of the same assertion ID, across panel restarts too.
+        await checkAssertionNotReplayed(db, assertionBlock);
         subject = extractSamlSubject(assertionBlock);
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : String(err) };

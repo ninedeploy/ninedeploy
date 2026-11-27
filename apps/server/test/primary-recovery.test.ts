@@ -4,6 +4,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { setImmediate as yieldIO } from 'node:timers';
 import { eq } from 'drizzle-orm';
+import { logBus } from '../src/engine/logs.js';
 import { deploymentRuntimeOwners, deployments, domains, nodeAutoscaleCapacity, nodeDeploymentPreparations, primaryTransitions, servers, services, type PrimaryRuntimeSnapshot } from '@ninedeploy/db';
 import { reserveServiceRuntimeOwner } from '../src/lib/serviceRuntimeOwner.js';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -291,9 +292,18 @@ describe('primary recovery through SQLite and the real routing writer', () => {
   });
   it('ends an interrupted canary on the previous generation before removing its candidate', async () => {
     await journal({ desiredRuntimeId: old });
-    expect(await finish(recover())).toEqual({ recovered: 1, held: 0 });
+    // N07: what the deployment's log tells the operator about the canary that was in progress.
+    const lines: string[] = [];
+    const stop = logBus.subscribe(9, (line) => lines.push(line));
+    try {
+      expect(await finish(recover())).toEqual({ recovered: 1, held: 0 });
+    } finally {
+      stop();
+    }
     expect((await service())?.runtimeId).toBe(old); expect((await job())?.status).toBe('failed');
     expect(writes.at(-1)).toContain(`http://${old}:8080`); expect(containers.has(oldId)).toBe(true); expect(containers.has(candidateId)).toBe(false);
+    expect(lines).toContain(`Primary recovery confirmed ${old}; obsolete generations removed`);
+    expect(lines).toContain('Recovery does not re-run lifecycle hooks, canary observation or additional-node fan-out; inspect per-target state before another rollout');
   });
   it('recovers the first deployment without inventing an older runtime', async () => {
     await f.db.update(services).set({ runtimeId: null }); await journal({ previous: null });

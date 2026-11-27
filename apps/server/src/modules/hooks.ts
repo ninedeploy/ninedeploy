@@ -36,7 +36,7 @@ export const hookReceiveRoutes: FastifyPluginAsync = async (app) => {
     // authenticated deliveries consume dedup slots. Absent delivery ids fail
     // open (isReplayedDelivery) — the signature remains authoritative.
     // r313: the body is the signed part — dedupe on it too (per service).
-    if (isReplayedDelivery(req.headers, provider, { rawBody, scope: hook.serviceId })) {
+    if (await isReplayedDelivery(app.db, req.headers, provider, { rawBody, scope: hook.serviceId })) {
       return { ok: 'ignored', reason: 'replayed_delivery' };
     }
 

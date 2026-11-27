@@ -1,7 +1,6 @@
 ﻿import { createHmac } from 'node:crypto';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { encrypt } from '../src/lib/crypto.js';
-import { resetReplayWindowForTests } from '../src/lib/webhooks.js';
 import { hookReceiveRoutes, webhookMgmtRoutes } from '../src/modules/hooks.js';
 import { asUser, buildConfigRow, buildTestApp, createFakeDb, depRow, svcRow, webhookRow } from './helpers.js';
 import type { domainRow } from './helpers.js';
@@ -61,9 +60,8 @@ describe('webhook receiver', () => {
     teardownMocks.deleteLog.mockClear();
     teardownMocks.removeServiceBridgeIfEmpty.mockClear();
     for (const m of Object.values(runtimeMocks)) m.mockClear();
-    // r313: the replay window also remembers signed BODIES now, and these
-    // cases reuse the same payloads — each case starts with an empty window.
-    resetReplayWindowForTests();
+    // r313, N07: deliveries are remembered by their signed body, in the database.
+    // Each case builds its own fake database, so each starts with nothing remembered.
   });
 
   it('returns 404 for an unknown webhook', async () => {
@@ -1067,7 +1065,7 @@ describe('webhook receiver', () => {
     });
     expect(res.json()).toEqual({ ok: 'skipped', reason: 'auto_destroy_disabled' });
 
-    resetReplayWindowForTests(); // r313: same signed body, new scenario
+    // r313, N07: the same signed body, a new scenario: its own fake database remembers nothing yet.
     let c4 = 0;
     const app4 = await buildTestApp({
       db: createFakeDb({
@@ -1096,7 +1094,7 @@ describe('webhook receiver', () => {
       pull_request: { number: 1, title: 't', head: { ref: 'b', sha: 's' } },
     });
     for (const type of ['pm2', 'compose', 'unknown'] as const) {
-      resetReplayWindowForTests(); // r313: same signed body, new scenario
+      // r313, N07: the same signed body, a new scenario: its own fake database remembers nothing yet.
       let c = 0;
       const app = await buildTestApp({
         db: createFakeDb({
@@ -1126,7 +1124,7 @@ describe('webhook receiver', () => {
     expect(runtimeMocks.pm2Stop).toHaveBeenCalledTimes(1);
     expect(runtimeMocks.composeStop).toHaveBeenCalledTimes(1);
 
-    resetReplayWindowForTests(); // r313: same signed body, new scenario
+    // r313, N07: the same signed body, a new scenario: its own fake database remembers nothing yet.
     let c9 = 0;
     const app9 = await buildTestApp({
       db: createFakeDb({
@@ -1190,7 +1188,7 @@ describe('webhook receiver', () => {
       svcRow({ id: 50, runtimeId: null }),
       svcRow({ id: 50, runtimeId: 'c-docker', type: 'docker' }),
     ]) {
-      resetReplayWindowForTests(); // r313: same signed body, new scenario
+      // r313, N07: the same signed body, a new scenario: its own fake database remembers nothing yet.
       let c = 0;
       const app = await buildTestApp({
         db: createFakeDb({
@@ -1225,7 +1223,7 @@ describe('webhook receiver', () => {
     }
 
     // Service insert fails -> failed_to_create_preview
-    resetReplayWindowForTests(); // r313: same signed body, new scenario
+    // r313, N07: the same signed body, a new scenario: its own fake database remembers nothing yet.
     let c8 = 0;
     const app8 = await buildTestApp({
       db: createFakeDb({

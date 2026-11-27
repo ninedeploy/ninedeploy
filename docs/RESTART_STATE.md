@@ -48,13 +48,16 @@ These are observations or counters. Losing them delays a decision or repeats a m
 | A passkey challenge | Five minutes, in memory | The visitor tries again. `lib/webauthn.ts` |
 | A terminal that was opening | Its ticket lasts 30 seconds | The connection ended with the process; the terminal page starts a new session. `lib/terminalSessions.ts` |
 | A wake-up of a sleeping service | In flight | The request that woke it ended with the process. The next request wakes the service again. `lib/sleep.ts` |
+| A GitHub App setup in progress | Minutes, in memory | The callback says the setup state was used or expired; the setup starts again from Sources. [GitHub App](GITHUB_APP.md) |
 | Password resets, recovery codes, invitations, the setup token | In the database or a file | Kept. |
 
 ## Replay protection
 
-A webhook delivery, a SAML assertion and a GitHub App callback each carry an id the panel remembers for a while, so a captured request cannot be sent again. The panel remembers those ids in memory, and says so where it does: "a panel restart clears it", "one replay per panel restart, not one per attacker attempt" (`lib/webhooks.ts`, `lib/saml.ts`). After a restart, one captured request can be replayed inside its own validity window: a day for a webhook body, minutes for an assertion.
+A webhook delivery and a SAML assertion each carry something that makes a captured, correctly signed request recognisable when it is sent again. The panel remembers it for a while and refuses the second time: for a day for a webhook body, and for a SAML assertion at least six hours or until the assertion's own expiry, whichever is later.
 
-Signatures still hold. A replayed webhook needs a body the provider signed, a replayed assertion one the identity provider signed, and a push for a commit that is already running or queued is still refused. What is left is the residual the code names. Keeping the ids in the database would remove it; that needs a table or rows with an expiry, and is not done.
+It is remembered in the `replay_window` table (`lib/replayWindow.ts`), since November 27, 2026. Before, the panel kept it in memory and said so, and a restart let each captured request through once more. A row is the kind and a digest of what identifies the request, never the request itself. The check and the remembering are one statement, so two identical requests that arrive together are accepted once, and the row is written before the panel acts on the request. The hourly sweep removes rows whose time has passed (`plugins/housekeeping.ts`); a request that arrives after that time is accepted again.
+
+Signatures still hold. A replayed webhook needs a body the provider signed and a replayed assertion one the identity provider signed; only a request whose signature was verified reaches the table.
 
 ## Not in this panel's memory
 
@@ -62,4 +65,14 @@ The node agent and the wake catcher are processes of their own, on their hosts. 
 
 ## Tests
 
-No test under `apps/server/test` restarts the panel during a canary, a forward-auth sign-in or an idle window: their reset functions are called between tests, and the only exercise of a hard restart during a canary is `scripts/smoke-node-canary.mjs`. The recovery rows above are each proven at boot by the test named in their row.
+Each recovery row above is proven at boot by the test named in its row.
+
+What follows a restart in the middle of a canary or of an idle window is held by `test/lib/restartBehaviour.test.ts`, which empties the registries a new process starts with:
+
+- A canary is over. The next routing sends nothing to the candidate, the status says there is no canary, and the promote control answers that there is none. The work of the stopped process (its observations, its promote request, its ending by deployment id or owner) cannot reach a canary the new process starts, and an access-log line from before the new step began is not counted in it.
+- An idle window starts again. A service idle for hours before the restart is not put to sleep right after it, a request keeps it awake, and a new wake is not held to the one the stopped process had begun.
+- The operator's message for an interrupted canary is in the deployment's log: `test/primary-recovery.test.ts` holds its two lines ("Primary recovery confirmed …", "Recovery does not re-run lifecycle hooks, canary observation …").
+
+The replay window is opened a second time, as a restarted panel opens it, in `test/lib/replayWindow.test.ts`.
+
+Not under test: a forward-auth sign-in across a restart. Its code is one lookup in a one-minute list, and the refusal is the message named above.

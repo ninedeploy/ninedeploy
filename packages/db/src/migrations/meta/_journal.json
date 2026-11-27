@@ -883,6 +883,13 @@
       "when": 1794528913205,
       "tag": "0126_database_upgrade_series",
       "breakpoints": true
+    },
+    {
+      "idx": 127,
+      "version": "6",
+      "when": 1795811140254,
+      "tag": "0127_replay_window",
+      "breakpoints": true
     }
   ]
 }

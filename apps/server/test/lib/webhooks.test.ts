@@ -1,25 +1,34 @@
 ﻿import { createHmac } from 'node:crypto';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, beforeEach, afterEach } from 'vitest';
+import type { DB } from '@ninedeploy/db';
 import { isPing, isPullRequest, isReplayedDelivery, parsePullRequest, parsePush, resetReplayWindowForTests, verifyWebhook } from '../../src/lib/webhooks.js';
+import { closeMigratedDb, migratedDb } from './githubAppKit.js';
 
 const SECRET = 'whsec_test';
 
+// N07: deliveries are remembered in the replay_window table, so each of these tests has a migrated database of its own.
+function replayDatabase() {
+  let db: DB;
+  beforeEach(async () => {
+    db = await migratedDb();
+  });
+  afterEach(() => closeMigratedDb(db));
+  return () => db;
+}
+
 describe('delivery replay isolation', () => {
-  it('accepts one repository delivery per service and still rejects that service’s duplicates', () => {
-    resetReplayWindowForTests();
+  const database = replayDatabase();
+  it('accepts one repository delivery per service and still rejects that service’s duplicates', async () => {
     const headers = { 'x-github-delivery': 'shared-push' };
     const body = '{"ref":"refs/heads/main"}';
-    expect(isReplayedDelivery(headers, 'github', { rawBody: body, scope: 1 })).toBe(false);
-    expect(isReplayedDelivery(headers, 'github', { rawBody: body, scope: 2 })).toBe(false);
-    expect(isReplayedDelivery(headers, 'github', { rawBody: body, scope: 1 })).toBe(true);
-    resetReplayWindowForTests();
+    expect(await isReplayedDelivery(database(), headers, 'github', { rawBody: body, scope: 1 })).toBe(false);
+    expect(await isReplayedDelivery(database(), headers, 'github', { rawBody: body, scope: 2 })).toBe(false);
+    expect(await isReplayedDelivery(database(), headers, 'github', { rawBody: body, scope: 1 })).toBe(true);
   });
-  it('isolates provider delivery identifiers even when a caller supplies no body', () => {
-    resetReplayWindowForTests();
-    expect(isReplayedDelivery({ 'x-github-delivery': 'same-id' }, 'github')).toBe(false);
-    expect(isReplayedDelivery({ 'x-gitea-delivery': 'same-id' }, 'gitea')).toBe(false);
-    expect(isReplayedDelivery({ 'x-github-delivery': 'same-id' }, 'github')).toBe(true);
-    resetReplayWindowForTests();
+  it('isolates provider delivery identifiers even when a caller supplies no body', async () => {
+    expect(await isReplayedDelivery(database(), { 'x-github-delivery': 'same-id' }, 'github')).toBe(false);
+    expect(await isReplayedDelivery(database(), { 'x-gitea-delivery': 'same-id' }, 'gitea')).toBe(false);
+    expect(await isReplayedDelivery(database(), { 'x-github-delivery': 'same-id' }, 'github')).toBe(true);
   });
 });
 
@@ -390,48 +399,59 @@ describe('isPullRequest and parsePullRequest', () => {
 });
 
 describe('isReplayedDelivery', () => {
-  it('flags a repeated GitHub delivery id but not first sightings', () => {
+  const database = replayDatabase();
+
+  it('flags a repeated GitHub delivery id but not first sightings', async () => {
     const headers = { ...githubHeaders('{}'), 'x-github-delivery': 'd-1' };
-    expect(isReplayedDelivery(headers, 'github')).toBe(false);
-    expect(isReplayedDelivery(headers, 'github')).toBe(true);
+    expect(await isReplayedDelivery(database(), headers, 'github')).toBe(false);
+    expect(await isReplayedDelivery(database(), headers, 'github')).toBe(true);
     const other = { ...githubHeaders('{}'), 'x-github-delivery': 'd-2' };
-    expect(isReplayedDelivery(other, 'github')).toBe(false);
+    expect(await isReplayedDelivery(database(), other, 'github')).toBe(false);
   });
 
-  it('tracks GitLab UUID and Gitea delivery headers', () => {
-    expect(isReplayedDelivery({ 'x-gitlab-uuid': 'u-1' }, 'gitlab')).toBe(false);
-    expect(isReplayedDelivery({ 'x-gitlab-uuid': 'u-1' }, 'gitlab')).toBe(true);
-    expect(isReplayedDelivery({ 'x-gitea-delivery': 'g-1' }, 'gitea')).toBe(false);
-    expect(isReplayedDelivery({ 'x-gitea-delivery': 'g-1' }, 'gitea')).toBe(true);
+  it('tracks GitLab UUID and Gitea delivery headers', async () => {
+    expect(await isReplayedDelivery(database(), { 'x-gitlab-uuid': 'u-1' }, 'gitlab')).toBe(false);
+    expect(await isReplayedDelivery(database(), { 'x-gitlab-uuid': 'u-1' }, 'gitlab')).toBe(true);
+    expect(await isReplayedDelivery(database(), { 'x-gitea-delivery': 'g-1' }, 'gitea')).toBe(false);
+    expect(await isReplayedDelivery(database(), { 'x-gitea-delivery': 'g-1' }, 'gitea')).toBe(true);
   });
 
-  it('fails open when the provider sent no delivery id', () => {
-    expect(isReplayedDelivery(githubHeaders('{}'), 'github')).toBe(false);
-    expect(isReplayedDelivery(githubHeaders('{}'), 'github')).toBe(false);
+  it('fails open when the provider sent no delivery id', async () => {
+    expect(await isReplayedDelivery(database(), githubHeaders('{}'), 'github')).toBe(false);
+    expect(await isReplayedDelivery(database(), githubHeaders('{}'), 'github')).toBe(false);
   });
 
   // r313 regression: the delivery id is not signed. A captured push replayed
   // with a FRESH id must still be recognised, because the signed body is the
   // same bytes.
-  it('flags a replayed signed body even when the delivery id is fresh (r313)', () => {
+  it('flags a replayed signed body even when the delivery id is fresh (r313)', async () => {
     const body = JSON.stringify({ ref: 'refs/heads/main', after: 'r313aaaa' });
     const first = { ...githubHeaders(body), 'x-github-delivery': 'r313-d1' };
     const forged = { ...githubHeaders(body), 'x-github-delivery': 'r313-attacker-fresh' };
-    expect(isReplayedDelivery(first, 'github', { rawBody: body, scope: 7 })).toBe(false);
-    expect(isReplayedDelivery(forged, 'github', { rawBody: body, scope: 7 })).toBe(true);
+    expect(await isReplayedDelivery(database(), first, 'github', { rawBody: body, scope: 7 })).toBe(false);
+    expect(await isReplayedDelivery(database(), forged, 'github', { rawBody: body, scope: 7 })).toBe(true);
     // no delivery id at all does not bypass the body check either
-    expect(isReplayedDelivery(githubHeaders(body), 'github', { rawBody: body, scope: 7 })).toBe(true);
+    expect(await isReplayedDelivery(database(), githubHeaders(body), 'github', { rawBody: body, scope: 7 })).toBe(true);
   });
 
-  it('scopes body dedupe per service and still dedupes on the id (r313)', () => {
+  it('scopes body dedupe per service and still dedupes on the id (r313)', async () => {
     const body = JSON.stringify({ ref: 'refs/heads/main', after: 'r313bbbb' });
     // the same push fanned out to two services is two legitimate deliveries
-    expect(isReplayedDelivery({ 'x-gitlab-uuid': 'r313-u1' }, 'gitlab', { rawBody: body, scope: 1 })).toBe(false);
-    expect(isReplayedDelivery({ 'x-gitlab-uuid': 'r313-u2' }, 'gitlab', { rawBody: body, scope: 2 })).toBe(false);
+    expect(await isReplayedDelivery(database(), { 'x-gitlab-uuid': 'r313-u1' }, 'gitlab', { rawBody: body, scope: 1 })).toBe(false);
+    expect(await isReplayedDelivery(database(), { 'x-gitlab-uuid': 'r313-u2' }, 'gitlab', { rawBody: body, scope: 2 })).toBe(false);
     // a different body under an already-seen id is still a replay
-    expect(isReplayedDelivery({ 'x-gitlab-uuid': 'r313-u1' }, 'gitlab', { rawBody: `${body} `, scope: 1 })).toBe(true);
+    expect(await isReplayedDelivery(database(), { 'x-gitlab-uuid': 'r313-u1' }, 'gitlab', { rawBody: `${body} `, scope: 1 })).toBe(true);
     // ...and a genuinely new push is not
-    expect(isReplayedDelivery({ 'x-gitlab-uuid': 'r313-u3' }, 'gitlab', { rawBody: `${body}\n`, scope: 1 })).toBe(false);
+    expect(await isReplayedDelivery(database(), { 'x-gitlab-uuid': 'r313-u3' }, 'gitlab', { rawBody: `${body}\n`, scope: 1 })).toBe(false);
+  });
+
+  // N07: the deliveries are in the database, so the test hook empties that, and only this kind.
+  it('is remembered for a day, and forgotten by the test hook', async () => {
+    const headers = { ...githubHeaders('{}'), 'x-github-delivery': 'n07' };
+    expect(await isReplayedDelivery(database(), headers, 'github')).toBe(false);
+    expect(await resetReplayWindowForTests(database())).toBe(1);
+    expect(await isReplayedDelivery(database(), headers, 'github')).toBe(false);
+    expect(await resetReplayWindowForTests(database())).toBe(1);
   });
 });
 
@@ -487,10 +507,15 @@ describe('Bitbucket', () => {
     expect(isPing(bbHeaders(body, 'repo:push'), 'bitbucket')).toBe(false);
   });
 
-  it('deduplicates Bitbucket deliveries by X-Request-UUID', () => {
-    const h = bbHeaders('{}', 'repo:push');
-    expect(isReplayedDelivery(h, 'bitbucket')).toBe(false);
-    expect(isReplayedDelivery(h, 'bitbucket')).toBe(true);
+  it('deduplicates Bitbucket deliveries by X-Request-UUID', async () => {
+    const db = await migratedDb();
+    try {
+      const h = bbHeaders('{}', 'repo:push');
+      expect(await isReplayedDelivery(db, h, 'bitbucket')).toBe(false);
+      expect(await isReplayedDelivery(db, h, 'bitbucket')).toBe(true);
+    } finally {
+      closeMigratedDb(db);
+    }
   });
 
   it('parses a repo:push payload into a deploy event', () => {

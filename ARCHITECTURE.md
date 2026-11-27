@@ -56,7 +56,7 @@ operator-gated exception (`services.published_port`, port mappings).
    │ data: 11 managed engines · backups · restore verification · PITR · major upgrades        │
    │ observability: collector · alert evaluator · uptime · log shipper · traffic analytics    │
    │ microkernel: event bus · hook pipeline · registries · 12 built-in plugins · sandbox      │
-   │ SQLite (.data/ninedeploy.db · 98 tables · Drizzle) · AES-256-GCM vault and key ring      │
+   │ SQLite (.data/ninedeploy.db · 99 tables · Drizzle) · AES-256-GCM vault and key ring      │
    └────┬──────────────┬───────────────────┬────────────────────────┬───────────────┬───────┘
         │ docker.sock  │ file provider     │ sealed agent transport │ S3 API        │ HTTPS
         ▼              ▼                   ▼                        ▼               ▼
@@ -102,7 +102,7 @@ ninedeploy/                         pnpm 11.23 workspace + Turborepo
 │   └── cli/                        `ninedeploy` (commander 15): 66 top-level commands and
 │                                   248 subcommands across 61 command files
 ├── packages/
-│   ├── db/          Drizzle schema (98 tables) + 126 hand-written SQL migrations;
+│   ├── db/          Drizzle schema (99 tables) + 127 hand-written SQL migrations;
 │   │                the server self-migrates at startup (drizzle-kit is dev-only)
 │   ├── schemas/     Zod v4 DTOs shared by server, web, CLI, SDK and MCP (65 files)
 │   ├── sdk/         typed API client: 19 resource namespaces, terminal, manifest
@@ -344,7 +344,7 @@ cache_registry_blobs   build-cache bookkeeping
 ### 4.5 Migration history
 
 `packages/db/src/migrations/`, forward-only, additive and hand-written; the
-journal (`meta/_journal.json`) holds **126** entries (`0000`–`0126`; tag `0020`
+journal (`meta/_journal.json`) holds **127** entries (`0000`–`0127`; tag `0020`
 does not exist — it was skipped and the journal does not reference it).
 `packages/db/test/schema-drift.test.ts` applies every migration to a fresh
 database and compares both directions against the Drizzle schema (§16.17),
@@ -366,7 +366,8 @@ promotion, observability, fan-out / primary / Swarm recovery ·
 `0101`–`0113` node lifecycle intents, runtime owners, error ingest, node
 autoscale, proxy write heads, ordered retirement · `0117`–`0122` CI runners
 and the CI deploy gate, serving-traffic receipts, node sleep and wake ·
-`0123`–`0126` PostgreSQL PITR, volume imports, database upgrades.
+`0123`–`0126` PostgreSQL PITR, volume imports, database upgrades · `0127` the
+replay window (N07).
 
 The runtime migrator (`packages/db/src/migrate.ts`) tolerates "object
 already exists" failures by re-applying statement by statement — releases up
@@ -494,7 +495,7 @@ Registered in `plugins/` in the order of §5.
 | sharedCertificateSync | Pushes renewed panel certificates to node proxies |
 | restartLimiter | Stops services that keep crashing past their opt-in limit |
 | gitPoller | Every 15 s, reads the branch head of the services whose Git polling is due, and queues a deploy for a new one (`lib/gitPoll.ts`) |
-| housekeeping | Hourly retention: deploy logs **and finished deployment rows** 30 d, audit 90 d, notification log 30 d, job runs 30 d, dead sessions 7 d, expired reset tokens, drills 90 d, retired invitations and transfers 30 d, cold build-cache rows 90 d, CI jobs 30 d, error events 30 d, plus scratch files |
+| housekeeping | Hourly retention: deploy logs **and finished deployment rows** 30 d, audit 90 d, notification log 30 d, job runs 30 d, dead sessions 7 d, expired reset tokens, drills 90 d, retired invitations and transfers 30 d, cold build-cache rows 90 d, CI jobs 30 d, error events 30 d, replay ids past their window, plus scratch files |
 | logShipper | Forwards container output to configured drains every 10 s over a durable queue |
 | jobScheduler | Cron-scheduled per-service jobs via croner; reloads the job set every 5 minutes |
 | panelBackupScheduler | Arms one cron job for the panel's own encrypted backup when enabled |

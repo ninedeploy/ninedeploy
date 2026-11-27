@@ -209,13 +209,15 @@ describe('F826: PR-preview webhook backstops', () => {
     const race = { after: null as null | (() => Promise<void>) };
     const app = await buildTestApp({ db: raceAfter('services', 'findMany', race), rawBody: true });
     await app.register(hookReceiveRoutes);
-    const deliver = (pr: number) => {
+    // N07: deliveries are remembered in the database. These scenarios send the same body on
+    // purpose, to reach the race behind the replay check, so each starts with nothing remembered.
+    const deliver = async (pr: number) => {
       const body = JSON.stringify({
         action: 'opened',
         number: pr,
         pull_request: { number: pr, title: `PR ${pr}`, head: { ref: `f-${pr}`, sha: `sha${pr}`, repo: { clone_url: REPO } }, user: { login: 'a' }, merged: false },
       });
-      resetReplayWindowForTests();
+      await resetReplayWindowForTests(db);
       const sig = `sha256=${createHmac('sha256', SECRET).update(body).digest('hex')}`;
       return app.inject({ method: 'POST', url: `/${hook!.id}`, headers: { 'content-type': 'application/json', 'x-github-event': 'pull_request', 'x-hub-signature-256': sig }, payload: body });
     };

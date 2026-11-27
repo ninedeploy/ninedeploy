@@ -51,7 +51,6 @@ vi.mock('../../src/engine/proxy.js', async (importOriginal) => ({
 
 const { githubAppHookRoutes } = await import('../../src/modules/githubAppHooks.js');
 const { hookReceiveRoutes } = await import('../../src/modules/hooks.js');
-const { resetReplayWindowForTests } = await import('../../src/lib/webhooks.js');
 const { clearGithubAppCaches } = await import('../../src/lib/githubApp.js');
 const { encrypt } = await import('../../src/lib/crypto.js');
 const { buildTestApp } = await import('../helpers.js');
@@ -86,7 +85,6 @@ let svcId: number;
 beforeEach(async () => {
   db = await fileDb();
   clearGithubAppCaches();
-  resetReplayWindowForTests();
   gh = fakeGithub();
   h.guardedFetch.mockReset();
   h.guardedFetch.mockImplementation(gh.handler);

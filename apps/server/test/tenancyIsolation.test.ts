@@ -55,7 +55,6 @@ vi.mock('node:dns/promises', async (importOriginal) => {
 });
 
 const { encrypt } = await import('../src/lib/crypto.js');
-const { resetReplayWindowForTests } = await import('../src/lib/webhooks.js');
 const { envRoutes, projectEnvRoutes } = await import('../src/modules/env.js');
 const { hookReceiveRoutes } = await import('../src/modules/hooks.js');
 const { servicesRoutes } = await import('../src/modules/services.js');
@@ -82,7 +81,6 @@ beforeEach(async () => {
   db = created.db;
   close = () => created.client?.close();
   await migrate(db, { migrationsFolder: MIGRATIONS });
-  resetReplayWindowForTests();
 });
 
 afterEach(() => {
