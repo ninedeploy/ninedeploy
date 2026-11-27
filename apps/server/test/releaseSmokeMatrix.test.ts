@@ -49,9 +49,9 @@ const measured: Array<[string, number]> = [
   [command('smoke-wake-recovery', ' --proof=.temp_files/release-wake-recovery'), 26],
   [command('smoke-container-metrics'), 22], [command('smoke-container-lifecycle'), 45], [command('smoke-container-generation-stop'), 17],
   [command('smoke-agent-creation-drain'), 26],
-  // Not in 0.20.0: 90 seconds on a developer's machine on November 27, 2026 (the image travels into an
-  // isolated daemon); the first release that runs it is to be measured and entered here.
-  [command('smoke-panel-domain', ' --proof=.temp_files/release-panel-domain'), 90], [command('smoke-node-lifecycle-controller'), 212],
+  // Not in 0.20.0: 42 seconds on a GitHub-hosted runner on November 27, 2026 (CI run 45988797231; the
+  // image travels into an isolated daemon), 90 on a developer machine.
+  [command('smoke-panel-domain', ' --proof=.temp_files/release-panel-domain'), 42], [command('smoke-node-lifecycle-controller'), 212],
   [command('smoke-node-lifecycle-fanout'), 236], [command('smoke-node-canary', ' --proof=.temp_files/release-node-smoke'), 676],
   [command('smoke-node-canary', ' --autoscale-only --proof=.temp_files/release-node-autoscale'), 327],
   [command('smoke-node-canary', ' --autoscale-rps-only --proof=.temp_files/release-node-autoscale-rps'), 487],

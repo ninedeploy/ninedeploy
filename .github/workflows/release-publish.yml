@@ -415,10 +415,11 @@ jobs:
     # one theme, so its name says what failed, and a rerun repeats as little
     # as possible. The themes are dealt so that no cohort is long. Smoke time
     # a cohort held in 0.20.0 (November 25, 2026), in seconds; agent-runtime
-    # since gained the panel-domain smoke (90, measured on November 27):
+    # since gained the panel-domain smoke (42 on a GitHub-hosted runner,
+    # November 27, 2026):
     #   node-autoscaling 814   swarm-artifacts 809   user-journey 751
     #   public-lifecycle 727   node-canary 676      panel-lifecycle 683
-    #   node-sleep 609         agent-runtime 590     replica-databases 511
+    #   node-sleep 609         agent-runtime 542     replica-databases 511
     #   node-wake 473          sleep-restoration 430
     #   upgrade 168            node-infrastructure 146
     # Three at a time, the cohorts took 54 minutes on November 18 and 25;
