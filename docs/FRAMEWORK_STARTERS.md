@@ -107,6 +107,8 @@ The seven new starters were built and asked on their own first, then the smoke p
 
 The images the Dockerfiles build run as a user of their own (`uid` 1000 for Express and Rails, 10001 for Django, 1001 for Spring Boot, 101 for the two nginx sites, and Distroless' `nonroot` for Go); Laravel's Apache is the exception named above. What each build produced on the same machine: Go 15 MiB, the two nginx sites 86 MiB each, Django 237 MiB, Express 337 MiB, Spring Boot 443 MiB, Rails 466 MiB.
 
+The same smoke then ran on GitHub's runner in the workflow of the commit that adds the seven starters ([run 46020814497](https://github.com/ninedeploy/ninedeploy/actions/runs/46020814497)): all ten deployed and answered, 6 min 33 s in all, from 19.5 s for the static site to 58.8 s for Spring Boot, each from upload to verified routes.
+
 ## Clean-server first deployment
 
 The test starts with a fresh Ubuntu 24.04.5 LTS QEMU/KVM guest with four vCPUs and 3 GiB of memory. It has no Docker installation, NineDeploy state, or cached container images. Run the pinned Docker-mode installer from the NineDeploy checkout. Start timing when the installer command begins. VM provisioning and fixture preparation happen before the timed interval.
