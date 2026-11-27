@@ -76,5 +76,13 @@ export default defineConfig({
       dependencies: ['setup'],
       use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 }, colorScheme: 'dark', storesLayout: false },
     },
+    // A5: the README's short recording, only with ND_HERO_VIDEO=<dir> and --project=hero.
+    // The spec records video in a 16:9 viewport; scripts/readme-hero.mjs cuts and converts it.
+    {
+      name: 'hero',
+      testMatch: /[/\\]hero\.spec\.ts$/,
+      dependencies: ['setup'],
+      use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 810 }, colorScheme: 'dark', storesLayout: false },
+    },
   ],
 });

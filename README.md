@@ -21,6 +21,8 @@ terminal CLI, a typed SDK, or an AI agent over MCP.
 
 </div>
 
+![A service deployed with NineDeploy: a new resource, the Docker image wizard, the deployment's log while it runs, and the service running](./docs/images/hero.gif)
+
 ![The NineDeploy dashboard: setup checklist, system status and host resources](./docs/images/dashboard.jpg)
 
 ---
@@ -54,7 +56,7 @@ Docker Swarm for stateless services.
 | ![The Hub: hundreds of one-click app templates](./docs/images/hub.jpg) | ![The dashboard on a phone](./docs/images/dashboard-phone.jpg) |
 | **The Hub**: one-click templates, verified and pinned | **On a phone** |
 
-These screenshots come from the browser journeys in [`e2e/`](./e2e), run against a real panel (`e2e/tests/screens.spec.ts`).
+The recording and the screenshots come from the browser journeys in [`e2e/`](./e2e), run against a real panel (`e2e/tests/hero.spec.ts` and `e2e/tests/screens.spec.ts`). The recording is cut where the deployment waits for its container.
 
 ## Why NineDeploy
 

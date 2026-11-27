@@ -54,6 +54,18 @@ node scripts/smoke-browser-e2e.mjs --image=<candidate-digest-reference> -- \
 
 Arguments after `--` go to Playwright. `--keep` leaves the disposable panel running for debugging.
 
+#### The README's images
+
+The README's screenshots and its recording come from the same harness, by hand and never in CI. Both projects show example names and no address or token.
+
+```sh
+ND_ADMIN_NAME=Acme ND_SCREENSHOTS=$PWD/docs/images node scripts/smoke-browser-e2e.mjs --image=<image> -- --project=screens
+ND_HERO_VIDEO=$PWD/.temp_files/hero node scripts/smoke-browser-e2e.mjs --image=<image> -- --project=hero
+node scripts/readme-hero.mjs .temp_files/hero/hero.webm docs/images/hero.gif --keep=<from>-<to>,<from>-<to>
+```
+
+`screens` (`e2e/tests/screens.spec.ts`) writes the seven screenshots; `ND_ADMIN_NAME` is the name of the operator they show. `hero` (`e2e/tests/hero.spec.ts`) deploys an image through the wizard and writes `hero.webm` with `hero.json`, the second at which each step happened. `readme-hero.mjs` keeps the seconds asked for, so the recording can skip the wait for the container, and encodes the GIF with ffmpeg in a container, so nothing is installed on the machine; it fails above 8 MiB. `--info` prints a recording's length.
+
 The desktop project includes the Git-backed PR preview lifecycle. The smoke provisions a read-only smart HTTP server on the fixture's private network. The test turns on previews in the browser and sends locally signed PR events to the panel's webhook endpoint. It checks branch-specific HTTP content through fixture Traefik, and verifies the Failed state and Docker build output in the browser for a second branch. Closing the PRs removes the preview services, routing, and the successful preview's container and bridge. The parent keeps serving its original commit. The hostnames use the reserved `.test` domain, and the HTTP probe stays inside the fixture network.
 
 ```sh
