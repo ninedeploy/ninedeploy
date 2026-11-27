@@ -57,7 +57,8 @@ Reconciled on November 27, 2026. This is the one list. The plans keep the eviden
 
 | Work | Where it stands |
 |---|---|
-| The Release's smoke cohorts | Nine start at once. The longest cohort is 26 minutes, because the cohorts are grouped by feature; dealt by time, the longest would be about 14. No release has run with nine at once. |
+| The Release's thirteen smoke cohorts | Each holds one theme, and the longest 13.6 minutes of smoke time. No release has run with them. |
+| The browser gate | 18 to 20 minutes of journeys that build on one another, one worker by design. With the smokes shortened, it is what a release waits on. |
 | The Release build from main CI's layers, and the checks it skips | Both are measured, and neither has run in a release. The next release is the first. |
 | R2 as an aggregate milestone | Its components shipped in patches. The checklist below separates the accepted cohorts from the remaining certification. |
 | Documentation-only pushes | They run the six smoke groups and the browser gate. |
@@ -230,7 +231,7 @@ The Release workflow's `publish-image` job skips the workspace build and the dat
 
 Still open, in the order of what each is worth: a documentation-only push runs the smoke groups and the browser gate; the browser gate is 18 minutes of journeys that build on one another, one worker by design; the six slowest test files; the canary smoke group, at 13.2 minutes on that run, is now the longest of the other jobs. One of the slowest files is not quick to make faster: `accessGrantsProperties.test.ts` gives 200 random grants and, after each, works out the user's every access decision again (172 seconds in one test on a slow runner). Every file also loads the application once more, which is 9 to 51 % of a chunk.
 
-The Release workflow's smokes have a longer tail than their work needs. In 0.20.0 the nine cohorts ran three at a time: three started at once and the other six waited 9 to 28 minutes for a runner, and the whole workflow took 66.5 minutes. Nine start at once since `dc45c7a9`, which no release has run with yet; then the longest cohort decides, and that is `node-sleep-wake` at 25.9 minutes, followed by `public-canary` at 25.5. The cohorts are grouped by feature, so each of these holds three smokes of 5 to 11 minutes. The nine took 128 minutes in all, 14 on average, so dealing the smokes by their time would bring the longest down to about that.
+The Release workflow's smokes run in thirteen cohorts, each holding one theme, and all start at once. Before November 27, 2026 they were nine cohorts, four of which held two or three themes. In 0.20.0 those nine ran three at a time, because a run takes the workflow file of the tagged commit: three started at once, the other six waited 9 to 28 minutes for a runner, and the workflow took 66.5 minutes. Nine at once would still have been held by `node-sleep-wake` at 25.9 minutes of smoke time and by `public-canary` at 25.5. Each theme is a cohort now: the longest, `node-autoscaling`, holds 814 seconds of smoke time in 0.20.0's measurements, and the shortest, `node-infrastructure`, 146. A rerun after one failed smoke repeats that theme alone, where it repeated 26 minutes of three. `releaseSmokeMatrix.test.ts` holds each smoke's measured time and fails a cohort above 14 minutes, so a new smoke is measured and given room. The smokes should now take about 14 minutes beside the browser gate's 20, where the longest cohort alone would have taken 26: about 6 minutes off a release, which then waits on the browser gate. No release has run with it.
 
 ## The stable channel
 

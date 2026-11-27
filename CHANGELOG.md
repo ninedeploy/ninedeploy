@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Run the image job's twelve node smokes as six groups, each on its own runner. The job went from 43.2 minutes to about 13.
 - Build the main image on two runners, one per architecture, and put the two under `:edge` and `:main-<sha>`. The publish path went from 7 to 12 minutes to 1 to 2. The other packages' suites and the contract preflight run in jobs of their own.
 - Let the Release build take the layers main CI built for the tagged commit, and skip the workspace build and the database integration checks when main CI passed on the same commit.
+- Run the Release's published-image smokes in thirteen cohorts that each hold one theme, where four of nine cohorts held two or three. The longest holds 13.6 minutes of smoke time where it held 25.9, and a rerun after one failed smoke repeats that theme alone.
 - The stable channel workflow reads the tag back before it reports a move.
 - Three tests that keep a real clock no longer fail under load: the invitation fixture takes its two dates at one moment, the wake-collection test allows its two child runs their time, and the "never becomes healthy" probe moves on a clock that is read.
 

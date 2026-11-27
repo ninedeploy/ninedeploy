@@ -1077,10 +1077,14 @@ tag runs `.github/workflows/release-publish.yml`:
    maintainer key) and SLSA build provenance attached
 2. **smoke-published-image** — on that pushed image, in privileged
    Docker-in-Docker: the upgrade smoke from the previous published release
-   (the same data volume), the user-journey smoke and nine cohorts —
-   `upgrade-journey`, `panel-lifecycle`, `public-lifecycle`,
-   `agent-runtime`, `node-infrastructure`, `node-sleep-wake`,
-   `public-canary`, `replica-databases` and `swarm-artifacts`
+   (the same data volume), the user-journey smoke, and thirteen cohorts
+   that each hold one theme and all start at once — `upgrade`,
+   `user-journey`, `agent-runtime`, `panel-lifecycle`, `node-canary`,
+   `node-autoscaling`, `public-lifecycle`, `replica-databases`,
+   `node-infrastructure`, `swarm-artifacts`, `node-sleep`, `node-wake`
+   and `sleep-restoration`. In 0.20.0's measurements the longest holds
+   13.6 minutes of smoke time. `releaseSmokeMatrix.test.ts` keeps each
+   smoke's measured time and fails a cohort above 14 minutes
 3. **desktop** — the installers are built and launched on macOS, Ubuntu and
    Windows (signing only when certificates exist)
 4. **browser-release-gate** — the five Playwright projects of the main
