@@ -368,6 +368,25 @@ jobs:
           include-hidden-files: true
           if-no-files-found: ignore
 
+      # The panel's own domain is served through the panel container's alias on the
+      # proxy network, so it does not depend on the address its port is published on.
+      - name: Verify the panel's own domain does not need its published port
+        if: matrix.group == 'routing'
+        timeout-minutes: 8
+        env:
+          DOCKER_HOST: unix:///var/run/docker.sock
+          DOCKER_CONTEXT: default
+        run: node scripts/smoke-panel-domain.mjs --image=ninedeploy:ci --proof=.temp_files/ci-panel-domain
+
+      - name: Preserve panel domain evidence
+        if: always() && matrix.group == 'routing'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ci-panel-domain-${{ github.run_id }}
+          path: .temp_files/ci-panel-domain/
+          include-hidden-files: true
+          if-no-files-found: ignore
+
       - name: Verify node readiness modes and failure controls
         if: matrix.group == 'lifecycle'
         timeout-minutes: 10

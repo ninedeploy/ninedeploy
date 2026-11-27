@@ -20,6 +20,7 @@ const expected = [
   command('smoke-wake-recovery', ' --proof=.temp_files/release-wake-recovery'),
   command('smoke-container-metrics'), command('smoke-container-lifecycle'), command('smoke-container-generation-stop'),
   command('smoke-agent-creation-drain'), command('smoke-node-lifecycle-controller'),
+  command('smoke-panel-domain', ' --proof=.temp_files/release-panel-domain'),
   command('smoke-node-lifecycle-fanout'), command('smoke-node-canary', ' --proof=.temp_files/release-node-smoke'),
   command('smoke-node-canary', ' --autoscale-only --proof=.temp_files/release-node-autoscale'),
   command('smoke-node-canary', ' --autoscale-rps-only --proof=.temp_files/release-node-autoscale-rps'),
@@ -47,7 +48,10 @@ const measured: Array<[string, number]> = [
   [command('smoke-wake-catcher', ' --proof=.temp_files/release-wake-catcher'), 2],
   [command('smoke-wake-recovery', ' --proof=.temp_files/release-wake-recovery'), 26],
   [command('smoke-container-metrics'), 22], [command('smoke-container-lifecycle'), 45], [command('smoke-container-generation-stop'), 17],
-  [command('smoke-agent-creation-drain'), 26], [command('smoke-node-lifecycle-controller'), 212],
+  [command('smoke-agent-creation-drain'), 26],
+  // Not in 0.20.0: 90 seconds on a developer's machine on November 27, 2026 (the image travels into an
+  // isolated daemon); the first release that runs it is to be measured and entered here.
+  [command('smoke-panel-domain', ' --proof=.temp_files/release-panel-domain'), 90], [command('smoke-node-lifecycle-controller'), 212],
   [command('smoke-node-lifecycle-fanout'), 236], [command('smoke-node-canary', ' --proof=.temp_files/release-node-smoke'), 676],
   [command('smoke-node-canary', ' --autoscale-only --proof=.temp_files/release-node-autoscale'), 327],
   [command('smoke-node-canary', ' --autoscale-rps-only --proof=.temp_files/release-node-autoscale-rps'), 487],
@@ -202,6 +206,19 @@ describe('complete parallel release smoke gate', () => {
     }
     expect([...perSuite.keys()].sort()).toEqual(suites.slice().sort());
     expect(Math.max(...perSuite.values())).toBeLessThanOrEqual(LONGEST_COHORT_SECONDS);
+  });
+  it('serves the panel domain through the proxy network, on the published image and on every CI image', () => {
+    // The panel's own domain does not depend on the address its port is published on.
+    const steps = jobs()['smoke-published-image'].steps!;
+    const smoke = steps.find(step => step.run?.includes('scripts/smoke-panel-domain.mjs'));
+    expect(smoke?.if).toBe("matrix.suite == 'agent-runtime'");
+    expect(smoke?.['continue-on-error']).not.toBe(true);
+    expect(smoke?.['timeout-minutes']).toBe(8);
+    const upload = steps.find(step => step.name === 'Preserve panel domain evidence');
+    expect(upload?.if).toBe("always() && matrix.suite == 'agent-runtime'");
+    expect((upload?.with as { name?: string } | undefined)?.name).toBe('release-panel-domain');
+    const ci = (load(readFileSync(new URL('../../../.github/workflows/ci.yml', import.meta.url), 'utf8')) as { jobs: Record<string, Job> }).jobs['docker-image'].steps!;
+    expect(ci.find(step => step.run?.includes('scripts/smoke-panel-domain.mjs'))?.if).toBe("matrix.group == 'routing'");
   });
   it('keeps the failure diagnostics on the cohorts whose proof folders it lists', () => {
     const diagnostics = jobs()['smoke-published-image'].steps!.find(step => step.name === 'Preserve failed node smoke diagnostics')!;

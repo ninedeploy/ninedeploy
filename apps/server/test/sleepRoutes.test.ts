@@ -44,7 +44,7 @@ vi.mock('../src/lib/sleepRuntime.js', () => ({
   }),
 }));
 const reach = vi.hoisted(() => ({ wakeUnreachableReason: vi.fn(async (): Promise<string | null> => null) }));
-vi.mock('../src/lib/panelUpstream.js', () => ({ ...reach, panelWakeUpstream: () => 'http://host.docker.internal:3000', detectPanelOnNetwork: async () => false }));
+vi.mock('../src/lib/panelUpstream.js', () => ({ ...reach, traefikPanelUpstream: () => 'http://host.docker.internal:3000', detectPanelOnNetwork: async () => false }));
 vi.mock('../src/engine/proxy.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/engine/proxy.js')>()),
   writeDynamicConfig: h.writeDynamicConfig,

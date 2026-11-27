@@ -1230,6 +1230,28 @@ describe('DNS-01 challenge (wildcard SSL)', () => {
     }
   });
 
+  it('serves the panel domain from the alias once the panel container joined the proxy network', async () => {
+    // The router of the panel's domain takes the same address as the wake and forward-auth
+    // endpoints, so the domain answers whatever address the panel port is published on.
+    const { resetPanelUpstream } = await import('../src/lib/panelUpstream.js');
+    process.env['NINEDEPLOY_DOMAIN'] = 'panel.example.com';
+    resetPanelUpstream({ onNetwork: true });
+    try {
+      const db = makeDb([], []);
+      await writeDynamicConfig(db as never);
+
+      const yaml = readFileSync(path.join(traefikDir, 'dynamic', 'ninedeploy.yml'), 'utf8');
+      const service = /svc_ninedeploy_panel:\n\s+loadBalancer:\n\s+servers:\n\s+- url: "([^"]+)"/.exec(yaml);
+      // This file's config stand-in has no port: the address is judged by its host.
+      expect(service?.[1]).toMatch(/^http:\/\/ninedeploy-panel:/);
+      expect(service?.[1]).not.toContain('host.docker.internal');
+      expect(yaml).toContain('ninedeploy_panel:');
+    } finally {
+      resetPanelUpstream();
+      delete process.env['NINEDEPLOY_DOMAIN'];
+    }
+  });
+
   it('H-2: the panel router carries an explicit priority no service rule can beat', async () => {
     process.env['NINEDEPLOY_DOMAIN'] = 'panel.example.com';
     try {

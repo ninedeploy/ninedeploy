@@ -414,10 +414,11 @@ jobs:
     # and every cohort starts at once, on a runner of its own. A cohort holds
     # one theme, so its name says what failed, and a rerun repeats as little
     # as possible. The themes are dealt so that no cohort is long. Smoke time
-    # a cohort held in 0.20.0 (November 25, 2026), in seconds:
+    # a cohort held in 0.20.0 (November 25, 2026), in seconds; agent-runtime
+    # since gained the panel-domain smoke (90, measured on November 27):
     #   node-autoscaling 814   swarm-artifacts 809   user-journey 751
     #   public-lifecycle 727   node-canary 676      panel-lifecycle 683
-    #   node-sleep 609         replica-databases 511  agent-runtime 500
+    #   node-sleep 609         agent-runtime 590     replica-databases 511
     #   node-wake 473          sleep-restoration 430
     #   upgrade 168            node-infrastructure 146
     # Three at a time, the cohorts took 54 minutes on November 18 and 25;
@@ -604,6 +605,22 @@ jobs:
         if: matrix.suite == 'agent-runtime'
         timeout-minutes: 10
         run: node scripts/smoke-agent-creation-drain.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}"
+
+      # The panel's own domain is served through the panel container's alias on the
+      # proxy network, so it does not depend on the address its port is published on.
+      - name: Verify the panel's own domain does not need its published port
+        if: matrix.suite == 'agent-runtime'
+        timeout-minutes: 8
+        run: node scripts/smoke-panel-domain.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}" --proof=.temp_files/release-panel-domain
+
+      - name: Preserve panel domain evidence
+        if: always() && matrix.suite == 'agent-runtime'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-panel-domain
+          path: .temp_files/release-panel-domain/
+          include-hidden-files: true
+          if-no-files-found: ignore
 
       - name: Verify durable panel node lifecycle readiness, routing and recovery
         if: matrix.suite == 'panel-lifecycle'

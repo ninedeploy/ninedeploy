@@ -742,6 +742,32 @@ warn_domain_dns() {
   esac
 }
 
+# A2: confirm that the panel's domain answers through Traefik, once the panel
+# is up. One HTTPS request to Traefik on this host carries the domain as its
+# Host. 200: the panel answered. The certificate is not checked: until Let's
+# Encrypt issues one it is Traefik's own, and the route is what is asked
+# about. Plain HTTP gets no answer by design, because a domain's router is
+# TLS-only. The panel container joins the proxy's network, so the domain does
+# not depend on the address its port is published on; a panel older than this
+# installer needed that port published on every address, at 3000. Traefik may
+# still be starting, so the request is repeated briefly. Warns, never fails:
+# the panel itself is healthy by now.
+#   $1 domain (nothing is checked without one)
+check_panel_domain() {
+  [ -n "${1:-}" ] || return 0
+  local _pd_domain="$1" _pd_code="" _pd_i
+  for _pd_i in 1 2 3 4 5 6 7 8 9 10; do
+    _pd_code="$(curl -sk -o /dev/null -m 3 -H "Host: $_pd_domain" -w '%{http_code}' https://127.0.0.1/health 2>/dev/null || true)"
+    if [ "$_pd_code" = "200" ]; then
+      ok "Panel domain $_pd_domain answers through Traefik"
+      return 0
+    fi
+    sleep 1
+  done
+  warn "The panel domain $_pd_domain did not answer through Traefik in 10 tries (last HTTPS answer: ${_pd_code:-none}). Traefik may still be starting: open https://$_pd_domain in a minute. A panel older than this installer needs its port published on every address at 3000 (NINEDEPLOY_BIND=0.0.0.0 and NINEDEPLOY_PORT=3000 in .env)."
+  return 0
+}
+
 # ── Release integrity (r702) ────────────────────────────────────────────────
 #
 # Since v0.10.43 every GitHub Release carries, besides CHANGELOG.md:
@@ -1899,16 +1925,9 @@ install_docker_mode() {
     else
       warn "No Let's Encrypt email in .env, so the public URL stays as it is. Unless an email is saved under Settings -> Security, $PANEL_DOMAIN_ARG gets a self-signed certificate: re-run with --email, or save it there and set NINEDEPLOY_PUBLIC_URL=https://$PANEL_DOMAIN_ARG in .env."
     fi
-    # Traefik reaches the panel through the Docker gateway, never loopback.
-    case "$(sed -n 's/^NINEDEPLOY_BIND=//p' .env | tail -1)" in
-      "" | 127.0.0.1 | localhost)
-        warn "The panel port is bound to 127.0.0.1, which Traefik cannot reach: $PANEL_DOMAIN_ARG answers only once NINEDEPLOY_BIND=0.0.0.0 is set in .env." ;;
-    esac
-    # Traefik targets host port 3000 (the port inside the container); a panel
-    # published elsewhere is not behind the domain (proven in dind, A2).
-    if [ "$panel_port" != "3000" ]; then
-      warn "The panel is published on port $panel_port, but Traefik forwards $PANEL_DOMAIN_ARG to port 3000: the domain answers only with NINEDEPLOY_PORT=3000."
-    fi
+    # The domain does not depend on the address the panel port is published on
+    # (the panel container joins the proxy's network), so nothing is guessed
+    # here: check_panel_domain asks Traefik once the panel is healthy.
   fi
   # The default panel URL follows the bind: http://<server-ip>:port when the
   # port is published on 0.0.0.0 (0.16 fresh installs), localhost:port for
@@ -2027,6 +2046,8 @@ install_docker_mode() {
     fail "Panel did not become healthy in ${DOCKER_HEALTH_TIMEOUT}s (raise with NINEDEPLOY_HEALTH_TIMEOUT=<seconds>) — inspect: cd $DOCKER_INSTALL_DIR && docker compose logs -f (the previous compose file and .env are kept in $DOCKER_ROLLBACK_DIR)"
   fi
   ok "NineDeploy panel is healthy (docker compose project 'ninedeploy')"
+  # A2: with a panel domain, confirm that Traefik serves it (warns, never fails).
+  check_panel_domain "$(sed -n 's/^NINEDEPLOY_DOMAIN=//p' .env 2>/dev/null | tail -1)"
   # r570: the new release is up — the previous compose file/.env copy is done.
   rm -rf "${DOCKER_ROLLBACK_DIR:?}"
 
@@ -3029,6 +3050,8 @@ if [ "$(uname -s)" = "Linux" ] && command -v systemctl &>/dev/null; then
 
     if [ "$_health_ok" = true ]; then
       ok "NineDeploy service is healthy (systemd, hardened unit)"
+      # A2: with a panel domain, confirm that Traefik serves it (warns, never fails).
+      check_panel_domain "${NINEDEPLOY_DOMAIN:-}"
     else
       warn "The process is running but /health did not answer within ${HEALTH_TIMEOUT}s"
       dump_service_diagnostics

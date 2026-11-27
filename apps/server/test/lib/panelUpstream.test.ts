@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
- * 0.16.11: how Traefik reaches the panel's wake endpoint. The probe runs
- * inside the Traefik container; the panel container joins the network only
- * when the host address does not work. No real docker: exec and the
- * container check are faked.
+ * 0.16.11: how Traefik reaches the panel itself (its wake endpoint, and since
+ * the panel domain followed suit, the router of that domain). The probe runs
+ * inside the Traefik container; the panel container joins the network when
+ * something needs the alias: a panel domain at boot, or the wake endpoint
+ * when the host address does not work. No real docker: exec and the container
+ * check are faked.
  */
 
 const h = vi.hoisted(() => ({
@@ -39,7 +41,7 @@ describe('wakeUnreachableReason', () => {
     expect(argsOf()).toEqual(['exec ninedeploy-traefik wget -q -O /dev/null -T 3 http://host.docker.internal:3000/health']);
     expect(await P.wakeUnreachableReason(60_000)).toBeNull();
     expect(h.capture).toHaveBeenCalledTimes(1);
-    expect(P.panelWakeUpstream()).toBe('http://host.docker.internal:3000');
+    expect(P.traefikPanelUpstream()).toBe('http://host.docker.internal:3000');
   });
 
   it('joins the panel container to the network when the host address fails, then uses its alias', async () => {
@@ -53,7 +55,7 @@ describe('wakeUnreachableReason', () => {
       'network connect --alias ninedeploy-panel ninedeploy abc123',
       'exec ninedeploy-traefik wget -q -O /dev/null -T 3 http://ninedeploy-panel:3000/health',
     ]);
-    expect(P.panelWakeUpstream()).toBe('http://ninedeploy-panel:3000');
+    expect(P.traefikPanelUpstream()).toBe('http://ninedeploy-panel:3000');
   });
 
   it('a join that fails because it is attached already reads the attachment back', async () => {
@@ -65,7 +67,7 @@ describe('wakeUnreachableReason', () => {
       return '';
     });
     expect(await P.wakeUnreachableReason(0)).toBeNull();
-    expect(P.panelWakeUpstream()).toBe('http://ninedeploy-panel:3000');
+    expect(P.traefikPanelUpstream()).toBe('http://ninedeploy-panel:3000');
   });
 
   it('names the problem when nothing reaches the panel, and retries after a minute', async () => {
@@ -87,6 +89,43 @@ describe('wakeUnreachableReason', () => {
   });
 });
 
+describe('joinPanelNetwork', () => {
+  it('joins under the alias once, and the panel is then reached by it', async () => {
+    expect(P.panelOnNetwork()).toBe(false);
+    expect(await P.joinPanelNetwork()).toBe(true);
+    expect(await P.joinPanelNetwork()).toBe(true);
+    expect(argsOf()).toEqual(['network connect --alias ninedeploy-panel ninedeploy abc123']);
+    expect(P.panelOnNetwork()).toBe(true);
+    expect(P.traefikPanelUpstream()).toBe('http://ninedeploy-panel:3000');
+  });
+
+  it('a join Docker refuses is read back: attached already, or not at all', async () => {
+    h.capture.mockImplementation(async (_cmd: unknown, args: unknown) => {
+      const a = args as string[];
+      if (a[0] === 'network') throw new Error('endpoint with name abc123 already exists in network ninedeploy');
+      if (a[0] === 'inspect') return '{"Aliases":["ninedeploy-panel"]}';
+      return '';
+    });
+    expect(await P.joinPanelNetwork()).toBe(true);
+    P.resetPanelUpstream();
+    h.capture.mockImplementation(async (_cmd: unknown, args: unknown) => {
+      if ((args as string[])[0] === 'network') throw new Error('network ninedeploy not found');
+      if ((args as string[])[0] === 'inspect') return 'null';
+      return '';
+    });
+    expect(await P.joinPanelNetwork()).toBe(false);
+    expect(P.traefikPanelUpstream()).toBe('http://host.docker.internal:3000');
+    expect(argsOf().slice(-2)).toEqual(['network connect --alias ninedeploy-panel ninedeploy abc123', 'inspect abc123 --format {{json (index .NetworkSettings.Networks "ninedeploy")}}']);
+  });
+
+  it('outside a container it does nothing', async () => {
+    h.inContainer.value = false;
+    expect(await P.joinPanelNetwork()).toBe(false);
+    expect(h.capture).not.toHaveBeenCalled();
+    expect(P.panelRunsInContainer()).toBe(false);
+  });
+});
+
 describe('detectPanelOnNetwork', () => {
   it('reads the alias on the network, only inside a container', async () => {
     h.capture.mockResolvedValue('{"Aliases":["ninedeploy-panel"]}');
@@ -104,6 +143,6 @@ describe('detectPanelOnNetwork', () => {
 
   it('resetPanelUpstream can start from the joined state', () => {
     P.resetPanelUpstream({ onNetwork: true });
-    expect(P.panelWakeUpstream()).toBe('http://ninedeploy-panel:3000');
+    expect(P.traefikPanelUpstream()).toBe('http://ninedeploy-panel:3000');
   });
 });

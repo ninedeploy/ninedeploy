@@ -32,7 +32,7 @@ import {
   servableCertificates,
 } from '../lib/customCertificates.js';
 import { canaryRouteFor } from './canaryState.js';
-import { panelWakeUpstream } from '../lib/panelUpstream.js';
+import { traefikPanelUpstream } from '../lib/panelUpstream.js';
 import { routingOverrides } from '../lib/maintenance.js';
 import { composeRouteCollides, composeServiceContainer } from '../lib/composeRoutes.js';
 import { FA_PREFIX, forwardAuthDomains } from '../lib/forwardAuth.js';
@@ -1279,7 +1279,7 @@ export async function renderDynamicConfig(
       const mw = `mw_${key}_fa`;
       mwList.push(mw);
       middlewares.push(
-        `    ${mw}:\n      forwardAuth:\n        address: "${panelWakeUpstream()}${FA_PREFIX}/verify/${d.id}"\n        trustForwardHeader: false\n        authResponseHeaders:\n          - X-Forwarded-User\n`,
+        `    ${mw}:\n      forwardAuth:\n        address: "${traefikPanelUpstream()}${FA_PREFIX}/verify/${d.id}"\n        trustForwardHeader: false\n        authResponseHeaders:\n          - X-Forwarded-User\n`,
       );
     }
 
@@ -1685,7 +1685,11 @@ export async function renderDynamicConfig(
         '    svc_ninedeploy_panel:\n' +
           '      loadBalancer:\n' +
           '        servers:\n' +
-          `          - url: "http://host.docker.internal:${config.port}"`,
+          // The same address as the wake and forward-auth endpoints: the panel's alias on
+          // the proxy network when its container joined it (plugins/traefik.ts joins it once
+          // a panel domain is set), so the domain answers whatever address the panel port is
+          // published on; the host address otherwise.
+          `          - url: "${traefikPanelUpstream()}"`,
       );
     }
   }
@@ -1733,7 +1737,7 @@ export async function renderDynamicConfig(
   }
   if (wakeUsed) {
     middlewares.push(`    ${WAKE_MW}:\n      addPrefix:\n        prefix: "${WAKE_PREFIX}"\n`);
-    svcBlocks.push(`    ${WAKE_SVC}:\n      loadBalancer:\n        servers:\n          - url: "${panelWakeUpstream()}"`);
+    svcBlocks.push(`    ${WAKE_SVC}:\n      loadBalancer:\n        servers:\n          - url: "${traefikPanelUpstream()}"`);
   }
 
   // Traefik v3's file provider rejects empty sections (`middlewares: {}`

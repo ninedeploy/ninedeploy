@@ -81,6 +81,43 @@ describe('install.sh panel domain helpers', () => {
     expect(elsewhere.stdout).toContain('survived');
   });
 
+  it('check_panel_domain asks Traefik, reports what answered, and never fails', () => {
+    // curl stands in with one HTTP status per call, counted in a file because
+    // command substitution runs it in a subshell; sleep is skipped.
+    const dir = mkdtempSync(path.join(tmpdir(), 'nd-domain-'));
+    const count = path.join(dir, 'count');
+    const probe = (curl: string, domain: string) =>
+      run(`set -euo pipefail\ncurl() { ${curl}; }\nsleep() { :; }\ncheck_panel_domain "$ND_DOMAIN"\necho survived`, [], { ...process.env, ND_DOMAIN: domain, ND_COUNT: count });
+    try {
+      // The router of a domain is TLS-only, so the request is HTTPS; the certificate is
+      // not checked, because until Let's Encrypt issues one it is Traefik's own.
+      expect(sh).toMatch(/_pd_code="\$\(curl -sk -o \/dev\/null -m 3 -H "Host: \$_pd_domain" -w '%\{http_code\}' https:\/\/127\.0\.0\.1\/health 2>\/dev\/null \|\| true\)"/);
+      const served = probe('printf 200', 'panel.example.com');
+      expect(served.status, served.stderr).toBe(0);
+      expect(served.stdout).toContain('Panel domain panel.example.com answers through Traefik');
+      expect(served.stdout).toContain('survived');
+      expect(served.stdout).not.toContain('did not answer');
+      const counted = `n=$(( $(cat "$ND_COUNT" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$ND_COUNT";`;
+      // A Traefik that is still starting answers 404 for a while: asked again, then reported.
+      const late = probe(`${counted} [ "$n" -ge 3 ] && printf 200 || printf 404`, 'panel.example.com');
+      expect(late.stdout).toContain('answers through Traefik');
+      expect(readFileSync(count, 'utf8').trim()).toBe('3');
+      rmSync(count);
+      const missing = probe(`${counted} printf 404`, 'panel.example.com');
+      expect(missing.status, missing.stderr).toBe(0);
+      expect(missing.stdout).toContain('survived');
+      expect(missing.stdout).toContain('The panel domain panel.example.com did not answer through Traefik in 10 tries (last HTTPS answer: 404)');
+      expect(missing.stdout).toContain('NINEDEPLOY_BIND=0.0.0.0 and NINEDEPLOY_PORT=3000');
+      expect(readFileSync(count, 'utf8').trim()).toBe('10');
+      // Without a domain nothing is asked.
+      const none = probe('printf 200', '');
+      expect(none.status, none.stderr).toBe(0);
+      expect(none.stdout).not.toContain('Traefik');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('prompt_panel_domain asks nothing without a terminal, during a self-update, or when the flag gave a domain', () => {
     const probe = 'PANEL_DOMAIN_ARG="$2"; ACME_EMAIL_ARG=""; prompt_panel_domain </dev/null; printf "[%s|%s]" "$PANEL_DOMAIN_ARG" "$ACME_EMAIL_ARG"';
     expect(run(probe, ['']).stdout).toBe('[|]');
@@ -127,9 +164,28 @@ describe('install.sh --domain/--email arguments', () => {
     expect(sh).toContain('if [ ! -f ".env" ]; then prompt_panel_domain; fi');
     // Helpers are defined before the source-only guard, so CI can call them.
     const guard = sh.indexOf('if [ "${NINEDEPLOY_INSTALL_SOURCE_ONLY:-}" = "1" ]');
-    for (const fn of ['valid_panel_domain', 'valid_acme_email', 'env_file_set', 'prompt_panel_domain', 'warn_domain_dns']) {
+    for (const fn of ['valid_panel_domain', 'valid_acme_email', 'env_file_set', 'prompt_panel_domain', 'warn_domain_dns', 'check_panel_domain']) {
       expect(sh.indexOf(`\n${fn}() {`), fn).toBeGreaterThan(0);
       expect(sh.indexOf(`\n${fn}() {`), fn).toBeLessThan(guard);
     }
+  });
+
+  it('asks Traefik about the panel domain once the panel is healthy, instead of guessing from the port', () => {
+    const dockerCheck = `check_panel_domain "$(sed -n 's/^NINEDEPLOY_DOMAIN=//p' .env 2>/dev/null | tail -1)"`;
+    expect(sh).toContain(dockerCheck);
+    const dockerHealthy = sh.indexOf(`ok "NineDeploy panel is healthy (docker compose project 'ninedeploy')"`);
+    expect(dockerHealthy).toBeGreaterThan(0);
+    expect(sh.indexOf(dockerCheck), 'after the Docker health gate').toBeGreaterThan(dockerHealthy);
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: the installer's text, with its shell expansion.
+    const metalCheck = 'check_panel_domain "${NINEDEPLOY_DOMAIN:-}"';
+    expect(sh).toContain(metalCheck);
+    const metalHealthy = sh.indexOf(`ok "NineDeploy service is healthy (systemd, hardened unit)"`);
+    expect(metalHealthy).toBeGreaterThan(0);
+    expect(sh.indexOf(metalCheck), 'after the systemd health gate').toBeGreaterThan(metalHealthy);
+    // The two guesses from the published port are gone. Bare metal keeps its own: there
+    // the panel is not a container, and Traefik reaches it through the host address.
+    expect(sh).not.toContain('The panel port is bound to 127.0.0.1, which Traefik cannot reach');
+    expect(sh).not.toContain('Traefik forwards $PANEL_DOMAIN_ARG to port 3000');
+    expect(sh).toContain('The panel listens on 127.0.0.1, which Traefik cannot reach');
   });
 });

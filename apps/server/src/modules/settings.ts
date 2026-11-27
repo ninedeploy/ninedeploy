@@ -16,6 +16,7 @@ import {
 } from '../engine/proxy.js';
 import { activeKeyVersion, knownKeyVersions } from '../lib/crypto.js';
 import { rotateSecretsWithReport } from '../lib/keyRotation.js';
+import { joinPanelNetwork } from '../lib/panelUpstream.js';
 import { unprocessable } from '../lib/errors.js';
 import {
   ensureVaultAllowlistInitialised,
@@ -175,6 +176,10 @@ export const settingsRoutes: FastifyPluginAsync = async (app) => {
   app.put('/panel-domain', async (req) => {
     const { domain } = domainPatch.parse(req.body);
     await setSettingString(app.db, 'panel_domain', domain);
+    // The domain answers whatever address the panel port is published on: in a
+    // container the panel joins the proxy's network first, so the route written
+    // below takes its alias.
+    if (domain) await joinPanelNetwork().catch(() => false);
     await writeDynamicConfig(app.db).catch(() => undefined);
     void audit(app.db, req.user!.id, 'settings.panel_domain', domain || 'cleared');
     return { ok: true, panelDomain: domain || null };
