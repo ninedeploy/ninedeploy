@@ -32,6 +32,8 @@ export const upgradeStatementArgs = z.object({
   /** `mysql.tableCounts`: the tables of one chunk, and the index of its first among all of them. */
   tables: z.array(z.object({ schema: identifier(64), table: identifier(64) }).strict()).min(1).max(COUNT_CHUNK).optional(),
   offset: z.number().int().min(0).max(1_000_000).optional(),
+  /** `mongo.setFeatureCompatibilityVersion`: the release the data directory is told it runs now (`7.0`). */
+  series: z.string().regex(/^\d+\.\d+$/).optional(),
 }).strict();
 export type UpgradeStatementArgs = z.infer<typeof upgradeStatementArgs>;
 export interface UpgradeTable {
@@ -42,9 +44,17 @@ export interface UpgradeTable {
 const literal = (s: string) => `'${s.replace(/'/g, "''")}'`;
 const mysqlIdent = (name: string) => `\`${name.replace(/`/g, '``')}\``;
 
+/** The managed MongoDB user, as `lib/databaseCommands.ts` names it. */
+const MONGO_USER = 'nine';
+/** `sh -c` around mongosh: the script comes as `$1`, the password on fd 3 (a pipe, never a file, never argv). */
+const MONGO_EVAL_SH = 'exec mongosh --nodb --quiet --eval "$1" 3<&0';
+/** What mongosh evaluates: it reads the password from fd 3, signs in on loopback, and prints the statement. */
+const mongoScript = (expression: string) =>
+  `const pw = require('fs').readFileSync('/dev/fd/3', 'utf8').trim(); const c = connect('mongodb://127.0.0.1:27017/admin'); c.auth('${MONGO_USER}', pw); db = c; print(${expression});`;
+
 interface Spec {
-  /** `mysql` also serves MariaDB. */
-  family: 'postgres' | 'mysql';
+  /** `mysql` also serves MariaDB; `mongo` is a mongosh expression. */
+  family: 'postgres' | 'mysql' | 'mongo';
   timeoutMs: number;
   /** The arguments the statement reads; any other is refused on a node. */
   args: readonly (keyof UpgradeStatementArgs)[];
@@ -123,12 +133,44 @@ export const UPGRADE_STATEMENTS = {
     },
   },
   'mysql.users': { family: 'mysql', timeoutMs: MYSQL_TIMEOUT_MS, args: [], build: () => 'SELECT HEX(CONCAT(user, \'@\', host)) FROM mysql.user ORDER BY 1' },
+  // ── MongoDB (N12): the server moves one release at a time, and its data directory has a release of its own ──
+  // Each is an expression mongosh prints, as `lib/databaseCommands.ts` runs a probe.
+  'mongo.serverVersion': { family: 'mongo', timeoutMs: PG_TIMEOUT_MS, args: [], build: () => 'db.version()' },
+  /** The release the DATA runs (`6.0`), which can lag behind the binary: a binary starts on its own release and the one before. */
+  'mongo.featureCompatibilityVersion': {
+    family: 'mongo', timeoutMs: PG_TIMEOUT_MS, args: [],
+    build: () => 'db.adminCommand({ getParameter: 1, featureCompatibilityVersion: 1 }).featureCompatibilityVersion.version',
+  },
+  /** A node asks this until the server accepts connections. */
+  'mongo.ping': { family: 'mongo', timeoutMs: PG_TIMEOUT_MS, args: [], build: () => 'db.adminCommand({ ping: 1 }).ok' },
+  // `confirm: true` is required from 7.0 on: the answer says the change cannot be undone without support.
+  'mongo.setFeatureCompatibilityVersion': {
+    family: 'mongo', timeoutMs: PG_TIMEOUT_MS, args: ['series'],
+    build: (a) => `JSON.stringify(db.adminCommand({ setFeatureCompatibilityVersion: '${a.series}', confirm: true }))`,
+  },
+  /** `[database, kind, exact count, indexes]` for every collection of every database that is not a system one, in order. */
+  'mongo.inventory': {
+    family: 'mongo', timeoutMs: MYSQL_TIMEOUT_MS, args: [],
+    build: () => "JSON.stringify(db.adminCommand({ listDatabases: 1 }).databases.map((x) => x.name).filter((n) => !['admin', 'config', 'local'].includes(n)).sort().map((n) => { const dd = db.getSiblingDB(n); return dd.getCollectionInfos({}).sort((a, b) => a.name.localeCompare(b.name)).map((ci) => [n + '.' + ci.name, ci.type, dd.getCollection(ci.name).countDocuments({}), dd.getCollection(ci.name).getIndexes().length]); }))",
+  },
+  'mongo.users': {
+    family: 'mongo', timeoutMs: MYSQL_TIMEOUT_MS, args: [],
+    build: () => "JSON.stringify(db.getSiblingDB('admin').getUsers().users.map((u) => u._id).sort())",
+  },
 } as const satisfies Record<string, Spec>;
 export type UpgradeStatementName = keyof typeof UPGRADE_STATEMENTS;
+export type UpgradeStatementFamily = Spec['family'];
+
+/** How a MongoDB statement is run as the managed user — on the panel host and on a node alike: the script is `$1`, the password goes to stdin and reaches mongosh on fd 3. */
+export function mongoStatementArgv(container: string, expression: string): string[] {
+  return ['exec', '-i', container, 'sh', '-c', MONGO_EVAL_SH, 'sh', mongoScript(expression)];
+}
 
 export interface UpgradeStatement {
   readonly name: UpgradeStatementName;
+  /** PostgreSQL and MySQL: SQL. MongoDB: the expression mongosh prints. */
   readonly text: string;
+  readonly family: UpgradeStatementFamily;
   /** PostgreSQL: the database to connect to (default: the row's). */
   readonly database?: string;
   /** The bound the statement runs under on either host. */
@@ -142,11 +184,21 @@ const noArgs: UpgradeStatementArgs = {};
 /** A statement for the panel host to run — and for a node to be asked for by name. */
 export function upgradeStatement<N extends UpgradeStatementName>(name: N, args: UpgradeStatementArgs = noArgs): UpgradeStatement {
   const spec: Spec = UPGRADE_STATEMENTS[name];
-  return { name, text: spec.build(args), timeoutMs: spec.timeoutMs, ...(spec.database ? { database: spec.database } : {}), args: { ...args } };
+  return { name, text: spec.build(args), timeoutMs: spec.timeoutMs, family: spec.family, ...(spec.database ? { database: spec.database } : {}), args: { ...args } };
 }
 
 /** The exact row counts of `tables` (at most {@link COUNT_CHUNK} of them), `offset` being the index of the first among all tables. */
 export const tableCountStatement = (tables: UpgradeTable[], offset: number) => upgradeStatement('mysql.tableCounts', { tables, offset });
+
+/** The release the data directory is told it runs now (`series`); the answer is JSON with `ok`. */
+export const mongoSetFeatureCompatibility = (series: string) => upgradeStatement('mongo.setFeatureCompatibilityVersion', { series });
+
+/** The family a database engine's statements belong to. */
+export const statementFamilyOf = (engine: string): UpgradeStatementFamily => (engine === 'postgres' ? 'postgres' : engine === 'mongo' ? 'mongo' : 'mysql');
+
+const PING: Record<UpgradeStatementFamily, UpgradeStatementName> = { postgres: 'postgres.ping', mysql: 'mysql.ping', mongo: 'mongo.ping' };
+/** What a host asks until the engine's server accepts connections; it prints `1`. */
+export const pingStatement = (engine: string) => upgradeStatement(PING[statementFamilyOf(engine)]);
 
 /**
  * The statement a node was asked for by name: the catalogue's own text, built

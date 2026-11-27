@@ -84,6 +84,19 @@ describe('UpgradeCard', () => {
     expect(await screen.findByText('Upgrade to MySQL 8.4 started')).toBeTruthy();
   });
 
+  it('MongoDB: offers the releases one at a time, the newest selected, and names the copy', async () => {
+    up.options.mockResolvedValue({ databaseId: 7, engine: 'mongo', currentMajor: 6, targets: [], currentSeries: '6.0', versions: ['7.0', '8.0'], refusal: null });
+    up.start.mockResolvedValue(row({ engine: 'mongo', fromMajor: 6, toMajor: 8, fromSeries: '6.0', toSeries: '8.0', status: 'running', phase: 'copy' }));
+    renderCard({ id: 7, name: 'events', engine: 'mongo' });
+    expect(await screen.findByText('MongoDB 6.0')).toBeTruthy();
+    const select = (await screen.findByLabelText('Target release')) as HTMLSelectElement;
+    expect([...select.options].map((o) => o.value)).toEqual(['7.0', '8.0']);
+    expect(select.value).toBe('8.0');
+    expect(screen.getByText(/data directory is copied into a new volume and upgraded there/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Upgrade' }));
+    expect(await screen.findByText('Upgrade to MongoDB 8.0?')).toBeTruthy();
+  });
+
   it('a completed MariaDB upgrade names its series and the accounts it compared', async () => {
     up.list.mockResolvedValue([row({ engine: 'mariadb', fromMajor: 10, toMajor: 11, fromSeries: '10.11', toSeries: '11.8', verification: { tables: 2, rows: 9, sequences: 0, users: 5, objects: { indexes: 1, constraints: 1, views: 0, triggers: 0, functions: 0, extensions: '', events: 0, schemas: 1 }, mismatches: [] } })]);
     renderCard({ id: 7, name: 'shop', engine: 'mariadb' });

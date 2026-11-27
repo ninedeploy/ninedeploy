@@ -47,6 +47,8 @@ const h = vi.hoisted(() => ({
   dumpBytes: Buffer.from('-- MySQL dump\nINSERT INTO orders VALUES (1);\n'),
   restored: [] as Buffer[],
   streams: [] as Array<{ kind: string; params: Record<string, unknown> }>,
+  /** MongoDB: the release the data on each container's volume runs (the feature compatibility version). */
+  mongoFcv: new Map<string, string>(),
 }));
 
 vi.mock('../../src/config.js', async (importOriginal) => {
@@ -147,7 +149,10 @@ async function upgradeOp(params: Record<string, unknown>, answer: Answer) {
     case 'run': {
       const image = params['image'] as string;
       const name = helper(params['helper'] as string);
-      h.containers.set(name, { labels: { 'ninedeploy.managed': 'database-upgrade' }, state: 'running', exitCode: 0, tag: image.startsWith('sha256:') ? 'mysql:8.0' : image });
+      const tag = image.startsWith('sha256:') ? (id.engine === 'mongo' ? 'mongo:6.0' : 'mysql:8.0') : image;
+      h.containers.set(name, { labels: { 'ninedeploy.managed': 'database-upgrade' }, state: 'running', exitCode: 0, tag });
+      // MongoDB's data keeps its own release: a helper starts on what its volume holds (the database's for the fence, the copy's for the staging container).
+      if (id.engine === 'mongo') h.mongoFcv.set(name, h.mongoFcv.get(id.container) ?? '6.0');
       h.trace.push(`run ${params['helper']} ${image} ${(params['volume'] as string)}`);
       return answer(0, reply({ started: name }));
     }
@@ -204,7 +209,7 @@ async function upgradeOp(params: Record<string, unknown>, answer: Answer) {
           return answer(0, ['root@%', 'root@localhost', 'app@%', 'mysql.sys@localhost', ...(staging ? ['mysql.infoschema@localhost'] : [])].map(hex));
         // PostgreSQL: the same series the fake reads from the image (`postgres:16` reports 16).
         case 'postgres.serverVersionNum':
-          return answer(0, [`${/^postgres:(d+)/.exec(tag)?.[1] ?? '16'}0004`]);
+          return answer(0, [`${/^postgres:(\d+)/.exec(tag)?.[1] ?? '16'}0004`]);
         case 'postgres.databaseSize':
           return answer(0, ['1000']);
         case 'postgres.otherDatabases':
@@ -222,6 +227,22 @@ async function upgradeOp(params: Record<string, unknown>, answer: Answer) {
           return answer(0, [`public.orders_id_seq${US}42`]);
         case 'postgres.fingerprint.objects':
           return answer(0, [['3', '2', '0', '0', '1', 'plpgsql'].join(US)]);
+        // MongoDB: the release the binary is (by image) and the release the data runs (by container); the inventory and the accounts as JSON.
+        case 'mongo.serverVersion':
+          return answer(0, [`${(h.containers.get(where)?.tag ?? 'mongo:6.0').slice(-3)}.40`]);
+        case 'mongo.featureCompatibilityVersion':
+          return answer(0, [h.mongoFcv.get(where) ?? '6.0']);
+        case 'mongo.ping':
+          return answer(0, ['1']);
+        case 'mongo.setFeatureCompatibilityVersion': {
+          const args = params['args'] as { series: string };
+          h.mongoFcv.set(where, args.series);
+          return answer(0, ['{"ok":1}']);
+        }
+        case 'mongo.inventory':
+          return answer(0, [JSON.stringify([[['app.events', 'collection', 42, 2]]])]);
+        case 'mongo.users':
+          return answer(0, ['["admin.nine"]']);
         default:
           throw new Error(`the fake node knows no statement ${statement}`);
       }
@@ -304,6 +325,7 @@ beforeEach(async () => {
   h.native = '';
   h.restored = [];
   h.streams = [];
+  h.mongoFcv.clear();
   vi.mocked(caps.assertNodeCapability).mockReset();
   vi.mocked(caps.assertNodeCapability).mockResolvedValue(undefined);
   ({ db, client: dbClient } = createDb({ url: ':memory:' }));
@@ -352,7 +374,8 @@ describe('a node is no refusal', () => {
   it('the row keeps its own columns, and the names come out of them', async () => {
     const d = await row();
     expect(upgradeRefusal(d)).toBeNull();
-    expect(upgradeRefusal({ ...d, engine: 'mongo' })?.code).toBe('database_upgrade_engine');
+    expect(upgradeRefusal({ ...d, engine: 'mongo' })).toBeNull();
+    expect(upgradeRefusal({ ...d, engine: 'redis' })?.code).toBe('database_upgrade_engine');
     expect(upgradeRefusal({ ...d, pitrEnabled: true })?.code).toBe('database_upgrade_pitr');
     const view = hostView(d);
     expect(view).toMatchObject({ containerName: 'nd-db-shop', volumeName: 'nd-db-shop-data', serverId: 3 });
@@ -511,6 +534,44 @@ describe('the dump method on a node: PostgreSQL 16 → 17', () => {
     // The fence was started on the old image on the old volume; the staging copy on the new image on the new one.
     const runs = h.ops.filter((o) => o.op === 'db.upgrade' && o.params['action'] === 'run');
     expect(runs.map((o) => [o.params['helper'], o.params['image'], o.params['volume']])).toEqual([['old', 'sha256:old', 'nd-db-pg-data'], ['new', image, vol]]);
+  });
+});
+
+describe('the copy method on a node: MongoDB 6.0 → 7.0', () => {
+  it('the copy starts on 7.0, the data is told it runs 7.0 (by name, the series as its argument), the record says what the data ran', async () => {
+    await db.insert(databases).values({
+      id: 22, ownerUserId: 7, name: 'events', slug: 'events', engine: 'mongo', status: 'running', version: '6.0', serverId: 3,
+      containerName: null, volumeName: null, internalHost: 'nd-db-events', passwordEncrypted: encrypt('pw-events'), username: 'nine',
+    } as never);
+    const events = (await db.query.databases.findFirst({ where: eq(databases.id, 22) }))!;
+    h.containers.set('nd-db-events', { labels: { 'ninedeploy.managed': 'database' }, state: 'running', exitCode: 0, tag: 'mongo:6.0' });
+    h.volumes.set('nd-db-events-data', own('events', '22'));
+    const deps = fastDeps(events);
+    const plan = await planUpgrade(db, events, '7.0', deps);
+    expect(plan).toMatchObject({ fromSeries: '6.0', toSeries: '7.0', steps: ['7.0'], fromImage: { tag: 'mongo:6.0' } });
+    const admitted = await admitUpgrade(db, events, plan, 7);
+    h.trace.length = 0;
+    await runDatabaseUpgrade(db, admitted.id, { actorId: 7, fromImageTag: admitted.fromImageTag }, deps);
+    const up = await upgradeRow(admitted.id);
+    expect(up.error).toBeNull();
+    const vol = `nd-db-events-data-u${admitted.id}`;
+    expect(h.trace).toEqual([
+      'sql mongo.featureCompatibilityVersion@database',
+      'pull mongo:7.0', 'stop nd-db-events', 'rm nd-db-events',
+      'run old sha256:old nd-db-events-data', 'sql mongo.ping@old', 'sql mongo.inventory@old', 'sql mongo.users@old',
+      'dump nd-db-upg-events-old', 'clean-stop old=0',
+      `volume+ ${vol}`, 'copy-start', 'remove copy',
+      `run new mongo:7.0 ${vol}`, 'sql mongo.ping@new', 'sql mongo.setFeatureCompatibilityVersion@new',
+      'sql mongo.inventory@new', 'sql mongo.users@new', 'sql mongo.featureCompatibilityVersion@new',
+      'clean-stop new=0',
+      'remove old', 'remove new', 'remove copy', 'pull mongo:7.0', 'rm nd-db-events', `start mongo:7.0 ${vol}`, 'sql mongo.ping@database',
+    ]);
+    const set = h.ops.find((o) => o.op === 'db.upgrade' && o.params['action'] === 'sql' && o.params['statement'] === 'mongo.setFeatureCompatibilityVersion')!;
+    expect(set.params).toEqual({ database: { databaseId: 22, slug: 'events', engine: 'mongo', container: 'nd-db-events' }, action: 'sql', target: { kind: 'helper', helper: 'new' }, statement: 'mongo.setFeatureCompatibilityVersion', args: { series: '7.0' }, password: 'pw-events' });
+    // The helper that ran on the copy got the row's credentials; the fence started on the old image on the old volume at `/data/db`.
+    expect(h.ops.filter((o) => o.op === 'db.upgrade' && o.params['action'] === 'run').map((o) => [o.params['helper'], o.params['image'], o.params['volume'], o.params['mount'], (o.params['env'] as Record<string, string>)['MONGO_INITDB_ROOT_PASSWORD']])).toEqual([['old', 'sha256:old', 'nd-db-events-data', '/data/db', 'pw-events'], ['new', 'mongo:7.0', vol, '/data/db', 'pw-events']]);
+    expect(JSON.parse(up.verification!)).toMatchObject({ tables: 1, rows: 42, users: 1, objects: { indexes: 2, views: 0 }, mismatches: [], featureCompatibility: { before: '6.0', after: '7.0' } });
+    expect(await db.query.databases.findFirst({ where: eq(databases.id, 22) })).toMatchObject({ status: 'running', version: '7.0', nodeVolumeName: vol, containerName: null, volumeName: null });
   });
 });
 

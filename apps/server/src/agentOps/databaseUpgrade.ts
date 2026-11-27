@@ -3,7 +3,7 @@ import path from 'node:path';
 import { z } from 'zod';
 import { PG_DB, PG_USER, mysqlClientConfig } from '../lib/databaseCommands.js';
 import { NODE_UPGRADE_CAPABILITY, NODE_UPGRADE_REPLY } from '../lib/databaseUpgradeNames.js';
-import { SEP, UPGRADE_STATEMENTS, resolveUpgradeStatement } from '../lib/databaseUpgradeSql.js';
+import { mongoStatementArgv, SEP, statementFamilyOf, UPGRADE_STATEMENTS, resolveUpgradeStatement } from '../lib/databaseUpgradeSql.js';
 import { spawnValidated, spawnValidatedStream } from '../lib/spawnValidated.js';
 import type { AgentOpModule } from './index.js';
 import { RE_IMAGE, RE_PATH } from './operands.js';
@@ -58,7 +58,7 @@ const image = z.string().max(255).regex(RE_IMAGE);
 const identity = z.object({
   databaseId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
   slug: z.string().regex(/^[a-z0-9][a-z0-9-]{0,62}$/),
-  engine: z.enum(['postgres', 'mysql', 'mariadb']),
+  engine: z.enum(['postgres', 'mysql', 'mariadb', 'mongo']),
   container: z.string().max(128).regex(/^nd-db-[a-z0-9][a-z0-9_.-]*$/),
 }).strict();
 export type NodeUpgradeIdentity = z.infer<typeof identity>;
@@ -179,7 +179,8 @@ async function removeHelper(name: string, id: NodeUpgradeIdentity): Promise<void
   const labels = await labelsOf('container', name);
   if (labels === null) return;
   assertHelper(labels, name, id);
-  await mustDocker(['rm', '-f', name], `removing ${name}`);
+  // `-v`: the anonymous volumes the image declares besides the data one (MongoDB's `/data/configdb`) go with the helper; a named volume is never touched.
+  await mustDocker(['rm', '-f', '-v', name], `removing ${name}`);
 }
 
 const helperLabels = (id: NodeUpgradeIdentity, which: Helper): string[] => [
@@ -274,8 +275,8 @@ async function run(params: Record<string, unknown>, onLine: (line: string) => vo
       onLine(`Stopping ${name} (a slow, clean shutdown; up to ${req.timeoutSec} s) …`);
       await docker(['stop', '--time', String(req.timeoutSec), name], (req.timeoutSec + 120) * 1000);
       const state = await stateOf(name);
-      // Removed either way: a stop that ran out of time ends in SIGKILL, and the caller reads that from the code.
-      await docker(['rm', '-f', name]);
+      // Removed either way, with its anonymous volumes: a stop that ran out of time ends in SIGKILL, and the caller reads that from the code.
+      await docker(['rm', '-f', '-v', name]);
       reply({ exitCode: state && state.state === 'exited' ? state.exitCode : null });
       return 0;
     }
@@ -298,14 +299,20 @@ async function run(params: Record<string, unknown>, onLine: (line: string) => vo
     case 'sql': {
       const name = await boundContainer(id, req.target);
       const statement = resolveUpgradeStatement(req.statement, req.args);
-      const family = id.engine === 'postgres' ? 'postgres' : 'mysql';
-      if (UPGRADE_STATEMENTS[statement.name].family !== family) throw new Error(`Statement ${statement.name} does not run on ${id.engine}`);
-      const argv = family === 'postgres'
+      // A statement runs on its own family: the catalogue says which, the engine says what runs.
+      if (UPGRADE_STATEMENTS[statement.name].family !== statementFamilyOf(id.engine)) throw new Error(`Statement ${statement.name} does not run on ${id.engine}`);
+      const argv = statement.family === 'postgres'
         ? ['exec', '-i', name, 'psql', '-X', '-v', 'ON_ERROR_STOP=1', '-U', PG_USER, '-d', statement.database ?? PG_DB, '-At', '-F', SEP, '-c', statement.text]
-        // The password travels as a `[client]` option file on stdin: never in
-        // argv (the host's and the container's process lists) nor in the environment.
-        : ['exec', '-i', name, id.engine === 'mariadb' ? 'mariadb' : 'mysql', '--defaults-extra-file=/dev/stdin', '-h127.0.0.1', '-uroot', '-N', '-B', '-e', statement.text];
-      const { code, out, stderr } = await collected(argv, { timeoutMs: statement.timeoutMs, ...(family === 'mysql' ? { stdin: mysqlClientConfig(req.password) } : {}) });
+        : statement.family === 'mongo'
+          // mongosh reads the password from fd 3 (stdin here) and prints the statement.
+          ? mongoStatementArgv(name, statement.text)
+          // The password travels as a `[client]` option file on stdin: never in
+          // argv (the host's and the container's process lists) nor in the environment.
+          : ['exec', '-i', name, id.engine === 'mariadb' ? 'mariadb' : 'mysql', '--defaults-extra-file=/dev/stdin', '-h127.0.0.1', '-uroot', '-N', '-B', '-e', statement.text];
+      const { code, out, stderr } = await collected(argv, {
+        timeoutMs: statement.timeoutMs,
+        ...(statement.family === 'postgres' ? {} : { stdin: statement.family === 'mongo' ? req.password : mysqlClientConfig(req.password) }),
+      });
       if (code !== 0) {
         if (stderr.trim()) onLine(stderr.trim().slice(-500));
         return code;

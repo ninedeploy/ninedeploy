@@ -10,19 +10,19 @@ import { useT } from '../../lib/i18n.js';
 
 const message = (err: unknown, fallback: string) => (err instanceof Error ? err.message : fallback);
 
-const ENGINE_LABELS: Record<string, string> = { postgres: 'PostgreSQL', mysql: 'MySQL', mariadb: 'MariaDB' };
+const ENGINE_LABELS: Record<string, string> = { postgres: 'PostgreSQL', mysql: 'MySQL', mariadb: 'MariaDB', mongo: 'MongoDB' };
 /** Rows from panels before 0.18.28 carry only the majors. */
 const fromOf = (u: DatabaseUpgrade) => u.fromSeries ?? String(u.fromMajor);
 const toOf = (u: DatabaseUpgrade) => u.toSeries ?? String(u.toMajor);
 
 /**
- * O2, Database → Settings: move a PostgreSQL, MySQL or MariaDB database to a
- * newer release. The panel checks the running server, stops the database,
- * dumps it (kept as a backup, labelled `pre-upgrade` in the database), then
- * restores (PostgreSQL) or copies and upgrades in place (MySQL, MariaDB) into
- * a new volume and compares the copy before the switch. The previous volume
- * stays until "Finalize"; until then "Roll back" points the database back at
- * it. Admin on the database.
+ * O2, Database → Settings: move a PostgreSQL, MySQL, MariaDB or MongoDB
+ * database to a newer release. The panel checks the running server, stops the
+ * database, dumps it (kept as a backup, labelled `pre-upgrade` in the
+ * database), then restores (PostgreSQL) or copies and upgrades in place
+ * (MySQL, MariaDB, MongoDB) into a new volume and compares the copy before the
+ * switch. The previous volume stays until "Finalize"; until then "Roll back"
+ * points the database back at it. Admin on the database.
  */
 export function UpgradeCard({ db }: { db: DatabaseDetail }) {
   const t = useT();

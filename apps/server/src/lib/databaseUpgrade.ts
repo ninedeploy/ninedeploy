@@ -57,7 +57,7 @@ import { createLogger } from './log.js';
 import { pullDockerImage } from './dockerPull.js';
 import { decrypt } from './crypto.js';
 import { mysqlClientConfig } from './databaseCommands.js';
-import { COUNT_CHUNK, SEP, tableCountStatement, upgradeStatement, type UpgradeStatement, type UpgradeTable } from './databaseUpgradeSql.js';
+import { COUNT_CHUNK, SEP, mongoSetFeatureCompatibility, mongoStatementArgv, pingStatement, tableCountStatement, upgradeStatement, type UpgradeStatement, type UpgradeTable } from './databaseUpgradeSql.js';
 import { copierName, fenceName, helperName, hostView, stagingName, upgradeVolumeName, volumeOf, volumeSet } from './databaseUpgradeNames.js';
 import {
   copyDockerVolume,
@@ -107,7 +107,7 @@ export interface UpgradeVerification {
 }
 
 /** The engines a major upgrade is offered for. */
-export type UpgradeEngine = 'postgres' | 'mysql' | 'mariadb';
+export type UpgradeEngine = 'postgres' | 'mysql' | 'mariadb' | 'mongo';
 
 interface EngineUpgradeSpec {
   label: string;
@@ -128,11 +128,12 @@ export const UPGRADE_ENGINES: Record<UpgradeEngine, EngineUpgradeSpec> = {
   postgres: { label: 'PostgreSQL', method: 'dump', targets: ['14', '15', '16', '17', '18'] },
   mysql: { label: 'MySQL', method: 'copy', targets: ['8.4', '9.7'], floor: '8.0' },
   mariadb: { label: 'MariaDB', method: 'copy', targets: ['10.11', '11.4', '11.8', '12.3'], floor: '10.6' },
+  // N12: MongoDB moves one release at a time (6.0 → 7.0 → 8.0), and its data directory has a
+  // release of its own. 6.0 is the oldest release this upgrade has been run from.
+  mongo: { label: 'MongoDB', method: 'copy', targets: ['7.0', '8.0'], floor: '6.0' },
 };
 
-const MYSQL_DATA_DIR = '/var/lib/mysql';
-
-export const isUpgradeEngine = (engine: string): engine is UpgradeEngine => Object.hasOwn(UPGRADE_ENGINES, engine);
+const isUpgradeEngine = (engine: string): engine is UpgradeEngine => Object.hasOwn(UPGRADE_ENGINES, engine);
 export const engineLabel = (engine: string) => (isUpgradeEngine(engine) ? UPGRADE_ENGINES[engine].label : engine);
 
 /** `8.0.36` → [8, 0]; null when the text does not start with a version. */
@@ -163,19 +164,30 @@ export function rowSeries(engine: string, version: string | null): string | null
   return /^\d+\.\d+/.test(version) ? seriesOf(engine, version) : null;
 }
 
+/** The release after `series` in MongoDB's numbering (`7.0` after `6.0`): there is no minor series. */
+const nextMongoRelease = (series: string) => `${Number(series.split('.')[0]) + 1}.0`;
+
 /**
  * The series a copy upgrade passes through, ending at `to`; a string says why
  * it cannot. MySQL never skips an LTS series: anything before 8.4 steps
  * through 8.4 first (8.0 → 8.4 → 9.7 on the same copy). MariaDB upgrades
- * from any earlier release directly.
+ * from any earlier release directly. MongoDB never skips a release, and its
+ * data has a release of its own (the feature compatibility version): when the
+ * data is still behind the binary, the copy starts on the binary's own
+ * release first, so that release is set on the data before the next one.
  */
-export function upgradeSteps(engine: UpgradeEngine, from: string, to: string): string[] | string {
+export function upgradeSteps(engine: UpgradeEngine, from: string, to: string, fcv?: string | null): string[] | string {
   const spec = UPGRADE_ENGINES[engine];
   if (!spec.targets.includes(to)) return `${spec.label} ${to} is not a supported target (supported: ${spec.targets.join(', ')}).`;
   if (compareSeries(to, from) <= 0) return `The database already runs ${spec.label} ${from}; an upgrade must go to a newer release.`;
   if (spec.floor && compareSeries(from, spec.floor) < 0) return `${spec.label} ${from} is older than ${spec.floor}, the oldest release this upgrade starts from. Upgrade it to ${spec.floor} by hand first.`;
   if (engine === 'mysql' && compareSeries(from, '8.4') < 0 && compareSeries(to, '8.4') > 0) return ['8.4', to];
-  return [to];
+  if (engine !== 'mongo') return [to];
+  const steps: string[] = [];
+  for (let s = fcv != null && compareSeries(fcv, from) < 0 ? from : nextMongoRelease(from); ; s = nextMongoRelease(s)) {
+    steps.push(s);
+    if (compareSeries(s, to) >= 0) return steps;
+  }
 }
 
 /** The leading integer of a series (`8.4` → 8), for the `fromMajor`/`toMajor` columns. */
@@ -232,17 +244,18 @@ export function mysqlClientOptions(password: string): Buffer {
 }
 
 /**
- * MySQL/MariaDB: wait until root logs in over loopback TCP with the stored
- * password. A server upgrading its data directory on start (MySQL's data
- * dictionary, MariaDB's `mariadb-upgrade`) answers only afterwards, so the
- * bound is long; a container that exited (a failed upgrade) ends the wait.
+ * MySQL, MariaDB and MongoDB: wait until the managed user signs in on
+ * loopback with the stored password. A server upgrading its data directory on
+ * start (MySQL's data dictionary, MariaDB's `mariadb-upgrade`) answers only
+ * afterwards, so the bound is long; a container that exited (a failed
+ * upgrade, a binary that refuses the data's release) ends the wait.
  */
-async function waitForMysqlTcp(container: string, d: Database, log: (line: string) => void, timeoutSec = 1800): Promise<boolean> {
+async function waitForServer(container: string, d: Database, log: (line: string) => void, timeoutSec = 1800): Promise<boolean> {
   const deadline = Date.now() + timeoutSec * 1000;
   let last = '';
   while (Date.now() < deadline) {
     try {
-      if ((await databaseUpgradeDeps.sql(d, container, upgradeStatement('mysql.ping'))).trim() === '1') return true;
+      if ((await databaseUpgradeDeps.sql(d, container, pingStatement(d.engine))).trim() === '1') return true;
     } catch (err) {
       last = err instanceof Error ? err.message : String(err);
     }
@@ -284,18 +297,22 @@ export const databaseUpgradeDeps: DatabaseUpgradeDeps = {
   pull: (image, log) => pullDockerImage(image, log),
   stopAndRemove: async (container, log) => {
     await run('docker', ['stop', '--time', '60', container], {}, log).catch(() => undefined);
-    await run('docker', ['rm', '-f', container], {}, () => undefined).catch(() => undefined);
+    // `-v` removes only anonymous volumes (MongoDB's `/data/configdb`); the data volume is a named one and stays.
+    await run('docker', ['rm', '-f', '-v', container], {}, () => undefined).catch(() => undefined);
   },
   runIsolated: (d, spec, log) => runIsolatedDatabase(d, spec, log),
   // The password travels as a `[client]` option file on stdin: never in argv
   // (the host's and the container's process lists) nor in the environment.
   // `--defaults-extra-file` must come first; checked on mysql 8.0/9.7 and mariadb 10.6/11.8.
+  // MongoDB's mongosh reads it from fd 3 the same way (stdin).
   sql: (d, container, statement) =>
     capture(
       'docker',
-      ['exec', '-i', container, d.engine === 'mariadb' ? 'mariadb' : 'mysql', '--defaults-extra-file=/dev/stdin', '-h127.0.0.1', '-uroot', '-N', '-B', '-e', statement.text],
+      statement.family === 'mongo'
+        ? mongoStatementArgv(container, statement.text)
+        : ['exec', '-i', container, d.engine === 'mariadb' ? 'mariadb' : 'mysql', '--defaults-extra-file=/dev/stdin', '-h127.0.0.1', '-uroot', '-N', '-B', '-e', statement.text],
       { timeoutMs: statement.timeoutMs },
-      mysqlClientOptions(decrypt(d.passwordEncrypted)),
+      statement.family === 'mongo' ? Buffer.from(decrypt(d.passwordEncrypted)) : mysqlClientOptions(decrypt(d.passwordEncrypted)),
     ),
   dataDirBytes: async (container, dir) => {
     const n = Number.parseInt((await capture('docker', ['exec', container, 'du', '-sb', dir])).trim().split(/\s+/)[0] ?? '', 10);
@@ -311,7 +328,7 @@ export const databaseUpgradeDeps: DatabaseUpgradeDeps = {
   stopClean: (container, log) => stopContainerClean(container, log),
   copyVolume: (from, to, image, name, log) => copyDockerVolume(from, to, image, name, log),
   waitReady: async (container, d, log) => {
-    if (d.engine === 'mysql' || d.engine === 'mariadb') return waitForMysqlTcp(container, d, log);
+    if (d.engine !== 'postgres') return waitForServer(container, d, log);
     const cfg = ENGINES.postgres!;
     // TCP, not the socket: a fresh cluster's init server listens on the socket
     // only and is restarted by the entrypoint; TCP answers only once the real
@@ -424,12 +441,24 @@ export interface UpgradePlan {
   steps: string[];
 }
 
-/** MySQL/MariaDB: the running server's series. */
+/** The running server's series: MySQL and MariaDB from `VERSION()`, MongoDB from `db.version()`. */
 async function readServerSeries(deps: DatabaseUpgradeDeps, d: Database, container: string): Promise<string> {
-  const raw = (await deps.sql(d, container, upgradeStatement('mysql.serverVersion'))).trim();
+  const raw = (await deps.sql(d, container, upgradeStatement(d.engine === 'mongo' ? 'mongo.serverVersion' : 'mysql.serverVersion'))).trim();
   const series = seriesOf(d.engine, raw);
   if (!series) throw new Error(`could not read the server version (${clip(raw)})`);
   return series;
+}
+
+/**
+ * MongoDB: the release the data directory runs, the feature compatibility
+ * version. A binary starts on its own release and the one before, so the data
+ * can be a release behind the binary; which releases the copy then starts on
+ * in turn follows from it (`upgradeSteps`).
+ */
+async function readMongoFcv(deps: DatabaseUpgradeDeps, d: Database, container: string): Promise<string> {
+  const raw = (await deps.sql(d, container, upgradeStatement('mongo.featureCompatibilityVersion'))).trim();
+  if (!/^\d+\.\d+$/.test(raw)) throw new Error(`could not read the release of the data directory, the feature compatibility version (${clipTo(raw, 120)})`);
+  return raw;
 }
 
 /**
@@ -491,14 +520,16 @@ export async function planUpgrade(db: DB, row: Database, to: number | string, gi
 }
 
 /**
- * MySQL/MariaDB preflight: the real series, an allowed path, accounts the
- * target can still log in, and room for the copy and the safety dump.
+ * The preflight of a copy upgrade (MySQL, MariaDB, MongoDB): the real series,
+ * an allowed path, what the target can still log in with, and room for the
+ * copy and the safety dump.
  */
 async function planCopyUpgrade(d: Database, to: string, fromImage: { id: string; tag: string }, deps: DatabaseUpgradeDeps): Promise<UpgradePlan> {
   const engine = d.engine as UpgradeEngine;
   const container = d.containerName!;
+  const cfg = ENGINES[engine]!;
   const fromSeries = await readServerSeries(deps, d, container);
-  const steps = upgradeSteps(engine, fromSeries, to);
+  const steps = upgradeSteps(engine, fromSeries, to, engine === 'mongo' ? await readMongoFcv(deps, d, container) : null);
   if (typeof steps === 'string') throw badRequest(steps, 'database_upgrade_target');
   if (engine === 'mysql' && compareSeries(to, '8.4') >= 0) {
     // 8.4 starts with mysql_native_password off and 9.0 removed it: such an
@@ -511,10 +542,11 @@ async function planCopyUpgrade(d: Database, to: string, fromImage: { id: string;
       );
     }
   }
-  const sizeBytes = await deps.dataDirBytes(container, MYSQL_DATA_DIR);
+  const dataDir = resolveVolumePath(cfg, d.version);
+  const sizeBytes = await deps.dataDirBytes(container, dataDir);
   // The copy lands where Docker keeps volumes; the safety dump in the backups
   // directory, which may be the same filesystem: ask room for both there.
-  const volumeFree = await deps.freeBytesIn(container, MYSQL_DATA_DIR);
+  const volumeFree = await deps.freeBytesIn(container, dataDir);
   const volumeNeeded = sizeBytes * 2 + FREE_SPACE_MARGIN_BYTES;
   if (volumeFree < volumeNeeded) {
     throw refuse('database_upgrade_disk', `Not enough free disk where Docker keeps volumes: the copy and the safety dump need about ${Math.ceil(volumeNeeded / 1024 / 1024)} MiB, ${Math.floor(volumeFree / 1024 / 1024)} MiB is free.`);
@@ -792,6 +824,51 @@ export async function mysqlFingerprint(deps: DatabaseUpgradeDeps, d: Database, c
 
 // ── the run ─────────────────────────────────────────────────────────────
 
+/**
+ * MongoDB: every collection of every database that is not a system one, with
+ * its exact count and its indexes (a system collection inside a user database
+ * counts too: it is there before and after), and every account. The server
+ * prints JSON for both (`mongo.inventory`, `mongo.users`).
+ */
+export async function mongoFingerprint(deps: DatabaseUpgradeDeps, d: Database, container: string): Promise<ClusterFingerprint> {
+  const read = async (name: 'mongo.inventory' | 'mongo.users'): Promise<unknown> => {
+    const raw = (await deps.sql(d, container, upgradeStatement(name))).trim();
+    try {
+      return JSON.parse(raw);
+    } catch {
+      throw new Error(`could not read ${name === 'mongo.users' ? 'the accounts' : 'the collections'} of ${container}: ${clipTo(raw, 200)}`);
+    }
+  };
+  const inventory = await read('mongo.inventory');
+  if (!Array.isArray(inventory)) throw new Error(`could not read the collections of ${container}`);
+  const rows: Record<string, string> = {};
+  let indexes = 0;
+  let views = 0;
+  for (const database of inventory) {
+    if (!Array.isArray(database)) throw new Error(`could not read the collections of ${container}`);
+    for (const entry of database) {
+      const [name, kind, count, indexCount] = entry as [unknown, unknown, unknown, unknown];
+      if (typeof name !== 'string' || typeof count !== 'number' || !Number.isFinite(count)) throw new Error(`could not read the collections of ${container}`);
+      rows[name] = String(count);
+      indexes += typeof indexCount === 'number' ? indexCount : 0;
+      if (kind === 'view') views += 1;
+    }
+  }
+  const users = await read('mongo.users');
+  if (!Array.isArray(users) || users.some((u) => typeof u !== 'string')) throw new Error(`could not read the accounts of ${container}`);
+  return {
+    rows,
+    sequences: {},
+    objects: { indexes, constraints: 0, views, triggers: 0, functions: 0, extensions: '' },
+    users: users as string[],
+  };
+}
+
+/** What the new copy must match, read the way the engine lets it be read. */
+export function fingerprintOf(deps: DatabaseUpgradeDeps, d: Database, container: string): Promise<ClusterFingerprint> {
+  return d.engine === 'mongo' ? mongoFingerprint(deps, d, container) : mysqlFingerprint(deps, d, container);
+}
+
 type UpgradeRow = DatabaseUpgrade;
 
 async function attachedSlugs(db: DB, databaseId: number): Promise<string[]> {
@@ -878,9 +955,10 @@ export async function runDatabaseUpgrade(
     await db.update(databaseUpgrades).set({ safetyBackupId: b!.id }).where(eq(databaseUpgrades.id, upgradeId));
     return file;
   };
-  const recordVerification = async (before: ClusterFingerprint, after: ClusterFingerprint) => {
+  /** The comparison on the record; MongoDB's record also says which release the data ran before and runs now. */
+  const recordVerification = async (before: ClusterFingerprint, after: ClusterFingerprint, featureCompatibility?: { before: string; after: string }) => {
     const diff = compareFingerprints(before, after);
-    await db.update(databaseUpgrades).set({ verification: JSON.stringify({ ...verificationSummary(before), mismatches: diff.slice(0, 50) }) }).where(eq(databaseUpgrades.id, upgradeId));
+    await db.update(databaseUpgrades).set({ verification: JSON.stringify({ ...verificationSummary(before), ...(featureCompatibility ? { featureCompatibility } : {}), mismatches: diff.slice(0, 50) }) }).where(eq(databaseUpgrades.id, upgradeId));
     if (diff.length > 0) throw new Error(`the ${spec.method === 'copy' ? 'upgraded' : 'restored'} copy does not match the old cluster: ${diff.slice(0, 5).join('; ')}${diff.length > 5 ? ` (+${diff.length - 5} more)` : ''}`);
   };
 
@@ -893,9 +971,12 @@ export async function runDatabaseUpgrade(
         throw new Error('the database changed since the upgrade was admitted; start it again');
       }
       if (spec.method === 'copy') {
-        const steps = upgradeSteps(up0.engine as UpgradeEngine, fromS, toS);
-        if (typeof steps === 'string') throw new Error(steps);
         const cfg = ENGINES[up0.engine]!;
+        const mongo = up0.engine === 'mongo';
+        // MongoDB's data has a release of its own, read from the running server before anything stops.
+        const fcvBefore = mongo ? await readMongoFcv(deps, d0, d0.containerName!) : null;
+        const steps = upgradeSteps(up0.engine as UpgradeEngine, fromS, toS, fcvBefore);
+        if (typeof steps === 'string') throw new Error(steps);
         await phase('pull');
         for (const step of steps) await deps.pull(cfg.image(step), log);
 
@@ -907,14 +988,16 @@ export async function runDatabaseUpgrade(
 
         // The fence: the old container's own image on the old volume, no
         // network. It recovers whatever a hard stop left, gives the
-        // fingerprint and the safety dump, then shuts down slowly and must
-        // exit cleanly: only that data directory is fit to be copied.
+        // fingerprint and the safety dump, then shuts down and must exit
+        // cleanly: only that data directory is fit to be copied.
         await phase('dump');
-        await deps.runIsolated(d0, { name: fence, image: up0.fromImage, volume: up0.previousVolume, mount: MYSQL_DATA_DIR }, log);
+        const mount = resolveVolumePath(cfg, up0.previousVersion);
+        await deps.runIsolated(d0, { name: fence, image: up0.fromImage, volume: up0.previousVolume, mount }, log);
         if (!(await deps.waitReady(fence, d0, log))) throw new Error(`the old ${label} server did not come up for the dump`);
-        const before = await mysqlFingerprint(deps, d0, fence);
+        const before = await fingerprintOf(deps, d0, fence);
         await safetyDump(fence);
-        await deps.sql(d0, fence, upgradeStatement('mysql.fastShutdown'));
+        // MySQL and MariaDB write everything out first (a slow shutdown); MongoDB's shutdown is complete by itself.
+        if (!mongo) await deps.sql(d0, fence, upgradeStatement('mysql.fastShutdown'));
         const fenceExit = await deps.stopClean(fence, log);
         if (fenceExit !== 0) throw new Error(`the old ${label} server did not shut down cleanly (exit code ${fenceExit ?? 'unknown'}); its data directory was not copied`);
 
@@ -926,23 +1009,29 @@ export async function runDatabaseUpgrade(
         await deps.copyVolume(up0.previousVolume, up0.targetVolume, cfg.image(steps[0]!), copier, log);
 
         // Each step starts the next release on the COPY, which upgrades it in
-        // place; between steps the server shuts down slowly again.
+        // place; between steps the server shuts down cleanly again. MongoDB:
+        // the copy is then told which release it runs, which no older binary can start on afterwards — on the copy only, the old volume is never written to.
         await phase('upgrade');
         for (const [n, step] of steps.entries()) {
           const stepRow: Database = { ...target, version: step };
           const env: Record<string, string> = up0.engine === 'mariadb' ? { MARIADB_AUTO_UPGRADE: '1' } : {};
-          await deps.runIsolated(stepRow, { name: staging, image: cfg.image(step), volume: up0.targetVolume, mount: MYSQL_DATA_DIR, env }, log);
+          await deps.runIsolated(stepRow, { name: staging, image: cfg.image(step), volume: up0.targetVolume, mount, env }, log);
           if (!(await deps.waitReady(staging, stepRow, log))) throw new Error(`${label} ${step} did not come up on the copy (its upgrade on start failed; see the panel log)`);
+          if (mongo) {
+            const reply = (await deps.sql(stepRow, staging, mongoSetFeatureCompatibility(step))).trim();
+            if (!/"ok"\s*:\s*1/.test(reply)) throw new Error(`the data directory was not set to ${label} ${step}: ${clipTo(reply, 300)}`);
+          }
           if (n < steps.length - 1) {
-            await deps.sql(stepRow, staging, upgradeStatement('mysql.fastShutdown'));
+            if (!mongo) await deps.sql(stepRow, staging, upgradeStatement('mysql.fastShutdown'));
             const exit = await deps.stopClean(staging, log);
             if (exit !== 0) throw new Error(`${label} ${step} did not shut down cleanly on the copy (exit code ${exit ?? 'unknown'})`);
           }
         }
 
         await phase('verify');
-        const after = await mysqlFingerprint(deps, target, staging);
-        await recordVerification(before, after);
+        const after = await fingerprintOf(deps, target, staging);
+        const fcvAfter = mongo ? await readMongoFcv(deps, target, staging) : null;
+        await recordVerification(before, after, fcvBefore && fcvAfter ? { before: fcvBefore, after: fcvAfter } : undefined);
         const exit = await deps.stopClean(staging, log);
         if (exit !== 0) throw new Error(`${label} ${toS} did not shut down cleanly after the check (exit code ${exit ?? 'unknown'})`);
       } else {

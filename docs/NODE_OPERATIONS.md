@@ -408,11 +408,11 @@ Requires agent 0.18.12 or newer (`db.pgbouncer`) and a sealed transport. The nod
 
 ## Major version upgrade of a node database
 
-A PostgreSQL, MySQL or MariaDB database on a node moves to a newer release from the same card as one on the panel host: **Database → Settings → Major version upgrade**. The steps, the comparison, the rollback and the finalize are the same; [the database guide, section 12, "On a node"](DATABASES_BACKUPS.md#on-a-node) has them.
+A PostgreSQL, MySQL, MariaDB or MongoDB database on a node moves to a newer release from the same card as one on the panel host: **Database → Settings → Major version upgrade**. The steps, the comparison, the rollback and the finalize are the same; [the database guide, section 12, "On a node"](DATABASES_BACKUPS.md#on-a-node) has them, and its [MongoDB](DATABASES_BACKUPS.md#mongodb) part how that server moves one release at a time.
 
 How it works on a node:
 - The panel keeps the record of the upgrade and asks the agent for each step (`db.upgrade`): a helper container with no network (the old server on the old volume for the dump, the new one on the copy), the copy itself, a slow and clean stop, and one statement at a time.
-- A statement goes by its name; the agent builds its text from the catalogue both share. No SQL crosses to the node.
+- A statement goes by its name; the agent builds its text from the catalogue both share. No SQL crosses to the node (for MongoDB the statement is an expression in mongosh).
 - A volume or a container is touched only when it carries the database's id (`ninedeploy.database.id`). The helpers are `nd-db-upg-<slug>-old`, `-new` and `-copy`, labelled `ninedeploy.managed=database-upgrade`, and the panel host's Docker is never asked for them.
 - The safety dump travels over the sealed stream channel into the panel's backups directory.
 

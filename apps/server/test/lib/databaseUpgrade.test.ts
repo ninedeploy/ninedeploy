@@ -114,12 +114,13 @@ async function admitAndRun(deps: Deps, toMajor = 18) {
 }
 
 describe('refusals before anything stops', () => {
-  it('offers PostgreSQL, MySQL and MariaDB on the panel host and on nodes, and not other engines, pgvector, preview copies or PITR', async () => {
+  it('offers PostgreSQL, MySQL, MariaDB and MongoDB on the panel host and on nodes, and not other engines, pgvector, preview copies or PITR', async () => {
     const base = await row();
     expect(upgradeRefusal(base)).toBeNull();
     expect(upgradeRefusal({ ...base, serverId: 3 })).toBeNull();
     expect(upgradeRefusal({ ...base, engine: 'mysql' })).toBeNull();
-    expect(upgradeRefusal({ ...base, engine: 'mongo' })?.code).toBe('database_upgrade_engine');
+    expect(upgradeRefusal({ ...base, engine: 'mongo' })).toBeNull();
+    expect(upgradeRefusal({ ...base, engine: 'redis' })?.code).toBe('database_upgrade_engine');
     expect(upgradeRefusal({ ...base, version: 'vector' })?.code).toBe('database_upgrade_pgvector');
     expect(upgradeRefusal({ ...base, previewCopyOf: 2 })?.code).toBe('database_upgrade_preview');
     expect(upgradeRefusal({ ...base, pitrEnabled: true })?.code).toBe('database_upgrade_pitr');

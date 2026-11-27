@@ -318,9 +318,9 @@ A dump restores the database as it was when the dump was taken. Point-in-time re
 
 ## ⬆️ 12. Major version upgrades (PostgreSQL, MySQL, MariaDB; O2)
 
-A PostgreSQL, MySQL or MariaDB database can move to a newer release (for example PostgreSQL 16 → 18, MySQL 8.0 → 9.7, MariaDB 10.11 → 11.8) from **Settings → Major version upgrade**, on the panel host or on a node ([On a node](#on-a-node)). The CLI is `ninedeploy databases upgrade start <dbId> --to 18` (or `--to 8.4`), and the API is `POST /v1/databases/:id/upgrades` with `{ "toVersion": "18" }` (`{ "toMajor": 18 }` still works for PostgreSQL). The options route lists the targets in `versions`.
+A PostgreSQL, MySQL, MariaDB or MongoDB database can move to a newer release (for example PostgreSQL 16 → 18, MySQL 8.0 → 9.7, MariaDB 10.11 → 11.8, MongoDB 6.0 → 8.0) from **Settings → Major version upgrade**, on the panel host or on a node ([On a node](#on-a-node)). The CLI is `ninedeploy databases upgrade start <dbId> --to 18` (or `--to 8.4`), and the API is `POST /v1/databases/:id/upgrades` with `{ "toVersion": "18" }` (`{ "toMajor": 18 }` still works for PostgreSQL). The options route lists the targets in `versions`.
 
-PostgreSQL moves by dump and restore (below). MySQL and MariaDB move by copy: see [MySQL and MariaDB](#mysql-and-mariadb). Starting, rolling back and finalizing need `admin` on the database. Reading the options (`GET /v1/databases/:id/upgrades/options`) and the history needs `viewer`.
+PostgreSQL moves by dump and restore (below). MySQL and MariaDB move by copy: see [MySQL and MariaDB](#mysql-and-mariadb). MongoDB moves by copy too, one release at a time: see [MongoDB](#mongodb). Starting, rolling back and finalizing need `admin` on the database. Reading the options (`GET /v1/databases/:id/upgrades/options`) and the history needs `viewer`.
 
 **What happens, in order.**
 1. **Checks against the running database, before anything stops.** The panel reads the real major from the cluster (`server_version_num`), not from the configured tag. It refuses, naming what to change, when:
@@ -370,17 +370,32 @@ Users, grants and every database in the server come along. Rollback and finalize
 The upgrade of a database that lives on a node is the same upgrade: the same steps, the same comparison, the same switch, rollback and finalize, and the same record on the panel. What differs is who touches Docker. The panel keeps the journal and asks the node's agent for each step (`db.upgrade`): a helper started with no network, a statement, a copy, a slow stop, a removal. Services reach a node database through its own bridge by container name, and the container keeps its name, so nothing has to rejoin.
 
 - **The agent must be able to.** It has to be 0.21.0 or newer, reached over the sealed transport, and its owner must not have switched databases off (`NINEDEPLOY_AGENT_DATABASES=off`). An older agent, an unsealed transport or a node that does not answer is refused before anything stops; the card says which.
-- **No SQL crosses to the node.** The panel asks for a statement by its name (`mysql.serverVersion`, `postgres.fingerprint.rows`, …) from a catalogue both share; the agent builds the text. The same catalogue gives the panel host its text, so both run the same words.
+- **No SQL crosses to the node.** The panel asks for a statement by its name (`mysql.serverVersion`, `postgres.fingerprint.rows`, …) from a catalogue both share; the agent builds the text. The same catalogue gives the panel host its text, so both run the same words. For MongoDB the statement is an expression in mongosh, and the password reaches mongosh on a file descriptor: never in an argument, never in a file.
 - **Everything is bound to the one database.** A volume or a container that does not carry the database's id (`ninedeploy.database.id`) is refused before anything runs, and a helper container (`nd-db-upg-<slug>-old`, `-new`, `-copy`) is removed only when it carries the same id.
 - **The safety dump lands on the panel host.** It travels over the sealed stream channel into the panel's backups directory, as a backup does, so the panel host needs room for it. The node needs room for the copy, where Docker keeps its volumes.
 - **A copy runs for as long as it takes.** It is started detached and watched, so a lost request does not stop it; a slow shutdown is waited for up to an hour, as on the panel host.
 - **When the node goes away.** The upgrade fails and the row is pointed back on the panel; the node is asked to start the database again, and if it does not answer the reason says so and the database can be started from its page once the node is back. That start first removes whatever the upgrade left on the node, so no leftover helper shares the volume with the server.
 - **When the panel restarts and the node does not answer.** The upgrade stays open with a note, which keeps stop, start, restart, limits, delete and the PITR switch answering 409: nothing may run beside a helper the panel could not remove. The node sweep finishes the recovery within a minute of the node answering.
 
+### MongoDB
+
+A MongoDB data directory has a release of its own, the **feature compatibility version**, which can be behind the server's release: a server starts on data of its own release and of the one before, never on data that is older, and no older server starts once the data is told a newer release. So MongoDB moves **one release at a time**, and the upgrade does it on the copy only:
+
+1. **Checks against the running server.** The panel reads the server's release (`db.version()`) and the data's release, and room for the copy where Docker keeps volumes and for the dump in the backups directory.
+2. **The target images are pulled** while the database still runs.
+3. **The database stops.** A container of its own image on its own volume, with no network (the fence), gives the fingerprint (every collection of every database with its exact count and its indexes, and every account) and the safety dump (`mongodump`), then is stopped and must exit cleanly.
+4. **The data directory is copied** into the new volume, read-only from the old one.
+5. **Each release starts on the copy in turn**, and the copy is then told it runs that release (`setFeatureCompatibilityVersion`, with the confirmation the server asks for). 6.0 → 8.0 starts 7.0 on the copy, sets 7.0, stops it cleanly, then starts 8.0 and sets 8.0. When the data was already a release behind the server (a server updated without the data being told), the copy starts on the server's own release first.
+6. **The copy is compared with the original:** every collection's exact count, the number of indexes and views, and every account. Then the switch, the start under the same name, as for the others.
+
+The upgrade record's `verification` says which release the data ran before and runs now (`featureCompatibility`). Users and their roles live in the data directory and come along. Rollback and finalize work as above: the old volume was never written to, so its data still runs the old release for the old server.
+
+**Targets.** 7.0 and 8.0 (the engine default), from 6.0 or later. 5.0 and older: upgrade by hand to 6.0 first.
+
 **Targets.** MySQL 8.4 (LTS) and 9.7 (the engine default), from 8.0 or later. MariaDB 10.11, 11.4, 11.8 and 12.3, from 10.6 or later, directly.
 
 **Limits.**
-- **On the panel host and on nodes.** PostgreSQL goes to 14–18. On a node the agent has to be 0.21.0 or newer and sealed ([On a node](#on-a-node)). pgvector databases and preview copies are refused. MongoDB and the other engines have no major upgrade yet.
+- **On the panel host and on nodes.** PostgreSQL goes to 14–18. On a node the agent has to be 0.21.0 or newer and sealed ([On a node](#on-a-node)). pgvector databases and preview copies are refused. The other engines (the Redis family, ClickHouse, Meilisearch, RabbitMQ) have no major upgrade.
 - **MySQL 5.7 and MariaDB before 10.6** are refused: upgrade them by hand to 8.0 or 10.6 first.
 - **PITR must be off** (its archive and base backups belong to one cluster). Turn it off, upgrade, turn it on again. A rollback is refused while PITR is on.
 - **Deleting the database keeps both volumes**, like any data volume. A new database created later with the same name would pick up the old `nd-db-<slug>-data` volume. If that volume holds another major's data, the create is refused with the major named, instead of starting a server that cannot read it.

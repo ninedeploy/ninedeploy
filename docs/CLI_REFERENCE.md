@@ -392,7 +392,7 @@ Manage the PgBouncer sidecar: enable | disable | status (postgres only)
 ninedeploy databases upgrade [options] [command]
 ```
 
-Move a PostgreSQL, MySQL or MariaDB database to a newer release in a new volume, compare, switch (previous volume kept)
+Move a PostgreSQL, MySQL, MariaDB or MongoDB database to a newer release in a new volume, compare, switch (previous volume kept)
 
 ### `databases pitr`
 

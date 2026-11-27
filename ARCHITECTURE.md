@@ -1261,7 +1261,7 @@ Work that is planned but not implemented, tracked as packages in the
 [November 16 work plan](docs/plans/PROJECT_REVIEW_2026-11-16.md):
 
 - Panel sign-in (forward auth) on nodes — N11; the design record is `docs/plans/node-forward-auth.md` and the implementation is open
-- Database high availability, and major upgrades for MongoDB — N12 (major upgrades on nodes are done: `lib/nodeDatabaseUpgrade.ts` over `agentOps/databaseUpgrade.ts`)
+- Database high availability — N12 (major upgrades on nodes and for MongoDB are done: `lib/nodeDatabaseUpgrade.ts` over `agentOps/databaseUpgrade.ts`, statements by name from `lib/databaseUpgradeSql.ts`)
 - Preview database copies only for PostgreSQL and the Redis family on the
   panel host — N13
 - GitOps covers projects, services, domains and grants and never deletes;

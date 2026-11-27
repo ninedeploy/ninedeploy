@@ -1,12 +1,12 @@
 /**
  * `ninedeploy databases upgrade …` — O2 major-version upgrades (PostgreSQL,
- * MySQL and MariaDB on the panel host).
+ * MySQL and MariaDB on the panel host; N12 adds MongoDB and nodes).
  *
  *   status <dbId>                              current release, targets, and the upgrade history
  *   start <dbId> --to <release> [--yes] [--no-wait]
  *                                              stop, move into a new volume (PostgreSQL: dump and
- *                                              restore; MySQL/MariaDB: copy and upgrade in place),
- *                                              compare, switch
+ *                                              restore; MySQL/MariaDB: copy and upgrade in place;
+ *                                              MongoDB: copy, one release at a time), compare, switch
  *   rollback <dbId> <upgradeId> [--yes]        point the database back at the previous volume
  *   finalize <dbId> <upgradeId> [--yes]        delete the volume the database no longer uses
  */
@@ -16,7 +16,7 @@ import { c, error, header, info, kv, spinner, success, table } from '../lib/form
 
 type Upgrade = Awaited<ReturnType<NineDeployClient['databases']['upgrades']['start']>>;
 
-const LABELS: Record<string, string> = { postgres: 'PostgreSQL', mysql: 'MySQL', mariadb: 'MariaDB' };
+const LABELS: Record<string, string> = { postgres: 'PostgreSQL', mysql: 'MySQL', mariadb: 'MariaDB', mongo: 'MongoDB' };
 const label = (engine: string) => LABELS[engine] ?? engine;
 /** `fromSeries`/`toSeries` arrive from 0.18.28; older panels send only the majors. */
 const fromOf = (u: Upgrade) => u.fromSeries ?? String(u.fromMajor);
@@ -95,7 +95,7 @@ export async function upgradeStart(
   if (id === null) return;
   const to = (opts.to ?? '').trim();
   if (!/^[0-9]{1,2}([.][0-9]{1,2})?$/.test(to)) {
-    error(`--to must be a release, e.g. --to 18 (PostgreSQL), --to 8.4 (MySQL) or --to 11.8 (MariaDB). ${usage}`);
+    error(`--to must be a release, e.g. --to 18 (PostgreSQL), --to 8.4 (MySQL), --to 11.8 (MariaDB) or --to 8.0 (MongoDB). ${usage}`);
     process.exitCode = 1;
     return;
   }

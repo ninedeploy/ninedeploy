@@ -667,7 +667,8 @@ export async function runIsolatedDatabase(
 ): Promise<void> {
   const cfg = ENGINES[d.engine];
   if (!cfg) throw new Error(`Unknown engine: ${d.engine}`);
-  await run('docker', ['rm', '-f', spec.name], {}, swallow).catch(() => undefined);
+  // `-v`: the anonymous volumes the image declares besides the data one (MongoDB's `/data/configdb`) go with the helper.
+  await run('docker', ['rm', '-f', '-v', spec.name], {}, swallow).catch(() => undefined);
   const args = ['run', '-d', '--name', spec.name, '--network', 'none', '--restart', 'no', '--label', `${MANAGED_VOLUME_LABEL}=database-upgrade`, '--label', `ninedeploy.database.slug=${d.slug}`];
   if (d.memLimitMb > 0) args.push('--memory', `${d.memLimitMb}m`, '--memory-swap', `${d.memLimitMb}m`);
   args.push('-v', `${spec.volume}:${spec.mount}`);
@@ -702,7 +703,7 @@ export async function stopContainerClean(name: string, log: (line: string) => vo
   } catch {
     code = null;
   }
-  await run('docker', ['rm', '-f', name], {}, swallow).catch(() => undefined);
+  await run('docker', ['rm', '-f', '-v', name], {}, swallow).catch(() => undefined);
   return code;
 }
 

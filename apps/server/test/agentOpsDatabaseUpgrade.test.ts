@@ -284,6 +284,30 @@ describe('sql: a statement of the catalogue, by name', () => {
     expect(h.streamArgv[0]!.at(-1)).toBe('SELECT 100, COUNT(*) FROM `shop`.`orders` UNION ALL SELECT 101, COUNT(*) FROM `a``b`.`c``d`');
   });
 
+  it('MongoDB: mongosh builds the expression here, the password reaches it on stdin, and the series the data is set to comes as an argument', async () => {
+    helper('old');
+    h.answer = { out: '{"ok":1}\n', stderr: '', code: 0 };
+    const mongo = { ...id, engine: 'mongo' } as const;
+    const params = { database: mongo, action: 'sql', target: { kind: 'helper' as const, helper: 'old' as const }, statement: 'mongo.setFeatureCompatibilityVersion', args: { series: '7.0' }, password: 'p#w"rd' };
+    // The request names the statement and its argument; the expression is the catalogue's, built here.
+    expect(JSON.stringify(params)).not.toMatch(/adminCommand|confirm: true|readFileSync/);
+    expect(await op(params)).toEqual({ code: 0, lines: ['{"ok":1}'], reply: null });
+    const argv = h.streamArgv[0]!;
+    expect(argv.slice(0, 6)).toEqual(['exec', '-i', 'nd-db-upg-main-old', 'sh', '-c', 'exec mongosh --nodb --quiet --eval "$1" 3<&0']);
+    expect(argv.at(-1)).toContain("setFeatureCompatibilityVersion: '7.0', confirm: true");
+    // The password is what mongosh reads on fd 3: it is stdin here, and in no argv element.
+    expect(h.streamStdin).toEqual(['p#w"rd']);
+    expect(argv.some((a) => a.includes('p#w'))).toBe(false);
+  });
+
+  it('a statement runs only on its own family', async () => {
+    helper('old');
+    await expect(op({ database: { ...id, engine: 'mongo' }, action: 'sql', target: { kind: 'helper', helper: 'old' }, statement: 'mysql.ping', password: 'x' })).rejects.toThrow(/does not run on mongo/);
+    await expect(op({ database: id, action: 'sql', target: { kind: 'helper', helper: 'old' }, statement: 'mongo.ping', password: 'x' })).rejects.toThrow(/does not run on mysql/);
+    await expect(op({ database: { ...PG, engine: 'mongo' }, action: 'sql', target: { kind: 'helper', helper: 'old' }, statement: 'postgres.ping', password: 'x' })).rejects.toThrow(/does not run on mongo/);
+    expect(h.streamed).toBe(0);
+  });
+
   it('refuses what is not in the catalogue, another family, and an argument the statement does not take', async () => {
     helper('old');
     const base = { action: 'sql', database: id, target: { kind: 'helper', helper: 'old' }, password: 'x' };

@@ -4,7 +4,9 @@ import { z } from 'zod';
 // Request and response shapes for `/v1/databases/:id/upgrades`. A database, on
 // the panel host or on a node (N12), moves to a newer release in a new volume: PostgreSQL by dump
 // and restore, MySQL and MariaDB by copying the stopped data directory and
-// upgrading the copy in place. The previous volume stays until the upgrade is
+// upgrading the copy in place. MongoDB moves by copy too, one release at a
+// time, telling the data directory which release it runs. The previous volume
+// stays until the upgrade is
 // finalized, so it can be rolled back. Server side:
 // apps/server/src/lib/databaseUpgrade.ts.
 

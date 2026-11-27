@@ -29,6 +29,7 @@ import type { NodeUpgradeAgent } from '../../src/lib/nodeDatabaseUpgrade.js';
 import type { NodeDatabaseDeps } from '../../src/lib/nodeDatabase.js';
 
 const ENABLED = process.env.RUN_INTEGRATION === '1';
+const STARTED_AT = new Date();
 // Generated per run (test-only, never reused) so no credential is hardcoded.
 const PASSWORD = `integ-${process.pid}-${Math.random().toString(36).slice(2)}`;
 const READER_PASSWORD = `reader-${process.pid}-${Math.random().toString(36).slice(2)}`;
@@ -44,7 +45,7 @@ vi.mock('../../src/lib/audit.js', () => ({ audit: vi.fn(async () => undefined) }
 const { runOp } = await import('../../src/agent.js');
 const { dbDumpKind, dbRestoreKind } = await import('../../src/agentOps/databases.js');
 const { capture } = await import('../../src/lib/exec.js');
-const { ENGINES, createBackupReadStream } = await import('../../src/engine/database.js');
+const { ENGINES, createBackupReadStream, resolveVolumePath } = await import('../../src/engine/database.js');
 const { admitUpgrade, clusterFingerprint, databaseUpgradeDeps, finalizeDatabaseUpgrade, planUpgrade, recoverInterruptedUpgrades, rollbackDatabaseUpgrade, runDatabaseUpgrade } = await import('../../src/lib/databaseUpgrade.js');
 const { nodeDatabaseUpgradeDeps } = await import('../../src/lib/nodeDatabaseUpgrade.js');
 const { nodeDatabaseRuntime } = await import('../../src/lib/nodeDatabase.js');
@@ -135,26 +136,39 @@ const psql = (container: string, sql: string): Promise<string> => capture('docke
 /** From the container's own address, so the password is what logs in (the image trusts the socket and 127.0.0.1). */
 const psqlTcp = (container: string, sql: string, password: string): Promise<string> =>
   capture('docker', ['exec', '-e', `PGPASSWORD=${password}`, container, 'sh', '-c', 'psql -h "$(hostname -i | cut -d" " -f1)" -U nine -d app -At -c "$1"', 'sh', sql]);
+/** An expression in mongosh as a user with a password: the catalogue's own way of running a MongoDB statement (the password on fd 3). */
+const mongoEval = (container: string, expression: string, user = 'nine', password = PASSWORD): Promise<string> =>
+  capture(
+    'docker',
+    ['exec', '-i', container, 'sh', '-c', 'exec mongosh --nodb --quiet --eval "$1" 3<&0', 'sh', `const pw = require('fs').readFileSync('/dev/fd/3', 'utf8').trim(); const c = connect('mongodb://127.0.0.1:27017/admin'); c.auth('${user}', pw); db = c; print(${expression})`],
+    {},
+    Buffer.from(password),
+  );
+const MONGO_FCV = 'db.adminCommand({ getParameter: 1, featureCompatibilityVersion: 1 }).featureCompatibilityVersion.version';
 
 // `GROUP_CONCAT` is cut at 1024 characters by default: the fingerprint must cover every row.
 const MYSQL_FINGERPRINT = "SET SESSION group_concat_max_len = 1000000; SELECT COUNT(*), COALESCE(SUM(qty), 0), MD5(GROUP_CONCAT(CONCAT(id, ':', item, ':', qty) ORDER BY id SEPARATOR ';')) FROM app.orders";
 const PG_FINGERPRINT = "SELECT count(*), coalesce(sum(qty), 0), md5(string_agg(id || ':' || item || ':' || qty, ',' ORDER BY id)) FROM orders";
 
 interface Scenario {
-  engine: 'mysql' | 'postgres';
+  engine: 'mysql' | 'postgres' | 'mongo';
   slug: string;
   from: string;
   to: string;
+  /** The releases the copy is started on in turn. */
+  steps: string[];
+  /** What `fingerprint` answers on the seeded database. */
+  seeded: RegExp;
   seed: (container: string) => Promise<string>;
   fingerprint: (container: string) => Promise<string>;
   credentials: (container: string) => Promise<void>;
-  /** What the server reports after the upgrade (`SELECT VERSION()` / `server_version`). */
+  /** What the server reports after the upgrade (`SELECT VERSION()` / `server_version` / `db.version()`). */
   version: (container: string) => Promise<string>;
 }
 
 /** One MySQL scenario per slug: a volume carries its row's id, which is what the agent binds an upgrade to. */
 const mysqlScenario = (slug: string): Scenario => ({
-  engine: 'mysql', slug, from: '8.0', to: '8.4',
+  engine: 'mysql', slug, from: '8.0', to: '8.4', steps: ['8.4'], seeded: /^500\t375750\t[0-9a-f]{32}$/,
   seed: async (container) => {
     await mysql(container, 'CREATE TABLE app.orders (id INT AUTO_INCREMENT PRIMARY KEY, item VARCHAR(50) NOT NULL, qty INT NOT NULL) ENGINE=InnoDB');
     await mysql(container, "INSERT INTO app.orders (item, qty) WITH RECURSIVE n AS (SELECT 1 AS x UNION ALL SELECT x + 1 FROM n WHERE x < 500) SELECT CONCAT('item', x), x * 3 FROM n");
@@ -172,7 +186,7 @@ const mysqlScenario = (slug: string): Scenario => ({
 });
 
 const pgScenario: Scenario = {
-  engine: 'postgres', slug: 'it-pg', from: '16', to: '17',
+  engine: 'postgres', slug: 'it-pg', from: '16', to: '17', steps: ['17'], seeded: /^500\t375750\t[0-9a-f]{32}$/,
   seed: async (container) => {
     await psql(container, 'CREATE TABLE orders (id serial PRIMARY KEY, item text NOT NULL, qty int NOT NULL)');
     await psql(container, "INSERT INTO orders (item, qty) SELECT 'item' || g, g * 3 FROM generate_series(1, 500) g");
@@ -186,11 +200,35 @@ const pgScenario: Scenario = {
   version: (container) => psql(container, 'SHOW server_version'),
 };
 
-const scenarios: Scenario[] = [mysqlScenario('it-mysql'), pgScenario];
+/** 6.0 → 8.0 in two steps: a binary never skips a release, and the data is told each release in turn. */
+const mongoScenario: Scenario = {
+  engine: 'mongo', slug: 'it-mongo', from: '6.0', to: '8.0', steps: ['7.0', '8.0'], seeded: /^\[500,374250,2\]$/,
+  seed: async (container) => {
+    await mongoEval(container, "(() => { const d = db.getSiblingDB('app'); d.orders.insertMany(Array.from({ length: 500 }, (_, i) => ({ item: 'item' + i, qty: i * 3 }))); d.orders.createIndex({ item: 1 }); return d.orders.countDocuments({}); })()");
+    // An account besides the managed user: it must survive both releases with its password and its role.
+    await mongoEval(container, `JSON.stringify(db.getSiblingDB('admin').createUser({ user: 'reader', pwd: '${READER_PASSWORD}', roles: [{ role: 'read', db: 'app' }] }))`);
+    return mongoFingerprint(container);
+  },
+  fingerprint: mongoFingerprint,
+  credentials: async (container) => {
+    expect((await mongoEval(container, "db.getSiblingDB('app').orders.countDocuments({})", 'reader', READER_PASSWORD)).trim()).toBe('500');
+    await expect(mongoEval(container, "db.getSiblingDB('app').orders.countDocuments({})", 'reader', 'not-the-password')).rejects.toThrow();
+    await expect(mongoEval(container, 'db.adminCommand({ ping: 1 }).ok', 'nine', 'not-the-password')).rejects.toThrow();
+  },
+  version: (container) => mongoEval(container, 'db.version()'),
+};
+
+function mongoFingerprint(container: string): Promise<string> {
+  // 500 documents numbered from 0: 3 × (499 × 500 / 2) = 374 250; two indexes on the collection.
+  return mongoEval(container, "JSON.stringify([db.getSiblingDB('app').orders.countDocuments({}), db.getSiblingDB('app').orders.aggregate([{ $group: { _id: null, s: { $sum: '$qty' } } }]).toArray()[0].s, db.getSiblingDB('app').orders.getIndexes().length])");
+}
+
+const scenarios: Scenario[] = [mysqlScenario('it-mysql'), pgScenario, mongoScenario];
 
 async function cleanup(slug: string) {
   for (const name of [`nd-db-${slug}`, `nd-db-upg-${slug}-old`, `nd-db-upg-${slug}-new`, `nd-db-upg-${slug}-copy`]) {
-    await capture('docker', ['rm', '-f', name]).catch(() => undefined);
+    // `-v` as the product does it: MongoDB's image declares an anonymous volume besides the data one.
+    await capture('docker', ['rm', '-f', '-v', name]).catch(() => undefined);
   }
   await capture('docker', ['network', 'rm', `nd-dbnet-${slug}`]).catch(() => undefined);
   const volumes = (await capture('docker', ['volume', 'ls', '--format', '{{.Name}}']).catch(() => '')).split('\n').map((l) => l.trim()).filter((l) => l === `nd-db-${slug}-data` || l.startsWith(`nd-db-${slug}-data-u`));
@@ -204,11 +242,26 @@ describe.skipIf(!ENABLED)('major upgrade of a node database (real Docker, the ag
     await db.insert(users).values({ id: 1, email: 'owner@example.com', passwordHash: 'x' });
     await db.insert(servers).values({ id: 3, name: 'edge-1', host: '10.0.0.5', port: 4600, tokenEncrypted: encryptSecret('t'), status: 'online' } as never);
     // Pulled once, before the clock of a test runs.
-    for (const image of ['mysql:8.0', 'mysql:8.4', 'postgres:16', 'postgres:17']) await capture('docker', ['pull', image]);
+    for (const image of ['mysql:8.0', 'mysql:8.4', 'postgres:16', 'postgres:17', 'mongo:6.0', 'mongo:7.0', 'mongo:8.0']) await capture('docker', ['pull', image]);
   }, 900_000);
 
   afterAll(async () => {
     for (const slug of slugs) await cleanup(slug);
+    // A MongoDB container has an anonymous volume besides its data one. The ones this run
+    // left behind (the product's ordinary container removal does not take them along) go too.
+    // Twice, with a pause: Docker releases a removed container's volumes a moment after `rm`.
+    for (const pause of [0, 3_000]) {
+      await new Promise((resolve) => setTimeout(resolve, pause));
+      const anonymous = (await capture('docker', ['volume', 'ls', '-f', 'dangling=true', '-q']).catch(() => ''))
+        .split('\n')
+        .map((name) => name.trim())
+        .filter((name) => /^[0-9a-f]{64}$/.test(name));
+      for (const name of anonymous) {
+        // `capture` keeps the trailing newline, and a date that ends in one does not parse.
+        const createdAt = (await capture('docker', ['volume', 'inspect', '--format', '{{.CreatedAt}}', name]).catch(() => '')).trim();
+        if (createdAt && new Date(createdAt).getTime() >= STARTED_AT.getTime() - 60_000) await capture('docker', ['volume', 'rm', '-f', name]).catch(() => undefined);
+      }
+    }
     try {
       rmSync(tmp, { recursive: true, force: true, maxRetries: 3 });
     } catch {
@@ -225,8 +278,7 @@ describe.skipIf(!ENABLED)('major upgrade of a node database (real Docker, the ag
     const container = `nd-db-${scenario.slug}`;
     await until(`${scenario.engine} accepts connections`, () => scenario.version(container).then((v) => v.trim().startsWith(scenario.from)), 180_000);
     const before = (await scenario.seed(container)).trim();
-    // 500 rows whose `qty` is three times their number: 3 × (500 × 501 / 2) = 375 750.
-    expect(before).toMatch(/^500\t375750\t[0-9a-f]{32}$/);
+    expect(before).toMatch(scenario.seeded);
     return { row: (await rowOf(row.id))!, before };
   }
 
@@ -243,7 +295,7 @@ describe.skipIf(!ENABLED)('major upgrade of a node database (real Docker, the ag
       }
       const deps = depsFor(row);
       const plan = await planUpgrade(db, row, scenario.to, deps);
-      expect(plan).toMatchObject({ fromSeries: scenario.from, toSeries: scenario.to, steps: [scenario.to] });
+      expect(plan).toMatchObject({ fromSeries: scenario.from, toSeries: scenario.to, steps: scenario.steps });
       const admitted = await admitUpgrade(db, row, plan, 1);
       await runDatabaseUpgrade(db, admitted.id, { actorId: 1, fromImageTag: admitted.fromImageTag }, deps);
       const up = (await db.query.databaseUpgrades.findFirst({ where: eq(databaseUpgrades.id, admitted.id) })!)!;
@@ -254,7 +306,11 @@ describe.skipIf(!ENABLED)('major upgrade of a node database (real Docker, the ag
       // The row, switched in its own column; the container keeps its name; it runs the new image on the new volume.
       const target = `nd-db-${scenario.slug}-data-u${admitted.id}`;
       expect(await rowOf(row.id)).toMatchObject({ status: 'running', version: scenario.to, nodeVolumeName: target, containerName: null, volumeName: null });
-      expect((await capture('docker', ['inspect', container, '--format', '{{.Config.Image}}|{{range .Mounts}}{{.Name}}{{end}}'])).trim()).toBe(`${ENGINES[scenario.engine]!.image(scenario.to)}|${target}`);
+      // (MongoDB's image declares a second, anonymous volume for /data/configdb: what matters is the data path.)
+      const dataPath = resolveVolumePath(ENGINES[scenario.engine]!, scenario.to);
+      const mounts = (await capture('docker', ['inspect', container, '--format', '{{range .Mounts}}{{.Destination}}={{.Name}};{{end}}'])).trim().split(';');
+      expect(mounts.find((m) => m.startsWith(`${dataPath}=`))).toBe(`${dataPath}=${target}`);
+      expect((await capture('docker', ['inspect', container, '--format', '{{.Config.Image}}'])).trim()).toBe(ENGINES[scenario.engine]!.image(scenario.to));
       expect((await scenario.version(container)).trim()).toMatch(new RegExp(`^${scenario.to}\\.`));
 
       // Identical data on the clean target; the stored credentials work, a wrong password does not.
@@ -267,7 +323,14 @@ describe.skipIf(!ENABLED)('major upgrade of a node database (real Docker, the ag
       const safety = (await db.query.backups.findFirst({ where: eq(backups.id, up.safetyBackupId!) }))!;
       expect(safety).toMatchObject({ label: 'pre-upgrade', status: 'completed' });
       const dump = (await (await createBackupReadStream(safety.path!)).toArray()).toString('utf8');
-      expect(dump).toContain('orders');
+      // A SQL dump says so in the clear; a MongoDB archive is gzip inside.
+      if (scenario.engine === 'mongo') expect(dump.length).toBeGreaterThan(1000);
+      else expect(dump).toContain('orders');
+      if (scenario.engine === 'mongo') {
+        // The data was told each release in turn, on the copy: it runs the target's now, and the record says where it came from.
+        expect((await mongoEval(container, MONGO_FCV)).trim()).toBe(scenario.to);
+        expect(JSON.parse(up.verification!)).toMatchObject({ featureCompatibility: { before: scenario.from, after: scenario.to } });
+      }
 
       // Rollback: the untouched old volume, the old series, the same data.
       await rollbackDatabaseUpgrade(db, up, 1, deps);

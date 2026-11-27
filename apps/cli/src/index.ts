@@ -366,7 +366,7 @@ databases
 // ── Major-version upgrades (O2) ──────────────────────────────────────────
 const upgradeCmd = databases
   .command('upgrade')
-  .description('Move a PostgreSQL, MySQL or MariaDB database to a newer release in a new volume, compare, switch (previous volume kept)');
+  .description('Move a PostgreSQL, MySQL, MariaDB or MongoDB database to a newer release in a new volume, compare, switch (previous volume kept)');
 upgradeCmd.command('status <dbId>').description('The running release, the releases it can move to, and the upgrade history')
   .action((dbId: string) => upgradeStatus(getClient(), dbId));
 upgradeCmd.command('start <dbId>').description('Upgrade to a newer release; the database stops until it is done (database admin)')

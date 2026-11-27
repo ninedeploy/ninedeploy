@@ -6,7 +6,7 @@ import { decrypt } from './crypto.js';
 import { ENGINES, withDatabaseOperationLock } from '../engine/database.js';
 import type { DatabaseUpgradeDeps } from './databaseUpgrade.js';
 import { NODE_UPGRADE_CAPABILITY, NODE_UPGRADE_FEATURE, NODE_UPGRADE_REPLY, helperName, helperOf, hostView, type UpgradeHelper } from './databaseUpgradeNames.js';
-import { upgradeStatement, type UpgradeStatement } from './databaseUpgradeSql.js';
+import { pingStatement, type UpgradeStatement } from './databaseUpgradeSql.js';
 import { nodeContainerState, nodeDatabaseRuntime, nodeDatabaseVolumeLabels, type NodeDatabaseAgent, type NodeDatabaseDeps } from './nodeDatabase.js';
 
 /**
@@ -159,7 +159,7 @@ export function nodeDatabaseUpgradeDeps(db: DB, row: Database, opts: NodeDatabas
     // answers only afterwards, so the bound is long; a container that exited
     // (a failed upgrade) ends the wait.
     const boundSec = x.engine === 'postgres' ? 180 : 1800;
-    const ping = upgradeStatement(x.engine === 'postgres' ? 'postgres.ping' : 'mysql.ping');
+    const ping = pingStatement(x.engine);
     const deadline = Date.now() + boundSec * 1000;
     let last = '';
     while (Date.now() < deadline) {
