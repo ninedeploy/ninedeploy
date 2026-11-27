@@ -410,15 +410,27 @@ jobs:
     needs: publish-image
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    # Each cohort owns isolated Docker fixtures; promotion needs all cohorts.
-    # Every cohort starts at once. With three at a time the 26-minute
-    # node-sleep-wake cohort waited 27 minutes for a runner on November 18 and
-    # 25, 2026, and the cohorts took 54 minutes instead of the longest one's.
+    # Each cohort owns isolated Docker fixtures; promotion needs all cohorts,
+    # and every cohort starts at once, on a runner of its own. A cohort holds
+    # one theme, so its name says what failed, and a rerun repeats as little
+    # as possible. The themes are dealt so that no cohort is long. Smoke time
+    # a cohort held in 0.20.0 (November 25, 2026), in seconds:
+    #   node-autoscaling 814   swarm-artifacts 809   user-journey 751
+    #   public-lifecycle 727   node-canary 676      panel-lifecycle 683
+    #   node-sleep 609         replica-databases 511  agent-runtime 500
+    #   node-wake 473          sleep-restoration 430
+    #   upgrade 168            node-infrastructure 146
+    # Three at a time, the cohorts took 54 minutes on November 18 and 25;
+    # nine at once, the longest alone would have taken 26, since four cohorts
+    # held two or three themes each (node-sleep-wake 25.9 minutes,
+    # public-canary 25.5). The longest is now 13.6. A smoke that outgrows its
+    # cohort's room gets a cohort of its own: releaseSmokeMatrix.test.ts holds
+    # each smoke's measured time and the bound.
     strategy:
       fail-fast: false
-      max-parallel: 9
+      max-parallel: 13
       matrix:
-        suite: [upgrade-journey, agent-runtime, panel-lifecycle, public-canary, public-lifecycle, replica-databases, node-infrastructure, swarm-artifacts, node-sleep-wake]
+        suite: [upgrade, user-journey, agent-runtime, panel-lifecycle, node-canary, node-autoscaling, public-lifecycle, replica-databases, node-infrastructure, swarm-artifacts, node-sleep, node-wake, sleep-restoration]
     permissions:
       # releases API read (previous release) + pulling the GHCR images.
       contents: read
@@ -464,7 +476,7 @@ jobs:
       # exactly that), and no server was ever offered such a tag. Strictly
       # below: a re-run of an older tag must not "upgrade" downwards.
       - name: Find the previous published release
-        if: matrix.suite == 'upgrade-journey'
+        if: matrix.suite == 'upgrade'
         id: previous
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -489,14 +501,14 @@ jobs:
       # The slow-deploy seed pulls python:3.12 inside DinD; the script only
       # waits for it to reach `building`, but the whole run is bounded here.
       - name: Upgrade smoke (previous release → this tag, same data volume)
-        if: matrix.suite == 'upgrade-journey' && steps.previous.outputs.from != ''
+        if: matrix.suite == 'upgrade' && steps.previous.outputs.from != ''
         timeout-minutes: 30
         env:
           FROM_TAG: ${{ steps.previous.outputs.from }}
         run: node scripts/smoke-upgrade.mjs --from="$FROM_TAG" --to="$RELEASE_TAG"
 
       - name: User-journey smoke on the pushed image
-        if: matrix.suite == 'upgrade-journey'
+        if: matrix.suite == 'user-journey'
         timeout-minutes: 20
         run: node scripts/smoke-user-journey.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}"
 
@@ -604,17 +616,17 @@ jobs:
         run: node scripts/smoke-node-lifecycle-fanout.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}"
 
       - name: Public node canary lifecycle smoke on the pushed image
-        if: matrix.suite == 'public-canary'
+        if: matrix.suite == 'node-canary'
         timeout-minutes: 20
         run: node scripts/smoke-node-canary.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}" --proof=.temp_files/release-node-smoke
 
       - name: Public node autoscaling and continuous routing on the pushed image
-        if: matrix.suite == 'public-canary'
+        if: matrix.suite == 'node-autoscaling'
         timeout-minutes: 20
         run: node scripts/smoke-node-canary.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}" --autoscale-only --proof=.temp_files/release-node-autoscale
 
       - name: Public node request-rate autoscaling with a source-loss control on the pushed image
-        if: matrix.suite == 'public-canary'
+        if: matrix.suite == 'node-autoscaling'
         timeout-minutes: 25
         run: node scripts/smoke-node-canary.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}" --autoscale-rps-only --proof=.temp_files/release-node-autoscale-rps
 
@@ -707,7 +719,7 @@ jobs:
           if-no-files-found: warn
 
       - name: Verify public manual node wake without touching panel decoys
-        if: matrix.suite == 'node-sleep-wake'
+        if: matrix.suite == 'node-wake'
         timeout-minutes: 15
         env:
           DOCKER_HOST: unix:///var/run/docker.sock
@@ -715,7 +727,7 @@ jobs:
         run: node scripts/smoke-node-canary.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}" --manual-wake-only --proof=.temp_files/release-manual-node-wake
 
       - name: Verify lost pre-Stop routing acknowledgement restores the application
-        if: matrix.suite == 'node-sleep-wake'
+        if: matrix.suite == 'sleep-restoration'
         timeout-minutes: 12
         env:
           DOCKER_HOST: unix:///var/run/docker.sock
@@ -723,18 +735,18 @@ jobs:
         run: node scripts/smoke-node-canary.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}" --sleep-restoration-only --proof=.temp_files/release-sleep-restoration
 
       - name: Verify public automatic node sleep and readiness-held restart recovery
-        if: matrix.suite == 'node-sleep-wake'
+        if: matrix.suite == 'node-sleep'
         timeout-minutes: 20
         env:
           DOCKER_HOST: unix:///var/run/docker.sock
           DOCKER_CONTEXT: default
         run: node scripts/smoke-node-canary.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}" --automatic-sleep-only --proof=.temp_files/release-automatic-node-sleep
 
-      - name: Preserve public node sleep and wake receipts
-        if: always() && matrix.suite == 'node-sleep-wake'
+      - name: Preserve public manual node wake receipts
+        if: always() && matrix.suite == 'node-wake'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: release-node-sleep-wake
+          name: release-node-sleep-wake-manual-wake
           path: |
             .temp_files/release-manual-node-wake/runtime-result.json
             .temp_files/release-manual-node-wake/runtime-cleanup.json
@@ -743,12 +755,28 @@ jobs:
             .temp_files/release-manual-node-wake/manual-wake-outcome.json
             .temp_files/release-manual-node-wake/cases.json
             .temp_files/release-manual-node-wake/failure-state.json
+          include-hidden-files: true
+          if-no-files-found: warn
+      - name: Preserve lost-routing restoration receipts
+        if: always() && matrix.suite == 'sleep-restoration'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-node-sleep-wake-sleep-restoration
+          path: |
             .temp_files/release-sleep-restoration/runtime-result.json
             .temp_files/release-sleep-restoration/runtime-cleanup.json
             .temp_files/release-sleep-restoration/sleep-restoration-receipt.json
             .temp_files/release-sleep-restoration/sleep-restoration-traffic.json
             .temp_files/release-sleep-restoration/cases.json
             .temp_files/release-sleep-restoration/failure-state.json
+          include-hidden-files: true
+          if-no-files-found: warn
+      - name: Preserve public automatic node sleep receipts
+        if: always() && matrix.suite == 'node-sleep'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-node-sleep-wake-automatic-sleep
+          path: |
             .temp_files/release-automatic-node-sleep/runtime-result.json
             .temp_files/release-automatic-node-sleep/runtime-cleanup.json
             .temp_files/release-automatic-node-sleep/automatic-sleep-idle.json
@@ -766,7 +794,7 @@ jobs:
       # Only synthetic fixture summaries and container names: raw logs may
       # contain sensitive configuration and are deliberately not uploaded.
       - name: Preserve failed node smoke diagnostics
-        if: failure() && (matrix.suite == 'public-canary' || matrix.suite == 'public-lifecycle' || matrix.suite == 'replica-databases')
+        if: failure() && (matrix.suite == 'node-canary' || matrix.suite == 'node-autoscaling' || matrix.suite == 'public-lifecycle' || matrix.suite == 'replica-databases')
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: node-smoke-failure-${{ matrix.suite }}
@@ -790,7 +818,7 @@ jobs:
           retention-days: 7
 
       - name: Recorded Compose release restore smoke on the pushed image
-        if: matrix.suite == 'upgrade-journey'
+        if: matrix.suite == 'user-journey'
         timeout-minutes: 10
         run: node scripts/smoke-user-journey.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}" --compose-release-only
 

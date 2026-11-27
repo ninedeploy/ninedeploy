@@ -551,13 +551,13 @@ describe('r581: publication is gated on the end-to-end smokes', () => {
     expect(upgrade).toBeGreaterThan(Math.max(install, previous));
     expect(steps[upgrade]!.run).toBe('node scripts/smoke-upgrade.mjs --from="$FROM_TAG" --to="$RELEASE_TAG"');
     expect(steps[upgrade]!.env?.['FROM_TAG']).toBe('${{ steps.previous.outputs.from }}');
-    expect(steps[upgrade]!.if).toBe("matrix.suite == 'upgrade-journey' && steps.previous.outputs.from != ''");
+    expect(steps[upgrade]!.if).toBe("matrix.suite == 'upgrade' && steps.previous.outputs.from != ''");
     expect(steps[upgrade]!['timeout-minutes']).toBeGreaterThan(0);
 
     const journey = steps.findIndex((s) => s.run?.includes('scripts/smoke-user-journey.mjs'));
     expect(journey).toBeGreaterThan(install);
     expect(steps[journey]!.run).toBe('node scripts/smoke-user-journey.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}"');
-    expect(steps[journey]!.if).toBe("matrix.suite == 'upgrade-journey'");
+    expect(steps[journey]!.if).toBe("matrix.suite == 'user-journey'");
     expect(steps[journey]!['timeout-minutes']).toBeGreaterThan(0);
     const nodeOps = steps.findIndex((s) => s.run?.includes('scripts/smoke-multinode.mjs'));
     expect(nodeOps).toBeGreaterThan(journey);
@@ -568,7 +568,7 @@ describe('r581: publication is gated on the end-to-end smokes', () => {
     const nodeCanary = steps.findIndex((s) => s.run?.includes('scripts/smoke-node-canary.mjs'));
     expect(nodeCanary).toBeGreaterThan(nodeOps);
     expect(steps[nodeCanary]!.run).toBe('node scripts/smoke-node-canary.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}" --proof=.temp_files/release-node-smoke');
-    expect(steps[nodeCanary]!.if).toBe("matrix.suite == 'public-canary'");
+    expect(steps[nodeCanary]!.if).toBe("matrix.suite == 'node-canary'");
     expect(steps[nodeCanary]!['timeout-minutes']).toBeGreaterThan(0);
     expect((steps[nodeCanary] as Record<string, unknown>)['continue-on-error']).not.toBe(true);
     const initialStop = steps.findIndex((s) => s.run?.includes('--initial-stop-only'));
@@ -583,7 +583,7 @@ describe('r581: publication is gated on the end-to-end smokes', () => {
     expect((steps[mixedAgent] as Record<string, unknown>)['continue-on-error']).not.toBe(true);
     expect(composeRestore).toBeGreaterThan(nodeOps);
     expect(steps[composeRestore]!.run).toBe('node scripts/smoke-user-journey.mjs --image="ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}" --compose-release-only');
-    expect(steps[composeRestore]!.if).toBe("matrix.suite == 'upgrade-journey'");
+    expect(steps[composeRestore]!.if).toBe("matrix.suite == 'user-journey'");
     expect(steps[composeRestore]!['timeout-minutes']).toBeGreaterThan(0);
   });
 

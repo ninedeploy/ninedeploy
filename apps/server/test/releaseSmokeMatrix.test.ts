@@ -6,7 +6,7 @@ type Job = { needs?: string | string[]; if?: string; 'continue-on-error'?: boole
   strategy?: { 'fail-fast'?: boolean; 'max-parallel'?: number; matrix?: { suite?: string[]; group?: string[] } }; steps?: Step[] };
 const jobs = () => (load(readFileSync(new URL('../../../.github/workflows/release-publish.yml', import.meta.url), 'utf8')) as { jobs: Record<string, Job> }).jobs;
 const imageJob = () => (load(readFileSync(new URL('../../../.github/workflows/ci.yml', import.meta.url), 'utf8')) as { jobs: Record<string, Job> }).jobs['docker-image'];
-const suites = ['upgrade-journey', 'agent-runtime', 'panel-lifecycle', 'public-canary', 'public-lifecycle', 'replica-databases', 'node-infrastructure', 'swarm-artifacts', 'node-sleep-wake'];
+const suites = ['upgrade', 'user-journey', 'agent-runtime', 'panel-lifecycle', 'node-canary', 'node-autoscaling', 'public-lifecycle', 'replica-databases', 'node-infrastructure', 'swarm-artifacts', 'node-sleep', 'node-wake', 'sleep-restoration'];
 // biome-ignore lint/suspicious/noTemplateCurlyInString: Literal GitHub shell variable in the actual smoke commands.
 const image = 'ghcr.io/ninedeploy/ninedeploy:${RELEASE_TAG}';
 const command = (name: string, flags = '') => `node scripts/${name}.mjs --image="${image}"${flags}`;
@@ -36,6 +36,37 @@ const expected = [
   command('smoke-node-canary', ' --sleep-restoration-only --proof=.temp_files/release-sleep-restoration'),
   command('smoke-node-canary', ' --automatic-sleep-only --proof=.temp_files/release-automatic-node-sleep'),
 ];
+// What each smoke took in the 0.20.0 release run (November 25, 2026), in seconds. A new smoke
+// is measured on its first release run and entered here, so the bound below stays honest.
+const measured: Array<[string, number]> = [
+  ['node scripts/smoke-upgrade.mjs --from="$FROM_TAG" --to="$RELEASE_TAG"', 166],
+  [command('smoke-user-journey'), 683], [command('smoke-user-journey', ' --compose-release-only'), 68],
+  [command('smoke-multinode', ' --node-operations-only --no-swarm'), 122], [command('smoke-container-readiness'), 53], [command('smoke-local-docker-readiness'), 27],
+  [command('smoke-primary-network-readiness', ' --proof=.temp_files/release-primary-network-readiness'), 31],
+  [command('smoke-serving-traffic', ' --proof=.temp_files/release-serving-traffic'), 129],
+  [command('smoke-wake-catcher', ' --proof=.temp_files/release-wake-catcher'), 2],
+  [command('smoke-wake-recovery', ' --proof=.temp_files/release-wake-recovery'), 26],
+  [command('smoke-container-metrics'), 22], [command('smoke-container-lifecycle'), 45], [command('smoke-container-generation-stop'), 17],
+  [command('smoke-agent-creation-drain'), 26], [command('smoke-node-lifecycle-controller'), 212],
+  [command('smoke-node-lifecycle-fanout'), 236], [command('smoke-node-canary', ' --proof=.temp_files/release-node-smoke'), 676],
+  [command('smoke-node-canary', ' --autoscale-only --proof=.temp_files/release-node-autoscale'), 327],
+  [command('smoke-node-canary', ' --autoscale-rps-only --proof=.temp_files/release-node-autoscale-rps'), 487],
+  [command('smoke-node-canary', ' --autoscale-database-only --proof=.temp_files/release-node-autoscale-database'), 363],
+  [command('smoke-node-canary', ' --health-modes-only --proof=.temp_files/release-panel-health-modes'), 235],
+  [command('smoke-node-canary', ' --lifecycle-only --proof=.temp_files/release-node-smoke'), 357],
+  [command('smoke-node-canary', ' --initial-stop-only --proof=.temp_files/release-node-initial-stop'), 116],
+  [command('smoke-node-canary', ' --mixed-agent-only --proof=.temp_files/release-node-mixed-agent'), 120],
+  [command('smoke-node-limits', ' --proof=.temp_files/release-node-limits'), 134],
+  [command('smoke-node-canary', ' --replica-databases-only --proof=.temp_files/release-node-smoke'), 148],
+  [command('smoke-multinode', ' --new-node-features --no-swarm'), 146], [command('smoke-multinode', ' --swarm-only'), 463],
+  [command('smoke-node-canary', ' --swarm-runtime-only --proof=.temp_files/release-swarm-runtime'), 346],
+  [command('smoke-node-canary', ' --manual-wake-only --proof=.temp_files/release-manual-node-wake'), 473],
+  [command('smoke-node-canary', ' --sleep-restoration-only --proof=.temp_files/release-sleep-restoration'), 430],
+  [command('smoke-node-canary', ' --automatic-sleep-only --proof=.temp_files/release-automatic-node-sleep'), 609],
+];
+// The cohorts' themes: until November 27, 2026 four cohorts held two or three themes each, and
+// the longest took 25.9 minutes where the longest single theme takes 13.6.
+const LONGEST_COHORT_SECONDS = 14 * 60;
 describe('complete parallel release smoke gate', () => {
   it('requires staged catcher traffic acceptance and uploads only its public evidence in CI and release runs', () => {
     const ci = (load(readFileSync(new URL('../../../.github/workflows/ci.yml', import.meta.url), 'utf8')) as { jobs: Record<string, Job> }).jobs;
@@ -128,23 +159,59 @@ describe('complete parallel release smoke gate', () => {
       'cases.json', 'failure-state.json',
     ].map(file => `.temp_files/release-swarm-runtime/${file}`));
   });
-  it('requires public manual/automatic node wake and lost-routing restoration on the pushed image', () => {
+  it('requires public manual/automatic node wake and lost-routing restoration on the pushed image, each in a cohort of its own', () => {
     const steps = jobs()['smoke-published-image'].steps!;
-    for (const mode of ['--manual-wake-only', '--sleep-restoration-only', '--automatic-sleep-only']) {
+    const uploads = [
+      ['--manual-wake-only', 'node-wake', 'Preserve public manual node wake receipts', 'release-node-sleep-wake-manual-wake', 'manual-node-wake'],
+      ['--sleep-restoration-only', 'sleep-restoration', 'Preserve lost-routing restoration receipts', 'release-node-sleep-wake-sleep-restoration', 'sleep-restoration'],
+      ['--automatic-sleep-only', 'node-sleep', 'Preserve public automatic node sleep receipts', 'release-node-sleep-wake-automatic-sleep', 'automatic-node-sleep'],
+    ] as const;
+    const kept = new Set<string>();
+    for (const [mode, suite, uploadName, artifact, proof] of uploads) {
       const smoke = steps.find(step => step.run?.includes(mode));
-      expect(smoke?.if).toBe("matrix.suite == 'node-sleep-wake'");
+      expect(smoke?.if).toBe(`matrix.suite == '${suite}'`);
       expect(smoke?.['continue-on-error']).not.toBe(true);
       expect(smoke?.['timeout-minutes']).toBeGreaterThanOrEqual(12);
+      // The smoke's receipts leave with it, also when it fails.
+      const upload = steps.find(step => step.name === uploadName);
+      expect(upload?.if).toBe(`always() && matrix.suite == '${suite}'`);
+      const inputs = upload?.with as { name?: string; path?: string } | undefined;
+      expect(inputs?.name).toBe(artifact);
+      const paths = inputs?.path?.trim().split('\n').map(path => path.trim()) ?? [];
+      for (const path of paths) {
+        expect(path).toMatch(new RegExp(`^\\.temp_files/release-${proof}/[a-z-]+\\.json$`));
+        kept.add(path);
+      }
+      expect(paths).toContain(`.temp_files/release-${proof}/runtime-result.json`);
+      expect(paths).toContain(`.temp_files/release-${proof}/runtime-cleanup.json`);
     }
-    const upload = steps.find(step => step.name === 'Preserve public node sleep and wake receipts');
-    expect(upload?.if).toBe("always() && matrix.suite == 'node-sleep-wake'");
-    const paths = upload?.with?.path?.trim().split('\n').map(path => path.trim()) ?? [];
-    expect(paths.length).toBeGreaterThanOrEqual(20);
-    for (const path of paths) expect(path).toMatch(/^\.temp_files\/release-(?:manual-node-wake|sleep-restoration|automatic-node-sleep)\/[a-z-]+\.json$/);
-    for (const name of ['manual-node-wake', 'sleep-restoration', 'automatic-node-sleep']) {
-      expect(paths).toContain(`.temp_files/release-${name}/runtime-result.json`);
-      expect(paths).toContain(`.temp_files/release-${name}/runtime-cleanup.json`);
+    expect(kept.size).toBeGreaterThanOrEqual(20);
+  });
+  it('keeps every cohort short: each smoke has its measured time, and no cohort holds more than 14 minutes of it', () => {
+    const smoke = jobs()['smoke-published-image'];
+    const seconds = new Map(measured);
+    expect(new Set(measured.map(([run]) => run)).size).toBe(measured.length);
+    expect([...seconds.keys()].sort()).toEqual(expected.slice().sort());
+    const perSuite = new Map<string, number>();
+    for (const step of smoke.steps!.filter(step => step.run?.startsWith('node scripts/smoke-'))) {
+      // A new smoke is measured on its first release run and entered above.
+      const time = seconds.get(step.run!);
+      expect(time, step.run).toBeDefined();
+      const suite = /^matrix[.]suite == '([a-z-]+)'/.exec(step.if!)![1]!;
+      perSuite.set(suite, (perSuite.get(suite) ?? 0) + time!);
     }
+    expect([...perSuite.keys()].sort()).toEqual(suites.slice().sort());
+    expect(Math.max(...perSuite.values())).toBeLessThanOrEqual(LONGEST_COHORT_SECONDS);
+  });
+  it('keeps the failure diagnostics on the cohorts whose proof folders it lists', () => {
+    const diagnostics = jobs()['smoke-published-image'].steps!.find(step => step.name === 'Preserve failed node smoke diagnostics')!;
+    const listed = ['node-canary', 'node-autoscaling', 'public-lifecycle', 'replica-databases'];
+    for (const suite of listed) expect(diagnostics.if).toContain(`matrix.suite == '${suite}'`);
+    for (const [name, suite] of [['--proof=.temp_files/release-node-smoke', 'node-canary'], ['--autoscale-rps-only', 'node-autoscaling'], ['--initial-stop-only', 'public-lifecycle'], ['--replica-databases-only', 'replica-databases']] as const) {
+      expect(jobs()['smoke-published-image'].steps!.find(step => step.run?.includes(name) && step.if === `matrix.suite == '${suite}'`)).toBeDefined();
+    }
+    expect(diagnostics.if).toMatch(/^failure\(\) && /);
+    expect(diagnostics['if']).not.toContain('public-canary');
   });
   it.each([true, false])('runs every required smoke exactly once when a previous release exists: %s', previousExists => {
     const smoke = jobs()['smoke-published-image'], scheduled: string[] = [];
@@ -167,7 +234,7 @@ describe('complete parallel release smoke gate', () => {
   });
   it('limits previous-release lookup to the upgrade cohort and gates publication on the entire matrix', () => {
     const all = jobs(), previous = all['smoke-published-image'].steps!.find(step => step.id === 'previous');
-    expect(previous?.if).toBe("matrix.suite == 'upgrade-journey'");
+    expect(previous?.if).toBe("matrix.suite == 'upgrade'");
     expect([all['promote-release'].needs ?? []].flat()).toEqual(expect.arrayContaining(['publish-image', 'smoke-published-image']));
     expect(all['promote-release'].if).toBeUndefined(); expect(all['promote-release']['continue-on-error']).not.toBe(true);
     expect([all['publish-npm'].needs ?? []].flat()).toContain('promote-release');
