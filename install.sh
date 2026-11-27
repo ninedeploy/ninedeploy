@@ -21,8 +21,8 @@
 #
 # Version selection:
 #   --channel release   newest vX.Y.Z tag on GitHub (default)
-#   --channel stable    the release the `stable` tag points at: a release that
-#                       has been out for 7 days, or a security fix (A6)
+#   --channel stable    the release the stable channel names: one that has
+#                       been out for 7 days, or a security fix (A6)
 #   --channel main      track the main branch (edge)
 #   --version vX.Y.Z    pin an exact tag
 #   --force             discard local modifications to tracked files and drop
@@ -504,24 +504,50 @@ stable_tag_from_ls_remote() {
   ' | highest_semver_tag
 }
 
-# A6: the stable channel's release. The daily stable-channel.yml workflow
-# moves the lightweight `stable` tag to a release that has been out for seven
-# days (or at once for a security fix). git ls-remote answers with every tag
-# and its commit in one request; the tags API is the fallback.
+# A6: the release the stable channel's STABLE file names, from the file's own
+# text (https://raw.githubusercontent.com/<repo>/stable/STABLE). Empty when
+# it is not a release tag.
+stable_tag_from_pointer_text() {
+  highest_semver_tag
+}
+
+# A6: the same file through the GitHub contents API, whose JSON body carries
+# the text as base64 broken into lines with \n (empty when there is none).
+stable_tag_from_contents_json() {
+  sed -n 's/.*"content"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
+    | sed 's/\\n//g' | tr -d '\n ' | base64 -d 2>/dev/null | highest_semver_tag
+}
+
+# A6: the stable channel's release. The daily stable-channel.yml workflow keeps
+# the channel on a release that has been out for seven days (or at once for a
+# security fix). Two carriers name it, and the channel is the newer release
+# either names: the STABLE file on the `stable` branch (the workflow writes
+# it with its built-in token), and the lightweight `stable` tag on the
+# release's commit (git ls-remote answers with every tag and its commit in
+# one request; the tags API is the fallback).
 stable_tag() {
-  local _tag=""
+  local _tag="" _pointer=""
+  _pointer=$( (curl -fsSL -m 15 --retry 2 --retry-delay 2 \
+      "https://raw.githubusercontent.com/${REPO_SLUG}/stable/STABLE" 2>/dev/null || true) | stable_tag_from_pointer_text )
+  if [ -z "$_pointer" ]; then
+    _pointer=$( (curl -fsSL -m 15 --retry 2 --retry-delay 2 -H 'Accept: application/vnd.github+json' \
+        "https://api.github.com/repos/${REPO_SLUG}/contents/STABLE?ref=stable" 2>/dev/null || true) | stable_tag_from_contents_json )
+  fi
   _tag=$( (git ls-remote --tags "$REPO_URL" 2>/dev/null || true) | stable_tag_from_ls_remote )
-  if [ -n "$_tag" ]; then printf '%s' "$_tag"; return 0; fi
-  warn "git ls-remote found no stable release — asking the GitHub API" >&2
-  local _sha=""
-  _sha=$( (curl -fsSL -m 15 --retry 3 --retry-delay 2 -H 'Accept: application/vnd.github+json' \
-      "https://api.github.com/repos/${REPO_SLUG}/git/ref/tags/stable" 2>/dev/null || true) \
-    | grep -o '"sha"[[:space:]]*:[[:space:]]*"[0-9a-f]*"' | head -1 | sed 's/.*"\([0-9a-f]*\)"$/\1/' )
-  [ -n "$_sha" ] || return 0
-  (curl -fsSL -m 15 --retry 3 --retry-delay 2 -H 'Accept: application/vnd.github+json' \
-      "https://api.github.com/repos/${REPO_SLUG}/tags?per_page=100" 2>/dev/null || true) \
-    | tr -d '\n' | sed 's/},{/}\n{/g' | grep "\"sha\"[[:space:]]*:[[:space:]]*\"$_sha\"" \
-    | grep -o '"name"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"\([^"]*\)"$/\1/' | highest_semver_tag
+  if [ -z "$_tag" ] && [ -z "$_pointer" ]; then
+    warn "git ls-remote found no stable release and the stable branch names none — asking the GitHub API" >&2
+    local _sha=""
+    _sha=$( (curl -fsSL -m 15 --retry 3 --retry-delay 2 -H 'Accept: application/vnd.github+json' \
+        "https://api.github.com/repos/${REPO_SLUG}/git/ref/tags/stable" 2>/dev/null || true) \
+      | grep -o '"sha"[[:space:]]*:[[:space:]]*"[0-9a-f]*"' | head -1 | sed 's/.*"\([0-9a-f]*\)"$/\1/' )
+    if [ -n "$_sha" ]; then
+      _tag=$( (curl -fsSL -m 15 --retry 3 --retry-delay 2 -H 'Accept: application/vnd.github+json' \
+          "https://api.github.com/repos/${REPO_SLUG}/tags?per_page=100" 2>/dev/null || true) \
+        | tr -d '\n' | sed 's/},{/}\n{/g' | grep "\"sha\"[[:space:]]*:[[:space:]]*\"$_sha\"" \
+        | grep -o '"name"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"\([^"]*\)"$/\1/' | highest_semver_tag )
+    fi
+  fi
+  printf '%s\n%s\n' "$_pointer" "$_tag" | highest_semver_tag
 }
 
 # Docker mode: the panel image tag for the resolved ref. A pinned
@@ -1697,7 +1723,7 @@ elif [ "$CHANNEL" = "main" ]; then
   info "Edge channel: tracking the main branch"
 elif [ "$CHANNEL" = "stable" ]; then
   REF=$(stable_tag)
-  [ -n "$REF" ] || fail "The stable channel has no release yet (no stable tag on GitHub). Use --channel release, or pin one with --version vX.Y.Z."
+  [ -n "$REF" ] || fail "The stable channel has no release yet (neither the stable branch nor the stable tag names one on GitHub). Use --channel release, or pin one with --version vX.Y.Z."
   info "Stable channel: installing $REF"
 else
   REF=$(latest_tag)
@@ -2187,7 +2213,7 @@ update_from_git() {
   # host keeps serving the previous release. Deepen first.
   if [ "$(git rev-parse --is-shallow-repository 2>/dev/null || echo false)" = "true" ]; then
     info "Shallow checkout detected — fetching full history so tags resolve…"
-    # --force: a moved tag (the `stable` channel tag is moved daily) would
+    # --force: a moved tag (the `stable` tag moves when the channel does) would
     # otherwise be rejected as "would clobber existing tag" and fail the fetch.
     git fetch --force --unshallow --tags origin 2>/dev/null \
       || git fetch --force --depth=2147483647 --tags origin 2>/dev/null \

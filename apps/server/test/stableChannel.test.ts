@@ -1,15 +1,21 @@
 /**
  * A6 (docs/plans/COMPETITIVE_ROADMAP_2026-11.md): the stable release channel.
- *  - scripts/stable-channel.mjs decides where the `stable` tag moves;
- *  - the workflow runs it daily and only moves a lightweight tag;
- *  - the panel resolves the release the tag points at, per channel;
+ *  - scripts/stable-channel.mjs decides which release the channel names;
+ *  - the workflow runs it daily and writes two carriers: the STABLE file on
+ *    the `stable` branch (with the built-in token) and the lightweight `stable`
+ *    tag (with STABLE_TAG_TOKEN when it is set);
+ *  - the panel resolves the channel per channel: the newer release the two name;
  *  - the installer accepts --channel stable and resolves it the same way.
  */
+// biome-ignore-all lint/suspicious/noTemplateCurlyInString: the workflow's and the installer's text are what is under test here.
+import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { load } from 'js-yaml';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { fixtureBash, fixtureBashPath } from './bashFixture.js';
 
 type ExecCb = (err: Error | null, stdout: string, stderr: string) => void;
 const exec = vi.hoisted(() => ({ impl: null as null | ((cmd: string, args: string[]) => { stdout?: string; error?: string }) }));
@@ -26,6 +32,8 @@ const script = (await import(new URL('../../../scripts/stable-channel.mjs', impo
   isSecurity: (body: string) => boolean;
 };
 const root = new URL('../../../', import.meta.url);
+/** The contents API's body for the STABLE file: base64, broken into lines. */
+const pointerBody = (tag: string) => ({ content: Buffer.from(`${tag}\n`).toString('base64').match(/.{1,20}/g)!.join('\n'), encoding: 'base64' });
 const day = 86_400_000;
 const NOW = new Date('2026-11-20T12:00:00Z');
 const rel = (tag: string, daysAgo: number, body = '', extra: Record<string, unknown> = {}) => ({
@@ -63,43 +71,89 @@ describe('scripts/stable-channel.mjs', () => {
 });
 
 describe('.github/workflows/stable-channel.yml', () => {
+  type WfStep = { id?: string; if?: string; env?: Record<string, string>; run?: string; uses?: string };
   const wf = load(readFileSync(new URL('.github/workflows/stable-channel.yml', root), 'utf8')) as {
     on: { schedule: Array<{ cron: string }>; workflow_dispatch: unknown };
     permissions: Record<string, string>;
-    jobs: { promote: { permissions: Record<string, string>; steps: Array<{ run?: string; uses?: string }> } };
+    jobs: { promote: { env: Record<string, string>; permissions: Record<string, string>; steps: WfStep[] } };
   };
-  const runs = wf.jobs.promote.steps.map((s) => s.run ?? '').join('\n');
+  const steps = wf.jobs.promote.steps;
+  const runs = steps.map((s) => s.run ?? '').join('\n');
+  const step = (id: string) => {
+    const found = steps.find((s) => s.id === id);
+    expect(found, `no step with id ${id}`).toBeDefined();
+    return found!;
+  };
 
   it('runs daily and by hand, with write access only in its job', () => {
     expect(wf.on.schedule[0]!.cron).toMatch(/^\d+ \d+ \* \* \*$/);
     expect(wf.on.workflow_dispatch).toBeTruthy();
     expect(wf.permissions).toEqual({ contents: 'read' });
     expect(wf.jobs.promote.permissions).toEqual({ contents: 'write' });
-    for (const s of wf.jobs.promote.steps) if (s.uses) expect(s.uses).toMatch(/@[0-9a-f]{40}$/);
+    for (const s of steps) if (s.uses) expect(s.uses).toMatch(/@[0-9a-f]{40}$/);
   });
 
-  it('decides with the script, moves only a lightweight tag on a release commit, and only refs/tags/stable', () => {
+  it('decides where the channel is from both of its carriers, then with the script', () => {
+    const decide = step('pick').run!;
+    expect(decide).toContain('repos/$REPO/git/ref/tags/stable');
+    expect(decide).toContain('repos/$REPO/contents/STABLE?ref=stable');
     expect(runs).toContain('node scripts/stable-channel.mjs');
-    expect(runs).toContain('[ "$type" = "commit" ]');
-    expect(runs).toContain('repos/$REPO/git/refs/tags/stable');
-    expect(runs).toContain('ref=refs/tags/stable');
-    expect(runs).not.toMatch(/git push/);
-    // A forced tag must be a published release.
+    // A tag given by hand must be a published release.
     expect(runs).toContain('.draft == false and .prerelease == false');
   });
 
-  it('reports a move only after reading the tag back, and skips that on a dry run', () => {
-    const steps = wf.jobs.promote.steps;
-    const move = steps.findIndex((s) => s.run?.includes('-X PATCH "repos/$REPO/git/refs/tags/stable"'));
-    const confirm = steps.findIndex((s) => s.run?.includes('have=$(gh api "repos/$REPO/git/ref/tags/stable" --jq .object.sha)'));
-    expect(move).toBeGreaterThan(0);
-    expect(confirm).toBeGreaterThan(move);
-    // (wf is typed with run and uses only; the conditions are read from the loaded file.)
-    const raw = wf.jobs.promote.steps as Array<{ if?: string }>;
-    expect(raw[confirm]!.if).toContain("inputs.dry_run != true");
-    expect(raw[move]!.if).toContain("steps.pick.outputs.target != ''");
-    // The built-in token cannot make this move; the workflow says which secret can.
-    expect(runs).toContain('STABLE_TAG_TOKEN');
+  it('names the release in the STABLE file on the stable branch, with a commit built on main, and never backwards', () => {
+    // The built-in GITHUB_TOKEN may write this ref: the commit's .github/workflows is main's.
+    const pointer = step('pointer');
+    expect(pointer.if).toContain("steps.pick.outputs.target != ''");
+    expect(pointer.if).toContain('inputs.dry_run != true');
+    expect(pointer.env?.['GH_TOKEN']).toBeUndefined();
+    expect(pointer.run).toContain('"base_tree":"%s"');
+    expect(pointer.run).toContain('"path":"STABLE"');
+    expect(pointer.run).toContain('repos/$REPO/git/ref/heads/main');
+    expect(pointer.run).toContain('repos/$REPO/git/refs/heads/stable');
+    expect(pointer.run).toContain('ref=refs/heads/stable');
+    expect(pointer.run).toMatch(/Stable never moves backwards/);
+    // A tag given by hand moves the file even backwards; the rules never do.
+    expect(pointer.run).toContain('if [ -z "$FORCED_TAG" ] && [ -n "$have" ]');
+    expect(pointer.run).toContain('echo "state=written" >> "$GITHUB_OUTPUT"');
+  });
+
+  it('moves only a lightweight tag on a release commit, and only refs/tags/stable', () => {
+    const tag = step('tag').run!;
+    expect(tag).toContain('[ "$type" = "commit" ]');
+    expect(tag).toContain('repos/$REPO/git/refs/tags/stable');
+    expect(tag).toContain('ref=refs/tags/stable');
+    expect(runs).not.toMatch(/git push/);
+  });
+
+  it('without the tag secret the run stays green and says the tag did not move; with a failing secret it fails', () => {
+    const tag = step('tag').run!;
+    expect(step('tag').env?.['GH_TOKEN']).toBe('${{ secrets.STABLE_TAG_TOKEN || secrets.GITHUB_TOKEN }}');
+    const warning = tag.indexOf('::warning::The stable tag was not moved');
+    const error = tag.indexOf('::error::Could not move the stable tag with STABLE_TAG_TOKEN');
+    expect(warning).toBeGreaterThan(0);
+    expect(error).toBeGreaterThan(0);
+    // The no-secret branch says so and ends the step well; the broken-secret branch, which comes
+    // first in the function, fails.
+    expect(tag.slice(warning)).toContain('echo "moved=false" >> "$GITHUB_OUTPUT"');
+    expect(tag.slice(error, warning)).toMatch(/exit 1\n\s*fi/);
+    expect(step('tag').env?.['HAS_TAG_TOKEN']).toBe("${{ secrets.STABLE_TAG_TOKEN != '' }}");
+  });
+
+  it('reports what stable names only after reading the carriers back, and skips that on a dry run', () => {
+    const confirm = step('confirm');
+    const pointerAt = steps.indexOf(step('pointer'));
+    const tagAt = steps.indexOf(step('tag'));
+    expect(pointerAt).toBeLessThan(tagAt);
+    expect(steps.indexOf(confirm)).toBeGreaterThan(tagAt);
+    expect(confirm.if).toContain("steps.pick.outputs.target != ''");
+    expect(confirm.if).toContain('inputs.dry_run != true');
+    expect(confirm.run).toContain('gh api "repos/$REPO/contents/STABLE?ref=stable" --jq .content');
+    expect(confirm.run).toContain('echo "::error::the stable branch names $have, not $TARGET.');
+    // The tag is confirmed only when its step moved it.
+    expect(confirm.run).toContain('if [ "${{ steps.tag.outputs.moved }}" = "true" ]; then');
+    expect(confirm.run).toContain('gh api "repos/$REPO/git/ref/tags/stable" --jq .object.sha');
   });
 });
 
@@ -123,6 +177,42 @@ describe('panel: update check on the stable channel', () => {
     const { stableTagFromLsRemote } = await import('../src/lib/updateCheck.js');
     expect(stableTagFromLsRemote(LS_REMOTE)).toBe('v98.0.1');
     expect(() => stableTagFromLsRemote('aaa\trefs/tags/v1.0.0')).toThrow(/no stable tag yet/);
+  });
+
+  it('reads the release the stable branch names, as the text of its STABLE file', async () => {
+    const { stableTagFromPointer } = await import('../src/lib/updateCheck.js');
+    expect(stableTagFromPointer('v0.19.0\n')).toBe('v0.19.0');
+    expect(stableTagFromPointer(' 0.19.0 ')).toBe('v0.19.0');
+    expect(() => stableTagFromPointer('not a release')).toThrow(/returned no release tag/);
+    expect(() => stableTagFromPointer('')).toThrow(/returned no release tag/);
+  });
+
+  it('serves the stable branch when the tag behind it is stuck, which is what a missing tag secret leaves', async () => {
+    // The channel has two carriers; every source is asked and the newest release any names is the channel's.
+    exec.impl = (cmd, args) => (cmd === 'git' && args[0] === 'ls-remote' ? { stdout: LS_REMOTE } : { error: 'no' });
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => (url.includes('/contents/STABLE?ref=stable') ? { ok: true, status: 200, json: async () => pointerBody('v99.0.1') } : { ok: false, status: 404, json: async () => ({}) })));
+    const { checkForUpdate } = await import('../src/lib/updateCheck.js');
+    expect(await checkForUpdate(true, 'stable')).toMatchObject({ latest: 'v99.0.1', updateAvailable: true, channel: 'stable', source: 'github-api stable-file' });
+  });
+
+  it('serves the tag when the stable branch is the one behind', async () => {
+    exec.impl = (cmd, args) => {
+      if (cmd === 'git' && args[0] === 'ls-remote') return { stdout: LS_REMOTE };
+      if (cmd === 'curl' && args.some((a) => a.endsWith('/stable/STABLE'))) return { stdout: 'v97.0.0\n' };
+      return { error: 'no' };
+    };
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 404, json: async () => ({}) })));
+    const { checkForUpdate } = await import('../src/lib/updateCheck.js');
+    expect(await checkForUpdate(true, 'stable')).toMatchObject({ latest: 'v98.0.1', channel: 'stable', source: 'git' });
+  });
+
+  it('serves the raw STABLE file when git and the API are both unreachable', async () => {
+    exec.impl = (cmd, args) => (cmd === 'curl' && args.some((a) => a.endsWith('/stable/STABLE')) ? { stdout: 'v99.0.2\n' } : { error: 'no' });
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      throw new Error('fetch failed');
+    }));
+    const { checkForUpdate } = await import('../src/lib/updateCheck.js');
+    expect(await checkForUpdate(true, 'stable')).toMatchObject({ latest: 'v99.0.2', channel: 'stable', source: 'stable-file' });
   });
 
   it('offers the stable release, keeps a separate answer per channel, and falls back to the API', async () => {
@@ -157,19 +247,53 @@ describe('panel: update check on the stable channel', () => {
     const res = await checkForUpdate(true, 'stable');
     expect(res).toMatchObject({ latest: null, updateAvailable: null, reason: 'unreachable', channel: 'stable' });
     expect(res.detail).toContain('no stable tag yet');
+    expect(res.detail).toContain('the stable branch has no STABLE file yet');
   });
 });
 
 describe('install.sh --channel stable', () => {
   const sh = readFileSync(new URL('install.sh', root), 'utf8');
+  // The installer's functions under its own bash, with curl and git replaced by shell functions.
+  const bash = fixtureBash(spawnSync);
+  const installer = fixtureBashPath(spawnSync, fileURLToPath(new URL('install.sh', root)), bash);
+  const shrun = (script: string) =>
+    spawnSync(bash, ['-c', `NINEDEPLOY_INSTALL_SOURCE_ONLY=1 . "$1"\n${script}`, 'stable-channel-test', installer], { encoding: 'utf8', timeout: 20_000 }).stdout.trim();
+
+  it('reads the release the stable branch names, and serves the newer of the file and the tag', () => {
+    expect(shrun(`printf 'v0.19.0\\n' | stable_tag_from_pointer_text`)).toBe('v0.19.0');
+    expect(shrun(`printf 'not-a-release\\n' | stable_tag_from_pointer_text`)).toBe('');
+    // The contents API's body: base64 broken into lines with \n.
+    const body = JSON.stringify(pointerBody('v0.19.0'), null, 2);
+    expect(shrun(`printf '%s' '${body}' | stable_tag_from_contents_json`)).toBe('v0.19.0');
+    expect(shrun(`printf '%s' '{"encoding":"base64"}' | stable_tag_from_contents_json`)).toBe('');
+    // A tag stuck behind the stable branch (what a missing tag secret leaves) …
+    const stuck = [
+      `curl() { case "$*" in *raw.githubusercontent.com*) printf 'v0.19.0\\n';; *) return 22;; esac; }`,
+      `git() { printf 'aaa\\trefs/tags/stable\\naaa\\trefs/tags/v0.18.28\\n'; }`,
+      'stable_tag',
+    ].join('\n');
+    expect(shrun(stuck)).toBe('v0.19.0');
+    // … and the stable branch behind the tag.
+    const behind = [`curl() { return 22; }`, `git() { printf 'aaa\\trefs/tags/stable\\naaa\\trefs/tags/v0.19.0\\n'; }`, 'stable_tag'].join('\n');
+    expect(shrun(behind)).toBe('v0.19.0');
+    // Neither carrier names a release: nothing, and the caller says so.
+    const none = [`curl() { return 22; }`, `git() { printf 'aaa\\trefs/tags/v0.19.0\\n'; }`, 'stable_tag 2>/dev/null'].join('\n');
+    expect(shrun(none)).toBe('');
+  });
+
   it('accepts the channel, resolves it through stable_tag, and refuses when there is no stable release', () => {
     expect(sh).toContain('release|stable|main) ;;');
     expect(sh).toContain('REF=$(stable_tag)');
     expect(sh).toMatch(/\[ -n "\$REF" \] \|\| fail "The stable channel has no release yet/);
     // Defined before the source-only guard, so CI can exercise it.
     const guard = sh.indexOf('if [ "${NINEDEPLOY_INSTALL_SOURCE_ONLY:-}" = "1" ]');
-    expect(sh.indexOf('\nstable_tag_from_ls_remote() {')).toBeLessThan(guard);
-    expect(sh.indexOf('\nstable_tag() {')).toBeLessThan(guard);
+    for (const fn of ['stable_tag_from_ls_remote', 'stable_tag_from_pointer_text', 'stable_tag_from_contents_json', 'stable_tag']) {
+      expect(sh.indexOf(`\n${fn}() {`), fn).toBeGreaterThan(0);
+      expect(sh.indexOf(`\n${fn}() {`), fn).toBeLessThan(guard);
+    }
+    // The STABLE file is asked where the workflow writes it.
+    expect(sh).toContain('"https://raw.githubusercontent.com/${REPO_SLUG}/stable/STABLE"');
+    expect(sh).toContain('"https://api.github.com/repos/${REPO_SLUG}/contents/STABLE?ref=stable"');
   });
 
   it('tells the panel about the channel, except on a pinned run (the self-update pins its target)', () => {

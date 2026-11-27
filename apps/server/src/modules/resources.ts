@@ -34,7 +34,8 @@ export const systemRoutes: FastifyPluginAsync = async (app) => {
 
   // Latest-release check (GitHub Releases feed, 6h cache; "unknown" when
   // offline or disabled — never throws so the dashboard stays usable).
-  // A6: on the stable channel the check offers the release the `stable` tag points at.
+  // A6: on the stable channel the check offers the release the channel names: the newer of
+  // the STABLE file on the stable branch and the `stable` tag (lib/updateCheck.ts).
   // A saved choice wins; without one, NINEDEPLOY_UPDATE_CHANNEL (written by
   // install.sh --channel stable) decides.
   const channelOf = async (): Promise<UpdateChannel> =>

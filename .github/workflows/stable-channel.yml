@@ -1,15 +1,31 @@
 name: Stable channel
 
-# A6 (docs/plans/COMPETITIVE_ROADMAP_2026-11.md): moves the lightweight
-# `stable` tag to the newest published release that has been out for seven
-# days, or at once for a release marked as a security fix. Panels set to the
-# stable update channel and `install.sh --channel stable` install the release
-# this tag points at. The rules live in scripts/stable-channel.mjs:
+# A6 (docs/plans/COMPETITIVE_ROADMAP_2026-11.md): keeps the **stable** channel
+# on the newest published release that has been out for seven days, or at once
+# for a release marked as a security fix. Panels set to the stable update
+# channel and `install.sh --channel stable` install the release the channel
+# names. The rules live in scripts/stable-channel.mjs:
 #   <!-- stable: hold -->      in a release's notes keeps it off stable;
 #   <!-- stable: security -->  promotes it at once (only the marker counts).
 # Stable never moves backwards. Run it by hand with
 #   gh workflow run stable-channel.yml            (apply the rules now)
 #   gh workflow run stable-channel.yml -f tag=vX.Y.Z   (point stable at a release)
+#
+# The channel has two carriers, and this workflow writes both:
+#   - the `stable` branch's STABLE file, which names the release. Every panel
+#     and installer reads it, and the built-in GITHUB_TOKEN may write it: the
+#     commit is built on main's own tree with that one file added, so its
+#     .github/workflows equals the default branch's. GitHub refuses a token
+#     without the `workflows` permission a ref on any other commit once main's
+#     workflow files differ from it. Measured: of the seven runs up to November
+#     26, 2026 that had a tag to write, the two whose release commit still
+#     equalled main went through and the five others got 403; a probe on
+#     November 27 wrote this commit, moved this branch and read the file back;
+#   - the lightweight `stable` tag on the release's commit, which versions
+#     before the STABLE file read. It needs STABLE_TAG_TOKEN: a fine-grained
+#     token for this repository with Contents and Workflows read and write.
+#     Without it the tag stays where it is, the run says so, and the channel
+#     is still served by the STABLE file.
 
 on:
   schedule:
@@ -51,12 +67,15 @@ jobs:
         id: pick
         run: |
           set -euo pipefail
-          current=$(gh api "repos/$REPO/git/ref/tags/stable" --jq .object.sha 2>/dev/null || true)
-          current_tag=""
-          if [ -n "$current" ]; then
-            current_tag=$(gh api "repos/$REPO/tags?per_page=100" --paginate --jq ".[] | select(.commit.sha == \"$current\") | .name" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1 || true)
+          # Where the channel is: the newer of what its two carriers name.
+          tag_sha="$(gh api "repos/$REPO/git/ref/tags/stable" --jq .object.sha 2>/dev/null || true)"
+          tag_names=""
+          if [ -n "$tag_sha" ]; then
+            tag_names="$(gh api "repos/$REPO/tags?per_page=100" --paginate --jq ".[] | select(.commit.sha == \"$tag_sha\") | .name" | tr '\n' ' ' || true)"
           fi
-          echo "Current stable: ${current_tag:-none}"
+          pointer="$(gh api "repos/$REPO/contents/STABLE?ref=stable" --jq .content 2>/dev/null | sed 's/\\n//g' | base64 -d 2>/dev/null || true)"
+          current_tag="$(printf '%s\n%s\n' "$tag_names" "$pointer" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1 || true)"
+          echo "Current stable: ${current_tag:-none} (the tag names: ${tag_names:-nothing}; the STABLE file names: ${pointer:-nothing})"
           if [ -n "$FORCED_TAG" ]; then
             printf '%s' "$FORCED_TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$' || { echo "::error::tag must be vX.Y.Z"; exit 1; }
             gh api "repos/$REPO/releases/tags/$FORCED_TAG" --jq '.draft == false and .prerelease == false' | grep -q true \
@@ -68,60 +87,101 @@ jobs:
           fi
           echo "target=$target" >> "$GITHUB_OUTPUT"
 
-      # The built-in GITHUB_TOKEN cannot do this, although the job has
-      # contents: write. GitHub lets a token without the `workflows` permission
-      # write a ref only when the target commit's .github/workflows equals the
-      # default branch's. A release commit's equals main's only until main
-      # touches a workflow file, which the seven-day soak nearly always sees.
-      # Measured over the seven runs that had a tag to write up to 2026-11-26:
-      # the two whose target's workflow files still equalled main's (November
-      # 13 and 14) went through, the other five were refused ("Resource not
-      # accessible by integration", 403). A probe on 2026-11-27 showed `git
-      # push` is refused the same way, naming the first differing file and
-      # the missing permission. So the tag is written with STABLE_TAG_TOKEN: a
-      # fine-grained token for this repository with Contents and Workflows
-      # read and write. Without it, stable stays where it is and this run
-      # fails each day until a maintainer moves the tag by hand (as on
-      # 2026-11-27) or adds the secret.
+      # The STABLE file on the stable branch. The commit is built on main's tree
+      # with one file added, which is what lets the built-in token write the
+      # ref (the workflow's header says why). A tag given by hand moves it even
+      # backwards; the rules never do.
+      - name: Point the stable branch at the release
+        if: steps.pick.outputs.target != '' && inputs.dry_run != true
+        id: pointer
+        env:
+          TARGET: ${{ steps.pick.outputs.target }}
+        run: |
+          set -euo pipefail
+          read_pointer() { gh api "repos/$REPO/contents/STABLE?ref=stable" --jq .content 2>/dev/null | sed 's/\\n//g' | base64 -d 2>/dev/null || true; }
+          have="$(read_pointer)"
+          echo "The stable branch names: ${have:-nothing}"
+          if [ "$have" = "$TARGET" ]; then
+            echo "state=already" >> "$GITHUB_OUTPUT"
+            echo "The stable branch already names $TARGET."
+            exit 0
+          fi
+          if [ -z "$FORCED_TAG" ] && [ -n "$have" ] && [ "$(printf '%s\n%s\n' "$have" "$TARGET" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)" != "$TARGET" ]; then
+            echo "::error::the stable branch names $have, which is newer than $TARGET. Stable never moves backwards."
+            exit 1
+          fi
+          main="$(gh api "repos/$REPO/git/ref/heads/main" --jq .object.sha)"
+          blob="$(gh api -X POST "repos/$REPO/git/blobs" -f content="$TARGET" -f encoding=utf-8 --jq .sha)"
+          tree="$(printf '{"base_tree":"%s","tree":[{"path":"STABLE","mode":"100644","type":"blob","sha":"%s"}]}' "$main" "$blob" \
+            | gh api -X POST "repos/$REPO/git/trees" --input - --jq .sha)"
+          commit="$(printf '{"message":"stable: %s","tree":"%s","parents":["%s"]}' "$TARGET" "$tree" "$main" \
+            | gh api -X POST "repos/$REPO/git/commits" --input - --jq .sha)"
+          if gh api "repos/$REPO/git/ref/heads/stable" >/dev/null 2>&1; then
+            gh api -X PATCH "repos/$REPO/git/refs/heads/stable" -f sha="$commit" -F force=true --jq .object.sha
+          else
+            gh api -X POST "repos/$REPO/git/refs" -f ref=refs/heads/stable -f sha="$commit" --jq .ref
+          fi
+          echo "state=written" >> "$GITHUB_OUTPUT"
+          echo "### Stable names $TARGET" >> "$GITHUB_STEP_SUMMARY"
+
+      # The tag on the release's commit, for versions that read only it. The
+      # built-in token is refused here once main's workflow files differ from
+      # the release commit's (the header says why), so it takes
+      # STABLE_TAG_TOKEN. Without that secret the tag stays, which the run
+      # reports: the STABLE file above serves the channel. A secret that is set
+      # and fails is an error, since it is expired or lacks a permission.
       - name: Move the stable tag
         if: steps.pick.outputs.target != ''
+        id: tag
         env:
           TARGET: ${{ steps.pick.outputs.target }}
           GH_TOKEN: ${{ secrets.STABLE_TAG_TOKEN || secrets.GITHUB_TOKEN }}
           HAS_TAG_TOKEN: ${{ secrets.STABLE_TAG_TOKEN != '' }}
         run: |
           set -euo pipefail
-          sha=$(gh api "repos/$REPO/git/ref/tags/$TARGET" --jq .object.sha)
-          type=$(gh api "repos/$REPO/git/ref/tags/$TARGET" --jq .object.type)
+          sha="$(gh api "repos/$REPO/git/ref/tags/$TARGET" --jq .object.sha)"
+          type="$(gh api "repos/$REPO/git/ref/tags/$TARGET" --jq .object.type)"
           [ "$type" = "commit" ] || { echo "::error::$TARGET is not a lightweight tag on a commit ($type)"; exit 1; }
           echo "stable → $TARGET ($sha)"
           if [ "$DRY_RUN" = "true" ]; then exit 0; fi
-          hint() {
-            if [ "$HAS_TAG_TOKEN" != "true" ]; then
-              echo "::error::Could not move the stable tag: the STABLE_TAG_TOKEN secret is not set, and GITHUB_TOKEN may not write a tag on a release commit whose workflow files differ from main. Add a fine-grained token for this repository with Contents and Workflows read and write as the STABLE_TAG_TOKEN Actions secret."
-            else
+          refused() {
+            if [ "$HAS_TAG_TOKEN" = "true" ]; then
               echo "::error::Could not move the stable tag with STABLE_TAG_TOKEN: check that it is not expired and has Contents and Workflows read and write on this repository."
+              exit 1
             fi
-            exit 1
+            echo "::warning::The stable tag was not moved: the STABLE_TAG_TOKEN secret is not set, and GITHUB_TOKEN may not write a tag on a release commit whose workflow files differ from main. Panels and installers read the stable branch's STABLE file, so the channel is served; versions before that file read the tag. To move it, add a fine-grained token for this repository with Contents and Workflows read and write as the STABLE_TAG_TOKEN Actions secret, or run this workflow with its tag input from an account that may."
+            echo "moved=false" >> "$GITHUB_OUTPUT"
+            echo "The stable tag was not moved (see the warning)." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
           }
           if gh api "repos/$REPO/git/ref/tags/stable" >/dev/null 2>&1; then
-            gh api -X PATCH "repos/$REPO/git/refs/tags/stable" -f sha="$sha" -F force=true >/dev/null || hint
+            gh api -X PATCH "repos/$REPO/git/refs/tags/stable" -f sha="$sha" -F force=true >/dev/null || refused
           else
-            gh api -X POST "repos/$REPO/git/refs" -f ref=refs/tags/stable -f sha="$sha" >/dev/null || hint
+            gh api -X POST "repos/$REPO/git/refs" -f ref=refs/tags/stable -f sha="$sha" >/dev/null || refused
           fi
-          echo "### Stable is now $TARGET" >> "$GITHUB_STEP_SUMMARY"
+          echo "moved=true" >> "$GITHUB_OUTPUT"
+          echo "### The stable tag is on $TARGET" >> "$GITHUB_STEP_SUMMARY"
 
-      # Read the ref back: a move is reported only when GitHub shows it.
-      - name: Confirm the stable tag
+      # Read both carriers back: a move is reported only when GitHub shows it.
+      - name: Confirm what stable names
         if: steps.pick.outputs.target != '' && inputs.dry_run != true
+        id: confirm
         env:
           TARGET: ${{ steps.pick.outputs.target }}
         run: |
           set -euo pipefail
-          want=$(gh api "repos/$REPO/git/ref/tags/$TARGET" --jq .object.sha)
-          have=$(gh api "repos/$REPO/git/ref/tags/stable" --jq .object.sha)
-          if [ "$have" != "$want" ]; then
-            echo "::error::stable is at $have, not at $TARGET ($want). The move did not take; see the step before."
+          have="$(gh api "repos/$REPO/contents/STABLE?ref=stable" --jq .content | sed 's/\\n//g' | base64 -d)"
+          if [ "$have" != "$TARGET" ]; then
+            echo "::error::the stable branch names $have, not $TARGET. The write did not take; see the step before."
             exit 1
           fi
-          echo "Confirmed: stable is at $TARGET ($have)"
+          echo "Confirmed: the stable branch names $TARGET."
+          if [ "${{ steps.tag.outputs.moved }}" = "true" ]; then
+            want="$(gh api "repos/$REPO/git/ref/tags/$TARGET" --jq .object.sha)"
+            at="$(gh api "repos/$REPO/git/ref/tags/stable" --jq .object.sha)"
+            if [ "$at" != "$want" ]; then
+              echo "::error::the stable tag is at $at, not at $TARGET ($want). The move did not take; see the step before."
+              exit 1
+            fi
+            echo "Confirmed: the stable tag is on $TARGET."
+          fi

@@ -71,7 +71,7 @@ services:
       NINEDEPLOY_ACME_EMAIL: ${NINEDEPLOY_ACME_EMAIL:-}
       NINEDEPLOY_DNS_PROVIDER: ${NINEDEPLOY_DNS_PROVIDER:-}
       NINEDEPLOY_DNS_TOKEN: ${NINEDEPLOY_DNS_TOKEN:-}
-      # "stable" offers only releases on the stable tag (install.sh --channel
+      # "stable" offers only the release the stable channel names (install.sh --channel
       # stable writes it). Settings → System → Update channel wins over it.
       NINEDEPLOY_UPDATE_CHANNEL: ${NINEDEPLOY_UPDATE_CHANNEL:-}
       # A2: the panel's own hostname (install.sh --domain). Traefik routes it to

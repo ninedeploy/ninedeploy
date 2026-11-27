@@ -62,7 +62,7 @@ const schema = z.object({
   // (GitHub Releases format). Defaults to the NineDeploy releases feed; set to
   // "disabled" to turn update checks off (air-gapped instances).
   NINEDEPLOY_UPDATE_CHECK_URL: z.string().optional(),
-  // A6: "stable" offers only releases on the stable tag (install.sh --channel
+  // A6: "stable" offers only the release the stable channel names (install.sh --channel
   // stable writes it). Anything else is every release. A channel saved under
   // Settings -> System wins over it.
   NINEDEPLOY_UPDATE_CHANNEL: z.string().optional(),

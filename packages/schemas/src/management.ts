@@ -36,8 +36,9 @@ export type UpdateCheckResult = z.infer<typeof updateCheckResult>;
 // ── Update channel (A6) ────────────────────────────────────────────────────
 /**
  * `release`: every published release (the default, as before).
- * `stable`: the release the `stable` git tag points at — one that has been
- * out for seven days, or a security fix (.github/workflows/stable-channel.yml).
+ * `stable`: the release the stable channel names — one that has been out for
+ * seven days, or a security fix (.github/workflows/stable-channel.yml names
+ * it in the `stable` branch's STABLE file and in the `stable` git tag).
  */
 export const updateChannel = z.enum(['release', 'stable']);
 export type UpdateChannel = z.infer<typeof updateChannel>;

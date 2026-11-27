@@ -1,10 +1,13 @@
 #!/usr/bin/env node
 // A6 (docs/plans/COMPETITIVE_ROADMAP_2026-11.md): the `stable` release channel.
 //
-// `stable` is a lightweight git tag that points at a published release. The
-// daily .github/workflows/stable-channel.yml runs this script to decide where
-// it should point, then moves the tag. Panels on the stable channel and
-// `install.sh --channel stable` offer the release the tag points at.
+// The stable channel names a published release. The daily
+// .github/workflows/stable-channel.yml runs this script to decide which
+// release, then writes the name into the STABLE file on the `stable` branch
+// (with its built-in token) and moves the lightweight `stable` tag to the
+// release's commit (with STABLE_TAG_TOKEN when it is set). Panels on the
+// stable channel and `install.sh --channel stable` offer the newer release
+// the two name.
 //
 // Rules, in order:
 //   - only published (not draft, not prerelease) vX.Y.Z releases count;

@@ -29,7 +29,11 @@ export interface UpdateCheckResult {
   channel?: UpdateChannel;
 }
 
-/** A6: `release` follows every release (as before); `stable` follows the `stable` tag. */
+/**
+ * A6: `release` follows every release (as before); `stable` follows the stable
+ * channel, which two carriers name: the STABLE file on the `stable` branch and
+ * the `stable` tag. The channel is whichever names the newer release.
+ */
 export type UpdateChannel = 'release' | 'stable';
 
 /** Successful answers are reused for an hour (GitHub's anonymous API budget is 60 req/h per IP). */
@@ -312,13 +316,43 @@ async function stableViaApi(repo: string): Promise<Found> {
   return { latest, notesUrl: `https://github.com/${repo}/releases/tag/${latest}` };
 }
 
+/**
+ * A6: the release the `stable` branch's STABLE file names, which is the text
+ * itself. The channel's other carrier: the daily workflow writes it with the
+ * built-in token, where moving the tag needs a secret (stable-channel.yml).
+ */
+export function stableTagFromPointer(text: string): string {
+  return requireTag(text.trim(), 'stable branch file');
+}
+
+async function stableViaPointerRaw(repo: string): Promise<Found> {
+  const out = await run('curl', ['-fsSL', '-m', '12', '-A', USER_AGENT, `https://raw.githubusercontent.com/${repo}/stable/STABLE`]);
+  const latest = stableTagFromPointer(out);
+  return { latest, notesUrl: `https://github.com/${repo}/releases/tag/${latest}` };
+}
+
+async function stableViaPointerApi(repo: string): Promise<Found> {
+  const res = await fetch(`https://api.github.com/repos/${repo}/contents/STABLE?ref=stable`, { headers: { accept: 'application/vnd.github+json', 'user-agent': USER_AGENT }, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+  if (res.status === 404) throw new Error('the stable branch has no STABLE file yet');
+  if (!res.ok) throw new Error(`GitHub API ${res.status}`);
+  const body = (await res.json()) as { content?: unknown; encoding?: unknown };
+  if (typeof body.content !== 'string' || body.encoding !== 'base64') throw new Error('the STABLE file came in a shape the panel does not read');
+  // GitHub breaks the base64 text into lines; they are not part of it.
+  const latest = stableTagFromPointer(Buffer.from(body.content.replaceAll('\n', ''), 'base64').toString('utf8'));
+  return { latest, notesUrl: `https://github.com/${repo}/releases/tag/${latest}` };
+}
+
 function sources(url: string, channel: UpdateChannel): Array<{ name: string; run: () => Promise<Found> }> {
   const gh = GITHUB_API_LATEST.exec(url);
   const repo = gh ? `${gh[1]}/${gh[2]}` : null;
   if (channel === 'stable') {
-    // A custom feed names one release; the stable tag lives on GitHub only.
+    // A custom feed names one release; the stable channel lives on GitHub only.
     if (!repo) return [{ name: 'stable', run: async () => Promise.reject(new Error('the stable channel needs the GitHub release feed (NINEDEPLOY_UPDATE_CHECK_URL is a custom feed)')) }];
+    // Two carriers: the STABLE file on the stable branch, and the tag. Every source is
+    // asked (see probe): a carrier that did not move lags behind the other.
     return [
+      { name: 'stable-file', run: () => stableViaPointerRaw(repo) },
+      { name: 'github-api stable-file', run: () => stableViaPointerApi(repo) },
       { name: 'git', run: () => stableViaGit(repo) },
       { name: 'github-api', run: () => stableViaApi(repo) },
     ];
@@ -338,23 +372,37 @@ function sources(url: string, channel: UpdateChannel): Array<{ name: string; run
 
 async function probe(channel: UpdateChannel): Promise<UpdateCheckResult> {
   const failures: string[] = [];
+  const answers: Array<{ found: Found; source: string }> = [];
   for (const source of sources(config.updateCheckUrl, channel)) {
     try {
       const found = await source.run();
-      const good: LastGood = { ...found, checkedAt: new Date().toISOString(), source: source.name };
-      saveLastGood(channel, good);
-      const result = verdict(channel, good);
-      cachedBy.set(channel, { result, at: Date.now(), isFailure: false });
-      return result;
+      if (channel !== 'stable') return settled(channel, found, source.name);
+      answers.push({ found, source: source.name });
     } catch (err) {
       failures.push(`${source.name}: ${describeError(err)}`);
     }
+  }
+  if (channel === 'stable' && answers.length > 0) {
+    // The stable channel has two carriers and every source was asked. The
+    // channel is the newest release any of them names: stable never moves
+    // backwards, so a carrier that names an older release is one that did
+    // not move, not one that was turned back.
+    const newest = answers.reduce((a, b) => (isNewer(b.found.latest, a.found.latest) ? b : a));
+    return settled(channel, newest.found, newest.source);
   }
   const detail = failures.join(' | ').slice(0, DETAIL_MAX);
   log.warn(`every release source failed — ${detail}`);
   const previous = loadLastGood(channel);
   const result = previous ? verdict(channel, previous, { stale: true, detail }) : unknownResult(channel, 'unreachable', detail);
   cachedBy.set(channel, { result, at: Date.now(), isFailure: true });
+  return result;
+}
+
+function settled(channel: UpdateChannel, found: Found, source: string): UpdateCheckResult {
+  const good: LastGood = { ...found, checkedAt: new Date().toISOString(), source };
+  saveLastGood(channel, good);
+  const result = verdict(channel, good);
+  cachedBy.set(channel, { result, at: Date.now(), isFailure: false });
   return result;
 }
 
