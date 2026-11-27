@@ -807,9 +807,10 @@ Stated plainly, because finding these out during an incident is worse than readi
   refuses the static build pack (build it on the panel instead), a database on another host than
   the service, and, until its agent is updated, every feature its agent predates
   (`422 node_agent_outdated`). Each node capability can be switched off by the node's owner. A PAT
-  or deploy key reaches a node only when its source allows it; otherwise build on the panel. Major
-  database upgrades run on the panel host only. See [MULTI_NODE.md](./docs/MULTI_NODE.md) and the
-  [support matrix](./docs/SUPPORT_MATRIX.md).
+  or deploy key reaches a node only when its source allows it; otherwise build on the panel. A major
+  database upgrade of PostgreSQL, MySQL or MariaDB runs on the panel host and on a node whose agent
+  is 0.21.0 or newer ([the database guide, section 12](./docs/DATABASES_BACKUPS.md#on-a-node)). See
+  [MULTI_NODE.md](./docs/MULTI_NODE.md) and the [support matrix](./docs/SUPPORT_MATRIX.md).
 - **Default remote health is container state.** Opt-in HTTP/TCP readiness for plain Docker services
   runs inside the workload's network namespace on capable agents; see [Node operations](./docs/NODE_OPERATIONS.md).
   Existing services keep their default behaviour. The panel sits outside the node's Docker

@@ -22,6 +22,7 @@ import {
 } from '../lib/databaseCommands.js';
 import { STREAM_HARD_CAP_MS } from '../lib/agentStream.js';
 import { spawnValidated, spawnValidatedStream } from '../lib/spawnValidated.js';
+import { UPGRADE_HELPER_LABEL } from './databaseUpgrade.js';
 import type { AgentOpModule } from './index.js';
 import { type Params, str } from './operands.js';
 import type { PreparedStream, StreamKindHandler } from './stream.js';
@@ -103,7 +104,9 @@ async function mustDocker(argv: string[], what: string, timeoutMs = DB_SHORT_TIM
 async function assertManagedDatabase(name: string): Promise<void> {
   const res = await docker(['inspect', '--format', '{{index .Config.Labels "ninedeploy.managed"}}', name]);
   if (res.code !== 0) throw new Error(`Database container ${name} does not exist on this node`);
-  if ((res.lines.find((l) => l.trim() !== '') ?? '').trim() !== 'database') {
+  const managed = (res.lines.find((l) => l.trim() !== '') ?? '').trim();
+  // N12: an upgrade's fence and staging copy are this database too, for a dump or a restore (agentOps/databaseUpgrade.ts).
+  if (managed !== 'database' && managed !== UPGRADE_HELPER_LABEL) {
     throw new Error(`Container ${name} is not a managed database on this node`);
   }
 }

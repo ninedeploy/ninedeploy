@@ -36,14 +36,14 @@ const real = { ...upgrade.databaseUpgradeDeps };
 function fakeDocker() {
   const calls: string[] = [];
   Object.assign(upgrade.databaseUpgradeDeps, {
-    psql: async (container: string, sql: string, o?: { database?: string }) => {
+    psql: async (container: string, sql: { text: string; database?: string }) => {
       const staging = container.endsWith('-new');
-      if (sql.includes('server_version_num')) return staging ? '180001' : '160004';
-      if (sql.includes('pg_database_size')) return '1000';
-      if (sql.includes('FROM pg_database') || sql.includes('FROM pg_roles')) return '';
-      if (o?.database === 'postgres') return '0';
-      if (sql.includes('query_to_xml')) return `public.t${SEP}3`;
-      if (sql.includes('pg_extension')) return ['1', '1', '0', '0', '0', 'plpgsql'].join(SEP);
+      if (sql.text.includes('server_version_num')) return staging ? '180001' : '160004';
+      if (sql.text.includes('pg_database_size')) return '1000';
+      if (sql.text.includes('FROM pg_database') || sql.text.includes('FROM pg_roles')) return '';
+      if (sql.database === 'postgres') return '0';
+      if (sql.text.includes('query_to_xml')) return `public.t${SEP}3`;
+      if (sql.text.includes('pg_extension')) return ['1', '1', '0', '0', '0', 'plpgsql'].join(SEP);
       return '';
     },
     containerImage: async () => ({ id: 'sha256:old', tag: 'postgres:16' }),

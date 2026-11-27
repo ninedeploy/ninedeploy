@@ -103,6 +103,7 @@ const FEATURES: Record<MultiNodeCapability, string> = {
   'docker.startSet': 'start owned container replicas',
   'host.packages': 'read and change OS updates',
   'agent.rekey': 'rotate its agent key',
+  'db.upgrade': 'upgrade a database to a new major version',
   'db.dump.extra': 'back up and restore clickhouse on a node',
   'image.scan': 'scan images for vulnerabilities',
   'volume.compose': 'move a compose stack with its volumes',

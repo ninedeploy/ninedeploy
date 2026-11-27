@@ -14,6 +14,7 @@ import { MULTI_NODE_CAPABILITIES, type MultiNodeCapability } from '@ninedeploy/s
 import { buildOps } from './builds.js';
 import { observabilityOps } from './observability.js';
 import { databaseOps } from './databases.js';
+import { databaseUpgradeOps } from './databaseUpgrade.js';
 import { pitrOps } from './pitr.js';
 import { fileMountOps } from './fileMounts.js';
 import { gitKeyOps } from './gitCredential.js';
@@ -138,6 +139,8 @@ export const AGENT_OP_MODULES: readonly AgentOpModule[] = [
   nodePagesOps,
   // P2 deploy hooks in a one-off container from the release image (agentOps/deployHooks.ts)
   deployHookOps,
+  // N12 major upgrades of a node database (agentOps/databaseUpgrade.ts)
+  databaseUpgradeOps,
 ];
 
 /**
@@ -184,6 +187,8 @@ export const AGENT_KILL_SWITCHES: Readonly<Partial<Record<MultiNodeCapability, r
   'db.manage': ['NINEDEPLOY_AGENT_DATABASES'],
   'db.pitr.archive': ['NINEDEPLOY_AGENT_DATABASES', 'NINEDEPLOY_AGENT_PITR'],
   'db.dump.extra': ['NINEDEPLOY_AGENT_DATABASES'],
+  // N12: a major upgrade of a node database is a database operation like the rest.
+  'db.upgrade': ['NINEDEPLOY_AGENT_DATABASES'],
   // G5.1: Trivy on the node is the node owner's call.
   'image.scan': ['NINEDEPLOY_AGENT_IMAGE_SCAN'],
   // G3.1: compose volume transfers are the node owner's call.

@@ -3,10 +3,10 @@ import { randomUUID } from 'node:crypto';
 import type { Readable } from 'node:stream';
 import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { type Database, databases, type DB } from '@ninedeploy/db';
+import { type Database, databases, databaseUpgrades, type DB } from '@ninedeploy/db';
 import { NODE_PITR_CAPABILITY, NODE_PITR_REPLY, nodePitrTarget } from './nodePitrContract.js';
 import { PITR_ARCHIVE_MOUNT, pitrArchiveVolume, pitrServerArgs } from '../engine/pitrArchive.js';
-import { isNotNull } from 'drizzle-orm';
+import { eq, isNotNull } from 'drizzle-orm';
 import type { MultiNodeCapability } from '@ninedeploy/schemas';
 import {
   createBackupReadStream,
@@ -134,6 +134,25 @@ export async function nodeContainerState(agent: NodeDatabaseAgent, name: string)
   return (res.lines.find((l) => l.includes('|')) ?? res.lines[0] ?? '').split('|')[0]?.trim() || 'missing';
 }
 
+/**
+ * N12: what an interrupted upgrade of this database may have left on the node
+ * — its fence, its staging copy, its copier — goes before a server starts on
+ * the old volume again. Asked only of a database that was ever upgraded. An
+ * agent without `db.upgrade` refuses the op, which leaves nothing to remove.
+ */
+async function removeUpgradeHelpers(db: DB, agent: NodeDatabaseAgent, d: Database): Promise<void> {
+  let upgraded = true;
+  try {
+    upgraded = (await db.query.databaseUpgrades.findFirst({ where: eq(databaseUpgrades.databaseId, d.id) })) != null;
+  } catch {
+    /* the journal could not be read: clear anyway */
+  }
+  if (!upgraded) return;
+  for (const helper of ['old', 'new', 'copy'] as const) {
+    await agent('db.upgrade', { database: { databaseId: d.id, slug: d.slug, engine: d.engine, container: nodeContainerOf(d) }, action: 'remove', helper }, { tolerateExit: true }).catch(() => undefined);
+  }
+}
+
 /** Write an agent→panel stream to `destFile` through the backup cipher (`encryptFileInPlace`'s envelope, never plaintext on disk). */
 async function writeEncrypted(readable: Readable, done: Promise<unknown>, destFile: string): Promise<void> {
   const tmp = `${destFile}.${randomUUID()}.part`;
@@ -216,6 +235,12 @@ export function nodeDatabaseRuntime(db: DB, d: Database, deps: NodeDatabaseDeps 
       throw err;
     }
   };
+  const restoreUnlocked = async (file: string, log: (line: string) => void): Promise<void> => {
+    if (!DUMPABLE_ENGINES.has(d.engine) && !PANEL_ONLY_DUMPABLE_ENGINES.has(d.engine)) throw new Error(`restore not supported for ${d.engine}`);
+    await assertExtra();
+    log(`Restoring ${d.name} on node #${serverId} …`);
+    await streamInto(await createBackupReadStream(file), { mode: 'restore' });
+  };
 
   return {
     where: 'node' as const,
@@ -230,6 +255,8 @@ export function nodeDatabaseRuntime(db: DB, d: Database, deps: NodeDatabaseDeps 
       if (!cfg) throw new Error(`Unknown engine: ${d.engine}`);
       const archiving = d.engine === 'postgres' && d.pitrEnabled;
       await (deps.assertCapable ?? defaultAssert)(db, serverId, ['db.manage', 'docker.runSpec', 'volume.manage', ...(archiving ? [NODE_PITR_CAPABILITY] : [])], NODE_DATABASE_FEATURE);
+      // N12: an upgrade that could not finish (the panel or the node restarted meanwhile) may have left its helpers on the database's volume — servers the panel started with no network. They go before anything runs on that volume again; the upgrade's own final start and its recovery come here too, after removing them once more by name.
+      await removeUpgradeHelpers(db, agent, d);
       const archiveOp = async (action: 'prepare' | 'verify') => {
         const result = await agent('db.pitr', { database: nodePitrTarget(d), action });
         const line = result.lines.find((l) => l.startsWith(NODE_PITR_REPLY));
@@ -354,15 +381,18 @@ export function nodeDatabaseRuntime(db: DB, d: Database, deps: NodeDatabaseDeps 
     backup(file: string, log: (line: string) => void): Promise<void> {
       return withDatabaseOperationLock(d.id, log, () => dumpUnlocked(file, log));
     },
+    /** {@link backup} for a caller that already holds the database's operation lock (a major upgrade does). */
+    dumpHeld(file: string, log: (line: string) => void): Promise<void> {
+      return dumpUnlocked(file, log);
+    },
 
     /** Restore an encrypted (or legacy plaintext) backup file from the panel into the node database. */
     restore(file: string, log: (line: string) => void): Promise<void> {
-      if (!DUMPABLE_ENGINES.has(d.engine) && !PANEL_ONLY_DUMPABLE_ENGINES.has(d.engine)) return Promise.reject(new Error(`restore not supported for ${d.engine}`));
-      return withDatabaseOperationLock(d.id, log, async () => {
-        await assertExtra();
-        log(`Restoring ${d.name} on node #${serverId} …`);
-        await streamInto(await createBackupReadStream(file), { mode: 'restore' });
-      });
+      return withDatabaseOperationLock(d.id, log, () => restoreUnlocked(file, log));
+    },
+    /** {@link restore} for a caller that already holds the database's operation lock (a major upgrade does). */
+    restoreHeld(file: string, log: (line: string) => void): Promise<void> {
+      return restoreUnlocked(file, log);
     },
 
     /** 0.14 import: the safety backup and the import under one lock, as on the panel host. `file` is the staged plaintext dump. */

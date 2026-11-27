@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { request as httpRequest } from 'node:http';
 import { isIPv6 } from 'node:net';
 import { servers, type DB } from '@ninedeploy/db';
+import { type UpgradeStatementName, UPGRADE_STATEMENTS } from './databaseUpgradeSql.js';
 import { decrypt, randomToken } from './crypto.js';
 import { open as openSealed, seal } from './agentSeal.js';
 import { sha256 } from './crypto.js';
@@ -60,8 +61,27 @@ export function agentChildTimeoutMs(op: string): number | undefined {
   return LONG_AGENT_OPS.has(op) ? AGENT_LONG_OP_TIMEOUT_MS : undefined;
 }
 
+/**
+ * N12: how long the panel waits for an upgrade step of a node, from what the
+ * step names — the agent stops the child at the same bound. `stop` is a slow,
+ * clean shutdown (up to an hour); `sql` is a statement of the upgrade's
+ * catalogue, whose own bound is the wait. Anything else is a short step.
+ */
+function upgradeRequestTimeoutMs(params: Record<string, unknown>): number | undefined {
+  if (params['action'] === 'stop') {
+    const sec = params['timeoutSec'];
+    if (typeof sec === 'number' && Number.isInteger(sec) && sec >= 1 && sec <= 3600) return (sec + 240) * 1000;
+  }
+  if (params['action'] === 'sql') {
+    const name = params['statement'];
+    if (typeof name === 'string' && Object.hasOwn(UPGRADE_STATEMENTS, name)) return UPGRADE_STATEMENTS[name as UpgradeStatementName].timeoutMs + 120_000;
+  }
+  return undefined;
+}
+
 /** How long the panel waits for `op`'s answer. */
 export function agentRequestTimeoutMs(op: string, params: Record<string, unknown> = {}): number {
+  if (op === 'db.upgrade') return upgradeRequestTimeoutMs(params) ?? SHORT_OP_REQUEST_MS;
   if (op === 'db.pitr' && params['action'] === 'baseBackup') return 6 * 60 * 60_000 + 240_000;
   if (op === 'db.pitr' && params['action'] === 'prune') return 13 * 60_000;
   if (op === 'docker.lifecycle') return 35_000;
@@ -93,6 +113,16 @@ export function agentRequestTimeoutMs(op: string, params: Record<string, unknown
     return (typeof s === 'number' && Number.isInteger(s) && s >= 1 && s <= 3600 ? s : 3600) * 1000 + 120_000;
   }
   return LONG_AGENT_OPS.has(op) ? AGENT_LONG_OP_TIMEOUT_MS + 30_000 : SHORT_OP_REQUEST_MS;
+}
+
+/**
+ * A request that must not go through `fetch`: its dispatcher gives up on a
+ * response whose HEADERS take longer than 300 s, and the agent answers an op
+ * only once it has finished. True for the long build ops and for any op whose
+ * own budget (see {@link agentRequestTimeoutMs}) is longer than the short one.
+ */
+export function isLongAgentRequest(op: string, params: Record<string, unknown> = {}): boolean {
+  return LONG_AGENT_OPS.has(op) || agentRequestTimeoutMs(op, params) > SHORT_OP_REQUEST_MS;
 }
 
 /** Minimal response shape both transports below produce. */
@@ -261,7 +291,7 @@ async function supportsSealed(serverId: number, host: string, port: number, sign
  * the first place.
  */
 export const SEALED_ONLY_AGENT_OPS: ReadonlySet<string> = new Set(['swarm.info', 'swarm.join', 'swarm.leave', 'docker.probe', 'docker.readiness', 'docker.logsSince', 'proxy.confirmRouting', 'proxy.writeOrderedConfig', 'docker.identity', 'docker.retire', 'docker.containerTool', 'volume.fileTool', 'db.client.prepare', 'terminal.open']);
-export const isSealedOnlyAgentOp = (op: string): boolean => SEALED_ONLY_AGENT_OPS.has(op) || op === 'db.pitr' || op.startsWith('swarm.') || op.startsWith('db.studio.') ||
+export const isSealedOnlyAgentOp = (op: string): boolean => SEALED_ONLY_AGENT_OPS.has(op) || op === 'db.pitr' || op === 'db.upgrade' || op.startsWith('swarm.') || op.startsWith('db.studio.') ||
   op.startsWith('proxy.traffic.') || op.startsWith('proxy.servingTraffic.') || op.startsWith('proxy.idleWatch.') || op.startsWith('wake.');
 
 /**
@@ -359,7 +389,7 @@ export async function agentOp(
       signal.throwIfAborted();
       const remaining = deadline - Date.now();
       if (remaining <= 0) throw new AgentRequestTimeout();
-      res = LONG_AGENT_OPS.has(op)
+      res = isLongAgentRequest(op, params)
         ? await postWithoutHeadersTimeout(url, headers, requestBody, remaining, opts?.signal)
         : await fetch(url, {
           method: 'POST',

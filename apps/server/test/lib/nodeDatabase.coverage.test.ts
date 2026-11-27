@@ -93,6 +93,8 @@ function scriptedAgent(answers: Record<string, Answer | Answer[]> = {}) {
   return { agent, calls, ops: () => calls.map((c) => c.op) };
 }
 
+/** N12: a start clears the upgrade helpers by name before anything else (with a fake db the journal cannot be read, so it clears anyway). */
+const HELPERS = ['db.upgrade', 'db.upgrade', 'db.upgrade'];
 const noCaps = { assertCapable: async () => undefined };
 const logs = () => {
   const lines: string[] = [];
@@ -185,7 +187,7 @@ describe('nodeDatabaseRuntime.start', () => {
     const rt = nd.nodeDatabaseRuntime(fakeDb, row(), { agent: a.agent, ...noCaps });
     expect(rt).toMatchObject({ where: 'node', serverId: 3, container: 'nd-db-orders', volume: 'nd-db-orders-data', network: 'nd-dbnet-orders' });
     await rt.start(log);
-    expect(a.ops()).toEqual(['docker.inspect']);
+    expect(a.ops()).toEqual([...HELPERS, 'docker.inspect']);
     expect(lines).toEqual(['nd-db-orders already running on node #3 — reusing']);
   });
 
@@ -199,7 +201,7 @@ describe('nodeDatabaseRuntime.start', () => {
     const { lines, log } = logs();
     const rt = nd.nodeDatabaseRuntime(fakeDb, row({ engine: 'redis', slug: 'cache', cpuShares: 512, cpuLimitMilli: 500, memLimitMb: 256 }), { agent: a.agent, ...noCaps });
     await rt.start(log, { labels: { 'ninedeploy.preview': 'pr-4', 'evil.label': 'x', 'ninedeploy.UPPER': 'no' } });
-    expect(a.ops()).toEqual(['docker.inspect', 'docker.networkCreate', 'docker.volumeInspect', 'docker.pull', 'docker.rm', 'docker.runSpec']);
+    expect(a.ops()).toEqual([...HELPERS, 'docker.inspect', 'docker.networkCreate', 'docker.volumeInspect', 'docker.pull', 'docker.rm', 'docker.runSpec']);
     expect(lines).toContain('Reusing volume nd-db-cache-data on node #3');
     const spec = a.calls.find((c) => c.op === 'docker.runSpec')!.params;
     expect(spec).toEqual({
@@ -228,7 +230,7 @@ describe('nodeDatabaseRuntime.start', () => {
     const { lines, log } = logs();
     await nd.nodeDatabaseRuntime(fakeDb, row(), { agent: a.agent, ...noCaps }).start(log);
     expect(lines).toContain('nd-db-orders is running despite the run failure — adopting it');
-    expect(a.ops()).toEqual([
+    expect(a.ops()).toEqual([...HELPERS,
       'docker.inspect', 'docker.networkCreate', 'docker.volumeInspect', 'docker.volumeCreate', 'docker.pull', 'docker.rm',
       'file.writeEnv', 'docker.runSpec', 'docker.inspect', 'file.deleteEnv',
     ]);

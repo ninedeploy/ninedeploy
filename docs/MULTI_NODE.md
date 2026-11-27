@@ -78,6 +78,7 @@ The panel keeps the last answer in memory for up to 5 minutes, so after an agent
 | Container options (GPUs, shared memory, init, ulimit, capabilities) | `docker.runSpec` + `docker.runtimeOptions` | 0.16.6 | `NINEDEPLOY_AGENT_RUNTIME_OPTIONS=off`. Not a refusal: without it the container starts without them, as before, and the log says why |
 | OS security updates (read pending updates, automatic security updates on/off) | `host.packages` | 0.18.6 | `NINEDEPLOY_AGENT_HOST_PACKAGES=off` |
 | ClickHouse, Meilisearch and RabbitMQ backups and restores of node databases | `db.manage` + `db.dump.extra` | 0.18.7 | `NINEDEPLOY_AGENT_DATABASES=off` |
+| Major version upgrades of node databases (DATABASES_BACKUPS.md §12, "On a node"; the panel keeps the journal, the agent runs each step) | `db.manage`, `stream` + `db.upgrade`, sealed transport | 0.21.0 | `NINEDEPLOY_AGENT_DATABASES=off` |
 | Trivy image scans of node services (scheduled and on request) | `image.scan` | 0.18.7 | `NINEDEPLOY_AGENT_IMAGE_SCAN=off` |
 | Moving a compose stack with its volumes (list, create and transfer `ndcmp-<slug>_<key>`) | `volume.compose` | 0.18.7 | `NINEDEPLOY_AGENT_VOLUME_COMPOSE=off` |
 | GitHub Actions just-in-time runners on the node (GITHUB_APP.md §7.1) | `gha.runner` | 0.18.7 | opt-in: `NINEDEPLOY_AGENT_GHA_RUNNERS=on`; `off` or unset turns it off |

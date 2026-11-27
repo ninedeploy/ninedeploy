@@ -66,19 +66,19 @@ function fakeDeps(opts: {
   };
   const deps: Deps = {
     psql: vi.fn(async () => { throw new Error('psql must not run for MySQL'); }),
-    sql: vi.fn(async (_d: Database, container: string, sql: string) => {
+    sql: vi.fn(async (_d: Database, container: string, sql: { text: string }) => {
       const server = container === 'nd-dbup-shop-new' ? NEW : OLD;
-      if (sql === 'SELECT VERSION()') return `${versionOf(container)}\n`;
-      if (sql === 'SELECT 1') return '1\n';
-      if (sql.startsWith('SET GLOBAL')) {
+      if (sql.text === 'SELECT VERSION()') return `${versionOf(container)}\n`;
+      if (sql.text === 'SELECT 1') return '1\n';
+      if (sql.text.startsWith('SET GLOBAL')) {
         calls.push(`slow-shutdown ${container}`);
         return '';
       }
-      if (sql.includes('mysql_native_password')) return opts.native ?? '';
-      if (sql.includes('FROM information_schema.TABLES')) return `${hex('shop')}${TAB}${hex('orders')}\n`;
-      if (sql.includes('UNION ALL') || sql.startsWith('SELECT 0, COUNT(*)')) return `0${TAB}${server.rows}\n`;
-      if (sql.includes('information_schema.STATISTICS')) return ['3', '2', '1', '0', '1', '0', '1'].join(TAB) + '\n';
-      if (sql.includes('FROM mysql.user')) return server.users.map(hex).join('\n') + '\n';
+      if (sql.text.includes('mysql_native_password')) return opts.native ?? '';
+      if (sql.text.includes('FROM information_schema.TABLES')) return `${hex('shop')}${TAB}${hex('orders')}\n`;
+      if (sql.text.includes('UNION ALL') || sql.text.startsWith('SELECT 0, COUNT(*)')) return `0${TAB}${server.rows}\n`;
+      if (sql.text.includes('information_schema.STATISTICS')) return ['3', '2', '1', '0', '1', '0', '1'].join(TAB) + '\n';
+      if (sql.text.includes('FROM mysql.user')) return server.users.map(hex).join('\n') + '\n';
       return '';
     }),
     containerImage: vi.fn(async () => ({ id: 'sha256:old', tag: 'mysql:8.0' })),

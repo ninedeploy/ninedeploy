@@ -792,6 +792,7 @@ daemon is real. Guides:
 | containerReadiness | `docker.readiness` |
 | containerTools | `docker.containerTool` |
 | databaseClient | `db.client.prepare` |
+| databaseUpgrade | `db.upgrade` |
 | databases | `docker.restart`, `db.exec` |
 | deployHooks | `docker.hookRun` |
 | fileMounts | `file.writeMount`, `file.removeMounts` |
@@ -1259,10 +1260,8 @@ Limits that are decided design, not defects:
 Work that is planned but not implemented, tracked as packages in the
 [November 16 work plan](docs/plans/PROJECT_REVIEW_2026-11-16.md):
 
-- Restart behavior for user-visible in-memory state (canary observations,
-  idle observations, one-time forward-auth codes) — N07
 - Panel sign-in (forward auth) on nodes — N11; the design record is `docs/plans/node-forward-auth.md` and the implementation is open
-- Database high availability, major upgrades on nodes and for MongoDB — N12
+- Database high availability, and major upgrades for MongoDB — N12 (major upgrades on nodes are done: `lib/nodeDatabaseUpgrade.ts` over `agentOps/databaseUpgrade.ts`)
 - Preview database copies only for PostgreSQL and the Redis family on the
   panel host — N13
 - GitOps covers projects, services, domains and grants and never deletes;

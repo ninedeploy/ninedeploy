@@ -92,6 +92,7 @@ describe('agent capabilities (multi-node §1.1)', () => {
       'proxy.pages',
       'docker.hooks',
       'db.pitr.archive',
+      'db.upgrade',
     ]);
     expect(multiNodeCapability.parse('db.manage')).toBe('db.manage');
     expect(multiNodeCapability.parse('db.pitr.archive')).toBe('db.pitr.archive');

@@ -51,16 +51,16 @@ function fakeDeps(opts: { staging?: Partial<Cluster>; otherDatabases?: string; o
   const clusterOf = (container: string): Cluster => (container === 'nd-dbup-orders-new' ? NEW : OLD);
   let startCount = 0;
   const deps: Deps = {
-    psql: vi.fn(async (container: string, sql: string, o?: { database?: string }) => {
+    psql: vi.fn(async (container: string, sql: { text: string; database?: string }) => {
       const c = clusterOf(container);
-      if (sql.includes('server_version_num')) return `${c.version}\n`;
-      if (sql.includes('pg_database_size')) return '1000\n';
-      if (sql.includes('FROM pg_database')) return opts.otherDatabases ?? '';
-      if (sql.includes('FROM pg_roles')) return opts.otherRoles ?? '';
-      if (o?.database === 'postgres') return `${opts.postgresDbTables ?? '0'}\n`;
-      if (sql.includes('query_to_xml')) return `${c.rows}\n`;
-      if (sql.includes('pg_sequences')) return `${c.seq}\n`;
-      if (sql.includes('pg_extension')) return `${c.objects}\n`;
+      if (sql.text.includes('server_version_num')) return `${c.version}\n`;
+      if (sql.text.includes('pg_database_size')) return '1000\n';
+      if (sql.text.includes('FROM pg_database')) return opts.otherDatabases ?? '';
+      if (sql.text.includes('FROM pg_roles')) return opts.otherRoles ?? '';
+      if (sql.database === 'postgres') return `${opts.postgresDbTables ?? '0'}\n`;
+      if (sql.text.includes('query_to_xml')) return `${c.rows}\n`;
+      if (sql.text.includes('pg_sequences')) return `${c.seq}\n`;
+      if (sql.text.includes('pg_extension')) return `${c.objects}\n`;
       return '';
     }),
     containerImage: vi.fn(async () => ({ id: 'sha256:old', tag: 'postgres:16' })),
@@ -114,10 +114,10 @@ async function admitAndRun(deps: Deps, toMajor = 18) {
 }
 
 describe('refusals before anything stops', () => {
-  it('offers PostgreSQL, MySQL and MariaDB on the panel host only, and not pgvector, preview copies or PITR', async () => {
+  it('offers PostgreSQL, MySQL and MariaDB on the panel host and on nodes, and not other engines, pgvector, preview copies or PITR', async () => {
     const base = await row();
     expect(upgradeRefusal(base)).toBeNull();
-    expect(upgradeRefusal({ ...base, serverId: 3 })?.code).toBe('database_upgrade_node');
+    expect(upgradeRefusal({ ...base, serverId: 3 })).toBeNull();
     expect(upgradeRefusal({ ...base, engine: 'mysql' })).toBeNull();
     expect(upgradeRefusal({ ...base, engine: 'mongo' })?.code).toBe('database_upgrade_engine');
     expect(upgradeRefusal({ ...base, version: 'vector' })?.code).toBe('database_upgrade_pgvector');

@@ -350,7 +350,10 @@ export const AGENT_RUN_EXTRAS_VERSION = '0.16.4';
 export const AGENT_FILE_MOUNTS_VERSION = '0.16.5';
 /** 0.16.6: `docker.runtimeOptions` (container options on `docker.runSpec`). */
 export const AGENT_RUNTIME_OPTIONS_VERSION = '0.16.6';
+/** N12: `db.upgrade` (a major upgrade of a node database) ships in the release after 0.20.0; an older agent has no such op and is told to update. */
+export const AGENT_DB_UPGRADE_VERSION = '0.21.0';
 export const AGENT_CAPABILITY_VERSION: Readonly<Record<MultiNodeCapability, string>> = {
+  'db.upgrade': AGENT_DB_UPGRADE_VERSION,
   'db.pitr.archive': '0.18.29',
   // ── 0.16 T2 agent transport ──
   stream: AGENT_MULTI_NODE_VERSION,
@@ -464,6 +467,7 @@ export const CAPABILITY_SWITCH: Readonly<Partial<Record<MultiNodeCapability, str
   'docker.buildOptions': 'NINEDEPLOY_AGENT_BUILDS',
   'git.sshkey': 'NINEDEPLOY_AGENT_STATIC_CREDENTIALS',
   'db.manage': 'NINEDEPLOY_AGENT_DATABASES',
+  'db.upgrade': 'NINEDEPLOY_AGENT_DATABASES',
   'db.pitr.archive': 'NINEDEPLOY_AGENT_PITR',
   'db.dump.extra': 'NINEDEPLOY_AGENT_DATABASES',
   'image.scan': 'NINEDEPLOY_AGENT_IMAGE_SCAN',

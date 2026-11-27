@@ -318,7 +318,7 @@ A dump restores the database as it was when the dump was taken. Point-in-time re
 
 ## ⬆️ 12. Major version upgrades (PostgreSQL, MySQL, MariaDB; O2)
 
-A PostgreSQL, MySQL or MariaDB database can move to a newer release (for example PostgreSQL 16 → 18, MySQL 8.0 → 9.7, MariaDB 10.11 → 11.8) from **Settings → Major version upgrade**. The CLI is `ninedeploy databases upgrade start <dbId> --to 18` (or `--to 8.4`), and the API is `POST /v1/databases/:id/upgrades` with `{ "toVersion": "18" }` (`{ "toMajor": 18 }` still works for PostgreSQL). The options route lists the targets in `versions`.
+A PostgreSQL, MySQL or MariaDB database can move to a newer release (for example PostgreSQL 16 → 18, MySQL 8.0 → 9.7, MariaDB 10.11 → 11.8) from **Settings → Major version upgrade**, on the panel host or on a node ([On a node](#on-a-node)). The CLI is `ninedeploy databases upgrade start <dbId> --to 18` (or `--to 8.4`), and the API is `POST /v1/databases/:id/upgrades` with `{ "toVersion": "18" }` (`{ "toMajor": 18 }` still works for PostgreSQL). The options route lists the targets in `versions`.
 
 PostgreSQL moves by dump and restore (below). MySQL and MariaDB move by copy: see [MySQL and MariaDB](#mysql-and-mariadb). Starting, rolling back and finalizing need `admin` on the database. Reading the options (`GET /v1/databases/:id/upgrades/options`) and the history needs `viewer`.
 
@@ -343,7 +343,7 @@ The CLI waits for the result (`--no-wait` returns at once). The card shows the p
 
 **Which major the database goes back to.** The panel records the major the cluster really runs, read from the server. A database created without a version follows the engine default, which may since have moved past its data; a failure, a rollback or a restart in the middle puts it back on its real major and pins that version.
 
-**When it fails.** A failure before the switch removes the new volume and starts the database as it was, on its old major. A new major that does not start after the switch is pointed back the same way, and its volume is kept: it was on the network and may hold writes. The reason is on the upgrade row (`GET /v1/databases/:id/upgrades`). If the panel restarts in the middle, it finishes on boot: before the switch it starts the old database; after it, it starts the verified copy.
+**When it fails.** A failure before the switch removes the new volume and starts the database as it was, on its old major. A new major that does not start after the switch is pointed back the same way, and its volume is kept: it was on the network and may hold writes. The reason is on the upgrade row (`GET /v1/databases/:id/upgrades`). If the panel restarts in the middle, it finishes on boot: before the switch it starts the old database; after it, it starts the verified copy. One host that does not answer at boot is the exception: the upgrade then stays open and is finished by a sweep once the host answers ([On a node](#on-a-node)).
 
 **Rollback and finalize.** After a completed upgrade the previous volume is kept.
 - **Roll back** (`ninedeploy databases upgrade rollback <dbId> <upgradeId>`) points the database back at it, on the old major. Writes made since the upgrade stay on the upgraded volume and are **not** carried back.
@@ -365,10 +365,22 @@ A dump of every database carries the `mysql` system schema, and loading that int
 
 Users, grants and every database in the server come along. Rollback and finalize work as above.
 
+### On a node
+
+The upgrade of a database that lives on a node is the same upgrade: the same steps, the same comparison, the same switch, rollback and finalize, and the same record on the panel. What differs is who touches Docker. The panel keeps the journal and asks the node's agent for each step (`db.upgrade`): a helper started with no network, a statement, a copy, a slow stop, a removal. Services reach a node database through its own bridge by container name, and the container keeps its name, so nothing has to rejoin.
+
+- **The agent must be able to.** It has to be 0.21.0 or newer, reached over the sealed transport, and its owner must not have switched databases off (`NINEDEPLOY_AGENT_DATABASES=off`). An older agent, an unsealed transport or a node that does not answer is refused before anything stops; the card says which.
+- **No SQL crosses to the node.** The panel asks for a statement by its name (`mysql.serverVersion`, `postgres.fingerprint.rows`, …) from a catalogue both share; the agent builds the text. The same catalogue gives the panel host its text, so both run the same words.
+- **Everything is bound to the one database.** A volume or a container that does not carry the database's id (`ninedeploy.database.id`) is refused before anything runs, and a helper container (`nd-db-upg-<slug>-old`, `-new`, `-copy`) is removed only when it carries the same id.
+- **The safety dump lands on the panel host.** It travels over the sealed stream channel into the panel's backups directory, as a backup does, so the panel host needs room for it. The node needs room for the copy, where Docker keeps its volumes.
+- **A copy runs for as long as it takes.** It is started detached and watched, so a lost request does not stop it; a slow shutdown is waited for up to an hour, as on the panel host.
+- **When the node goes away.** The upgrade fails and the row is pointed back on the panel; the node is asked to start the database again, and if it does not answer the reason says so and the database can be started from its page once the node is back. That start first removes whatever the upgrade left on the node, so no leftover helper shares the volume with the server.
+- **When the panel restarts and the node does not answer.** The upgrade stays open with a note, which keeps stop, start, restart, limits, delete and the PITR switch answering 409: nothing may run beside a helper the panel could not remove. The node sweep finishes the recovery within a minute of the node answering.
+
 **Targets.** MySQL 8.4 (LTS) and 9.7 (the engine default), from 8.0 or later. MariaDB 10.11, 11.4, 11.8 and 12.3, from 10.6 or later, directly.
 
 **Limits.**
-- **On the panel host only.** PostgreSQL goes to 14–18. Databases on nodes, pgvector databases and preview copies are refused. MongoDB and the other engines have no major upgrade yet.
+- **On the panel host and on nodes.** PostgreSQL goes to 14–18. On a node the agent has to be 0.21.0 or newer and sealed ([On a node](#on-a-node)). pgvector databases and preview copies are refused. MongoDB and the other engines have no major upgrade yet.
 - **MySQL 5.7 and MariaDB before 10.6** are refused: upgrade them by hand to 8.0 or 10.6 first.
 - **PITR must be off** (its archive and base backups belong to one cluster). Turn it off, upgrade, turn it on again. A rollback is refused while PITR is on.
 - **Deleting the database keeps both volumes**, like any data volume. A new database created later with the same name would pick up the old `nd-db-<slug>-data` volume. If that volume holds another major's data, the create is refused with the major named, instead of starting a server that cannot read it.

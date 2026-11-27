@@ -33,6 +33,9 @@ const HOUR_MS = 60 * 60 * 1000;
  * previous process was running is recovered at boot (its helpers removed, the
  * database started again on the volume its row names) WITHOUT blocking
  * startup, and failed or finalized records older than 180 days are pruned.
+ * A row whose host does not answer at boot stays open with a note, and the
+ * node database sweep finishes it when the host answers (N12; the nodeDatabases
+ * plugin calls `resumeInterruptedUpgrades`).
  *
  * Every step is isolated and never blocks startup.
  */

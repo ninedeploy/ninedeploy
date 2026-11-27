@@ -48,9 +48,9 @@ Each pair is **panel host / node**. These are structural eligibility checks for 
 
 | Engine | PITR | Major upgrade eligibility | Preview copy | Isolated restore adapter |
 |---|---|---|---|---|
-| postgres | ✅ / ✅ | ✅ / — | ✅ / — | ✅ |
-| mysql | — / — | ✅ / — | — / — | ✅ |
-| mariadb | — / — | ✅ / — | — / — | ✅ |
+| postgres | ✅ / ✅ | ✅ / ✅ | ✅ / — | ✅ |
+| mysql | — / — | ✅ / ✅ | — / — | ✅ |
+| mariadb | — / — | ✅ / ✅ | — / — | ✅ |
 | mongo | — / — | — / — | — / — | ✅ |
 | redis | — / — | — / — | ✅ / — | ✅ |
 | valkey | — / — | — / — | ✅ / — | ✅ |

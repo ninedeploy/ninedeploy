@@ -95,6 +95,8 @@ export const MULTI_NODE_CAPABILITIES = [
   'docker.hooks',
   // N04: typed PostgreSQL WAL archive control and sealed snapshot export.
   'db.pitr.archive',
+  // N12: a major upgrade of a node database — the panel's journal, the node's hands (stop, copy, compare, switch, rollback).
+  'db.upgrade',
 ] as const;
 export const multiNodeCapability = z.enum(MULTI_NODE_CAPABILITIES);
 export type MultiNodeCapability = z.infer<typeof multiNodeCapability>;

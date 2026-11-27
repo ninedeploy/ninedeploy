@@ -1,8 +1,8 @@
 import { z } from 'zod';
 
 // ── Database major upgrade (O2) ────────────────────────────────────────────
-// Request and response shapes for `/v1/databases/:id/upgrades`. A database on
-// the panel host moves to a newer release in a new volume: PostgreSQL by dump
+// Request and response shapes for `/v1/databases/:id/upgrades`. A database, on
+// the panel host or on a node (N12), moves to a newer release in a new volume: PostgreSQL by dump
 // and restore, MySQL and MariaDB by copying the stopped data directory and
 // upgrading the copy in place. The previous volume stays until the upgrade is
 // finalized, so it can be rolled back. Server side:

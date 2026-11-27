@@ -2,6 +2,7 @@ import { eq, isNotNull } from 'drizzle-orm';
 import { databases, type DB } from '@ninedeploy/db';
 import fp from 'fastify-plugin';
 import { agentOp } from '../lib/agentClient.js';
+import { resumeInterruptedUpgrades } from '../lib/databaseUpgrade.js';
 import { type NodeDatabaseAgent, nodeContainerOf, nodeContainerState, recordNodeReachability } from '../lib/nodeDatabase.js';
 
 /**
@@ -20,6 +21,10 @@ import { type NodeDatabaseAgent, nodeContainerOf, nodeContainerState, recordNode
  * An UNREACHABLE node never changes `status`: the database may well still
  * run there. The API reports `reachable: false` (lib/nodeDatabase.ts keeps
  * the last answer per node) and scheduled backups record the failure.
+ *
+ * N12: each sweep also finishes a major upgrade that boot could not recover
+ * because its host did not answer (lib/databaseUpgrade.ts
+ * `resumeInterruptedUpgrades`): a minute after the node is back, not an hour.
  *
  * Registered in `app.ts` after `kernelPlugin` (mount point M2). Every test
  * that boots the real app mocks it; the sweep itself is exported for tests.
@@ -79,6 +84,15 @@ export default fp(
       try {
         const changed = await sweepNodeDatabases(fastify.db);
         for (const c of changed) fastify.log.info({ component: 'node-databases', ...c }, `node database #${c.id}: ${c.from} → ${c.to}`);
+        // N12: an upgrade boot could not finish because its host did not answer
+        // is finished now that the node is back (lib/databaseUpgrade.ts
+        // `resumeInterruptedUpgrades`; it finds only rows left waiting).
+        try {
+          const resumed = await resumeInterruptedUpgrades(fastify.db);
+          if (resumed > 0) fastify.log.info({ component: 'node-databases', resumed }, `finished the recovery of ${resumed} interrupted database upgrade(s)`);
+        } catch {
+          /* the next sweep tries again */
+        }
       } finally {
         busy = false;
       }

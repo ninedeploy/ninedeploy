@@ -191,8 +191,9 @@ export function redisCliCommand(engine: string, cn: string, password: string, ..
   return { argv: ['exec', '-e', 'REDISCLI_AUTH', cn, engine === 'keydb' ? 'keydb-cli' : 'redis-cli', ...command], env: { REDISCLI_AUTH: password } };
 }
 
-const PG_USER = 'nine';
-const PG_DB = 'app';
+/** The user and the database every managed PostgreSQL database has (`ENGINES.postgres` defaults; the node's builders use them). */
+export const PG_USER = 'nine';
+export const PG_DB = 'app';
 const MONGO_USER = 'nine';
 
 /** `databaseSize`: the engine's size query, or null when the engine has none (size 0). */
