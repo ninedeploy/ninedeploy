@@ -23,7 +23,8 @@ curl -fsSL https://raw.githubusercontent.com/NineDeploy/NineDeploy/main/install.
 - Without the flags, a first install on a terminal asks for both. Press Enter to skip.
 - The installer warns when the domain does not resolve to the server yet.
 - The setup link is printed for the domain and for `http://<server-ip>:3000`. The second link works before the certificate is issued.
-- Leave port 3000 reachable from Docker: Traefik forwards the domain to it through the Docker gateway. To keep it off the internet, block it in your cloud provider's firewall instead of binding the panel to 127.0.0.1.
+- The domain does not depend on the address port 3000 is published on. In Docker mode the panel container joins the proxy's network once a domain is set, and Traefik reaches it there. To keep the plain-HTTP port off the internet, set `NINEDEPLOY_BIND=127.0.0.1` in `.env` and run `docker compose up -d`; the link `http://<server-ip>:3000` then works through an SSH tunnel only. On bare metal, leave the port reachable from Docker and block it in your cloud provider's firewall instead.
+- Once the panel is healthy, the installer asks Traefik for the domain and reports whether it answered.
 - A domain set later under **Settings → Security** wins over `NINEDEPLOY_DOMAIN`.
 - Without the email, the first-run form offers to use the admin's email for Let's Encrypt.
 

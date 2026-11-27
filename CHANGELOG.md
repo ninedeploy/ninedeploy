@@ -12,8 +12,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 **Highlights**
 
 - Fixes reach a release sooner: a push's verification takes 35 to 44 minutes instead of 79, and a release builds its image in about 30 seconds where 0.20.0 took 7.5 minutes.
+- A panel installed with a domain in Docker mode answers on that domain whether its port is bound to `127.0.0.1`, published on another port, or not published at all.
 
 **Action needed:** No.
+
+### Fixed
+
+- **The panel's own domain no longer depends on the address its port is published on.** In Docker mode the panel container joins the proxy's network once a domain is set, and Traefik reaches it there; the router of the domain, the forward-auth check and the wake endpoint share that address. Before, Traefik reached the panel through the host port, so a panel bound to `127.0.0.1` (as `--private` installs are) or published on another port than 3000 did not answer on its domain. The installer no longer guesses from the port: once the panel is healthy, it asks Traefik for the domain over HTTPS and reports whether it answered. Checked on an isolated Docker daemon with the panel's port unpublished.
 
 ### Internal
 

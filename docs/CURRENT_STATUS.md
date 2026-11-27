@@ -33,7 +33,6 @@ Reconciled on November 27, 2026. This is the one list. The plans keep the eviden
 | ID | Work |
 |---|---|
 | A4 | Seven more framework guides with starters: Django, Rails, Express, Astro, Go, Spring and a static site. |
-| A2 | Route the panel's own domain to the panel container over the `ninedeploy` network. Today it reaches the panel only through the Docker gateway on host port 3000. |
 | A3 | Group the 20 sections of instance Settings by task. |
 | A8 | Rename the `coolify-*` template slugs, with redirects. Approved on November 9. |
 | X2 | Deploy by polling Git, for servers that cannot receive webhooks. |
@@ -108,6 +107,7 @@ The `stable` tag pointed at v0.18.28 (`f238463e`) on November 23, 2026, so the s
 | Networking and Swarm diagnostics | Docker uses per-service `nd-svc-*` bridges; Compose and Swarm have their own network paths. Joined worker task metrics are aggregated through agents; missing samples are unknown. | Source guards and the existing [Swarm acceptance](SWARM_RUNTIME_ACCEPTANCE.md); the release run's cohorts above. | Published. Swarm remains a stateless deployer. |
 | Browser journeys | Setup, deploy, environment and rollback, backup, approvals, access, locale, phone and compact checks exist. The domain journey checks routing configuration, without obtaining a real certificate. | [Browser run 43706059714](https://github.com/ninedeploy/ninedeploy/actions/runs/43706059714) passed on an earlier base commit. | Since 0.20.0, promotion requires the browser gate on the signed image digest, and main's CI runs the journeys on every push. Real public DNS and ACME acceptance remains open. |
 | Desktop | Installers and tests exist; signing is conditional on certificates. | The 0.19.0 release run packaged all three platforms. | Installers are published with every release since 0.18.25, unsigned. Physical-Mac Keychain use and published installer signatures are not independently verified (N18). |
+| The panel's own domain in Docker mode | Implemented on `main` after 0.20.0. Once a domain is set, the panel container joins the proxy's network at boot, and the router of the domain, the forward-auth check and the wake endpoint reach it under its alias. The installer checks that the domain answers instead of guessing from the published port. On bare metal Traefik still reaches the panel through the Docker gateway. | `smoke-panel-domain.mjs` on an isolated daemon: the panel with a domain and no published port, six cases. It runs in CI's routing group and in the `agent-runtime` release cohort. | Unreleased. |
 
 ## Packages published in 0.19.0
 

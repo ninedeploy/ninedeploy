@@ -94,8 +94,8 @@ How it works:
 - The client address follows `NINEDEPLOY_TRUST_PROXY`. With the default (`1`), the `X-Forwarded-For` of a peer on a private network is trusted. A container on the panel host's networks can therefore claim any address. The list is not a boundary against workloads on the same host.
 - The same applies to a client the panel sees through a private hop. In Docker mode, with port 3000 published on `0.0.0.0`, Docker's userland proxy can make some clients appear to come from the bridge gateway, for example an IPv6 client reaching an IPv4-published port. Such a client's own `X-Forwarded-For` would then be trusted.
 - The list is reliable when clients reach the panel only through its HTTPS domain. Traefik then sets the real client address.
-  - Keep port 3000 reachable from Docker, because Traefik forwards to it through the Docker gateway. A panel bound to `127.0.0.1` is cut off from its domain.
-  - Block port 3000 from the internet with a firewall in front of the host instead.
+  - In Docker mode the panel container joins the proxy's network once a domain is set, and Traefik reaches it there. Port 3000 can then stay on `127.0.0.1` (`NINEDEPLOY_BIND`), and the domain answers all the same.
+  - On bare metal Traefik reaches the panel through the Docker gateway, so there keep the port reachable from Docker and block it from the internet with a firewall in front of the host.
   - The Doctor page warns when the panel port is reachable over plain HTTP.
   - `NINEDEPLOY_TRUST_PROXY=false` stops the spoofing, but then every client behind Docker's userland proxy appears as the bridge gateway. Prefer the HTTPS domain.
 
