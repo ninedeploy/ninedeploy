@@ -909,10 +909,13 @@ operators.
   Logs, Danger Zone; the cards for canary, autoscale, sleep, placement,
   maintenance, forward auth, image scan, errors, pending changes and recovery
   live on these tabs
-- **Settings** — 20 sections: Account, Appearance, Security, SSO & OIDC,
-  Integrations, AI Diagnosis, Notifications, Log Drains, Firewall, Storage &
-  Prune, Swarm, Deploy freeze, CI runners, Image scanning, GitOps, Config
-  Center, Plugins, System, Panel backup, Migration
+- **Settings** — 20 sections in five groups named for the task a person
+  comes for, six sections at the most in a group: Your account (Account,
+  Appearance), Access & certificates (Security, SSO & OIDC), Services &
+  deploys (Deploy freeze, CI runners, Image scanning, GitOps, Config
+  Center, Plugins), Servers & data (Swarm, Firewall, Storage & Prune,
+  System, Panel backup, Migration), Connections & alerts (Integrations,
+  Notifications, Log Drains, AI Diagnosis)
 - **Languages**: English (the source strings) and Turkish
   (`locales/tr.ts`, keyed by the English text); `test/i18nCatalog.test.ts`
   fails on a missing or unused entry. See

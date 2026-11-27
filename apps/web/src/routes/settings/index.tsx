@@ -85,31 +85,30 @@ interface SectionCategory {
   items: SectionItem[];
 }
 
+/**
+ * The sections of Settings, grouped by the task a person comes for, and in the order
+ * a new installation meets them. No group holds more than six sections (A3;
+ * test/Settings.test.tsx holds both rules). A section's `id` is its address
+ * (`?section=`) and the name of its help topic: it does not change when groups do.
+ */
 const SETTING_GROUPS: SectionCategory[] = [
   {
-    category: msg('Personal & Access'),
+    category: msg('Your account'),
     items: [
-      { id: 'account', label: msg('Account'), desc: msg('Profile, credentials & passkeys'), icon: <User size={16} /> },
-      { id: 'appearance', label: msg('Appearance'), desc: msg('Theme colors & density'), icon: <Palette size={16} /> },
-      { id: 'security', label: msg('Security'), desc: msg('2FA, audit logs & sessions'), icon: <Shield size={16} /> },
+      { id: 'account', label: msg('Account'), desc: msg('Password, passkeys, 2FA & sessions'), icon: <User size={16} /> },
+      { id: 'appearance', label: msg('Appearance'), desc: msg('Language, theme & layout'), icon: <Palette size={16} /> },
+    ],
+  },
+  {
+    category: msg('Access & certificates'),
+    items: [
+      { id: 'security', label: msg('Security'), desc: msg("API tokens, sign-up & the panel's certificate"), icon: <Shield size={16} /> },
       { id: 'sso', label: msg('SSO & OIDC'), desc: msg('Identity providers & auto-enroll'), icon: <KeyRound size={16} />, operatorOnly: true },
     ],
   },
   {
-    category: msg('Integrations & Alerts'),
+    category: msg('Services & deploys'),
     items: [
-      { id: 'integrations', label: msg('Integrations'), desc: msg('Vault secrets, DNS & S3'), icon: <Boxes size={16} />, operatorOnly: true },
-      { id: 'ai', label: msg('AI Diagnosis'), desc: msg('BYO-key failed-deploy analysis'), icon: <Bot size={16} /> },
-      { id: 'notifications', label: msg('Notifications'), desc: msg('Webhooks, Slack, Telegram'), icon: <Bell size={16} />, operatorOnly: true },
-      { id: 'log-drains', label: msg('Log Drains'), desc: msg('Syslog, Datadog & Vector'), icon: <Terminal size={16} />, operatorOnly: true },
-    ],
-  },
-  {
-    category: msg('DevOps & Engine'),
-    items: [
-      { id: 'firewall', label: msg('Firewall (UFW)'), desc: msg('Host ports & inbound packet filter'), icon: <Shield size={16} />, operatorOnly: true },
-      { id: 'storage', label: msg('Storage & Prune'), desc: msg('Disks, Docker prune & logs'), icon: <HardDrive size={16} />, operatorOnly: true },
-      { id: 'swarm', label: msg('Swarm'), desc: msg('Multi-node orchestration & cluster'), icon: <Network size={16} />, operatorOnly: true },
       { id: 'deploy-freeze', label: msg('Deploy freeze'), desc: msg('Hold deploys during releases & incidents'), icon: <Snowflake size={16} />, operatorOnly: true },
       { id: 'ci-runners', label: msg('CI runners'), desc: msg('Machines that run CI jobs'), icon: <Workflow size={16} />, operatorOnly: true },
       { id: 'image-scanning', label: msg('Image scanning'), desc: msg('Trivy vulnerability scans & deploy gate'), icon: <ScanSearch size={16} />, operatorOnly: true },
@@ -119,18 +118,28 @@ const SETTING_GROUPS: SectionCategory[] = [
     ],
   },
   {
-    category: msg('Platform & Lifecycle'),
+    category: msg('Servers & data'),
     items: [
+      { id: 'swarm', label: msg('Swarm'), desc: msg('Multi-node orchestration & cluster'), icon: <Network size={16} />, operatorOnly: true },
+      { id: 'firewall', label: msg('Firewall (UFW)'), desc: msg('Host ports & inbound packet filter'), icon: <Shield size={16} />, operatorOnly: true },
+      { id: 'storage', label: msg('Storage & Prune'), desc: msg('Disks, Docker prune & logs'), icon: <HardDrive size={16} />, operatorOnly: true },
       { id: 'system', label: msg('System'), desc: msg('Resources, version & updates'), icon: <Server size={16} />, operatorOnly: true },
       { id: 'panel-backup', label: msg('Panel backup'), desc: msg('Scheduled, encrypted self-backup'), icon: <DatabaseBackup size={16} />, operatorOnly: true },
       { id: 'migration', label: msg('Migration'), desc: msg('Full backups import/export'), icon: <ArrowLeftRight size={16} />, operatorOnly: true },
     ],
   },
+  {
+    category: msg('Connections & alerts'),
+    items: [
+      { id: 'integrations', label: msg('Integrations'), desc: msg('Vault secrets & DNS providers'), icon: <Boxes size={16} />, operatorOnly: true },
+      { id: 'notifications', label: msg('Notifications'), desc: msg('Webhooks, Slack, Telegram'), icon: <Bell size={16} />, operatorOnly: true },
+      { id: 'log-drains', label: msg('Log Drains'), desc: msg('Syslog, Datadog & Vector'), icon: <Terminal size={16} />, operatorOnly: true },
+      { id: 'ai', label: msg('AI Diagnosis'), desc: msg('BYO-key failed-deploy analysis'), icon: <Bot size={16} /> },
+    ],
+  },
 ];
 
-/** Settings page shell: clean vertical sidebar navigation layout with search filter. */
-
-/** Settings page shell: clean vertical sidebar navigation layout with search filter. */
+/** Settings page shell: a sidebar of sections grouped by task, with a filter; on a phone, one picker. */
 export function Settings() {
   const { user } = useAuth();
   const t = useT();
@@ -160,15 +169,19 @@ export function Settings() {
   const setSection = (next: SectionId) => setSearchParams({ section: next }, { replace: true });
   const [search, setSearch] = useState('');
 
+  // The filter narrows by a section's label or description, or by a group's name, which keeps
+  // the whole group.
   const filteredGroups = useMemo(() => {
     if (!search.trim()) return baseGroups;
     const q = search.toLowerCase();
-    return baseGroups.map((group) => ({
-      ...group,
-      items: group.items.filter(
-        (item) => t(item.label).toLowerCase().includes(q) || t(item.desc).toLowerCase().includes(q),
-      ),
-    })).filter((group) => group.items.length > 0);
+    return baseGroups
+      .map((group) => ({
+        ...group,
+        items: t(group.category).toLowerCase().includes(q)
+          ? group.items
+          : group.items.filter((item) => t(item.label).toLowerCase().includes(q) || t(item.desc).toLowerCase().includes(q)),
+      }))
+      .filter((group) => group.items.length > 0);
   }, [search, baseGroups, t]);
 
   return (
@@ -180,7 +193,7 @@ export function Settings() {
       />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-        {/* Below lg: one picker instead of the sixteen-item list, which pushed
+        {/* Below lg: one picker instead of the twenty-section list, which pushed
             the section itself a whole phone screen down. */}
         <div className="lg:hidden">
           <Select

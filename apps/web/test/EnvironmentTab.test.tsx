@@ -113,7 +113,8 @@ describe('EnvironmentTab — scheduled jobs card', () => {
     renderTab();
 
     expect(await screen.findByText(/Git\s+providers can.t reach that/)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Settings → Security' })).toHaveAttribute('href', '/settings');
+    // The link names the Security section and opens it: the page's landing section is Account.
+    expect(screen.getByRole('link', { name: 'Settings → Security' })).toHaveAttribute('href', '/settings?section=security');
   });
 
   it('does not warn for public webhook URLs', async () => {

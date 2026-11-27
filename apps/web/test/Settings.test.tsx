@@ -1,7 +1,8 @@
 ﻿import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { screen, waitFor, fireEvent } from '@testing-library/react';
+import { screen, waitFor, fireEvent, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Settings } from '../src/routes/settings/index.js';
+import { SETTINGS_SECTION_IDS } from '../src/help/keys.js';
 import { api, getToken } from '../src/lib/api.js';
 import { useTheme } from '../src/lib/theme.js';
 import { renderWithProviders, mockOf } from './helpers.js';
@@ -70,6 +71,18 @@ const channels = [
 
 const upToDate = { current: 'v0.0.0', latest: null, updateAvailable: false, notesUrl: null, checkedAt: '2026-01-01T00:00:00Z' };
 
+/** A3: the task groups of the Settings sidebar, each with its sections' ids in order (the `?section=` values). */
+const GROUPS: Array<[string, string[]]> = [
+  ['Your account', ['account', 'appearance']],
+  ['Access & certificates', ['security', 'sso']],
+  ['Services & deploys', ['deploy-freeze', 'ci-runners', 'image-scanning', 'gitops', 'config', 'plugins']],
+  ['Servers & data', ['swarm', 'firewall', 'storage', 'system', 'panel-backup', 'migration']],
+  ['Connections & alerts', ['integrations', 'notifications', 'log-drains', 'ai']],
+];
+/** The section ids of the tabs inside `container`, read from what each tab controls. */
+const tabsOf = (container: HTMLElement) =>
+  within(container).getAllByRole('tab').map((tab) => tab.getAttribute('aria-controls')?.replace('settings-panel-', ''));
+
 describe('Settings', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -101,7 +114,7 @@ describe('Settings', () => {
 
   const openSection = async (label: string) => {
     // Section tabs expose "label + description" as their accessible name
-    // (e.g. "Security 2FA, audit logs & sessions") — match on the leading
+    // (e.g. "Account Password, passkeys, 2FA & sessions") — match on the leading
     // label, escaping regex metacharacters in labels like "Firewall (UFW)".
     const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     fireEvent.click(await screen.findByRole('tab', { name: new RegExp(`^${escaped}(\\s|$)`) }));
@@ -112,11 +125,13 @@ describe('Settings', () => {
     renderWithProviders(<Settings />);
 
     const filter = screen.getByLabelText('Filter settings');
-    // Narrow to a single section by its description text.
+    // Narrow to a single section by its description text. Two-factor authentication lives in
+    // Account (A3 corrected the description that had put it under Security).
     fireEvent.change(filter, { target: { value: '2FA' } });
     const tabs = screen.getAllByRole('tab');
     expect(tabs.length).toBe(1);
-    expect(tabs[0]).toHaveTextContent('Security');
+    expect(tabs[0]).toHaveTextContent('Account');
+    expect(tabs[0]).toHaveAttribute('aria-controls', 'settings-panel-account');
 
     // A query that matches nothing shows the empty hint.
     fireEvent.change(filter, { target: { value: 'zzz-no-match' } });
@@ -126,6 +141,14 @@ describe('Settings', () => {
     fireEvent.change(filter, { target: { value: '2FA' } });
     fireEvent.click(screen.getByRole('button', { name: /clear filter/i }));
     expect(screen.getAllByRole('tab').length).toBeGreaterThan(5);
+  });
+
+  it('A3: a filter that names a group keeps the whole group', async () => {
+    renderWithProviders(<Settings />);
+    const nav = await screen.findByRole('navigation', { name: 'Settings sections' });
+    await within(nav).findAllByRole('tab');
+    fireEvent.change(screen.getByLabelText('Filter settings'), { target: { value: 'servers' } });
+    expect(tabsOf(nav)).toEqual(['swarm', 'firewall', 'storage', 'system', 'panel-backup', 'migration']);
   });
 
   it('renders system info, resources, theme controls and notification channels', async () => {
@@ -1422,5 +1445,38 @@ describe('Settings', () => {
     expect(screen.queryByText('SSO & OIDC')).not.toBeInTheDocument();
     // …nor reachable by deep link: ?section=firewall falls back to account.
     expect(screen.queryByText('Host Firewall & Port Control (UFW)')).not.toBeInTheDocument();
+  });
+
+  it('A3: groups the sections by the task a person comes for, six at the most in a group', async () => {
+    renderWithProviders(<Settings />);
+    const nav = await screen.findByRole('navigation', { name: 'Settings sections' });
+    await within(nav).findAllByRole('tab');
+    const headings = within(nav).getAllByRole('heading');
+    expect(headings.map((heading) => heading.textContent)).toEqual(GROUPS.map(([name]) => name));
+    headings.forEach((heading, i) => {
+      const ids = tabsOf(heading.parentElement!);
+      expect(ids, GROUPS[i]![0]).toEqual(GROUPS[i]![1]);
+      expect(ids.length, `${GROUPS[i]![0]} holds no more than six sections`).toBeLessThanOrEqual(6);
+    });
+    // Every section is in exactly one group, and the twenty ids are the addresses deep links and the help drawer use.
+    const ids = GROUPS.flatMap(([, group]) => group);
+    expect(tabsOf(nav)).toEqual(ids);
+    expect([...ids].sort()).toEqual([...SETTINGS_SECTION_IDS].sort());
+    // The phone picker is grouped the same way.
+    expect(within(screen.getByRole('combobox', { name: 'Settings section' })).getAllByRole('group').map((group) => group.getAttribute('label'))).toEqual(GROUPS.map(([name]) => name));
+  });
+
+  it('A3: a member sees the groups that still hold a section of theirs, and no empty group', async () => {
+    authState.user = { id: 7, isOperator: false };
+    renderWithProviders(<Settings />);
+    const nav = await screen.findByRole('navigation', { name: 'Settings sections' });
+    await within(nav).findAllByRole('tab');
+    expect(tabsOf(nav)).toEqual(['account', 'appearance', 'security', 'plugins', 'ai']);
+    expect(within(nav).getAllByRole('heading').map((heading) => heading.textContent)).toEqual([
+      'Your account',
+      'Access & certificates',
+      'Services & deploys',
+      'Connections & alerts',
+    ]);
   });
 });

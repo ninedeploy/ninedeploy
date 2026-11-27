@@ -42,11 +42,17 @@ describe('helpKeys', () => {
       for (const entry of tabs) expect(keys.has(entry.key), entry.key).toBe(true);
     }
     // settings.account appears both as the fallback entry and in the generated
-    // section list — count unique keys.
+    // section list — count unique keys. Twenty: one per section of the Settings
+    // page, CI runners included (A3: it used to show the Account topic).
     const settingsKeys = new Set(
       HELP_ROUTE_TABLE.filter((e) => e.key.startsWith('settings.')).map((e) => e.key),
     );
-    expect(settingsKeys.size).toBe(19);
+    expect(settingsKeys.size).toBe(20);
+  });
+
+  it('A3: the CI runners section has a topic of its own', () => {
+    expect(helpKeyForLocation('/settings', '?section=ci-runners')).toBe('settings.ci-runners');
+    expect(HELP_TOPICS['settings.ci-runners']?.title).toBe('Settings · CI runners');
   });
 
   it('r343: resolves the Settings AI section and the service Compose tab to their own topics', () => {

@@ -7,21 +7,24 @@ const REF_VAULT = '\u0024\u007B\u007Bvault:path/to/secret#field\u007D\u007D';
 const REF_AWS = '\u0024\u007B\u007Baws:secret-id\u007D\u007D';
 const REF_AWS_KEY = '\u0024\u007B\u007Baws:secret-id#jsonKey\u007D\u007D';
 
-/** Help topics for the 14 sections of the Settings page (/settings?section=…). */
+/** Help topics for the sections of the Settings page (/settings?section=…). */
 export const SETTINGS_TAB_TOPICS: Record<string, HelpTopic> = {
   'settings.account': {
     title: 'Settings · Account',
     summary:
-      'Your own profile and credentials: name and email, password change, and passkeys registered to your user.',
+      'Your own sign-in: profile, password, linked single sign-on, passkeys, two-factor authentication and the sessions you are signed in on.',
     sections: [
       {
         heading: 'What lives here',
         bullets: [
           'Profile details shown in the panel.',
-          'Password change — other sessions stay valid until you revoke them (see Security).',
+          'Password change — other sessions stay valid until you revoke them under Active sessions.',
+          'Single sign-on — link or unlink an identity provider your instance offers.',
           'Passkeys — device-bound WebAuthn credentials for passwordless sign-in; register more than one so a lost device does not lock you out.',
+          'Two-factor authentication, with recovery codes to keep outside the panel.',
+          'Active sessions — see every device signed in as you and end any of them.',
         ],
-        tip: 'Account-wide things (2FA, sessions, API tokens) are on the Security section; this one is identity only.',
+        tip: 'API tokens are on the Security section; this one is about how you sign in.',
       },
     ],
     related: [
@@ -445,5 +448,25 @@ export const SETTINGS_TAB_TOPICS: Record<string, HelpTopic> = {
       { label: 'Settings · Panel backup', helpId: 'settings.panel-backup' },
       { label: 'Backups', helpId: 'backups' },
     ],
+  },
+
+  'settings.ci-runners': {
+    title: 'Settings · CI runners',
+    summary:
+      'Machines that run the CI jobs of service pipelines. A runner pulls jobs from the panel over HTTPS with a token of its own; the panel never connects to it.',
+    sections: [
+      {
+        heading: 'What lives here',
+        bullets: [
+          'Add a runner with a name, its labels (such as linux and x64) and a capacity from 1 to 32: how many jobs it runs at once.',
+          'Its token is shown once and only its hash is stored. Start the runner on its machine with that token, as the CI runners guide shows.',
+          'The list says which runners are online, seen within the last 90 seconds, and refreshes itself.',
+          'A job names labels; a runner must carry every one of them to take it.',
+          'Revoking a runner stops it taking jobs, and the jobs it was running go back to the queue.',
+        ],
+        tip: 'A pipeline that gates deploys needs a runner that is online, or its deploys wait.',
+      },
+    ],
+    related: [{ label: 'Settings · Deploy freeze', helpId: 'settings.deploy-freeze' }],
   },
 };

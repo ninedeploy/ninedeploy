@@ -139,7 +139,7 @@ function WebhooksCard({ serviceId }: { serviceId: number }) {
               t('These URLs point at {localhost} because no panel domain is set. Git providers can\'t reach that — set your real address under {link} ("Panel Domain").'),
               {
                 localhost: <code className="font-mono">localhost</code>,
-                link: <Link to="/settings" className="font-medium underline underline-offset-2">{t('Settings → Security')}</Link>,
+                link: <Link to="/settings?section=security" className="font-medium underline underline-offset-2">{t('Settings → Security')}</Link>,
               },
             )}
           </div>
