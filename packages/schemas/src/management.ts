@@ -612,6 +612,8 @@ export interface DatabaseDetail {
   slug: string;
   engine: string;
   version: string | null;
+  /** N12: when the version was named by hand and the server has not run on it yet (it may still be changed); null otherwise. */
+  versionNamedAt?: string | null;
   status: string;
   host: string | null;
   port: number | null;

@@ -52,6 +52,7 @@ import { withNodeDatabaseLifecycle } from '../lib/nodeDatabaseLifecycle.js';
 import { nodeStudioState, clearNodeStudioForMutation, startNodeStudioForDatabase, stopNodeStudioForDatabase } from '../lib/nodeStudio.js';
 import { attachmentHostMismatch, fanoutDatabaseHostRefusal } from '../lib/remoteDatabaseRefusal.js';
 import { assertNoRunningUpgrade } from '../lib/databaseUpgrade.js';
+import { settleNamedVersion } from '../lib/databaseVersion.js';
 // ── end 0.16 T6 ──
 
 /** Docker volume names only: prevents `existingVolume` from becoming a bind
@@ -106,6 +107,8 @@ function serialize(
     slug: d.slug,
     engine: d.engine,
     version: d.version,
+    // N12: a version named by hand, until the server has run on it.
+    versionNamedAt: d.versionNamedAt ? d.versionNamedAt.toISOString() : null,
     status: d.status,
     host: d.internalHost,
     port: d.internalPort,
@@ -786,6 +789,12 @@ export const databasesRoutes: FastifyPluginAsync = async (app) => {
         await runtime.adoptRetainedVolume((line) => app.log.info({ component: 'database' }, line));
       }
       await runtime.start((line) => app.log.info({ component: 'database' }, line));
+      // N12: a release that was named, not read, is tried: one the server does
+      // not stay up in is undone here (the container removed, the name still
+      // open) and the start is refused with the reason.
+      if (d.versionNamedAt != null) {
+        await settleNamedVersion(app.db, d, (line) => runtime.stop(line), (line) => app.log.info({ component: 'database' }, line));
+      }
       await app.db
         .update(databases)
         .set({ status: 'running', initializedAt: d.initializedAt ?? new Date() })

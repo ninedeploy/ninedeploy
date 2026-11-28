@@ -1404,6 +1404,12 @@ export const MATRIX: Record<string, Rule> = {
   }),
   'POST /v1/databases/:id/upgrades/:upgradeId/rollback': R('admin', { allow404: 'no upgrade row is seeded' }),
   'POST /v1/databases/:id/upgrades/:upgradeId/finalize': R('admin', { allow404: 'no upgrade row is seeded' }),
+  // ── N12 the release of a database without a version: reading is a viewer's; naming it writes the row, so it takes its admin role.
+  'GET /v1/databases/:id/version': R('viewer'),
+  'PUT /v1/databases/:id/version': R('admin', {
+    body: () => ({ version: '18' }),
+    note: 'the seeded database has a version, so an admin gets the 409 refusal; the cases are covered by test/lib/databaseVersion.test.ts',
+  }),
   // ── end O2 ──
   // ── A1 service volume import (operator: a volume restore's floor) ──
   'GET /v1/services/:id/volume-imports': OP,

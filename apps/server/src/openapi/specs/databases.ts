@@ -8,6 +8,7 @@ import {
   createEmptyDatabase,
   databaseImportCreate,
   databaseUpgradeStart,
+  databaseVersionSet,
   volumeImportCreate,
   publicAccessPut,
   setLimits,
@@ -360,6 +361,24 @@ export const databasesSpecs: RouteSpecMap = {
     tag: 'databases',
     floor: 'admin',
     responseType: 'DatabaseUpgrade & { removedVolume: string }',
+  },
+  'GET /v1/databases/:id/version': {
+    summary: 'What is known about the release a database without a version, or with one named by hand, runs, and the releases it may be given',
+    description:
+      'For rows from installs before 0.18.28 that the version pin left alone (nothing runs and the volume was not created by the default image), and for a release named by hand that the server has not run on yet (namedAt). A Start would run the default on that data.',
+    tag: 'databases',
+    floor: 'viewer',
+    responseType: 'LegacyVersionStatus',
+  },
+  'PUT /v1/databases/:id/version': {
+    summary: 'Name the release a database without a version runs, before its first start; or change a name the server has not run on yet',
+    description:
+      'Writes the version to the row only, from the list the GET gives, only while nothing starts and no upgrade does. The name is provisional until the server has run on it: the first Start watches the container for twelve seconds and undoes one the server does not stay up in (409 database_version_named).',
+    tag: 'databases',
+    floor: 'admin',
+    body: databaseVersionSet,
+    validation: 'zod',
+    responseType: 'LegacyVersionStatus',
   },
   'GET /v1/services/:id/volume-imports': {
     summary: "List a service's volume imports",

@@ -52,6 +52,7 @@ import { BackupReplicasCard } from './database/BackupReplicasCard.js';
 import { PitrCard } from './database/PitrCard.js';
 import { RemotePitrCard } from './database/RemotePitrCard.js';
 import { UpgradeCard } from './database/UpgradeCard.js';
+import { VersionCard } from './database/VersionCard.js';
 import { ImportCard } from './database/ImportCard.js';
 import { IMPORT_DUMP_ANCHOR } from '../lib/importFile.js';
 import { RestoreVerifyDialog } from './database/RestoreVerifyDialog.js';
@@ -1087,6 +1088,7 @@ function SettingsPanel({ db, onDeleted }: { db: IDatabaseDetail; onDeleted: () =
         </>
       )}
 
+      <VersionCard db={db} />
       <UpgradeCard db={db} />
 
       {/* Danger Zone */}

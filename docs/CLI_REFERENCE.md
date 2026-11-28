@@ -394,6 +394,14 @@ ninedeploy databases upgrade [options] [command]
 
 Move a PostgreSQL, MySQL, MariaDB or MongoDB database to a newer release in a new volume, compare, switch (previous volume kept)
 
+### `databases version`
+
+```
+ninedeploy databases version [options] [command]
+```
+
+The release of a database from an install before 0.18.28 that has no version, or whose version was named by hand: show it, or name it before the first start
+
 ### `databases pitr`
 
 ```

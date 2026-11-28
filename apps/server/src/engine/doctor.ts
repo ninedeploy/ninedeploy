@@ -26,7 +26,7 @@ import type { SlugRow, SlugTable } from '../lib/slugAudit.js';
 import { auditSlugRows, slugTableInfo } from '../lib/slugAudit.js';
 import { eq } from 'drizzle-orm';
 import { getDiskUsage, executeAutoPrune } from './autoPrune.js';
-import { removeVolume, startDatabase, volumeExists, volumeLabels } from './database.js';
+import { ENGINES, defaultVersionTag, removeVolume, startDatabase, volumeExists, volumeLabels } from './database.js';
 import { parseHumanBytes, parseReclaimedBytes } from '../lib/imageInventory.js';
 import {
   capture,
@@ -46,6 +46,7 @@ import { writeDynamicConfig } from './proxy.js';
 import { startStoppedGeneration } from './interruptedRuntime.js';
 import { assertNoRunningUpgrade } from '../lib/databaseUpgrade.js';
 import { PITR_OFF_NOTICE_AFTER_MS, pitrGap } from '../lib/pitr.js';
+import { isAmbiguousVersion } from '../lib/databaseVersion.js';
 import {
   containerRunning,
   listManagedVolumeNames,
@@ -426,6 +427,49 @@ export async function scanDoctor(db: DB): Promise<DoctorReport> {
     });
   }
 
+  // N12: a database whose release is not known. The version pin leaves a
+  // stopped row without a version alone when its volume was created by
+  // another image than today's default (it cannot tell which release the
+  // data runs); a Start would run the default and may upgrade the data in
+  // place. A release named by hand is known only once the server has run on
+  // it. Named here so that the release is chosen, or chosen again, before
+  // the data is touched.
+  for (const d of dbs) {
+    if (!d.containerName) continue;
+    if (d.versionNamedAt != null) {
+      // Named by hand, not run on yet. While its trial runs there is nothing to say.
+      if (d.status === 'running') continue;
+      finding({
+        id: `database_version_unknown:${d.id}`,
+        kind: 'database_version_unknown',
+        severity: 'warn',
+        title: `Database "${d.name}" was given release ${d.version} by hand, and has not run on it yet`,
+        detail:
+          'The first start tries that release; one the server does not stay up in is undone, and a release can be named again. ' +
+          'Name the release the data runs: Set version on the database page, or ninedeploy databases version set <id> <release>.',
+        target: { type: 'database', name: d.name, id: d.id },
+        action: null,
+      });
+      continue;
+    }
+    if (d.version != null || !d.volumeName) continue;
+    if (containerByName.has(d.containerName) || (await containerRunning(d.containerName))) continue;
+    const labels = await volumeLabels(d.volumeName);
+    const creationImage = labels['ninedeploy.database.image'] ?? '';
+    if (!isAmbiguousVersion(creationImage || null, defaultVersionTag(d.engine), d.engine)) continue;
+    finding({
+      id: `database_version_unknown:${d.id}`,
+      kind: 'database_version_unknown',
+      severity: 'warn',
+      title: `Database "${d.name}" has no version: a Start would run ${ENGINES[d.engine]?.image(undefined) ?? 'the default image'} on data created by ${creationImage}`,
+      detail:
+        'It is stopped, and the panel cannot tell which release its data runs: the volume was not created by the image that is the default today. ' +
+        'MySQL, MariaDB and MongoDB upgrade data in place with no way back. Name the release the data runs before the first start: ' +
+        'Set version on the database page, or ninedeploy databases version set <id> <release>.',
+      target: { type: 'database', name: d.name, id: d.id },
+      action: null,
+    });
+  }
   for (const dep of activeDeployRows) {
     if (ageHours(dep.createdAt) < STUCK_DEPLOY_HOURS) continue;
     finding({

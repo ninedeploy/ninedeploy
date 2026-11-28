@@ -18,6 +18,7 @@ import type {
   DatabaseImportCreate,
   DatabaseUpgrade,
   DatabaseUpgradeOptions,
+  LegacyVersionStatus,
   BackupDestinationObject,
   BackupReplica,
   BackupReplicasView,
@@ -136,6 +137,17 @@ export interface DatabasesApi {
       finalize: (id: number, upgradeId: number) => Promise<DatabaseUpgrade & { removedVolume: string }>;
       /** Poll until the upgrade is no longer `running` (default every 2 s, for up to 2 h). */
       wait: (id: number, upgradeId: number, opts?: { intervalMs?: number; timeoutMs?: number }) => Promise<DatabaseUpgrade>;
+    };
+    /**
+     * N12: the release of a database that has no version (a row from an
+     * install before 0.18.28 whose volume was not created by the default
+     * image). `get` says what is known and which releases may be named;
+     * `set` names one, before the first start. Naming needs `admin` on the
+     * database.
+     */
+    version: {
+      get: (id: number) => Promise<LegacyVersionStatus>;
+      set: (id: number, input: { version: string }) => Promise<LegacyVersionStatus>;
     };
     /**
      * 0.14: public access through a per-database Traefik TCP sidecar. Reading
@@ -280,6 +292,10 @@ export function databasesApi(t: Transport): DatabasesApi {
             await new Promise<void>((resolve) => (globalThis as unknown as { setTimeout: (fn: () => void, ms: number) => unknown }).setTimeout(resolve, interval));
           }
         },
+      },
+      version: {
+        get: (id) => get<LegacyVersionStatus>(`/v1/databases/${id}/version`),
+        set: (id, input) => send<LegacyVersionStatus>('PUT', `/v1/databases/${id}/version`, input),
       },
       pgbouncerStatus: (id) => get<PgbouncerStatus>(`/v1/databases/${id}/pgbouncer`),
       enablePgbouncer: (id, input) =>

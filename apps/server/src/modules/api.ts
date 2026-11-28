@@ -18,6 +18,7 @@ import { databaseBackupPolicyRoutes } from './backupPolicy.js';
 import { databasePublicAccessRoutes } from './databasePublicAccess.js';
 import { databaseImportRoutes } from './databaseImports.js';
 import { databaseUpgradeRoutes } from './databaseUpgrades.js';
+import { databaseVersionRoutes } from './databaseVersions.js';
 import { volumeImportRoutes } from './volumeImports.js';
 import { pgbouncerRoutes } from './pgbouncer.js';
 import { pitrRoutes } from './pitr.js';
@@ -192,6 +193,8 @@ export const apiRoutes: FastifyPluginAsync = async (app) => {
   await app.register(databaseImportRoutes, { prefix: '/databases' });
   // O2: major-version upgrades of a managed database (lib/databaseUpgrade.ts).
   await app.register(databaseUpgradeRoutes, { prefix: '/databases' });
+  // N12: the release of a database that has no version (lib/databaseVersion.ts).
+  await app.register(databaseVersionRoutes, { prefix: '/databases' });
   await app.register(volumeImportRoutes, { prefix: '/services' });
   // Deployment lanes (production / staging / development) per workspace.
   await app.register(environmentRoutes, { prefix: '/environments' });

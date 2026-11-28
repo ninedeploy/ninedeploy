@@ -688,7 +688,7 @@ NineDeploy/                    pnpm 11 workspace + Turborepo
 │   ├── web/                   React 19 + Vite 8 + Tailwind v4 dashboard
 │   └── cli/                   `ninedeploy` (commander 15)
 ├── packages/
-│   ├── db/                    Drizzle schema (99 tables) + 128 SQL migrations
+│   ├── db/                    Drizzle schema (99 tables) + 129 SQL migrations
 │   ├── schemas/               Zod v4 DTOs shared by server, web, CLI, SDK and MCP
 │   ├── sdk/                   typed API client over an injectable fetch
 │   ├── mcp/                   Model Context Protocol server (64 tools, stdio and HTTP)

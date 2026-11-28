@@ -63,3 +63,20 @@ describe('databases.upgrades', () => {
     await expect(noPhase.databases.upgrades.wait(9, 4, { timeoutMs: 0 })).rejects.toThrow('(phase unknown)');
   });
 });
+
+/** N12: the SDK surface of a database that has no version. */
+describe('databases.version', () => {
+  const status = (over: Record<string, unknown> = {}) => ({
+    databaseId: 9, version: null, namedAt: null, canSet: true, why: null, creationImage: 'mysql:8.0', defaultImage: 'mysql:9.7', defaultTag: '9.7',
+    containerImage: null, ambiguous: true, choices: ['8.0', '8.4', '9.7'], ...over,
+  });
+
+  it('reads what is known about the release, and names one before the first start', async () => {
+    const { api, calls } = client((method) =>
+      method === 'PUT' ? status({ version: '8.0', canSet: false, why: 'This database already has a version.' }) : status(),
+    );
+    expect((await api.databases.version.get(9)).ambiguous).toBe(true);
+    expect((await api.databases.version.set(9, { version: '8.0' })).version).toBe('8.0');
+    expect(calls).toEqual(['GET /v1/databases/9/version', 'PUT /v1/databases/9/version {"version":"8.0"}']);
+  });
+});

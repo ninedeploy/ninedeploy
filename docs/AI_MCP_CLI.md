@@ -124,7 +124,7 @@ Swarm init/join/leave, node volumes): the MCP server only reads them.
 
 ## 💻 2. NineDeploy Interactive CLI (`ninedeploy`)
 
-The complete reference, generated from the CLI's own help output, is the [CLI command reference](CLI_REFERENCE.md): 66 commands and 248 subcommands at 0.19.0, each with its arguments and options. The commands below are the common ones, grouped by task.
+The complete reference, generated from the CLI's own help output, is the [CLI command reference](CLI_REFERENCE.md): 66 commands and 249 subcommands at 0.20.0, each with its arguments and options. The commands below are the common ones, grouped by task.
 
 ```bash
 # Global installation

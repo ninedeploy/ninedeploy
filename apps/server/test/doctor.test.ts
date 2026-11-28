@@ -51,6 +51,8 @@ const host = {
   networkMembers: {} as Record<string, string>,
   images: '',
   df: '',
+  /** Labels of every volume the scan inspects (JSON), for the version check of a database without one. */
+  volumeLabels: '{}',
 };
 
 beforeEach(() => {
@@ -64,6 +66,7 @@ beforeEach(() => {
   host.networkMembers = {};
   host.images = '';
   host.df = JSON.stringify({ Type: 'Images', Size: '2.207GB' });
+  host.volumeLabels = '{}';
   ex.run.mockResolvedValue(undefined);
   // clearAllMocks keeps implementations — re-arm the defaults per test so a
   // test-level override (disk pressure) cannot leak into the next one.
@@ -82,7 +85,7 @@ beforeEach(() => {
       return host.containers.map((c) => JSON.stringify(c)).join('\n');
     }
     if (a[0] === 'volume' && a[1] === 'ls') return host.volumeLs;
-    if (a[0] === 'volume' && a[1] === 'inspect' && a.includes('--format')) return '{}';
+    if (a[0] === 'volume' && a[1] === 'inspect' && a.includes('--format')) return host.volumeLabels;
     if (a[0] === 'volume' && a[1] === 'inspect') return 'Error: No such volume';
     if (a[0] === 'network' && a[1] === 'ls') return host.networks;
     if (a[0] === 'network' && a[1] === 'inspect') return host.networkMembers[String(a[2])] ?? '';
@@ -162,6 +165,39 @@ describe('doctor scan', () => {
     // The row off for five minutes is an upgrade in progress, or a choice just made: not mentioned yet.
     expect(report.findings.filter((x) => x.kind === 'pitr_off')).toEqual([expect.objectContaining({ id: 'pitr_off:1', severity: 'info', action: null, target: { type: 'database', name: 'DB', id: 1 } })]);
     expect(report.findings.find((x) => x.kind === 'pitr_off')?.detail).toContain('only its dumps to recover from');
+  });
+  it('names a database without a version whose volume was not created by the default image, and nothing else (N12)', async () => {
+    // mysql:8.0 created the volume; the default is 9.7: a Start would upgrade the data in place.
+    host.volumeLabels = JSON.stringify({ 'ninedeploy.database.image': 'mysql:8.0' });
+    const report = await scanDoctor(createFakeDb({
+      select: { databases: [dbRow({ engine: 'mysql' }), dbRow({ id: 2, version: '8.0', engine: 'mysql' }), dbRow({ id: 3, engine: 'mysql', containerName: null }), dbRow({ id: 4, engine: 'mysql', status: 'running' })] },
+    }));
+    // A row with a version, or without a container, is not named. One marked running whose container is gone is: starting it again is the very Start.
+    const named = report.findings.filter((x) => x.kind === 'database_version_unknown');
+    expect(named.map((x) => x.id)).toEqual(['database_version_unknown:1', 'database_version_unknown:4']);
+    expect(named[0]).toMatchObject({ severity: 'warn', action: null, target: { type: 'database', id: 1 } });
+    expect(named[0]?.title).toContain('a Start would run mysql:9.7 on data created by mysql:8.0');
+    expect(named[0]?.detail).toContain('ninedeploy databases version set <id> <release>');
+    // Created by the default image: the pin takes it; nothing to name.
+    host.volumeLabels = JSON.stringify({ 'ninedeploy.database.image': 'mysql:9.7' });
+    expect((await scanDoctor(createFakeDb({ select: { databases: [dbRow({ engine: 'mysql' })] } }))).findings.filter((x) => x.kind === 'database_version_unknown')).toEqual([]);
+  });
+  it('names a release given by hand until the server has run on it, and nothing while its trial runs (N12)', async () => {
+    const ago = new Date(Date.now() - 3600_000);
+    const scan = async (rows: ReturnType<typeof dbRow>[]) => (await scanDoctor(createFakeDb({ select: { databases: rows } }))).findings.filter((x) => x.kind === 'database_version_unknown');
+    // Stopped, or in error from a start that did not stay up: the same finding either way.
+    for (const status of ['stopped', 'error']) {
+      const named = await scan([dbRow({ engine: 'mysql', status, version: '8.0', versionNamedAt: ago })]);
+      expect(named.map((x) => x.id)).toEqual(['database_version_unknown:1']);
+      expect(named[0]).toMatchObject({ severity: 'warn', action: null, target: { type: 'database', name: 'DB', id: 1 } });
+      expect(named[0]?.title).toBe('Database "DB" was given release 8.0 by hand, and has not run on it yet');
+      expect(named[0]?.detail).toContain('The first start tries that release; one the server does not stay up in is undone, and a release can be named again.');
+      expect(named[0]?.detail).toContain('ninedeploy databases version set <id> <release>');
+    }
+    // Its trial is running: nothing to say yet. A version the server ran on, or one the pin wrote, is not a name by hand.
+    for (const row of [dbRow({ engine: 'mysql', status: 'running', version: '8.0', versionNamedAt: ago }), dbRow({ engine: 'mysql', version: '8.0' }), dbRow({ engine: 'mysql', versionNamedAt: ago })]) {
+      expect(await scan([row]), JSON.stringify(row)).toEqual([]);
+    }
   });
   it('flags orphan volumes with their retained origin and size', async () => {
     host.volumeLs = 'nd-svc-ghost-data\n';

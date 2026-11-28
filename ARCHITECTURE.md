@@ -102,7 +102,7 @@ ninedeploy/                         pnpm 11.23 workspace + Turborepo
 │   └── cli/                        `ninedeploy` (commander 15): 66 top-level commands and
 │                                   248 subcommands across 61 command files
 ├── packages/
-│   ├── db/          Drizzle schema (99 tables) + 128 hand-written SQL migrations;
+│   ├── db/          Drizzle schema (99 tables) + 129 hand-written SQL migrations;
 │   │                the server self-migrates at startup (drizzle-kit is dev-only)
 │   ├── schemas/     Zod v4 DTOs shared by server, web, CLI, SDK and MCP (65 files)
 │   ├── sdk/         typed API client: 19 resource namespaces, terminal, manifest
@@ -344,7 +344,7 @@ cache_registry_blobs   build-cache bookkeeping
 ### 4.5 Migration history
 
 `packages/db/src/migrations/`, forward-only, additive and hand-written; the
-journal (`meta/_journal.json`) holds **128** entries (`0000`–`0128`; tag `0020`
+journal (`meta/_journal.json`) holds **129** entries (`0000`–`0129`; tag `0020`
 does not exist — it was skipped and the journal does not reference it).
 `packages/db/test/schema-drift.test.ts` applies every migration to a fresh
 database and compares both directions against the Drizzle schema (§16.17),
@@ -421,7 +421,7 @@ host-privileged routes, `assertServiceRole` / `assertDatabaseRole` /
 | `/users`, `/demo` | users, demo | user list, operator flag, reset links, delete (operator only); demo seed (operator only) |
 | `/projects`, `/labels`, `/env` | projects, env, accessGrants, labels | project CRUD and project-scope env, the cross-scope env key search, who reaches a project, labels, a service's tag sets |
 | `/services` | services, deploys, env, domains, serviceVolumes, serviceFiles, serviceMigration, serviceMoveWithData, sourceUploads, hostAddresses, inlineDockerfile, manifest, hooks, deployHooks, serviceGithub, databases (attachments), jobs, badges, commitStatus, insights, stats, traffic, servicePlacement, imageTransfers, serviceTags, imageScans, pendingChanges, restartLimit, gitPoll, serviceCapabilities, maintenance, errorIngest, ci, serviceTunnel, volumeImports | the service surface: CRUD, runtime commands, deploys (trigger, list, rollback, cancel, remove, diff, WS logs and exec), environment, domains, volumes and files, export/import and moves with data, source upload, inline Dockerfile, manifest, hooks and GitHub links, scheduled jobs, status badges, commit statuses, insights, metrics, traffic, build placement, image scans, the pending-changes tray, restart limit, Git polling, capabilities, maintenance pages and error pages, error ingest, CI, tunnels, volume imports |
-| `/databases` | databases, backups, backupPolicy, databasePublicAccess, databaseTunnel, databaseImports, databaseUpgrades, studioProxy, pgbouncer, pitr | CRUD, limits, credentials, Studio proxy, backups and restore, backup policy, public access, tunnels, dump imports, major upgrades, PgBouncer, PITR |
+| `/databases` | databases, backups, backupPolicy, databasePublicAccess, databaseTunnel, databaseImports, databaseUpgrades, databaseVersions, studioProxy, pgbouncer, pitr | CRUD, limits, credentials, Studio proxy, backups and restore, backup policy, public access, tunnels, dump imports, major upgrades, the version of a database without one, PgBouncer, PITR |
 | `/backups`, `/backup-destinations` | backups, backupDestinations | list, delete, download; S3-compatible destinations |
 | `/volumes`, `/servers/:serverId/volumes` | volumes, volumeBackups, nodeVolumeFiles | inventory, delete, browse, volume backups; node volume files |
 | `/containers`, `/servers/:serverId/containers` | containers | inspect, compose, file browser (panel host and nodes) |

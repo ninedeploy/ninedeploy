@@ -42,6 +42,8 @@ describe('databases table — schema/migration drift guard', () => {
       'slug',
       'engine',
       'version',
+      // N12: when an operator named the release by hand, until the server has run on it (migration 0129).
+      'version_named_at',
       'status',
       'container_name',
       'internal_host',

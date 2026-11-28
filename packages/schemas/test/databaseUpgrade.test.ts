@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { databaseUpgradeOptions, databaseUpgradeStart } from '../src/databaseUpgrade.js';
+import { databaseUpgradeOptions, databaseUpgradeStart, databaseVersionSet, legacyVersionStatus } from '../src/databaseUpgrade.js';
 
 /** O2: the start body takes exactly one target; the options carry the series. */
 describe('databaseUpgradeStart', () => {
@@ -25,5 +25,25 @@ describe('databaseUpgradeOptions', () => {
   it('carries the engine, the running series and the series it can reach', () => {
     const parsed = databaseUpgradeOptions.parse({ databaseId: 3, engine: 'mysql', currentMajor: 8, targets: [], currentSeries: '8.0', versions: ['8.4', '9.7'], refusal: null });
     expect(parsed.versions).toEqual(['8.4', '9.7']);
+  });
+});
+
+describe('databaseVersionSet', () => {
+  it('takes a release tag, and nothing else', () => {
+    for (const version of ['18', '8.4', '11.8', '12.3']) expect(databaseVersionSet.safeParse({ version }).success).toBe(true);
+    expect(databaseVersionSet.safeParse({ version: 'latest' }).success).toBe(false);
+    expect(databaseVersionSet.safeParse({ version: '8.0', force: true }).success).toBe(false);
+    expect(databaseVersionSet.safeParse({}).success).toBe(false);
+  });
+});
+
+describe('legacyVersionStatus', () => {
+  it('carries what is known about the release and the list to choose from', () => {
+    const parsed = legacyVersionStatus.parse({
+      databaseId: 3, version: null, namedAt: null, canSet: true, why: null, creationImage: 'mysql:8.0', defaultImage: 'mysql:9.7', defaultTag: '9.7',
+      containerImage: null, ambiguous: true, choices: ['8.0', '8.4', '9.7'],
+    });
+    expect(parsed.choices).toEqual(['8.0', '8.4', '9.7']);
+    expect(legacyVersionStatus.safeParse({ databaseId: 3, version: null, canSet: true }).success).toBe(false);
   });
 });

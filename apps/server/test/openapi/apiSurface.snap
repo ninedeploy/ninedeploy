@@ -165,6 +165,7 @@ GET /v1/databases/:id/storage viewer nd://scope/read/databases
 GET /v1/databases/:id/tunnel admin nd://scope/read/databases
 GET /v1/databases/:id/upgrades viewer nd://scope/read/databases
 GET /v1/databases/:id/upgrades/options viewer nd://scope/read/databases
+GET /v1/databases/:id/version viewer nd://scope/read/databases
 GET /v1/deploy-freezes operator -
 GET /v1/deployments/:id/image-transfers viewer nd://scope/read/deploys
 GET /v1/doctor operator -
@@ -634,6 +635,7 @@ PUT /v1/databases/:id/imports/:importId/chunks/:index admin nd://scope/write/dat
 PUT /v1/databases/:id/pitr admin nd://scope/write/databases
 PUT /v1/databases/:id/pitr/remote operator nd://scope/write/databases
 PUT /v1/databases/:id/public-access operator nd://scope/write/databases
+PUT /v1/databases/:id/version admin nd://scope/write/databases
 PUT /v1/domains/:id/compose-route member nd://scope/write/domains
 PUT /v1/domains/:id/forward-auth member nd://scope/write/domains
 PUT /v1/github-apps/:id/private-key operator -

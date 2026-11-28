@@ -43,6 +43,11 @@ export const doctorFindingKind = z.enum([
   'database_stuck',
   /** Point-in-time recovery was turned off (a major upgrade needs it off) and is still off an hour later. */
   'pitr_off',
+  /**
+   * A database whose release is not known: without a version while its volume was not created by today's
+   * default image (a Start may upgrade its data in place), or given a release by hand that it has not run on yet.
+   */
+  'database_version_unknown',
   /** Service row says running, its runtime container is gone or exited. */
   'service_runtime_desync',
   /** A deploy row stuck in queued/building far past any live window. */

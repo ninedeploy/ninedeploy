@@ -39,6 +39,7 @@ import {
 import { databasePgbouncer } from './commands/pgbouncer.js';
 import { pitrBaseBackup, pitrDisable, pitrEnable, pitrRecover, pitrRecoveries, pitrStatus } from './commands/pitr.js';
 import { upgradeFinalize, upgradeRollback, upgradeStart, upgradeStatus } from './commands/databaseUpgrade.js';
+import { versionSet, versionShow } from './commands/databaseVersion.js';
 import { backupPolicyGet, backupPolicySet } from './commands/backupPolicy.js';
 import { logsSearch } from './commands/logs.js';
 import {
@@ -380,6 +381,16 @@ upgradeCmd.command('rollback <dbId> <upgradeId>').description('Point the databas
 upgradeCmd.command('finalize <dbId> <upgradeId>').description('Delete the volume the database no longer uses; no rollback after this (database admin)')
   .option('-y, --yes', 'Skip the confirmation')
   .action((dbId: string, upgradeId: string, o: { yes?: boolean }) => upgradeFinalize(getClient(), dbId, upgradeId, o));
+
+// ── The release of a database without a version (N12) ────────────────────
+const versionCmd = databases
+  .command('version')
+  .description('The release of a database from an install before 0.18.28 that has no version, or whose version was named by hand: show it, or name it before the first start');
+versionCmd.command('show <dbId>').description('What is known about the release such a database runs, and the releases it may be named')
+  .action((dbId: string) => versionShow(getClient(), dbId));
+versionCmd.command('set <dbId> <release>').description('Name the release the data runs, before the first start (database admin)')
+  .option('-y, --yes', 'Skip the confirmation')
+  .action((dbId: string, release: string, o: { yes?: boolean }) => versionSet(getClient(), dbId, release, o));
 
 // ── PostgreSQL point-in-time recovery (R3) ───────────────────────────────
 const pitrCmd = databases

@@ -2185,6 +2185,11 @@ export const databases = sqliteTable(
     slug: text('slug').notNull(),
     engine: text('engine', { enum: dbEngine }).notNull(),
     version: text('version'),
+    // ── N12: set when an operator NAMES the release of a row that has none
+    // (lib/databaseVersion.ts), cleared once the server has run on it. Until
+    // then the name is provisional: a Start the server does not survive is
+    // undone, and the name may be changed.
+    versionNamedAt: integer('version_named_at', { mode: 'timestamp' }),
     status: text('status', { enum: dbStatus }).notNull().default('creating'),
     containerName: text('container_name'),
     internalHost: text('internal_host'),

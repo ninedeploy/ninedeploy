@@ -94,3 +94,38 @@ export const databaseUpgradeOptions = z.object({
   refusal: z.object({ code: z.string(), message: z.string() }).nullable(),
 });
 export type DatabaseUpgradeOptions = z.infer<typeof databaseUpgradeOptions>;
+
+// ── The release of a database without a version (N12) ─────────────────────
+// Request and response shapes for `/v1/databases/:id/version`: a row from an
+// install before 0.18.28 that the version pin left alone, because its volume
+// was not created by the default image. Server side:
+// apps/server/src/lib/databaseVersion.ts.
+
+/** PUT /v1/databases/:id/version. The server checks the tag against the row's own list (`choices`). */
+export const databaseVersionSet = z.object({ version: z.string().regex(/^\d+[a-z0-9._-]*$/, 'A release tag, such as 18, 8.4 or 11.8') }).strict();
+export type DatabaseVersionSet = z.infer<typeof databaseVersionSet>;
+
+/** GET and PUT /v1/databases/:id/version. */
+export const legacyVersionStatus = z.object({
+  databaseId: z.number().int(),
+  /** The row's version; null for the rows this is about. */
+  version: z.string().nullable(),
+  /** When the version was named by hand and the server has not run on it yet (it may be changed); null otherwise. */
+  namedAt: z.string().nullable(),
+  /** The release may be named now: no version, no container to read it from, a list to choose from. */
+  canSet: z.boolean(),
+  /** Why not, when it may not. */
+  why: z.string().nullable(),
+  /** The image that initialized the volume; null when the volume is gone or says nothing. */
+  creationImage: z.string().nullable(),
+  /** What a Start would run today: the engine's default image. */
+  defaultImage: z.string(),
+  defaultTag: z.string().nullable(),
+  /** The image of the database's container, when there is one. */
+  containerImage: z.string().nullable(),
+  /** Nothing runs, and the volume was not created by today's default: a Start may upgrade the data in place, with no way back. */
+  ambiguous: z.boolean(),
+  /** The releases the version may be set to. */
+  choices: z.array(z.string()),
+});
+export type LegacyVersionStatus = z.infer<typeof legacyVersionStatus>;
