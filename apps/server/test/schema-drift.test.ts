@@ -71,6 +71,8 @@ describe('databases table — schema/migration drift guard', () => {
       'pitr_retention_days',
       'pitr_base_backup_at',
       'pitr_last_error',
+      // Since when point-in-time recovery has been off, for the gap a major upgrade leaves (migration 0128).
+      'pitr_disabled_at',
       // 0.16.12 (0090): a PR preview's copy of another database.
       'preview_copy_of',
       'preview_service_id',
