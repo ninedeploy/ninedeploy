@@ -102,7 +102,7 @@ ninedeploy/                         pnpm 11.23 workspace + Turborepo
 │   └── cli/                        `ninedeploy` (commander 15): 66 top-level commands and
 │                                   248 subcommands across 61 command files
 ├── packages/
-│   ├── db/          Drizzle schema (99 tables) + 127 hand-written SQL migrations;
+│   ├── db/          Drizzle schema (99 tables) + 128 hand-written SQL migrations;
 │   │                the server self-migrates at startup (drizzle-kit is dev-only)
 │   ├── schemas/     Zod v4 DTOs shared by server, web, CLI, SDK and MCP (65 files)
 │   ├── sdk/         typed API client: 19 resource namespaces, terminal, manifest
@@ -344,7 +344,7 @@ cache_registry_blobs   build-cache bookkeeping
 ### 4.5 Migration history
 
 `packages/db/src/migrations/`, forward-only, additive and hand-written; the
-journal (`meta/_journal.json`) holds **127** entries (`0000`–`0127`; tag `0020`
+journal (`meta/_journal.json`) holds **128** entries (`0000`–`0128`; tag `0020`
 does not exist — it was skipped and the journal does not reference it).
 `packages/db/test/schema-drift.test.ts` applies every migration to a fresh
 database and compares both directions against the Drizzle schema (§16.17),
@@ -367,7 +367,7 @@ promotion, observability, fan-out / primary / Swarm recovery ·
 autoscale, proxy write heads, ordered retirement · `0117`–`0122` CI runners
 and the CI deploy gate, serving-traffic receipts, node sleep and wake ·
 `0123`–`0126` PostgreSQL PITR, volume imports, database upgrades · `0127` the
-replay window (N07).
+replay window (N07) · `0128` when point-in-time recovery was last turned off (N12).
 
 The runtime migrator (`packages/db/src/migrate.ts`) tolerates "object
 already exists" failures by re-applying statement by statement — releases up

@@ -2254,6 +2254,11 @@ export const databases = sqliteTable(
     // (a fixed message; cleared by the next success).
     pitrBaseBackupAt: integer('pitr_base_backup_at', { mode: 'timestamp' }),
     pitrLastError: text('pitr_last_error'),
+    // N12: when point-in-time recovery was last turned off (null when it never
+    // was, or it is on). Turning it off deletes the archive, so from that
+    // moment the database has only its dumps to recover from; the card, the
+    // Doctor and `pitr status` say so until it is turned on again.
+    pitrDisabledAt: integer('pitr_disabled_at', { mode: 'timestamp' }),
     createdAt: ts('created_at'),
     updatedAt: tsUpdatable('updated_at'),
   },

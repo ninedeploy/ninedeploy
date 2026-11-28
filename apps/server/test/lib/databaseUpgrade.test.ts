@@ -124,6 +124,8 @@ describe('refusals before anything stops', () => {
     expect(upgradeRefusal({ ...base, version: 'vector' })?.code).toBe('database_upgrade_pgvector');
     expect(upgradeRefusal({ ...base, previewCopyOf: 2 })?.code).toBe('database_upgrade_preview');
     expect(upgradeRefusal({ ...base, pitrEnabled: true })?.code).toBe('database_upgrade_pitr');
+    // N12: the refusal says what turning it off costs.
+    expect(upgradeRefusal({ ...base, pitrEnabled: true })?.message).toContain('this database has only its dumps to recover from');
   });
 
   it('reads the major from the running cluster, not the row tag, and offers only newer ones', async () => {

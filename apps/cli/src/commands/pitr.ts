@@ -39,6 +39,12 @@ export async function pitrStatus(client: NineDeployClient, dbIdStr: string): Pro
   }
   kv('Enabled', s.enabled ? 'yes' : 'no');
   if (!s.enabled) {
+    // N12: it was on before. Say since when, and that an upgrade ran in between (the usual reason).
+    if (s.gap) {
+      kv('Off since', s.gap.since);
+      if (s.gap.upgrade) info(`The upgrade to ${s.gap.upgrade.engine === 'postgres' ? 'PostgreSQL' : s.gap.upgrade.engine} ${s.gap.upgrade.toSeries} ran after it was turned off.`);
+      info('Since then this database has only its dumps to recover from.');
+    }
     info(`Turn it on with: ninedeploy databases pitr enable ${id}`);
     return;
   }

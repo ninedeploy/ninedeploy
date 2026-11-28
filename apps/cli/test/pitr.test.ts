@@ -76,6 +76,13 @@ describe('pitr status', () => {
 });
 
 describe('enable / disable / base-backup', () => {
+  it('says since when point-in-time recovery is off, and that an upgrade ran after it (N12)', async () => {
+    await pitrStatus(client({ get: vi.fn(async () => ({ ...status, enabled: false, offSince: '2026-11-05T09:00:00.000Z', gap: { since: '2026-11-05T09:00:00.000Z', upgrade: { id: 3, engine: 'postgres', status: 'completed', fromSeries: '16', toSeries: '18', createdAt: '2026-11-05T09:10:00.000Z', completedAt: '2026-11-05T09:12:00.000Z' } } })) }).client, '4');
+    expect(text()).toMatch(/Off since.*2026-11-05T09:00:00.000Z/);
+    expect(text()).toContain('The upgrade to PostgreSQL 18 ran after it was turned off.');
+    expect(text()).toContain('only its dumps to recover from');
+    expect(text()).toContain('ninedeploy databases pitr enable 4');
+  });
   it('enables with a retention and validates it', async () => {
     const { pitr, client: c } = client();
     await pitrEnable(c, '4', { retention: '14' });

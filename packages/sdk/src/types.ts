@@ -399,6 +399,10 @@ export interface PitrStatus {
   baseBackups: Array<{ label: string; startedAt: string; finishedAt: string; sizeBytes: number }>;
   archiveBytes: number;
   segmentCount: number;
+  /** When point-in-time recovery was last turned off (null: never, or it is on). Since then only dumps recover this database. */
+  offSince?: string | null;
+  /** While it is off after having been on: since when, and the upgrade that ran after that (the usual reason it was turned off). */
+  gap?: { since: string; upgrade: { id: number; engine: string; status: string; fromSeries: string; toSeries: string; createdAt: string; completedAt: string | null } | null } | null;
 }
 
 /**

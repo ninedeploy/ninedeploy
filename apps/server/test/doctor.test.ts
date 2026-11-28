@@ -154,6 +154,15 @@ describe('doctor scan', () => {
     expect(report.findings.find((x) => x.kind === 'database_stuck')).toMatchObject({ id: 'database_stuck:2', action: 'mark_database_error' });
   });
 
+  it('mentions point-in-time recovery that was turned off an hour ago or more, as information (N12)', async () => {
+    const ago = new Date(Date.now() - 2 * 3600_000);
+    const report = await scanDoctor(createFakeDb({
+      select: { databases: [dbRow({ pitrDisabledAt: ago }), dbRow({ id: 2, pitrDisabledAt: new Date(Date.now() - 5 * 60_000) }), dbRow({ id: 3 }), dbRow({ id: 4, pitrEnabled: true, pitrDisabledAt: ago })] },
+    }));
+    // The row off for five minutes is an upgrade in progress, or a choice just made: not mentioned yet.
+    expect(report.findings.filter((x) => x.kind === 'pitr_off')).toEqual([expect.objectContaining({ id: 'pitr_off:1', severity: 'info', action: null, target: { type: 'database', name: 'DB', id: 1 } })]);
+    expect(report.findings.find((x) => x.kind === 'pitr_off')?.detail).toContain('only its dumps to recover from');
+  });
   it('flags orphan volumes with their retained origin and size', async () => {
     host.volumeLs = 'nd-svc-ghost-data\n';
     ex.capture.mockImplementation(async (_cmd: string, args: string[]) => {

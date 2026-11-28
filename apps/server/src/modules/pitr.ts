@@ -18,7 +18,7 @@ import { z } from 'zod';
 import { pitrRecoveries, projects, type Database } from '@ninedeploy/db';
 import { audit } from '../lib/audit.js';
 import { conflict, forbidden, HttpError, notFound, parseId as num, unprocessable } from '../lib/errors.js';
-import { pitrBusy, pitrStatus, pitrUnavailable, runPitrBaseBackup, setPitr, startPitrRecovery } from '../lib/pitr.js';
+import { pitrBusy, pitrGap, pitrStatus, pitrUnavailable, runPitrBaseBackup, setPitr, startPitrRecovery } from '../lib/pitr.js';
 import { assertNoRunningUpgrade } from '../lib/databaseUpgrade.js';
 import { assertDatabaseRole, assertProjectRole, isWorkspaceMember, loadDatabaseForUser } from '../lib/resourceAccess.js';
 import { configureRemotePitr, remotePitrStatus, startRemotePitrCheckpoint } from '../lib/pitrRemote.js';
@@ -66,7 +66,8 @@ export const pitrRoutes: FastifyPluginAsync = async (app) => {
 
   app.get<{ Params: { id: string } }>('/:id/pitr', async (req) => {
     const d = await load(req.params.id, req.user!, 'viewer');
-    return { databaseId: d.id, ...(await pitrStatus(d, undefined, app.db)) };
+    // N12: while point-in-time recovery is off after having been on, the answer says since when and which upgrade ran after that.
+    return { databaseId: d.id, ...(await pitrStatus(d, undefined, app.db)), gap: await pitrGap(app.db, d) };
   });
 
   app.get<{ Params: { id: string } }>('/:id/pitr/remote', { preHandler: app.requireOperator }, async (req) => {

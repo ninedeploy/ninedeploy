@@ -370,7 +370,8 @@ export function upgradeRefusal(d: Database): { code: string; message: string } |
   if (!isUpgradeEngine(d.engine)) return { code: 'database_upgrade_engine', message: `A major upgrade is available for PostgreSQL, MySQL and MariaDB, not ${d.engine}.` };
   if (d.version === 'vector' || d.version === 'pgvector') return { code: 'database_upgrade_pgvector', message: 'This database runs the pgvector image, which follows its own release line; a major upgrade is not offered for it.' };
   if (d.previewCopyOf != null || d.previewServiceId != null) return { code: 'database_upgrade_preview', message: 'A preview copy follows its source database; upgrade the source instead.' };
-  if (d.pitrEnabled) return { code: 'database_upgrade_pitr', message: 'Point-in-time recovery is on: its WAL archive and base backups belong to the current cluster. Turn it off, upgrade, then turn it on again.' };
+  // N12: say what turning it off costs — the gap is the operator's to accept.
+  if (d.pitrEnabled) return { code: 'database_upgrade_pitr', message: 'Point-in-time recovery is on: its WAL archive and base backups belong to the current cluster. Turn it off, upgrade, then turn it on again. Turning it off deletes them: from then until the first base backup of the new archive has finished, this database has only its dumps to recover from.' };
   if (d.serverId == null && (!d.containerName || !d.volumeName)) return { code: 'database_upgrade_unmanaged', message: 'This database has no container or volume name on the panel host.' };
   return null;
 }

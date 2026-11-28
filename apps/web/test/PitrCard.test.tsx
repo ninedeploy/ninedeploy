@@ -91,6 +91,25 @@ describe('PitrCard', () => {
     expect(await screen.findByText('Point-in-time recovery is on; the first base backup is running')).toBeInTheDocument();
   });
 
+  it('states the gap while point-in-time recovery is off after having been on, and names the upgrade that ran after it (N12)', async () => {
+    pitr.get.mockResolvedValue({ ...off, offSince: '2026-11-05T09:00:00.000Z', gap: { since: '2026-11-05T09:00:00.000Z', upgrade: { id: 3, engine: 'postgres', status: 'completed', fromSeries: '16', toSeries: '18', createdAt: '2026-11-05T09:10:00.000Z', completedAt: '2026-11-05T09:12:00.000Z' } } });
+    const first = renderCard();
+    expect(await screen.findByTestId('pitr-gap')).toHaveTextContent('before the upgrade to PostgreSQL 18; it is still off. Since then this database has only its dumps to recover from.');
+    expect(screen.getByRole('button', { name: 'Enable point-in-time recovery' })).toBeInTheDocument();
+    first.unmount();
+    // Off with no upgrade since: the same gap, without the upgrade.
+    pitr.get.mockResolvedValue({ ...off, offSince: '2026-11-05T09:00:00.000Z', gap: { since: '2026-11-05T09:00:00.000Z', upgrade: null } });
+    renderCard();
+    expect(await screen.findByTestId('pitr-gap')).toHaveTextContent('is still off. Since then this database has only its dumps to recover from.');
+    expect(screen.getByTestId('pitr-gap')).not.toHaveTextContent('upgrade');
+  });
+
+  it('says nothing about a gap for a database that never had point-in-time recovery on', async () => {
+    pitr.get.mockResolvedValue({ ...off, offSince: null, gap: null });
+    renderCard();
+    await screen.findByRole('button', { name: 'Enable point-in-time recovery' });
+    expect(screen.queryByTestId('pitr-gap')).toBeNull();
+  });
   it('shows why it is unavailable, and a load failure', async () => {
     pitr.get.mockResolvedValue({ ...off, available: false, unavailableReason: 'Point-in-time recovery is available for databases on the panel host, not yet on nodes.' });
     renderCard();

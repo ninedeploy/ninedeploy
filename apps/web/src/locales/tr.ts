@@ -6278,6 +6278,8 @@ export const TR: Readonly<Record<string, string>> = {
   'Enabling restarts the database once.': 'Açmak veritabanını bir kez yeniden başlatır.',
   'Point-in-time recovery is on; the first base backup is running': 'Zamana göre kurtarma açık; ilk temel yedek alınıyor',
   'Point-in-time recovery is off; its archive was deleted': 'Zamana göre kurtarma kapalı; arşivi silindi',
+  'Point-in-time recovery was turned off on {time}, before the upgrade to {series}; it is still off. Since then this database has only its dumps to recover from.': 'Zamana göre kurtarma, {series} sürümüne yükseltmeden önce {time} zamanında kapatıldı; hâlâ kapalı. O zamandan beri bu veritabanını geri getirmenin tek yolu yedek dökümleridir.',
+  'Point-in-time recovery was turned off on {time}; it is still off. Since then this database has only its dumps to recover from.': 'Zamana göre kurtarma {time} zamanında kapatıldı; hâlâ kapalı. O zamandan beri bu veritabanını geri getirmenin tek yolu yedek dökümleridir.',
   'Could not change point-in-time recovery': 'Zamana göre kurtarma değiştirilemedi',
   'Base backup started': 'Temel yedek başladı',
   'Could not start a base backup': 'Temel yedek başlatılamadı',

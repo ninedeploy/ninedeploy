@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { migrate } from 'drizzle-orm/libsql/migrator';
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createDb, databases, pitrRecoveries, users, type Database, type DB } from '@ninedeploy/db';
+import { createDb, databaseUpgrades, databases, pitrRecoveries, users, type Database, type DB } from '@ninedeploy/db';
 
 const audits = vi.hoisted(() => [] as Array<{ action: string; detail: string }>);
 vi.mock('../../src/lib/audit.js', () => ({
@@ -22,7 +22,7 @@ import type { HttpError } from '../../src/lib/errors.js';
 import { PitrRefusal, parseArchiveListing, type PitrInventory } from '../../src/engine/postgresPitr.js';
 import {
   failInterruptedPitrRecoveries, INTERRUPTED_RECOVERY_ERROR, pitrBusy, pitrDatabases, pitrMaintenance, pitrStatus, pitrUnavailable,
-  prunePitrRecoveries, runPitrBaseBackup, setPitr, startPitrRecovery, type PitrDeps,
+  pitrGap, prunePitrRecoveries, runPitrBaseBackup, setPitr, startPitrRecovery, type PitrDeps,
 } from '../../src/lib/pitr.js';
 
 const MIGRATIONS = fileURLToPath(new URL('../../../../packages/db/src/migrations', import.meta.url));
@@ -427,5 +427,44 @@ describe('the scheduler pass', () => {
     ]);
     await prunePitrRecoveries(db, Date.parse('2026-11-05T00:00:00Z'));
     expect((await db.select().from(pitrRecoveries)).map((r) => r.status)).toEqual(['running', 'completed']);
+  });
+});
+
+describe('the gap a major upgrade asks for (N12)', () => {
+  const noLog = () => undefined;
+  it('turning it off deletes the archive and the row remembers since when; the status and the gap say so until it is on again', async () => {
+    const d = await insertDb();
+    expect((await reload(d.id)).pitrDisabledAt).toBeNull();
+    expect(await pitrGap(db, d)).toBeNull();
+    expect((await pitrStatus(d)).offSince).toBeNull();
+    const on = await setPitr(db, d, { enabled: true }, userId, noLog, fakeDeps());
+    expect((await reload(d.id)).pitrDisabledAt).toBeNull();
+    const off = await setPitr(db, on, { enabled: false }, userId, noLog, fakeDeps());
+    const since = (await reload(d.id)).pitrDisabledAt!;
+    expect(Math.abs(Date.now() - since.getTime())).toBeLessThan(60_000);
+    expect((await pitrStatus(off)).offSince).toBe(since.toISOString());
+    expect(await pitrGap(db, off)).toEqual({ since: since.toISOString(), upgrade: null });
+  });
+
+  it('the gap names the upgrade admitted after it was turned off, and none from before', async () => {
+    const since = new Date(Math.floor(Date.now() / 1000) * 1000 - 3600_000);
+    const d = await insertDb({ pitrDisabledAt: since });
+    const base = { databaseId: d.id, engine: 'postgres', fromMajor: 16, toMajor: 18, fromSeries: '16', toSeries: '18', previousVersion: '16', targetVersion: '18', fromImage: 'sha256:old', toImage: 'postgres:18', previousVolume: 'nd-db-main-data', targetVolume: 'nd-db-main-data-u1', status: 'completed' };
+    await db.insert(databaseUpgrades).values({ ...base, id: 1, createdAt: new Date(since.getTime() - 86_400_000) });
+    expect(await pitrGap(db, d)).toEqual({ since: since.toISOString(), upgrade: null });
+    await db.insert(databaseUpgrades).values({ ...base, id: 2, targetVolume: 'nd-db-main-data-u2', createdAt: new Date(since.getTime() + 60_000), completedAt: new Date(since.getTime() + 120_000) });
+    const gap = await pitrGap(db, d);
+    expect(gap?.upgrade).toMatchObject({ id: 2, engine: 'postgres', status: 'completed', fromSeries: '16', toSeries: '18' });
+    // An upgrade from before 0126 carries only the majors.
+    await db.insert(databaseUpgrades).values({ ...base, id: 3, targetVolume: 'nd-db-main-data-u3', fromSeries: null, toSeries: null, createdAt: new Date(since.getTime() + 120_000) });
+    expect((await pitrGap(db, d))?.upgrade).toMatchObject({ id: 3, fromSeries: '16', toSeries: '18' });
+  });
+
+  it('no gap while it is on, or for a database that never had it on', async () => {
+    const never = await insertDb();
+    expect((await pitrStatus(never)).offSince).toBeNull();
+    // A row that is on again is not in a gap, whatever it remembers.
+    const onAgain = await insertDb({ slug: 'again', name: 'again', pitrEnabled: true, pitrDisabledAt: new Date(Date.now() - 3600_000) });
+    expect(await pitrGap(db, onAgain)).toBeNull();
   });
 });

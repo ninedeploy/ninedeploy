@@ -11,7 +11,8 @@ import { fileURLToPath } from 'node:url';
 import { migrate } from 'drizzle-orm/libsql/migrator';
 import type { FastifyInstance } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createDb, databases, pitrRecoveries, projects, users, workspaceMembers, workspaces, type DB } from '@ninedeploy/db';
+import { createDb, databaseUpgrades, databases, pitrRecoveries, projects, users, workspaceMembers, workspaces, type DB } from '@ninedeploy/db';
+import { eq } from 'drizzle-orm';
 
 const lib = vi.hoisted(() => ({
   setCalls: [] as Array<Record<string, unknown>>,
@@ -23,7 +24,7 @@ vi.mock('../../src/lib/pitr.js', async () => {
   const actual = await vi.importActual<typeof import('../../src/lib/pitr.js')>('../../src/lib/pitr.js');
   return {
     ...actual,
-    pitrStatus: vi.fn(async (d: { pitrEnabled: boolean; pitrRetentionDays: number }) => ({ enabled: d.pitrEnabled, retentionDays: d.pitrRetentionDays, recoverable: [] })),
+    pitrStatus: vi.fn(async (d: { pitrEnabled: boolean; pitrRetentionDays: number; pitrDisabledAt?: Date | null }) => ({ enabled: d.pitrEnabled, retentionDays: d.pitrRetentionDays, recoverable: [], offSince: d.pitrDisabledAt ? d.pitrDisabledAt.toISOString() : null })),
     setPitr: vi.fn(async (_db: unknown, d: Record<string, unknown>, input: Record<string, unknown>) => {
       lib.setCalls.push(input);
       return { ...d, pitrEnabled: input.enabled, pitrRetentionDays: input.retentionDays ?? d.pitrRetentionDays };
@@ -105,6 +106,21 @@ describe('reading', () => {
     // Another database's recovery reads as missing: no cross-database id oracle.
     const foreign = (await db.select().from(pitrRecoveries)).find((r) => r.sourceDatabaseId === ids.other)!.id;
     expect((await call('GET', `/databases/${ids.db}/pitr/recoveries/${foreign}`, ids.viewer)).statusCode).toBe(404);
+  });
+});
+
+describe('the gap (N12)', () => {
+  it('while point-in-time recovery is off after having been on, the status says since when and which upgrade ran after that', async () => {
+    // Never on, or on: no gap.
+    expect((await call('GET', `/databases/${ids.other}/pitr`, ids.viewer)).json()).toMatchObject({ enabled: false, offSince: null, gap: null });
+    expect((await call('GET', `/databases/${ids.db}/pitr`, ids.viewer)).json()).toMatchObject({ enabled: true, offSince: null, gap: null });
+    const since = new Date(Math.floor(Date.now() / 1000) * 1000 - 3600_000);
+    await db.update(databases).set({ pitrEnabled: false, pitrDisabledAt: since }).where(eq(databases.id, ids.db));
+    expect((await call('GET', `/databases/${ids.db}/pitr`, ids.viewer)).json()).toMatchObject({ enabled: false, offSince: since.toISOString(), gap: { since: since.toISOString(), upgrade: null } });
+    await db.insert(databaseUpgrades).values({ databaseId: ids.db, engine: 'postgres', fromMajor: 16, toMajor: 18, fromSeries: '16', toSeries: '18', previousVersion: '16', targetVersion: '18', fromImage: 'sha256:old', toImage: 'postgres:18', previousVolume: 'nd-db-main-data', targetVolume: 'nd-db-main-data-u1', status: 'completed', createdAt: new Date(since.getTime() + 60_000) });
+    expect((await call('GET', `/databases/${ids.db}/pitr`, ids.viewer)).json()).toMatchObject({
+      enabled: false, offSince: since.toISOString(), gap: { since: since.toISOString(), upgrade: { toSeries: '18', status: 'completed' } },
+    });
   });
 });
 

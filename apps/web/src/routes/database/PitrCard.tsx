@@ -107,7 +107,16 @@ export function PitrCard({ db }: { db: DatabaseDetail }) {
         {!s.available ? (
           <p className="text-sm text-slate-500">{s.unavailableReason}</p>
         ) : !s.enabled ? (
-          <div className="flex flex-wrap items-end gap-3">
+          <>
+            {/* N12: it was on before. The gap is stated until it is turned on again. */}
+            {s.gap && (
+              <p className="rounded-lg bg-amber-500/10 p-2 text-xs text-amber-200" data-testid="pitr-gap">
+                {s.gap.upgrade
+                  ? t('Point-in-time recovery was turned off on {time}, before the upgrade to {series}; it is still off. Since then this database has only its dumps to recover from.', { time: formatDateTime(s.gap.since), series: `PostgreSQL ${s.gap.upgrade.toSeries}` })
+                  : t('Point-in-time recovery was turned off on {time}; it is still off. Since then this database has only its dumps to recover from.', { time: formatDateTime(s.gap.since) })}
+              </p>
+            )}
+            <div className="flex flex-wrap items-end gap-3">
             <Field label={t('Keep for (days)')} error={retentionError}>
               <Input value={retention} onChange={(e) => setRetention(e.target.value)} placeholder={String(s.retentionDays)} inputMode="numeric" className="h-9 w-24 font-mono text-xs" />
             </Field>
@@ -115,7 +124,8 @@ export function PitrCard({ db }: { db: DatabaseDetail }) {
               {set.isPending ? t('Restarting…') : t('Enable point-in-time recovery')}
             </Button>
             <p className="w-full text-xs text-slate-500">{t('Enabling restarts the database once.')}</p>
-          </div>
+            </div>
+          </>
         ) : (
           <>
             {s.lastError && <p className="rounded-lg bg-amber-500/10 p-2 text-xs text-amber-300">{s.lastError}</p>}

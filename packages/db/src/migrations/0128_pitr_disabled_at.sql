@@ -1,0 +1,1 @@
+ALTER TABLE `databases` ADD `pitr_disabled_at` integer;

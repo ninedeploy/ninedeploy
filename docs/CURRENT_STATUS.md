@@ -35,7 +35,7 @@ Reconciled on November 27, 2026. This is the one list. The plans keep the eviden
 |---|---|
 | A8 | Rename the `coolify-*` template slugs, with redirects. Approved on November 9. |
 | N11 | Panel sign-in for services on nodes, after the decisions. |
-| N12 | Replicas with a manual promote, then the rest of high availability. Major upgrades on nodes and for MongoDB are done, unreleased. |
+| N12 | Replicas with a manual promote, then the rest of high availability. Major upgrades on nodes and for MongoDB are done, unreleased, and so is the gap point-in-time recovery leaves around an upgrade (shown on the card, by the Doctor after an hour, and in the CLI). |
 | N13 | Preview database copies for MySQL, MariaDB, MongoDB and nodes. |
 | N14 | GitOps for databases, build, storage and secret references; Compose release fidelity. |
 | S5 | Hot or relational settings state, moved into columns or tables. |

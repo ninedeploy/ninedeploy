@@ -45,6 +45,7 @@ import { serviceRoutingView } from './routingView.js';
 import { writeDynamicConfig } from './proxy.js';
 import { startStoppedGeneration } from './interruptedRuntime.js';
 import { assertNoRunningUpgrade } from '../lib/databaseUpgrade.js';
+import { PITR_OFF_NOTICE_AFTER_MS, pitrGap } from '../lib/pitr.js';
 import {
   containerRunning,
   listManagedVolumeNames,
@@ -404,6 +405,25 @@ export async function scanDoctor(db: DB): Promise<DoctorReport> {
         action: 'mark_database_error',
       });
     }
+  }
+
+  // N12: point-in-time recovery was turned off (a major upgrade needs it off)
+  // and is still off an hour later. Information, not a fault: staying off may
+  // be what the owner wants; the point is that the choice is visible.
+  for (const d of dbs) {
+    if (d.pitrEnabled || !d.pitrDisabledAt || d.engine !== 'postgres' || Date.now() - d.pitrDisabledAt.getTime() < PITR_OFF_NOTICE_AFTER_MS) continue;
+    const gap = await pitrGap(db, d);
+    finding({
+      id: `pitr_off:${d.id}`,
+      kind: 'pitr_off',
+      severity: 'info',
+      title: `Point-in-time recovery is off on "${d.name}" since ${d.pitrDisabledAt.toISOString().replace('T', ' ').slice(0, 16)} UTC`,
+      detail:
+        'It was on before; turning it off deleted its archive, so since then this database has only its dumps to recover from.' +
+        (gap?.upgrade ? ` The upgrade to ${gap.upgrade.engine === 'postgres' ? 'PostgreSQL' : gap.upgrade.engine} ${gap.upgrade.toSeries} ran after it was turned off. Turn it on again now that that is done, unless staying off is what you want.` : ' A major upgrade needs it off. Turn it on again when that is done, unless staying off is what you want.'),
+      target: { type: 'database', name: d.name, id: d.id },
+      action: null,
+    });
   }
 
   for (const dep of activeDeployRows) {

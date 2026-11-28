@@ -12,8 +12,8 @@
  *   database again and keeps only the recovery row with a fixed diagnostic.
  */
 import { randomUUID } from 'node:crypto';
-import { and, eq, inArray } from 'drizzle-orm';
-import { databases, pitrRecoveries, type Database, type DB } from '@ninedeploy/db';
+import { and, desc, eq, gte, inArray } from 'drizzle-orm';
+import { databaseUpgrades, databases, pitrRecoveries, type Database, type DB } from '@ninedeploy/db';
 import { encrypt, randomToken } from './crypto.js';
 import { conflict, HttpError, unprocessable } from './errors.js';
 import { slugify } from './slug.js';
@@ -178,7 +178,7 @@ async function setPitrCore(
         `A WAL archive volume ${pitrArchiveVolume(d.volumeName ?? '')} is left from an earlier database; delete it (Volumes) before enabling point-in-time recovery.`,
       );
     }
-    await db.update(databases).set({ pitrEnabled: true, pitrRetentionDays: retentionDays, pitrBaseBackupAt: null, pitrLastError: null }).where(eq(databases.id, d.id));
+    await db.update(databases).set({ pitrEnabled: true, pitrDisabledAt: null, pitrRetentionDays: retentionDays, pitrBaseBackupAt: null, pitrLastError: null }).where(eq(databases.id, d.id));
     const on = await reload(db, d.id);
     try {
       await recreate(on, log, deps);
@@ -193,11 +193,13 @@ async function setPitrCore(
     if (on.serverId == null) void runPitrBaseBackup(db, on, actor, log, deps).catch(() => undefined);
     return reload(db, d.id);
   }
-  // Disabling: the archive goes with it.
+  // Disabling: the archive goes with it, and the row remembers since when —
+  // from this moment the database has only its dumps (N12: the gap is shown
+  // until point-in-time recovery is turned on again).
   if (recoveriesRunning.has(d.id) || baseBackupsRunning.has(d.id) || prunesRunning.has(d.id) || archiveReaders.has(d.id)) {
     throw new HttpError(409, 'pitr_busy', 'A recovery, base backup or retention pass is using the WAL archive; try again when it finishes.');
   }
-  await db.update(databases).set({ pitrEnabled: false, pitrBaseBackupAt: null, pitrLastError: null, pitrRetentionDays: retentionDays }).where(eq(databases.id, d.id));
+  await db.update(databases).set({ pitrEnabled: false, pitrDisabledAt: new Date(), pitrBaseBackupAt: null, pitrLastError: null, pitrRetentionDays: retentionDays }).where(eq(databases.id, d.id));
   const off = await reload(db, d.id);
   if (off.status === 'running') {
     try {
@@ -249,6 +251,37 @@ export interface PitrStatus {
   baseBackups: Array<{ label: string; startedAt: string; finishedAt: string; sizeBytes: number }>;
   archiveBytes: number;
   segmentCount: number;
+  /** When point-in-time recovery was last turned off (null: never, or it is on). The archive went with it: since then only dumps recover this database. */
+  offSince: string | null;
+}
+
+/**
+ * N12: the gap a major upgrade asks for. Turning point-in-time recovery off
+ * deletes its archive and base backups; the upgrade needs it off; and until it
+ * is on again and its first base backup has finished, the database has only
+ * its dumps. The row says since when, and which upgrade ran after that (the
+ * usual reason it was turned off), so nothing has to remember it.
+ */
+export interface PitrGap {
+  since: string;
+  upgrade: { id: number; engine: string; status: string; fromSeries: string; toSeries: string; createdAt: string; completedAt: string | null } | null;
+}
+
+/** How long the Doctor waits before it mentions a database whose point-in-time recovery is still off. */
+export const PITR_OFF_NOTICE_AFTER_MS = 60 * 60 * 1000;
+
+export async function pitrGap(db: DB, d: Pick<Database, 'id' | 'pitrEnabled' | 'pitrDisabledAt'>): Promise<PitrGap | null> {
+  if (d.pitrEnabled || !d.pitrDisabledAt) return null;
+  const up = await db.query.databaseUpgrades.findFirst({
+    where: and(eq(databaseUpgrades.databaseId, d.id), gte(databaseUpgrades.createdAt, d.pitrDisabledAt)),
+    orderBy: desc(databaseUpgrades.id),
+  });
+  return {
+    since: d.pitrDisabledAt.toISOString(),
+    upgrade: up
+      ? { id: up.id, engine: up.engine, status: up.status, fromSeries: up.fromSeries ?? String(up.fromMajor), toSeries: up.toSeries ?? String(up.toMajor), createdAt: up.createdAt.toISOString(), completedAt: up.completedAt ? up.completedAt.toISOString() : null }
+      : null,
+  };
 }
 
 export async function pitrStatus(d: Database, deps: PitrDeps = pitrDeps, db?: DB): Promise<PitrStatus> {
@@ -267,6 +300,7 @@ export async function pitrStatus(d: Database, deps: PitrDeps = pitrDeps, db?: DB
     baseBackups: [],
     archiveBytes: 0,
     segmentCount: 0,
+    offSince: d.pitrDisabledAt ? d.pitrDisabledAt.toISOString() : null,
   };
   if (d.serverId != null && !unavailableReason) {
     status.recoveryUnavailableReason = NODE_PITR_REPLAY_REFUSAL;

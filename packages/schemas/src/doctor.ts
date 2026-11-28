@@ -41,6 +41,8 @@ export const doctorFindingKind = z.enum([
   'database_down',
   /** Database stuck in `creating` — provisioning never finished. */
   'database_stuck',
+  /** Point-in-time recovery was turned off (a major upgrade needs it off) and is still off an hour later. */
+  'pitr_off',
   /** Service row says running, its runtime container is gone or exited. */
   'service_runtime_desync',
   /** A deploy row stuck in queued/building far past any live window. */
